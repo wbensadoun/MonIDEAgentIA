@@ -1,0 +1,9 @@
+Fichier de test dans un sous-dossier
+
+Ce fichier teste la capacité de l'application à :
+- Lire des fichiers dans des sous-dossiers
+- Afficher l'arborescence correctement
+- Ouvrir les fichiers avec le bon chemin
+
+Date: 2025-01-27
+Chemin: test-folder/test-subfolder.txt

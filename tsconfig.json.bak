@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "es6",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "allowJs": true,
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "main.js",
+    "client/src/**/*.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "client/build"
+  ]
+}
