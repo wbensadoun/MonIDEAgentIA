@@ -1,0 +1,108 @@
+.error-boundary-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+  z-index: 9999;
+}
+
+.error-boundary-content {
+  max-width: 600px;
+  padding: 3rem;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.error-icon {
+  color: #ef4444;
+  margin-bottom: 1.5rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.error-title {
+  font-size: 1.875rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin-bottom: 1rem;
+}
+
+.error-message {
+  font-size: 1.125rem;
+  color: #cbd5e1;
+  margin-bottom: 1.5rem;
+}
+
+.error-details {
+  margin: 1.5rem 0;
+  text-align: left;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.error-details summary {
+  color: #3b82f6;
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.error-stack {
+  color: #94a3b8;
+  font-family: monospace;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 0.5rem;
+}
+
+.error-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.error-button {
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.error-button.primary {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+}
+
+.error-button.primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px -5px rgba(59, 130, 246, 0.4);
+}
+
+.error-button.secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.error-button.secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+}

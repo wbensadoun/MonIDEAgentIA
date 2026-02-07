@@ -13,6 +13,19 @@ try {
     // Nouvelle API pour ouvrir un dialogue de sélection de dossier
     openFolderDialog: () => ipcRenderer.invoke('open-folder-dialog'),
 
+    // Événements menu (émis par le processus main)
+    onMenuOpenFolder: (callback) => {
+      if (typeof callback !== 'function') return;
+      ipcRenderer.removeAllListeners('menu-open-folder');
+      ipcRenderer.on('menu-open-folder', () => callback());
+    },
+
+    onMenuOpenSettings: (callback) => {
+      if (typeof callback !== 'function') return;
+      ipcRenderer.removeAllListeners('menu-open-settings');
+      ipcRenderer.on('menu-open-settings', () => callback());
+    },
+
     // API pour lister tous les fichiers et dossiers dans un chemin donné
     getAllFiles: (folderPath) => ipcRenderer.invoke('get-all-files', folderPath),
     
@@ -41,10 +54,41 @@ try {
     getAllProjectFiles: (projectPath) => ipcRenderer.invoke('getAllProjectFiles', projectPath),
 
     // API pour l'appel Gemini avec contexte complet du projet
-    getGeminiCompletion: (history, currentCode, allProjectFiles) => ipcRenderer.invoke('get-gemini-completion', history, currentCode, allProjectFiles),
+    getGeminiCompletion: (history, currentCode, allProjectFiles, options) =>
+      ipcRenderer.invoke('get-gemini-completion', history, currentCode, allProjectFiles, options),
+    
+    // API pour lister les modèles Gemini disponibles
+    listGeminiModels: (apiKey) => ipcRenderer.invoke('list-gemini-models', apiKey),
+
+    // API pour l'appel Kimi K2.5 via Together
+    getKimiCompletion: (history, currentCode, allProjectFiles, options) =>
+      ipcRenderer.invoke('get-kimi-completion', history, currentCode, allProjectFiles, options),
 
     // API pour sauvegarder une conversation
     saveConversation: (projectPath, conversationHistory) => ipcRenderer.invoke('saveConversation', projectPath, conversationHistory),
+    listConversations: (projectPath) => ipcRenderer.invoke('listConversations', projectPath),
+    loadConversation: (projectPath, fileName) => ipcRenderer.invoke('loadConversation', projectPath, fileName),
+
+    // Logs
+    getLatestLog: () => ipcRenderer.invoke('get-latest-log'),
+    openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
+
+    // Settings
+    saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
+    loadSettings: () => ipcRenderer.invoke('load-settings'),
+    validateApiKey: (provider, apiKey) => ipcRenderer.invoke('validate-api-key', provider, apiKey),
+
+    // Terminal / Process Runner
+    startProcess: (payload) => ipcRenderer.invoke('start-process', payload),
+    stopProcess: (id) => ipcRenderer.invoke('stop-process', id),
+    onProcessOutput: (callback) => {
+      if (typeof callback !== 'function') return;
+      ipcRenderer.on('process-output', (_event, data) => callback(data));
+    },
+    onProcessExit: (callback) => {
+      if (typeof callback !== 'function') return;
+      ipcRenderer.on('process-exit', (_event, data) => callback(data));
+    },
 
     // Nouvelles API pour la gestion avancée des fichiers
     editFile: (projectPath, filename, searchText, replaceText) => ipcRenderer.invoke('editFile', projectPath, filename, searchText, replaceText),

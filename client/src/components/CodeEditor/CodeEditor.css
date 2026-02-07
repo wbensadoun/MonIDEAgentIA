@@ -1,0 +1,25 @@
+.code-editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.line-numbers {
+  background: linear-gradient(to bottom, #1a1a2e, #16213e);
+  border-right: 2px solid #3b82f6;
+  user-select: none;
+}
+
+.code-textarea {
+  tab-size: 2;
+  -moz-tab-size: 2;
+}
+
+.code-textarea::placeholder {
+  color: #64748b;
+}
+
+.code-textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

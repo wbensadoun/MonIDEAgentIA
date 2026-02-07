@@ -1,0 +1,24 @@
+.file-item {
+  animation: slideIn 0.3s ease-out;
+  transition: all 0.2s ease-in-out;
+}
+
+.file-item:hover {
+  transform: translateX(4px);
+  background-color: rgba(59, 130, 246, 0.1);
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.tree-view {
+  padding: 0.5rem 0;
+}

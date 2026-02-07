@@ -1,10 +1,10 @@
 /* Variables CSS pour la cohérence des couleurs */
 :root {
-  --primary-bg: #0f0f23;
-  --secondary-bg: #1a1a2e;
-  --tertiary-bg: #16213e;
-  --accent-color: #3b82f6;
-  --accent-hover: #2563eb;
+  --primary-bg: #050816;
+  --secondary-bg: #0b1120;
+  --tertiary-bg: #020617;
+  --accent-color: #38bdf8;
+  --accent-hover: #0ea5e9;
   --success-color: #10b981;
   --warning-color: #f59e0b;
   --error-color: #ef4444;
@@ -129,15 +129,15 @@
 
 /* Gradient de fond pour l'application */
 .app-background {
-  background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 50%, var(--tertiary-bg) 100%);
+  background-color: var(--primary-bg);
   min-height: 100vh;
 }
 
 /* Effet de verre pour les panneaux */
 .glass-effect {
-  backdrop-filter: blur(10px);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.25);
 }
 
 /* Animation pour les messages */
@@ -151,7 +151,37 @@
 }
 
 .code-editor:focus-within {
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.6);
+}
+
+/* Séparateurs de panneaux redimensionnables */
+.panel-resizer {
+  width: 6px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.panel-resizer::before {
+  content: '';
+  width: 2px;
+  height: 60%;
+  border-radius: 999px;
+  background: linear-gradient(to bottom, rgba(148, 163, 184, 0.15), rgba(148, 163, 184, 0.7));
+  transition: background-color 0.2s, box-shadow 0.2s, transform 0.1s;
+}
+
+.panel-resizer:hover::before {
+  background: linear-gradient(to bottom, rgba(56, 189, 248, 0.5), rgba(59, 130, 246, 1));
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.7);
+}
+
+.panel-resizer-active::before {
+  background: linear-gradient(to bottom, rgba(34, 211, 238, 0.8), rgba(37, 99, 235, 1));
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.9);
+  transform: scaleX(1.2);
 }
 
 /* Style pour les numéros de ligne */
@@ -190,9 +220,9 @@
   width: 2px;
   height: 2px;
   background: var(--accent-color);
-  border-radius: 50%;
-  opacity: 0.3;
-  animation: float 6s ease-in-out infinite;
+  border-radius: 999px;
+  opacity: 0.15;
+  animation: float 10s ease-in-out infinite;
 }
 
 @keyframes float {

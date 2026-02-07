@@ -1,0 +1,212 @@
+.ai-chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chat-message {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.typing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.typing-indicator span {
+  width: 4px;
+  height: 4px;
+  background: currentColor;
+  border-radius: 50%;
+  animation: bounce 1.4s ease-in-out infinite both;
+}
+
+.typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+.typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
+/* Chat layout & messages */
+
+.ai-chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.chat-message {
+  animation: fadeIn 0.25s ease-out;
+}
+
+.chat-row-user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chat-row-ai {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.chat-row-system {
+  display: flex;
+  justify-content: center;
+}
+
+.chat-bubble-user,
+.chat-bubble-model,
+.chat-bubble-architect,
+.chat-bubble-reviewer,
+.chat-bubble-coder,
+.chat-bubble-system {
+  max-width: 90%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  backdrop-filter: blur(10px);
+}
+
+.chat-bubble-user {
+  background: radial-gradient(circle at top left, rgba(34, 211, 238, 0.35), rgba(15, 23, 42, 0.9));
+}
+
+.chat-bubble-model {
+  background: radial-gradient(circle at top left, rgba(74, 222, 128, 0.25), rgba(15, 23, 42, 0.9));
+}
+
+.chat-bubble-architect {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(59, 130, 246, 0.25));
+}
+
+.chat-bubble-reviewer {
+  background: linear-gradient(135deg, rgba(244, 114, 182, 0.25), rgba(129, 140, 248, 0.25));
+}
+
+.chat-bubble-coder {
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.25), rgba(45, 212, 191, 0.25));
+}
+
+.chat-bubble-system {
+  background: rgba(250, 204, 21, 0.08);
+  border-color: rgba(250, 204, 21, 0.4);
+}
+
+.chat-message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chat-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.1rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-width: 1px;
+  border-style: solid;
+}
+
+.chat-badge-user {
+  color: #22d3ee;
+  border-color: rgba(34, 211, 238, 0.7);
+  background: rgba(8, 47, 73, 0.7);
+}
+
+.chat-badge-model {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.7);
+  background: rgba(5, 46, 22, 0.7);
+}
+
+.chat-badge-architect {
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.7);
+  background: rgba(8, 47, 73, 0.7);
+}
+
+.chat-badge-reviewer {
+  color: #f9a8d4;
+  border-color: rgba(236, 72, 153, 0.7);
+  background: rgba(88, 28, 135, 0.7);
+}
+
+.chat-badge-coder {
+  color: #6ee7b7;
+  border-color: rgba(52, 211, 153, 0.7);
+  background: rgba(6, 78, 59, 0.7);
+}
+
+.chat-badge-system {
+  color: #facc15;
+  border-color: rgba(250, 204, 21, 0.75);
+  background: rgba(113, 63, 18, 0.85);
+}
+
+.chat-message-text {
+  color: #e5e7eb;
+}
+
+.chat-images {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  overflow-x: auto;
+}
+
+.chat-image-wrapper {
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+}
+
+.chat-image-thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  display: block;
+}
+
+/* Multi-IA phase hint */
+
+.multi-ai-phase-hint {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  color: #9ca3af;
+}
+
+.multi-ai-phase-hint .phase-label {
+  font-weight: 500;
+}
+
+.multi-ai-phase-hint .phase-value {
+  color: #e5e7eb;
+}
+
+.multi-ai-phase-hint .phase-error {
+  color: #fca5a5;
+}

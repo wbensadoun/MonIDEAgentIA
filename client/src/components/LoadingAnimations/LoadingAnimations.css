@@ -1,0 +1,364 @@
+/* Loading Steps */
+.loading-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.step-completed {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.step-active {
+  background: rgba(59, 130, 246, 0.2);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.step-pending {
+  opacity: 0.5;
+}
+
+.step-indicator {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+.step-completed .step-indicator {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.step-active .step-indicator {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+}
+
+.step-pending .step-indicator {
+  background: rgba(107, 114, 128, 0.5);
+  color: #9ca3af;
+}
+
+.step-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid transparent;
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.step-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+.step-provider {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+/* Loading Pulse */
+.loading-pulse {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.2));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pulse-ring {
+  position: absolute;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--from-color, #3b82f6), var(--to-color, #2563eb));
+  opacity: 0.3;
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+.pulse-ring-delayed {
+  animation-delay: 1s;
+}
+
+.pulse-center {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--from-color, #3b82f6), var(--to-color, #2563eb));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.pulse-text {
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: #e5e7eb;
+  animation: pulse-text 1.5s ease-in-out infinite;
+}
+
+/* Success Animation */
+.success-animation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  animation: fade-in-up 0.5s ease-out;
+}
+
+.success-checkmark {
+  width: 4rem;
+  height: 4rem;
+}
+
+.checkmark-circle {
+  stroke: #10b981;
+  stroke-width: 3;
+  stroke-dasharray: 166;
+  stroke-dashoffset: 166;
+  animation: stroke-circle 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+}
+
+.checkmark-check {
+  stroke: #10b981;
+  stroke-width: 3;
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: stroke-check 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.6s forwards;
+}
+
+.success-message {
+  margin-top: 1rem;
+  font-size: 1rem;
+  color: #10b981;
+  font-weight: 500;
+}
+
+/* Error Animation */
+.error-animation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 1rem;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  animation: shake 0.5s ease-in-out;
+}
+
+.error-icon {
+  color: #ef4444;
+  animation: pulse-error 2s ease-in-out infinite;
+}
+
+.error-message {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: #e5e7eb;
+  text-align: center;
+}
+
+.error-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.error-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.error-btn.retry {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  border: none;
+}
+
+.error-btn.retry:hover {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+
+.error-btn.dismiss {
+  background: transparent;
+  color: #9ca3af;
+  border: 1px solid #4b5563;
+}
+
+.error-btn.dismiss:hover {
+  color: #e5e7eb;
+  border-color: #6b7280;
+}
+
+/* Voting Animation */
+.voting-animation {
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.voting-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.voting-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+.voting-progress {
+  font-size: 0.75rem;
+  color: #8b5cf6;
+  font-weight: bold;
+}
+
+.voting-bars {
+  display: flex;
+  gap: 0.25rem;
+  height: 0.5rem;
+}
+
+.voting-bar {
+  flex: 1;
+  background: rgba(107, 114, 128, 0.3);
+  border-radius: 0.125rem;
+  transition: all 0.3s ease;
+}
+
+.voting-bar.voted {
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  animation: bar-fill 0.5s ease-out;
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-text {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes stroke-circle {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes stroke-check {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-5px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes pulse-error {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes bar-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
