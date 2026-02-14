@@ -10,14 +10,20 @@ export const useAI = (
   setActiveFile,
   loadProjectItems,
   aiProvider = 'gemini',
-  thinkingMode = false
+  thinkingMode = false,
+  deepContextEnabled = false,
+  activeAgent = null,
+  activeSkill = null
 ) => {
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [aiConversationHistory, setAiConversationHistory] = useState([]);
   const [previousCode, setPreviousCode] = useState('');
   const [apiKeys, setApiKeys] = useState({ gemini: '', kimi: '' });
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const { gemini: geminiApiKey, kimi: kimiApiKey } = apiKeys;
+  const [projectScanPreset, setProjectScanPreset] = useState('safe'); // safe | full | god
+  const [projectScanIncludeSecrets, setProjectScanIncludeSecrets] = useState(false);
+  const [projectScanLargeFileStrategy, setProjectScanLargeFileStrategy] = useState('skip'); // skip | truncate
   const [multiAIState, setMultiAIState] = useState({
     isActive: false,
     currentPhase: null,
@@ -42,10 +48,19 @@ export const useAI = (
             gemini: response.settings.geminiApiKey || '',
             kimi: response.settings.kimiApiKey || ''
           });
-          setSettingsLoaded(true);
+
+          const preset = response.settings.aiContextPreset;
+          if (preset === 'safe' || preset === 'full' || preset === 'god') {
+            setProjectScanPreset(preset);
+          }
+
+          setProjectScanIncludeSecrets(!!response.settings.aiContextIncludeSecrets);
+
+          const strat = response.settings.aiContextLargeFileStrategy;
+          setProjectScanLargeFileStrategy(strat === 'truncate' ? 'truncate' : 'skip');
         }
       } catch (error) {
-        console.warn('Erreur chargement clés API:', error);
+        // silencieux
       }
     };
     loadApiKeys();
@@ -60,131 +75,238 @@ export const useAI = (
         gemini: next.geminiApiKey || '',
         kimi: next.kimiApiKey || ''
       });
-      setSettingsLoaded(true);
+
+      if (next.aiContextPreset === 'safe' || next.aiContextPreset === 'full' || next.aiContextPreset === 'god') {
+        setProjectScanPreset(next.aiContextPreset);
+      }
+
+      setProjectScanIncludeSecrets(!!next.aiContextIncludeSecrets);
+      setProjectScanLargeFileStrategy(next.aiContextLargeFileStrategy === 'truncate' ? 'truncate' : 'skip');
     };
 
     window.addEventListener('settings-updated', onSettingsUpdated);
     return () => window.removeEventListener('settings-updated', onSettingsUpdated);
   }, []);
 
-  const updateMultiAIStep = (stepIndex, status, message = '') => {
-    setMultiAIState(prev => {
-      const newSteps = [...prev.steps];
-      if (newSteps[stepIndex]) {
-        newSteps[stepIndex] = { ...newSteps[stepIndex], status, message };
-      }
-      return { ...prev, steps: newSteps };
-    });
+  // ===== MODÈLES TOGETHER AI PAR AGENT =====
+  const AGENT_MODELS = {
+    chefDeProjet: 'gemini-2.5-pro',
+    frontendDev: 'moonshotai/Kimi-K2.5',
+    backendDev: 'moonshotai/Kimi-K2.5',
+    architectEngineer: 'moonshotai/Kimi-K2.5',
+    scrumMaster: 'gemini-2.5-pro'
   };
 
-  const generateArchitectPrompt = (userRequest, projectContext, currentCode) => {
-    return `Tu es l'ARCHITECTE logiciel (Gemini). Analyse cette demande et produis un PLAN.
+  // ===== PROMPTS POUR CHAQUE AGENT =====
 
-DEMANDE: "${userRequest}"
+  const generateChefDeProjetPrompt = (userRequest, projectContext, currentCode) => {
+    return `Tu es le CHEF DE PROJET. Ton unique rôle est d'interpréter au mieux le besoin de l'utilisateur et de rédiger un CAHIER DES CHARGES complet et structuré.
 
-CONTEXTE: ${projectContext}
+DEMANDE DE L'UTILISATEUR: "${userRequest}"
+
+CONTEXTE DU PROJET: ${projectContext}
 CODE ACTUEL: ${currentCode || 'Aucun'}
 
 INSTRUCTIONS:
-1. Analyse si la demande necessite:
-   - [ ] Base de donnees (nouvelles tables/champs?)
-   - [ ] Routes API (nouveaux endpoints?)
-   - [ ] UI/Composants (nouvelles pages/elements?)
-   - [ ] Logique metier (services/fonctions?)
-   - [ ] Tests (a creer/modifier?)
-   - [ ] Autres modifications (config, dependances?)
+1. Analyse en profondeur la demande de l'utilisateur
+2. Identifie tous les besoins explicites ET implicites
+3. Rédige un cahier des charges structuré
 
-2. Produis un DECISION_TREE structure avec pour chaque categorie: OUI/NON + details si OUI.
+FORMAT DE SORTIE OBLIGATOIRE:
 
-3. Produis ensuite un PLAN detaille avec les etapes d'implementation.
+CAHIER_DES_CHARGES:
 
-FORMAT DE SORTIE:
-DECISION_TREE:
-{
-  "database": {"needed": boolean, "details": "..."},
-  "apiRoutes": {"needed": boolean, "details": "..."},
-  "ui": {"needed": boolean, "details": "..."},
-  "businessLogic": {"needed": boolean, "details": "..."},
-  "tests": {"needed": boolean, "details": "..."},
-  "other": {"needed": boolean, "details": "..."}
-}
+## 1. Résumé du besoin
+[Reformulation claire de la demande]
 
-PLAN:
-1. [Premiere etape]
-2. [Deuxieme etape]
+## 2. Spécifications Frontend
+- Pages/Composants à créer ou modifier
+- Interactions utilisateur attendues
+- Design/UX requis
+
+## 3. Spécifications Backend
+- Endpoints API nécessaires
+- Modèles de données / Base de données
+- Logique métier côté serveur
+
+## 4. Architecture technique
+- Technologies à utiliser
+- Structure des fichiers
+- Dépendances nécessaires
+
+## 5. Critères d'acceptation
+- [ ] Critère 1
+- [ ] Critère 2
 ...
 
-CONSIGNES IMPORTANTES:
-- Sois precis et technique
-- Identifie les fichiers concernes
-- Propose une architecture coherente avec le projet existant`;
+## 6. Fichiers concernés
+- Liste des fichiers à créer/modifier avec leur rôle
+
+CONSIGNES:
+- Sois exhaustif et précis
+- Pense aux cas limites et à la gestion d'erreurs
+- Reste cohérent avec l'architecture existante du projet`;
   };
 
-  const generateReviewerPrompt = (architectPlan, userRequest) => {
-    return `Tu es le RELECTEUR (Kimi 2.5). Examine ce plan architectural.
+  const generateFrontendDevPrompt = (cahierDesCharges, userRequest, projectContext, currentCode) => {
+    return `Tu es le DÉVELOPPEUR FRONTEND. Tu ne codes QUE le frontend (HTML, CSS, JavaScript, React, composants UI).
 
-PLAN DE L'ARCHITECTE:
-${architectPlan}
+CAHIER DES CHARGES:
+${cahierDesCharges}
 
 DEMANDE ORIGINALE: "${userRequest}"
 
-TACHE:
-1. Analyse chaque decision de l'arbre (database, apiRoutes, ui, businessLogic, tests, other)
-2. Pour chaque point, reponds: AGREE (d'accord) ou DISAGREE (pas d'accord) + justification courte
-3. Si DISAGREE, propose une correction/amelioration
-4. Donne un verdict final: APPROVED (plan valide) ou REJECTED (plan a corriger)
-
-FORMAT DE SORTIE:
-REVUE:
-- Database: [AGREE/DISAGREE] - justification
-- API Routes: [AGREE/DISAGREE] - justification
-- UI: [AGREE/DISAGREE] - justification
-- Business Logic: [AGREE/DISAGREE] - justification
-- Tests: [AGREE/DISAGREE] - justification
-- Other: [AGREE/DISAGREE] - justification
-
-VERDICT: [APPROVED/REJECTED]
-
-Si REJECTED, explique pourquoi et propose un PLAN_CORRIGE.
-Si APPROVED, resume le PLAN_APPROUVE en 3-4 lignes.`;
-  };
-
-  const generateCoderPrompt = (approvedPlan, userRequest, projectContext, currentCode) => {
-    return `Tu es le CODEUR (Kimi 2.5). Implemente ce plan approuve.
-
-PLAN APPROUVE:
-${approvedPlan}
-
-DEMANDE: "${userRequest}"
-
-CONTEXTE: ${projectContext}
+CONTEXTE DU PROJET: ${projectContext}
 CODE ACTUEL: ${currentCode || 'Aucun'}
 
 INSTRUCTIONS:
-1. Implemente TOUTES les etapes du plan
-2. Pour chaque fichier modifie ou cree, utilise le format:
+1. Lis attentivement le cahier des charges, en particulier les "Spécifications Frontend"
+2. Code UNIQUEMENT les fichiers frontend (composants React, pages, styles CSS, hooks)
+3. NE touche PAS au backend (pas de routes API, pas de modèles de données serveur)
+4. Pour chaque fichier, utilise ce format:
+
    **FICHIER: chemin/du/fichier.ext**
    \`\`\`langage
-   // code complet ici
+   // code complet du fichier
    \`\`\`
-3. Assure-toi que le code est:
-   - Complet et fonctionnel
-   - Coherent avec le style existant
-   - Bien commente si necessaire
-   - Sans erreurs de syntaxe evidentes
 
-Genere maintenant le code pour tous les fichiers concernes.`;
+CONSIGNES:
+- Code complet et fonctionnel, pas de placeholders
+- Respecte le style et les conventions du projet existant
+- Ajoute les imports nécessaires
+- Pense à la réactivité et à l'accessibilité
+- Gère les états de chargement et d'erreur côté UI`;
   };
 
-  const stopGeneration = useCallback(() => {
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
-    }
-    setIsLoading(false);
-    resetMultiAIState();
-    showMessage("Génération arrêtée", 2000);
-  }, [abortController, showMessage]);
+  const generateBackendDevPrompt = (cahierDesCharges, userRequest, projectContext, currentCode) => {
+    return `Tu es le DÉVELOPPEUR BACKEND. Tu ne codes QUE le backend (API, routes, modèles, services, base de données).
+
+CAHIER DES CHARGES:
+${cahierDesCharges}
+
+DEMANDE ORIGINALE: "${userRequest}"
+
+CONTEXTE DU PROJET: ${projectContext}
+CODE ACTUEL: ${currentCode || 'Aucun'}
+
+INSTRUCTIONS:
+1. Lis attentivement le cahier des charges, en particulier les "Spécifications Backend"
+2. Code UNIQUEMENT les fichiers backend (routes API, contrôleurs, modèles, services, migrations DB)
+3. NE touche PAS au frontend (pas de composants React, pas de CSS)
+4. Pour chaque fichier, utilise ce format:
+
+   **FICHIER: chemin/du/fichier.ext**
+   \`\`\`langage
+   // code complet du fichier
+   \`\`\`
+
+CONSIGNES:
+- Code complet et fonctionnel, pas de placeholders
+- Respecte les conventions REST pour les API
+- Valide les entrées utilisateur
+- Gère les erreurs proprement (try/catch, codes HTTP appropriés)
+- Pense à la sécurité (sanitization, auth si nécessaire)`;
+  };
+
+  const generateArchitectEngineerPrompt = (cahierDesCharges, frontendCode, backendCode, userRequest, projectContext) => {
+    return `Tu es l'ARCHITECTE ENGINEER. Ton rôle est de vérifier la cohérence technique entre le frontend et le backend produits par les développeurs.
+
+CAHIER DES CHARGES INITIAL:
+${cahierDesCharges}
+
+CODE FRONTEND PRODUIT:
+${frontendCode}
+
+CODE BACKEND PRODUIT:
+${backendCode}
+
+DEMANDE ORIGINALE: "${userRequest}"
+
+CONTEXTE DU PROJET: ${projectContext}
+
+INSTRUCTIONS:
+1. Vérifie que le frontend et le backend sont compatibles (endpoints, formats de données, noms de champs)
+2. Vérifie la cohérence avec le cahier des charges
+3. Identifie les problèmes potentiels (imports manquants, incohérences d'API, bugs évidents)
+4. Propose des CORRECTIONS si nécessaire
+
+FORMAT DE SORTIE OBLIGATOIRE:
+
+REVIEW:
+
+## Cohérence Frontend ↔ Backend
+- [OK/PROBLÈME] Description de chaque point vérifié
+
+## Cohérence avec le Cahier des Charges
+- [OK/MANQUANT] Critère d'acceptation 1
+- [OK/MANQUANT] Critère d'acceptation 2
+...
+
+## Problèmes détectés
+1. [Description du problème + correction proposée]
+
+## CORRECTIONS (si nécessaire)
+Pour chaque fichier corrigé, utilise le format:
+
+**FICHIER: chemin/du/fichier.ext**
+\`\`\`langage
+// code complet corrigé
+\`\`\`
+
+VERDICT: [VALIDATED/NEEDS_FIXES]
+
+Si VALIDATED: confirme que tout est cohérent.
+Si NEEDS_FIXES: liste les corrections appliquées.`;
+  };
+
+  const generateScrumMasterPrompt = (cahierDesCharges, frontendCode, backendCode, architectReview, userRequest) => {
+    return `Tu es le SCRUM MASTER. Ton rôle est de synthétiser tout le travail des agents et de produire le LIVRABLE FINAL complet et cohérent.
+
+CAHIER DES CHARGES:
+${cahierDesCharges}
+
+CODE FRONTEND:
+${frontendCode}
+
+CODE BACKEND:
+${backendCode}
+
+REVIEW ARCHITECTE:
+${architectReview}
+
+DEMANDE ORIGINALE: "${userRequest}"
+
+INSTRUCTIONS:
+1. Synthétise tous les outputs des agents précédents
+2. Si l'architecte a proposé des corrections, applique-les dans le code final
+3. Produis le LIVRABLE COMPLET avec tous les fichiers dans leur version finale
+4. Ajoute un résumé de ce qui a été fait
+
+FORMAT DE SORTIE OBLIGATOIRE:
+
+## Résumé des travaux
+[Résumé de ce qui a été implémenté, en 3-5 lignes]
+
+## Fichiers livrés
+
+Pour CHAQUE fichier (frontend + backend), utilise le format:
+
+**FICHIER: chemin/du/fichier.ext**
+\`\`\`langage
+// code complet final
+\`\`\`
+
+## Notes de livraison
+- Instructions d'installation/configuration si nécessaire
+- Points d'attention
+- Prochaines étapes suggérées
+
+CONSIGNES:
+- Chaque fichier doit contenir le code COMPLET et FINAL
+- Intègre les corrections de l'architecte
+- Le résultat doit être directement utilisable sans modifications supplémentaires`;
+  };
+
 
   const resetMultiAIState = useCallback(() => {
     setMultiAIState({
@@ -196,6 +318,16 @@ Genere maintenant le code pour tous les fichiers concernes.`;
       error: null
     });
   }, []);
+
+  const stopGeneration = useCallback(() => {
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
+    }
+    setIsLoading(false);
+    resetMultiAIState();
+    showMessage('Generation arretee', 2000);
+  }, [abortController, resetMultiAIState, showMessage]);
 
   const refreshConversations = useCallback(async () => {
     if (!currentProjectPath || !isElectronApiAvailable || !window.electronAPI?.listConversations) {
@@ -211,7 +343,7 @@ Genere maintenant le code pour tous les fichiers concernes.`;
         setConversations([]);
       }
     } catch (error) {
-      console.warn('Erreur chargement liste conversations:', error);
+      // silencieux
     }
   }, [currentProjectPath, isElectronApiAvailable]);
 
@@ -219,314 +351,32 @@ Genere maintenant le code pour tous les fichiers concernes.`;
     refreshConversations();
   }, [refreshConversations]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const generateAIResponse = useCallback(async () => {
-    console.log('[useAI] generateAIResponse appelée !');
-    console.log('[useAI] État avant génération:', { prompt, currentProjectPath, isLoading, aiProvider });
-    if (!prompt.trim()) {
-      showMessage("Veuillez entrer une requête.");
-      return;
+  const checkFileExists = useCallback(async (fileName) => {
+    if (!isElectronApiAvailable || !currentProjectPath || !window.electronAPI?.getAllFiles) {
+      return false;
     }
-    if (!currentProjectPath) {
-      showMessage("Veuillez ouvrir un dossier de projet.");
-      return;
-    }
-    if (!isElectronApiAvailable) {
-      showMessage("Erreur: Electron non disponible.", 10000);
-      return;
-    }
-
-    setIsLoading(true);
-    setPreviousCode(code);
-    
-    // Créer un AbortController pour cette génération
-    const controller = new AbortController();
-    setAbortController(controller);
-
-    const updatedHistory = [...aiConversationHistory, { role: 'user', text: prompt }];
-    setAiConversationHistory(updatedHistory);
-    setPrompt('');
-
     try {
-      const trimmedPrompt = prompt.trim();
-      const isLightRequest = aiProvider !== 'multi' && trimmedPrompt.length <= 80;
-
-      let allProjectFiles = null;
-
-      if (!isLightRequest) {
-        showMessage("Lecture du contexte projet...", 2000);
-        console.log('[useAI] Tentative de lecture des fichiers du projet:', currentProjectPath);
-        const projectFilesResponse = await window.electronAPI.getAllProjectFiles(currentProjectPath);
-        console.log('[useAI] Réponse getAllProjectFiles:', projectFilesResponse);
-        if (projectFilesResponse.success) {
-          allProjectFiles = projectFilesResponse;
-          const fileCount = Object.keys(projectFilesResponse.files).length;
-          showMessage(`Contexte lu: ${fileCount} fichiers analysés`, 2000);
-          console.log(`[useAI] Succès: ${fileCount} fichiers lus`);
-        } else {
-          console.error('[useAI] Erreur lecture projet:', projectFilesResponse.error);
-          showMessage(`Erreur lecture projet: ${projectFilesResponse.error}`, 3000);
-        }
-      } else {
-        showMessage("Mode rapide: réponse sans analyse complète du projet.", 2000);
+      const response = await window.electronAPI.getAllFiles(currentProjectPath);
+      if (response.success) {
+        return response.items.some(item => item.name === fileName && item.type === 'file');
       }
-
-      // Mode Multi-IA: Gemini (Architecte) + Kimi (Relecteur + Codeur)
-      if (aiProvider === 'multi') {
-        setMultiAIState({
-          isActive: true,
-          currentPhase: 'architect',
-          architectPlan: null,
-          approvedPlan: null,
-          steps: [
-            { label: 'Analyse Architecte (Gemini)', status: 'active', provider: 'Gemini' },
-            { label: 'Revue Relecteur (Kimi)', status: 'pending', provider: 'Kimi' },
-            { label: 'Génération Code (Kimi)', status: 'pending', provider: 'Kimi' }
-          ],
-          error: null
-        });
-
-        // Phase 1: Architecte (Gemini)
-        showMessage("Phase 1/3: L'architecte analyse...", 3000);
-        const architectPromptText = generateArchitectPrompt(prompt, JSON.stringify(allProjectFiles), code);
-        
-        const architectResponse = await window.electronAPI.getGeminiCompletion(
-          [{ role: 'user', text: architectPromptText }],
-          code,
-          allProjectFiles,
-          { thinkingMode: true, apiKey: apiKeys.gemini }
-        );
-
-        if (!architectResponse.success) {
-          throw new Error(`Architecte: ${architectResponse.error}`);
-        }
-
-        const architectPlan = architectResponse.text;
-        setMultiAIState(prev => ({
-          ...prev,
-          architectPlan,
-          currentPhase: 'reviewer',
-          steps: [
-            { label: 'Analyse Architecte (Gemini)', status: 'completed', provider: 'Gemini' },
-            { label: 'Revue Relecteur (Kimi)', status: 'active', provider: 'Kimi' },
-            { label: 'Génération Code (Kimi)', status: 'pending', provider: 'Kimi' }
-          ]
-        }));
-
-        // Ajouter le plan de l'architecte à l'historique
-        setAiConversationHistory(prev => [...prev, { 
-          role: 'model', 
-          text: `**[ARCHITECTE GEMINI]**\n\n${architectPlan}`,
-          isArchitect: true 
-        }]);
-
-        // Phase 2: Relecteur (Kimi)
-        showMessage("Phase 2/3: Le relecteur examine...", 3000);
-        const reviewerPromptText = generateReviewerPrompt(architectPlan, prompt);
-        
-        const reviewerResponse = await window.electronAPI.getKimiCompletion(
-          [{ role: 'user', text: reviewerPromptText }],
-          code,
-          null,
-          { model: 'moonshotai/Kimi-K2.5', thinkingMode: true, apiKey: apiKeys.kimi }
-        );
-
-        if (!reviewerResponse.success) {
-          throw new Error(`Relecteur: ${reviewerResponse.error}`);
-        }
-
-        const reviewText = reviewerResponse.text;
-        const isApproved = reviewText.includes('VERDICT: APPROVED');
-        
-        // Extraire le plan approuvé (ou corrigé)
-        let approvedPlan = architectPlan;
-        if (reviewText.includes('PLAN_CORRIGE')) {
-          const planMatch = reviewText.match(/PLAN_CORRIGE:?\s*\n?([\s\S]*?)(?=\n\n|$)/i);
-          if (planMatch) {
-            approvedPlan = planMatch[1].trim();
-          }
-        } else if (reviewText.includes('PLAN_APPROUVE')) {
-          const planMatch = reviewText.match(/PLAN_APPROUVE:?\s*\n?([\s\S]*?)(?=\n\n|$)/i);
-          if (planMatch) {
-            approvedPlan = planMatch[1].trim();
-          }
-        }
-
-        setMultiAIState(prev => ({
-          ...prev,
-          approvedPlan,
-          currentPhase: 'coder',
-          steps: [
-            { label: 'Analyse Architecte (Gemini)', status: 'completed', provider: 'Gemini' },
-            { label: 'Revue Relecteur (Kimi)', status: 'completed', provider: 'Kimi', verdict: isApproved ? 'APPROVED' : 'REJECTED' },
-            { label: 'Génération Code (Kimi)', status: 'active', provider: 'Kimi' }
-          ]
-        }));
-
-        // Ajouter la revue à l'historique
-        setAiConversationHistory(prev => [...prev, { 
-          role: 'model', 
-          text: `**[RELECTEUR KIMI]**\n\n${reviewText}`,
-          isReviewer: true 
-        }]);
-
-        if (!isApproved) {
-          showMessage("Plan rejeté, tentative avec corrections...", 3000);
-        }
-
-        // Phase 3: Codeur (Kimi)
-        showMessage("Phase 3/3: Génération du code final...", 3000);
-        const coderPromptText = generateCoderPrompt(approvedPlan, prompt, JSON.stringify(allProjectFiles), code);
-        
-        const coderResponse = await window.electronAPI.getKimiCompletion(
-          [{ role: 'user', text: coderPromptText }],
-          code,
-          allProjectFiles,
-          { model: 'moonshotai/Kimi-K2.5', thinkingMode: false, apiKey: apiKeys.kimi }
-        );
-
-        if (!coderResponse.success) {
-          throw new Error(`Codeur: ${coderResponse.error}`);
-        }
-
-        const finalCode = coderResponse.text;
-
-        setMultiAIState(prev => ({
-          ...prev,
-          currentPhase: 'completed',
-          steps: [
-            { label: 'Analyse Architecte (Gemini)', status: 'completed', provider: 'Gemini' },
-            { label: 'Revue Relecteur (Kimi)', status: 'completed', provider: 'Kimi' },
-            { label: 'Génération Code (Kimi)', status: 'completed', provider: 'Kimi' }
-          ]
-        }));
-
-        // Ajouter le code final à l'historique
-        setAiConversationHistory(prev => [...prev, { 
-          role: 'model', 
-          text: `**[CODEUR KIMI - CODE FINAL]**\n\n${finalCode}`,
-          isCoder: true 
-        }]);
-
-        // Appliquer les modifications
-        await processAIFileModifications(finalCode);
-        await autoSaveConversation(updatedHistory.concat([{ role: 'model', text: finalCode }]));
-
-        showMessage("Multi-IA terminé avec succès !", 4000);
-
-        // Réinitialiser après un délai
-        setTimeout(() => resetMultiAIState(), 3000);
-
-      } else {
-        // Mode simple (Gemini ou Kimi seul)
-        let response;
-        if (aiProvider === 'kimi') {
-          const images = updatedHistory
-            .filter(msg => Array.isArray(msg.images))
-            .flatMap(msg =>
-              msg.images.map(img => ({
-                dataUrl: img.dataUrl,
-                mimeType: img.mimeType
-              }))
-            );
-
-          const kimiOptions = {
-            model: 'moonshotai/Kimi-K2.5',
-            thinkingMode,
-            images,
-            apiKey: apiKeys.kimi
-          };
-
-          response = await window.electronAPI.getKimiCompletion(
-            updatedHistory,
-            code,
-            allProjectFiles,
-            kimiOptions
-          );
-        } else {
-          const geminiOptions = {
-            thinkingMode,
-            apiKey: apiKeys.gemini
-          };
-
-          response = await window.electronAPI.getGeminiCompletion(
-            updatedHistory,
-            code,
-            allProjectFiles,
-            geminiOptions
-          );
-        }
-
-        if (response.success) {
-          const fullAiText = response.text;
-          setAiConversationHistory(prev => [...prev, { role: 'model', text: fullAiText }]);
-          await processAIFileModifications(fullAiText);
-          await autoSaveConversation(updatedHistory.concat([{ role: 'model', text: fullAiText }]));
-        } else {
-          showMessage(`Erreur IA: ${response.error}`, 5000);
-        }
-      }
-    } catch (error) {
-      console.error("Erreur IA:", error);
-      // Vérifier si l'erreur est due à une annulation
-      if (error.name === 'AbortError') {
-        showMessage("Génération arrêtée par l'utilisateur", 2000);
-      } else {
-        showMessage(`Erreur IA: ${error.message}`, 5000);
-      }
-      setMultiAIState(prev => ({ ...prev, currentPhase: 'error', error: error.message }));
-    } finally {
-      setIsLoading(false);
-      setAbortController(null);
+      return false;
+    } catch {
+      return false;
     }
-  }, [prompt, currentProjectPath, code, aiConversationHistory, isElectronApiAvailable, showMessage, aiProvider, thinkingMode]);
+  }, [currentProjectPath, isElectronApiAvailable]);
 
-  // Log pour diagnostiquer
-  console.log('[useAI] État actuel:', {
-    hasPrompt: !!prompt,
-    hasCurrentProjectPath: !!currentProjectPath,
-    currentProjectPath,
-    isElectronApiAvailable,
-    aiProvider
-  });
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const processAIFileModifications = useCallback(async (aiResponse) => {
-    try {
-      let modificationsApplied = 0;
-      
-      const fileBlockRegex1 = /\*\*FICHIER:\s*([^*\n]+)\*\*\s*```([\w]*)?\s*([\s\S]*?)```/gi;
-      
-      let match;
-      while ((match = fileBlockRegex1.exec(aiResponse)) !== null) {
-        const fileName = match[1].trim();
-        const fileContent = match[3].trim();
-        
-        if (fileName && fileContent) {
-          const success = await createOrUpdateFile(fileName, fileContent);
-          if (success) modificationsApplied++;
-        }
-      }
-      
-      if (modificationsApplied > 0) {
-        showMessage(`${modificationsApplied} fichier(s) modifié(s) par l'IA`, 4000);
-      }
-    } catch (error) {
-      console.error('Erreur traitement modifications IA :', error);
-    }
-  }, [showMessage]);
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const createOrUpdateFile = useCallback(async (fileName, fileContent) => {
+    if (!isElectronApiAvailable || !currentProjectPath || !window.electronAPI) return false;
     try {
       const cleanFileName = fileName
         .replace(/[()]/g, '')
         .replace(/\s+/g, '_')
         .replace(/[<>:"|?*]/g, '')
         .trim();
-      
+
       const fileExists = await checkFileExists(cleanFileName);
-      
+
       if (fileExists) {
         const writeResp = await window.electronAPI.writeFile(currentProjectPath, cleanFileName, fileContent);
         if (writeResp.success) {
@@ -549,24 +399,36 @@ Genere maintenant le code pour tous les fichiers concernes.`;
       }
       return false;
     } catch (error) {
-      console.error(`Erreur fichier ${fileName}:`, error);
       return false;
     }
-  }, [currentProjectPath, activeFile, setCode, setActiveFile, loadProjectItems]);
+  }, [activeFile, checkFileExists, currentProjectPath, isElectronApiAvailable, loadProjectItems, setActiveFile, setCode]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const checkFileExists = useCallback(async (fileName) => {
+  const processAIFileModifications = useCallback(async (aiResponse) => {
+    if (!aiResponse) return;
     try {
-      const response = await window.electronAPI.getAllFiles(currentProjectPath);
-      if (response.success) {
-        return response.items.some(item => item.name === fileName && item.type === 'file');
+      let modificationsApplied = 0;
+
+      const fileBlockRegex1 = /\*\*FICHIER:\s*([^*\n]+)\*\*\s*```([\w]*)?\s*([\s\S]*?)```/gi;
+
+      let match;
+      while ((match = fileBlockRegex1.exec(aiResponse)) !== null) {
+        const fileName = match[1].trim();
+        const fileContent = match[3].trim();
+
+        if (fileName && fileContent) {
+          const success = await createOrUpdateFile(fileName, fileContent);
+          if (success) modificationsApplied++;
+        }
       }
-      return false;
-    } catch {
-      return false;
+
+      if (modificationsApplied > 0) {
+        showMessage(`${modificationsApplied} fichier(s) modifie(s) par l'IA`, 4000);
+      }
+    } catch (error) {
+      // silencieux
     }
-  }, [currentProjectPath]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createOrUpdateFile, showMessage]);
+
   const addImageMessage = useCallback((dataUrl) => {
     if (!dataUrl) return;
 
@@ -578,7 +440,7 @@ Genere maintenant le code pour tous les fichiers concernes.`;
 
       const newMessage = {
         role: 'user',
-        text: '[Image collée]',
+        text: '[Image collee]',
         images: [
           {
             type: 'inline',
@@ -590,37 +452,469 @@ Genere maintenant le code pour tous les fichiers concernes.`;
 
       setAiConversationHistory(prev => [...prev, newMessage]);
     } catch (error) {
-      console.warn('Erreur lors de l\'ajout du message image:', error);
+      // silencieux
     }
   }, []);
 
   const autoSaveConversation = useCallback(async (history) => {
-    if (currentProjectPath && history.length >= 4) {
-      try {
-        const response = await window.electronAPI.saveConversation(currentProjectPath, history);
-        if (response && response.success) {
-          await refreshConversations();
-        }
-      } catch (error) {
-        console.warn('Erreur sauvegarde auto:', error);
+    if (!currentProjectPath || !window.electronAPI?.saveConversation) return;
+    if (history.length < 4) return;
+    try {
+      const response = await window.electronAPI.saveConversation(currentProjectPath, history);
+      if (response && response.success) {
+        await refreshConversations();
       }
+    } catch (error) {
+      // silencieux
     }
   }, [currentProjectPath, refreshConversations]);
+
+  const generateAIResponse = useCallback(async () => {
+    if (!prompt.trim()) {
+      showMessage("Veuillez entrer une requête.");
+      return;
+    }
+    if (!currentProjectPath) {
+      showMessage("⚠️ Veuillez d'abord ouvrir un dossier de projet (Ctrl+O ou menu File > Open Folder)", 5000);
+      return;
+    }
+    if (!isElectronApiAvailable) {
+      showMessage("Erreur: Electron non disponible.", 10000);
+      return;
+    }
+
+    setIsLoading(true);
+    setPreviousCode(code);
+
+    // Créer un AbortController pour cette génération
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    const updatedHistory = [...aiConversationHistory, { role: 'user', text: prompt }];
+    setAiConversationHistory(updatedHistory);
+    setPrompt('');
+
+    try {
+      const trimmedPrompt = prompt.trim();
+      const projectIntentRegex = /\b(projet|project|repo|repository|structure|arborescence|architecture|analyse|audit|overview|contexte|context|scan|lire|lis|read)\b/i;
+      const wantsProjectContext =
+        !!deepContextEnabled ||
+        aiProvider === 'multi' ||
+        projectIntentRegex.test(trimmedPrompt) ||
+        trimmedPrompt.length > 140;
+
+      let allProjectFiles = null;
+
+      if (wantsProjectContext) {
+        showMessage("Lecture du contexte projet...", 2000);
+
+        const scanPresets = {
+          safe: {
+            includeHidden: false,
+            includeBuild: false,
+            includeNodeModules: false,
+            includeGit: false,
+            maxFileSize: 50000,
+            maxFiles: 8000,
+            maxTotalBytes: 25000000,
+            maxDepth: 30
+          },
+          full: {
+            includeHidden: true,
+            includeBuild: false,
+            includeNodeModules: false,
+            includeGit: false,
+            maxFileSize: 120000,
+            maxFiles: 12000,
+            maxTotalBytes: 40000000,
+            maxDepth: 40
+          },
+          god: {
+            includeHidden: true,
+            includeBuild: true,
+            includeNodeModules: true,
+            includeGit: false,
+            maxFileSize: 200000,
+            maxFiles: 20000,
+            maxTotalBytes: 80000000,
+            maxDepth: 60
+          }
+        };
+
+        const presetKey = deepContextEnabled || aiProvider === 'multi' ? projectScanPreset : 'safe';
+        const baseOptions = scanPresets[presetKey] || scanPresets.safe;
+        const scanOptions = {
+          ...baseOptions,
+          includeSecrets: projectScanIncludeSecrets,
+          largeFileStrategy: projectScanLargeFileStrategy
+        };
+
+        if (scanOptions.includeSecrets) {
+          scanOptions.includeHidden = true;
+        }
+
+        const projectFilesResponse = await window.electronAPI.getAllProjectFiles(currentProjectPath, scanOptions);
+        if (projectFilesResponse.success) {
+          allProjectFiles = projectFilesResponse;
+          const fileCount = Object.keys(projectFilesResponse.files).length;
+          const hitLimit = projectFilesResponse?.stats?.hitLimit;
+          const truncated = projectFilesResponse?.stats?.truncatedCount;
+          const suffix = hitLimit ? ' (limite atteinte)' : '';
+          const truncInfo = truncated ? `, ${truncated} tronqués` : '';
+          showMessage(`Contexte lu: ${fileCount} fichiers${truncInfo}${suffix}`, 2200);
+        } else {
+          showMessage(`Erreur lecture projet: ${projectFilesResponse.error}`, 3000);
+        }
+      } else {
+        showMessage("Mode rapide: pas de scan projet (active Ctx si besoin).", 2200);
+      }
+
+      // Mode Multi-IA: 5 Agents (Hybride Kimi + Gemini)
+      if (aiProvider === 'multi') {
+        const projectContextStr = JSON.stringify(allProjectFiles);
+
+        setMultiAIState({
+          isActive: true,
+          currentPhase: 'chef-projet',
+          architectPlan: null,
+          approvedPlan: null,
+          steps: [
+            { label: 'Chef de Projet (Gemini 2.5)', status: 'active', provider: 'Gemini' },
+            { label: 'Frontend Dev (Kimi-K2.5)', status: 'pending', provider: 'Together' },
+            { label: 'Backend Dev (Kimi-K2.5)', status: 'pending', provider: 'Together' },
+            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'pending', provider: 'Together' },
+            { label: 'Scrum Master (Gemini 2.5)', status: 'pending', provider: 'Gemini' }
+          ],
+          error: null
+        });
+
+        // ===== PHASE 1: CHEF DE PROJET (GEMINI) =====
+        showMessage("Phase 1/5: Le Chef de Projet (Gemini 2.5) analyse...", 3000);
+        const chefPromptText = generateChefDeProjetPrompt(prompt, projectContextStr, code);
+
+        // Utilisation de l'API GEMINI pour le Chef de Projet
+        const chefResponse = await window.electronAPI.getGeminiCompletion(
+          [{ role: 'user', text: chefPromptText }],
+          code,
+          allProjectFiles,
+          {
+            model: AGENT_MODELS.chefDeProjet,
+            thinkingMode: true,
+            apiKey: geminiApiKey, // Utilise la clé Gemini
+            projectPath: currentProjectPath,
+            agent: activeAgent,
+            skill: activeSkill
+          }
+        );
+
+        if (!chefResponse.success) {
+          throw new Error(`Chef de Projet: ${chefResponse.error}`);
+        }
+
+        const cahierDesCharges = chefResponse.text;
+
+        setMultiAIState(prev => ({
+          ...prev,
+          architectPlan: cahierDesCharges,
+          currentPhase: 'frontend-dev',
+          steps: [
+            { label: 'Chef de Projet (Gemini 2.5)', status: 'completed', provider: 'Gemini' },
+            { label: 'Frontend Dev (Kimi-K2.5)', status: 'active', provider: 'Together' },
+            { label: 'Backend Dev (Kimi-K2.5)', status: 'pending', provider: 'Together' },
+            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'pending', provider: 'Together' },
+            { label: 'Scrum Master (Gemini 2.5)', status: 'pending', provider: 'Gemini' }
+          ]
+        }));
+
+        setAiConversationHistory(prev => [...prev, {
+          role: 'model',
+          text: `**[🎯 CHEF DE PROJET]**\n\n${cahierDesCharges}`,
+          isChefDeProjet: true
+        }]);
+
+        // ===== PHASE 2: FRONTEND DEV (KIMI) =====
+        showMessage("Phase 2/5: Le Frontend Dev (Kimi) code l'interface...", 3000);
+        const frontendPromptText = generateFrontendDevPrompt(cahierDesCharges, prompt, projectContextStr, code);
+
+        const frontendResponse = await window.electronAPI.getKimiCompletion(
+          [{ role: 'user', text: frontendPromptText }],
+          code,
+          allProjectFiles,
+          {
+            model: AGENT_MODELS.frontendDev, // Kimi K2.5
+            thinkingMode: false,
+            apiKey: kimiApiKey, // Utilise la clé Together
+            projectPath: currentProjectPath,
+            agent: activeAgent,
+            skill: activeSkill
+          }
+        );
+
+        if (!frontendResponse.success) {
+          throw new Error(`Frontend Dev: ${frontendResponse.error}`);
+        }
+
+        const frontendCode = frontendResponse.text;
+
+        setMultiAIState(prev => ({
+          ...prev,
+          currentPhase: 'backend-dev',
+          steps: [
+            { label: 'Chef de Projet (Gemini 2.0)', status: 'completed', provider: 'Gemini' },
+            { label: 'Frontend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
+            { label: 'Backend Dev (Kimi-K2.5)', status: 'active', provider: 'Together' },
+            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'pending', provider: 'Together' },
+            { label: 'Scrum Master (Gemini 2.0)', status: 'pending', provider: 'Gemini' }
+          ]
+        }));
+
+        setAiConversationHistory(prev => [...prev, {
+          role: 'model',
+          text: `**[🎨 FRONTEND DEV]**\n\n${frontendCode}`,
+          isFrontendDev: true
+        }]);
+
+        // ===== PHASE 3: BACKEND DEV (KIMI) =====
+        showMessage("Phase 3/5: Le Backend Dev (Kimi) code le serveur...", 3000);
+        const backendPromptText = generateBackendDevPrompt(cahierDesCharges, prompt, projectContextStr, code);
+
+        const backendResponse = await window.electronAPI.getKimiCompletion(
+          [{ role: 'user', text: backendPromptText }],
+          code,
+          allProjectFiles,
+          {
+            model: AGENT_MODELS.backendDev,
+            thinkingMode: false,
+            apiKey: kimiApiKey,
+            projectPath: currentProjectPath,
+            agent: activeAgent,
+            skill: activeSkill
+          }
+        );
+
+        if (!backendResponse.success) {
+          throw new Error(`Backend Dev: ${backendResponse.error}`);
+        }
+
+        const backendCode = backendResponse.text;
+
+        setMultiAIState(prev => ({
+          ...prev,
+          currentPhase: 'architect-engineer',
+          steps: [
+            { label: 'Chef de Projet (Gemini 2.0)', status: 'completed', provider: 'Gemini' },
+            { label: 'Frontend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
+            { label: 'Backend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
+            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'active', provider: 'Together' },
+            { label: 'Scrum Master (Gemini 2.0)', status: 'pending', provider: 'Gemini' }
+          ]
+        }));
+
+        setAiConversationHistory(prev => [...prev, {
+          role: 'model',
+          text: `**[⚙️ BACKEND DEV]**\n\n${backendCode}`,
+          isBackendDev: true
+        }]);
+
+        // ===== PHASE 4: ARCHITECTE ENGINEER (KIMI) =====
+        showMessage("Phase 4/5: L'Architecte (Kimi) vérifie la cohérence...", 3000);
+        const architectPromptText = generateArchitectEngineerPrompt(cahierDesCharges, frontendCode, backendCode, prompt, projectContextStr);
+
+        const architectResponse = await window.electronAPI.getKimiCompletion(
+          [{ role: 'user', text: architectPromptText }],
+          code,
+          null,
+          {
+            model: AGENT_MODELS.architectEngineer,
+            thinkingMode: true,
+            apiKey: kimiApiKey,
+            projectPath: currentProjectPath,
+            agent: activeAgent,
+            skill: activeSkill
+          }
+        );
+
+        if (!architectResponse.success) {
+          throw new Error(`Architecte Engineer: ${architectResponse.error}`);
+        }
+
+        const architectReview = architectResponse.text;
+
+        setMultiAIState(prev => ({
+          ...prev,
+          currentPhase: 'scrum-master',
+          steps: [
+            { label: 'Chef de Projet (Gemini 2.0)', status: 'completed', provider: 'Gemini' },
+            { label: 'Frontend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
+            { label: 'Backend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
+            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'completed', provider: 'Together' },
+            { label: 'Scrum Master (Gemini 2.0)', status: 'active', provider: 'Gemini' }
+          ]
+        }));
+
+        setAiConversationHistory(prev => [...prev, {
+          role: 'model',
+          text: `**[🏗️ ARCHITECTE ENGINEER]**\n\n${architectReview}`,
+          isArchitectEngineer: true
+        }]);
+
+        // ===== PHASE 5: SCRUM MASTER (GEMINI) =====
+        showMessage("Phase 5/5: Le Scrum Master (Gemini) prépare le livrable final...", 3000);
+        const scrumPromptText = generateScrumMasterPrompt(cahierDesCharges, frontendCode, backendCode, architectReview, prompt);
+
+        // Utilisation de l'API GEMINI pour le Scrum Master
+        const scrumResponse = await window.electronAPI.getGeminiCompletion(
+          [{ role: 'user', text: scrumPromptText }],
+          code,
+          allProjectFiles,
+          {
+            model: AGENT_MODELS.scrumMaster,
+            thinkingMode: true,
+            apiKey: geminiApiKey, // Utilise la clé Gemini
+            projectPath: currentProjectPath,
+            agent: activeAgent,
+            skill: activeSkill
+          }
+        );
+
+        if (!scrumResponse.success) {
+          throw new Error(`Scrum Master: ${scrumResponse.error}`);
+        }
+
+        const finalDeliverable = scrumResponse.text;
+
+        setMultiAIState(prev => ({
+          ...prev,
+          currentPhase: 'completed',
+          steps: [
+            { label: 'Chef de Projet (Gemini 2.0)', status: 'completed', provider: 'Gemini' },
+            { label: 'Frontend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
+            { label: 'Backend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
+            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'completed', provider: 'Together' },
+            { label: 'Scrum Master (Gemini 2.0)', status: 'completed', provider: 'Gemini' }
+          ]
+        }));
+
+        // Ajouter le livrable final à l'historique
+        setAiConversationHistory(prev => [...prev, {
+          role: 'model',
+          text: `**[📋 SCRUM MASTER - LIVRABLE FINAL]**\n\n${finalDeliverable}`,
+          isScrumMaster: true
+        }]);
+
+        // Appliquer les modifications de fichiers depuis le livrable final
+        await processAIFileModifications(finalDeliverable);
+        await autoSaveConversation(updatedHistory.concat([{ role: 'model', text: finalDeliverable }]));
+
+        showMessage("Multi-IA (5 Agents Kimi/Gemini) terminé avec succès ! 🎉", 4000);
+
+        // Réinitialiser après un délai
+        setTimeout(() => resetMultiAIState(), 3000);
+
+
+      } else {
+        // Mode simple (Gemini ou Kimi seul)
+        let response;
+        if (aiProvider === 'kimi') {
+          const images = updatedHistory
+            .filter(msg => Array.isArray(msg.images))
+            .flatMap(msg =>
+              msg.images.map(img => ({
+                dataUrl: img.dataUrl,
+                mimeType: img.mimeType
+              }))
+            );
+
+          const kimiOptions = {
+            model: 'moonshotai/Kimi-K2.5',
+            thinkingMode,
+            images,
+            apiKey: kimiApiKey,
+            projectPath: currentProjectPath,
+            agent: activeAgent,
+            skill: activeSkill
+          };
+
+          response = await window.electronAPI.getKimiCompletion(
+            updatedHistory,
+            code,
+            allProjectFiles,
+            kimiOptions
+          );
+        } else {
+          const geminiOptions = {
+            thinkingMode,
+            apiKey: geminiApiKey,
+            projectPath: currentProjectPath,
+            agent: activeAgent,
+            skill: activeSkill
+          };
+
+          response = await window.electronAPI.getGeminiCompletion(
+            updatedHistory,
+            code,
+            allProjectFiles,
+            geminiOptions
+          );
+        }
+
+        if (response.success) {
+          const fullAiText = response.text;
+          setAiConversationHistory(prev => [...prev, { role: 'model', text: fullAiText }]);
+          await processAIFileModifications(fullAiText);
+          await autoSaveConversation(updatedHistory.concat([{ role: 'model', text: fullAiText }]));
+        } else {
+          showMessage(`Erreur IA: ${response.error}`, 5000);
+        }
+      }
+    } catch (error) {
+      // Vérifier si l'erreur est due à une annulation
+      if (error.name === 'AbortError') {
+        showMessage("Génération arrêtée par l'utilisateur", 2000);
+      } else {
+        showMessage(`Erreur IA: ${error.message}`, 5000);
+      }
+      setMultiAIState(prev => ({ ...prev, currentPhase: 'error', error: error.message }));
+    } finally {
+      setIsLoading(false);
+      setAbortController(null);
+    }
+  }, [
+    prompt,
+    currentProjectPath,
+    code,
+    aiConversationHistory,
+    isElectronApiAvailable,
+    showMessage,
+    aiProvider,
+    thinkingMode,
+    deepContextEnabled,
+    projectScanPreset,
+    projectScanIncludeSecrets,
+    projectScanLargeFileStrategy,
+    geminiApiKey,
+    kimiApiKey,
+    activeAgent,
+    activeSkill,
+    processAIFileModifications,
+    autoSaveConversation,
+    resetMultiAIState
+  ]);
 
   const saveConversation = useCallback(async () => {
     if (!currentProjectPath || aiConversationHistory.length === 0) {
       showMessage("Aucune conversation à sauvegarder.", 3000);
       return;
     }
-    
+
     try {
       const response = await window.electronAPI.saveConversation(currentProjectPath, aiConversationHistory);
       if (response.success) {
         showMessage(`Conversation sauvegardée: ${response.fileName}`, 4000);
         setActiveConversationFile(response.fileName || null);
-        setAiConversationHistory(prev => [...prev, { 
-          role: 'system', 
-          text: `Conversation sauvegardée dans: conversations/${response.fileName}` 
+        setAiConversationHistory(prev => [...prev, {
+          role: 'system',
+          text: `Conversation sauvegardée dans: conversations/${response.fileName}`
         }]);
         await refreshConversations();
       } else {

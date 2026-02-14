@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import './Settings.css';
 
 const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
   const [settings, setSettings] = useState({
@@ -7,21 +8,34 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
     defaultProvider: 'gemini',
     thinkingMode: false,
     devPort: '3004',
-    allowDangerousActions: false
+    allowDangerousActions: false,
+    aiContextPreset: 'safe',
+    aiContextIncludeSecrets: false,
+    aiContextLargeFileStrategy: 'skip'
   });
 
   const [loading, setLoading] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
   const [validation, setValidation] = useState({ gemini: null, kimi: null });
 
-  // Charger les settings au montage
+  const loadSettings = useCallback(async () => {
+    if (!isElectronApiAvailable || !window.electronAPI?.loadSettings) return;
+    try {
+      const response = await window.electronAPI.loadSettings();
+      if (response.success && response.settings) {
+        setSettings(prev => ({ ...prev, ...response.settings }));
+      }
+    } catch (error) {
+      showMessage('Erreur chargement des parametres', 3000);
+    }
+  }, [isElectronApiAvailable, showMessage]);
+
   useEffect(() => {
-    if (isOpen && isElectronApiAvailable) {
+    if (isOpen) {
       loadSettings();
     }
-  }, [isOpen, isElectronApiAvailable]);
+  }, [isOpen, loadSettings]);
 
-  // Ping de validation Gemini (débounce)
   useEffect(() => {
     if (!isElectronApiAvailable) return;
     const key = settings.geminiApiKey;
@@ -41,7 +55,6 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
     return () => { cancelled = true; clearTimeout(t); };
   }, [settings.geminiApiKey, isElectronApiAvailable]);
 
-  // Ping de validation Kimi (débounce)
   useEffect(() => {
     if (!isElectronApiAvailable) return;
     const key = settings.kimiApiKey;
@@ -62,31 +75,19 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
   }, [settings.kimiApiKey, isElectronApiAvailable]);
 
   const getValidationIcon = (status) => {
-    if (status === 'valid') return <span className="text-green-400 ml-2">✓</span>;
-    if (status === 'invalid') return <span className="text-red-400 ml-2">✗</span>;
+    if (status === 'valid') return <span className="settings-valid">OK</span>;
+    if (status === 'invalid') return <span className="settings-invalid">X</span>;
     return null;
   };
 
   const getValidationMessage = (keyType) => {
     if (keyType === 'gemini' && validation.gemini === 'invalid') {
-      return <span className="text-xs text-red-400 mt-1">Clé Gemini invalide (ping échoué)</span>;
+      return <span className="settings-warning">Cle Gemini invalide (ping echoue)</span>;
     }
     if (keyType === 'kimi' && validation.kimi === 'invalid') {
-      return <span className="text-xs text-red-400 mt-1">Clé Kimi invalide (ping échoué)</span>;
+      return <span className="settings-warning">Cle Kimi invalide (ping echoue)</span>;
     }
     return null;
-  };
-
-  const loadSettings = async () => {
-    try {
-      const response = await window.electronAPI.loadSettings();
-      if (response.success && response.settings) {
-        setSettings(prev => ({ ...prev, ...response.settings }));
-      }
-    } catch (error) {
-      console.error('Erreur chargement settings:', error);
-      showMessage('Erreur chargement des paramètres', 3000);
-    }
   };
 
   const saveSettings = async () => {
@@ -99,15 +100,14 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
     try {
       const response = await window.electronAPI.saveSettings(settings);
       if (response.success) {
-        showMessage('Paramètres sauvegardés', 3000);
+        showMessage('Parametres sauvegardes', 3000);
         window.dispatchEvent(new CustomEvent('settings-updated', { detail: settings }));
         onClose();
       } else {
         showMessage(`Erreur: ${response.error}`, 4000);
       }
     } catch (error) {
-      console.error('Erreur sauvegarde settings:', error);
-      showMessage('Erreur sauvegarde des paramètres', 3000);
+      showMessage('Erreur sauvegarde des parametres', 3000);
     } finally {
       setLoading(false);
     }
@@ -120,135 +120,149 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-gray-900 text-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Paramètres</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white text-xl leading-none"
-          >
-            ×
-          </button>
+    <div className="settings-overlay">
+      <div className="settings-modal">
+        <div className="settings-header">
+          <div>
+            <div className="settings-title">Settings</div>
+            <div className="settings-subtitle">Configuration IA et projet</div>
+          </div>
+          <button onClick={onClose} className="settings-close">X</button>
         </div>
 
-        <div className="space-y-4">
-          {/* Provider par défaut */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Provider IA par défaut</label>
+        <div className="settings-body custom-scrollbar">
+          <div className="settings-section">
+            <label className="settings-label">Provider IA par defaut</label>
             <select
               value={settings.defaultProvider}
               onChange={(e) => handleChange('defaultProvider', e.target.value)}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-white"
+              className="settings-input"
             >
-              <option value="gemini">Gemini (Google)</option>
-              <option value="kimi">Kimi (Together)</option>
-              <option value="multi">Multi-IA (Gemini+Kimi)</option>
+              <option value="gemini">Gemini</option>
+              <option value="kimi">Kimi</option>
+              <option value="multi">Multi-IA</option>
             </select>
           </div>
 
-          {/* Mode Thinking */}
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="thinkingMode"
-              checked={settings.thinkingMode}
-              onChange={(e) => handleChange('thinkingMode', e.target.checked)}
-              className="rounded"
-            />
-            <label htmlFor="thinkingMode" className="text-sm">
-              Activer le mode &quot;Thinking&quot; (réflexion visible)
+          <div className="settings-section">
+            <label className="settings-label">Options</label>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.thinkingMode}
+                onChange={(e) => handleChange('thinkingMode', e.target.checked)}
+              />
+              <span>Activer le mode Thinking (raisonnement visible)</span>
+            </label>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.allowDangerousActions}
+                onChange={(e) => handleChange('allowDangerousActions', e.target.checked)}
+              />
+              <span>Autoriser les actions risquees sans confirmation</span>
             </label>
           </div>
 
-          {/* Actions risquées / Always proceed */}
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="allowDangerousActions"
-              checked={settings.allowDangerousActions}
-              onChange={(e) => handleChange('allowDangerousActions', e.target.checked)}
-              className="rounded"
-            />
-            <label htmlFor="allowDangerousActions" className="text-sm">
-              Autoriser les actions risquées sans confirmation (mode &quot;always proceed&quot;)
+          <div className="settings-section">
+            <label className="settings-label">Contexte IA (scan projet)</label>
+            <select
+              value={settings.aiContextPreset || 'safe'}
+              onChange={(e) => handleChange('aiContextPreset', e.target.value)}
+              className="settings-input"
+            >
+              <option value="safe">Safe (rapide)</option>
+              <option value="full">Full (configs + dotfiles)</option>
+              <option value="god">God (build + node_modules)</option>
+            </select>
+            <div className="settings-hint">
+              Safe = le plus rapide. Full = meilleur contexte sans exploser. God = peut être long et gourmand.
+            </div>
+
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={!!settings.aiContextIncludeSecrets}
+                onChange={(e) => handleChange('aiContextIncludeSecrets', e.target.checked)}
+              />
+              <span>Inclure fichiers sensibles (ex: .env, clés)</span>
             </label>
+            <div className="settings-danger">
+              Attention: si tu utilises un provider IA externe (Gemini/Together), ces données peuvent être envoyées hors machine.
+            </div>
+
+            <label className="settings-label">Fichiers volumineux</label>
+            <select
+              value={settings.aiContextLargeFileStrategy || 'skip'}
+              onChange={(e) => handleChange('aiContextLargeFileStrategy', e.target.value)}
+              className="settings-input"
+            >
+              <option value="skip">Ignorer</option>
+              <option value="truncate">Tronquer</option>
+            </select>
           </div>
 
-          {/* Port de développement */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Port serveur dev (pour développement)</label>
+          <div className="settings-section">
+            <label className="settings-label">Port serveur dev</label>
             <input
               type="text"
               value={settings.devPort}
               onChange={(e) => handleChange('devPort', e.target.value)}
               placeholder="3004"
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-white"
+              className="settings-input"
             />
           </div>
 
-          {/* Clés API */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium">Clés API</label>
+          <div className="settings-section">
+            <div className="settings-row">
+              <label className="settings-label">Cles API</label>
               <button
                 type="button"
                 onClick={() => setShowApiKeys(!showApiKeys)}
-                className="text-xs text-blue-400 hover:text-blue-300"
+                className="settings-link"
               >
                 {showApiKeys ? 'Masquer' : 'Afficher'}
               </button>
             </div>
 
-            {/* Gemini API Key */}
-            <div className="mb-3">
-              <label className="block text-xs text-gray-400 mb-1 flex items-center">
-                Gemini API Key
-                {getValidationIcon(validation.gemini)}
+            <div className="settings-key">
+              <label className="settings-key-label">
+                Gemini API Key {getValidationIcon(validation.gemini)}
               </label>
               <input
                 type={showApiKeys ? 'text' : 'password'}
                 value={settings.geminiApiKey}
                 onChange={(e) => handleChange('geminiApiKey', e.target.value)}
                 placeholder="AIza..."
-                className={`w-full px-3 py-2 bg-gray-800 border rounded text-white text-sm ${
-                  validation.gemini === 'invalid' ? 'border-red-500' : 'border-gray-700'
-                }`}
+                className={`settings-input ${validation.gemini === 'invalid' ? 'is-invalid' : ''}`}
               />
               {getValidationMessage('gemini')}
             </div>
 
-            {/* Kimi/Together API Key */}
-            <div>
-              <label className="block text-xs text-gray-400 mb-1 flex items-center">
-                Kimi/Together API Key
-                {getValidationIcon(validation.kimi)}
+            <div className="settings-key">
+              <label className="settings-key-label">
+                Kimi/Together API Key {getValidationIcon(validation.kimi)}
               </label>
               <input
                 type={showApiKeys ? 'text' : 'password'}
                 value={settings.kimiApiKey}
                 onChange={(e) => handleChange('kimiApiKey', e.target.value)}
                 placeholder="tgp_v1_..."
-                className={`w-full px-3 py-2 bg-gray-800 border rounded text-white text-sm ${
-                  validation.kimi === 'invalid' ? 'border-red-500' : 'border-gray-700'
-                }`}
+                className={`settings-input ${validation.kimi === 'invalid' ? 'is-invalid' : ''}`}
               />
               {getValidationMessage('kimi')}
             </div>
           </div>
         </div>
 
-        <div className="flex justify-end space-x-2 mt-6">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-400 hover:text-white"
-          >
+        <div className="settings-footer">
+          <button onClick={onClose} className="btn btn-ghost">
             Annuler
           </button>
           <button
             onClick={saveSettings}
             disabled={loading}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded"
+            className="btn btn-primary"
           >
             {loading ? 'Sauvegarde...' : 'Sauvegarder'}
           </button>

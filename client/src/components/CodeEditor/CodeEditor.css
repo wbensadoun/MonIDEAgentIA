@@ -1,25 +1,115 @@
-.code-editor-container {
+.code-editor-root {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
 }
 
-.line-numbers {
-  background: linear-gradient(to bottom, #1a1a2e, #16213e);
-  border-right: 2px solid #3b82f6;
-  user-select: none;
+.code-editor-top {
+  border-bottom: 1px solid var(--border-0);
+  background: linear-gradient(180deg, rgba(11, 17, 24, 0.9), rgba(15, 22, 34, 0.65));
 }
 
-.code-textarea {
-  tab-size: 2;
-  -moz-tab-size: 2;
+.editor-tabs {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
-.code-textarea::placeholder {
-  color: #64748b;
+.editor-tabs-empty {
+  font-size: 0.75rem;
+  color: var(--text-2);
+  padding: 4px 2px;
 }
 
-.code-textarea:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+.editor-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 360px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-0);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-1);
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+}
+
+.editor-tab.is-active {
+  color: var(--text-0);
+  border-color: rgba(0, 245, 212, 0.45);
+  background: rgba(0, 245, 212, 0.1);
+  box-shadow: var(--glow-1);
+}
+
+.editor-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-tab-close {
+  width: 18px;
+  height: 18px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-2);
+  line-height: 1;
+  font-family: var(--font-ui);
+}
+
+.editor-tab:hover .editor-tab-close {
+  color: var(--text-0);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.editor-tab-close:hover {
+  color: #ffb4a2;
+  border-color: rgba(255, 107, 107, 0.4);
+  background: rgba(255, 107, 107, 0.12);
+}
+
+.code-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  color: var(--text-1);
+}
+
+.code-editor-label {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.65rem;
+  color: var(--text-2);
+}
+
+.code-editor-file {
+  color: var(--accent-1);
+  font-family: var(--font-code);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.code-editor-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.monaco-wrap {
+  flex: 1;
+  min-height: 0;
 }

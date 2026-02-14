@@ -1,21 +1,21 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import './FileExplorer.css';
 
 const FileIcon = () => (
-  <svg className="h-4 w-4 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+  <svg className="file-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
   </svg>
 );
 
 const FolderIcon = () => (
-  <svg className="h-4 w-4 mr-2 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+  <svg className="folder-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
   </svg>
 );
 
 const ChevronIcon = ({ isExpanded }) => (
   <svg
-    className={`h-3 w-3 text-gray-400 transition-transform duration-200 ${isExpanded ? 'transform rotate-90' : ''}`}
+    className={`chevron-icon ${isExpanded ? 'is-expanded' : ''}`}
     fill="none"
     viewBox="0 0 24 24"
     stroke="currentColor"
@@ -27,19 +27,19 @@ const ChevronIcon = ({ isExpanded }) => (
 const FileItem = ({ item, depth = 0, activeFile, expandedFolders, onToggleFolder, onFileClick, onDelete }) => {
   const isExpanded = expandedFolders.has(item.path);
   const isActive = activeFile === (item.path || item.name);
-  const paddingLeft = depth * 20;
+  const paddingLeft = depth * 18;
 
   return (
     <div key={item.path || item.name}>
       <div
-        className="file-item flex items-center justify-between group rounded-lg transition-all duration-200 ease-in-out"
+        className="file-item-row"
         style={{ paddingLeft: `${paddingLeft}px` }}
       >
-        <div className="flex items-center flex-grow">
+        <div className="file-item-main">
           {item.type === 'directory' && (
             <button
               onClick={() => onToggleFolder(item)}
-              className="p-1 mr-1 hover:bg-gray-600 rounded transition-colors"
+              className="file-item-toggle"
             >
               <ChevronIcon isExpanded={isExpanded} />
             </button>
@@ -53,29 +53,25 @@ const FileItem = ({ item, depth = 0, activeFile, expandedFolders, onToggleFolder
                 onToggleFolder(item);
               }
             }}
-            className={`flex-grow text-left p-2 rounded-lg text-sm flex items-center ${
-              isActive
-                ? 'bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-lg'
-                : 'hover:bg-gray-700/50 text-gray-200'
-            }`}
+            className={`file-item-button ${isActive ? 'is-active' : ''}`}
           >
             {item.type === 'directory' ? <FolderIcon /> : <FileIcon />}
-            <span className="truncate">{item.name}</span>
+            <span className="file-item-label">{item.name}</span>
           </button>
         </div>
 
         <button
-          onClick={() => onDelete(item.name, item.type)}
-          className="ml-2 p-1 rounded-full text-gray-500 hover:bg-red-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={() => onDelete(item.path || item.name, item.type)}
+          className="file-item-delete"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="file-delete-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
           </svg>
         </button>
       </div>
 
       {item.type === 'directory' && isExpanded && item.children && item.children.length > 0 && (
-        <div className="ml-2">
+        <div className="file-children">
           {item.children.map(child => (
             <FileItem
               key={child.path || child.name}
@@ -94,6 +90,18 @@ const FileItem = ({ item, depth = 0, activeFile, expandedFolders, onToggleFolder
   );
 };
 
+const flattenFiles = (items, acc = []) => {
+  (items || []).forEach((item) => {
+    if (item.type === 'file') {
+      acc.push(item);
+    }
+    if (item.type === 'directory' && Array.isArray(item.children)) {
+      flattenFiles(item.children, acc);
+    }
+  });
+  return acc;
+};
+
 const FileExplorer = ({
   projectItems,
   currentProjectPath,
@@ -108,110 +116,157 @@ const FileExplorer = ({
   onFileClick,
   onNewItemNameChange
 }) => {
+  const [filterQuery, setFilterQuery] = useState('');
+
+  const flatFiles = useMemo(() => flattenFiles(projectItems, []), [projectItems]);
+
+  const filteredFiles = useMemo(() => {
+    const q = filterQuery.trim().toLowerCase();
+    if (!q) return [];
+    return flatFiles.filter((file) => {
+      const name = (file.name || '').toLowerCase();
+      const path = (file.path || '').toLowerCase();
+      return name.includes(q) || path.includes(q);
+    });
+  }, [flatFiles, filterQuery]);
+
+  const projectName = currentProjectPath
+    ? currentProjectPath.split(/[\\/]/).pop()
+    : 'Aucun projet';
+
+  const handleCreate = async (type) => {
+    if (!onCreateItem) return;
+    const ok = await onCreateItem(type, newItemName);
+    if (ok && onNewItemNameChange) {
+      onNewItemNameChange('');
+    }
+  };
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && newItemName) {
-      onCreateItem(newItemName.includes('.') ? 'file' : 'directory');
+      handleCreate(newItemName.includes('.') ? 'file' : 'directory');
     }
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center space-x-3 mb-4">
-        <div className="w-10 h-10 bg-gradient-to-br from-sky-500 to-cyan-400 rounded-lg flex items-center justify-center shadow-lg">
-          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-          </svg>
+    <div className="nav-root">
+      <div className="nav-header">
+        <div className="nav-brand">
+          <div className="nav-icon">
+            <svg className="nav-icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+          </div>
+          <div className="nav-brand-text">
+            <div className="nav-title">Navigator</div>
+            <div className="nav-subtitle">{projectName}</div>
+          </div>
         </div>
-        <h3 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-cyan-300">
-          Projet
-        </h3>
+        <div className="nav-actions">
+          <button
+            onClick={onOpenFolder}
+            className="btn btn-primary"
+            disabled={!isElectronApiAvailable}
+          >
+            Ouvrir
+          </button>
+          <button
+            onClick={() => handleCreate('file')}
+            className="btn btn-ghost"
+            disabled={!isElectronApiAvailable || !newItemName}
+          >
+            + Fichier
+          </button>
+        </div>
       </div>
 
-      <button
-        onClick={onOpenFolder}
-        className="btn-hover-effect focus-ring w-full bg-gradient-to-r from-sky-600 to-cyan-500 hover:from-sky-700 hover:to-cyan-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105 mb-4 text-md flex items-center justify-center space-x-2"
-        disabled={!isElectronApiAvailable}
-      >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 9l5-5 5 5M12 4v12" />
-        </svg>
-        <span>Ouvrir un Dossier</span>
-      </button>
-
-      {currentProjectPath && (
-        <div className="mb-4 p-3 glass-effect rounded-xl text-gray-300 text-sm break-words border border-gray-700">
-          <div className="flex items-center space-x-2 mb-1">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="font-semibold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-blue-400">
-              Dossier Actif
-            </span>
-          </div>
-          <div className="text-white font-medium truncate">
-            {currentProjectPath.split(window.electronAPI?.pathSeparator || '/').pop()}
+      <div className="nav-section">
+        <div className="nav-section-title">Créer</div>
+        <div className="nav-create">
+          <input
+            type="text"
+            className="input-surface"
+            placeholder="Nom du fichier ou dossier"
+            value={newItemName}
+            onChange={(e) => onNewItemNameChange(e.target.value)}
+            onKeyPress={handleKeyPress}
+          />
+          <div className="nav-create-actions">
+            <button
+              onClick={() => handleCreate('file')}
+              className="btn btn-success"
+              disabled={!isElectronApiAvailable || !newItemName}
+            >
+              Fichier
+            </button>
+            <button
+              onClick={() => handleCreate('directory')}
+              className="btn btn-accent"
+              disabled={!isElectronApiAvailable || !newItemName}
+            >
+              Dossier
+            </button>
           </div>
         </div>
-      )}
+      </div>
 
-      <div className="flex-grow flex flex-col overflow-hidden">
-        {currentProjectPath && (
-          <div className="mb-4 border-t border-gray-700 pt-4">
-            <div className="relative mb-2">
-              <input
-                type="text"
-                className="focus-ring w-full p-3 pl-10 rounded-xl glass-effect text-gray-100 border border-gray-600 placeholder-gray-400 text-sm"
-                placeholder="Nouveau fichier/dossier..."
-                value={newItemName}
-                onChange={(e) => onNewItemNameChange(e.target.value)}
-                onKeyPress={handleKeyPress}
-              />
-              <svg className="w-5 h-5 text-gray-400 absolute top-1/2 left-3 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-            </div>
-            <div className="flex space-x-2">
-              <button
-                onClick={() => onCreateItem('file')}
-                className="btn-hover-effect focus-ring flex-1 bg-gradient-to-r from-green-500 to-teal-500 text-white font-bold py-2 px-2 rounded-lg shadow-md text-xs flex items-center justify-center space-x-1"
-                disabled={!isElectronApiAvailable || !newItemName}
-              >
-                <span>Fichier</span>
-              </button>
-              <button
-                onClick={() => onCreateItem('directory')}
-                className="btn-hover-effect focus-ring flex-1 bg-gradient-to-r from-cyan-500 to-sky-500 text-white font-bold py-2 px-2 rounded-lg shadow-md text-xs flex items-center justify-center space-x-1"
-                disabled={!isElectronApiAvailable || !newItemName}
-              >
-                <span>Dossier</span>
-              </button>
-            </div>
-          </div>
+      <div className="nav-section">
+        <div className="nav-section-title">Filtrer</div>
+        <input
+          type="text"
+          className="input-surface"
+          placeholder="Rechercher un fichier..."
+          value={filterQuery}
+          onChange={(e) => setFilterQuery(e.target.value)}
+        />
+        {filterQuery && (
+          <div className="nav-hint">{filteredFiles.length} rÃ©sultat(s)</div>
         )}
+      </div>
 
-        <div className="flex-grow overflow-y-auto custom-scrollbar pr-2">
-          {!currentProjectPath ? (
-            <div className="text-center text-gray-400 p-6 rounded-lg">
-              <p>Ouvrez un dossier</p>
-            </div>
-          ) : projectItems.length === 0 ? (
-            <div className="text-center text-gray-400 p-6 rounded-lg">
-              <p>Dossier vide</p>
+      <div className="nav-tree custom-scrollbar">
+        {!currentProjectPath ? (
+          <div className="nav-empty">
+            Ouvrez un dossier pour commencer.
+          </div>
+        ) : filterQuery ? (
+          filteredFiles.length === 0 ? (
+            <div className="nav-empty">
+              Aucun fichier trouvÃ©.
             </div>
           ) : (
-            <div className="tree-view">
-              {projectItems.map(item => (
-                <FileItem
-                  key={item.path || item.name}
-                  item={item}
-                  activeFile={activeFile}
-                  expandedFolders={expandedFolders}
-                  onToggleFolder={onToggleFolder}
-                  onFileClick={onFileClick}
-                  onDelete={onDeleteItem}
-                />
+            <div className="nav-results">
+              {filteredFiles.map((file) => (
+                <button
+                  key={file.path || file.name}
+                  className="nav-result"
+                  onClick={() => onFileClick(file.path || file.name)}
+                >
+                  <FileIcon />
+                  <span className="nav-result-label">{file.path || file.name}</span>
+                </button>
               ))}
             </div>
-          )}
-        </div>
+          )
+        ) : projectItems.length === 0 ? (
+          <div className="nav-empty">
+            Dossier vide.
+          </div>
+        ) : (
+          <div className="tree-view">
+            {projectItems.map(item => (
+              <FileItem
+                key={item.path || item.name}
+                item={item}
+                activeFile={activeFile}
+                expandedFolders={expandedFolders}
+                onToggleFolder={onToggleFolder}
+                onFileClick={onFileClick}
+                onDelete={onDeleteItem}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -44,8 +44,9 @@ export const useFileOperations = (currentProjectPath, isElectronApiAvailable, sh
   }, [isElectronApiAvailable]);
 
   const loadFolderChildren = useCallback(async (folderPath, itemPath) => {
+    if (!isElectronApiAvailable || !currentProjectPath || !folderPath) return;
     try {
-      const response = await window.electronAPI.getFolderChildren(folderPath);
+      const response = await window.electronAPI.getFolderChildren(currentProjectPath, folderPath);
       if (response.success) {
         setProjectItems(prevItems => {
           const updateItemChildren = (items) => {
@@ -64,7 +65,7 @@ export const useFileOperations = (currentProjectPath, isElectronApiAvailable, sh
     } catch (error) {
       console.error('Erreur chargement enfants:', error);
     }
-  }, []);
+  }, [currentProjectPath, isElectronApiAvailable]);
 
   const toggleFolderExpansion = useCallback(async (item) => {
     setExpandedFolders(prev => {
@@ -77,13 +78,14 @@ export const useFileOperations = (currentProjectPath, isElectronApiAvailable, sh
       return newSet;
     });
 
-    if (item.children.length === 0 && item.hasChildren) {
-      await loadFolderChildren(item.fullPath, item.path);
+    const childrenCount = Array.isArray(item.children) ? item.children.length : 0;
+    if (childrenCount === 0 && item.hasChildren) {
+      await loadFolderChildren(item.fullPath || item.path, item.path);
     }
   }, [loadFolderChildren]);
 
   const createNewItem = useCallback(async (type, itemName) => {
-    const name = itemName.trim();
+    const name = String(itemName || '').trim();
     if (!name) {
       showMessage(`Veuillez entrer un nom pour le nouveau ${type === 'file' ? 'fichier' : 'dossier'}.`);
       return false;

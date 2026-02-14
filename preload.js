@@ -28,19 +28,25 @@ try {
 
     // API pour lister tous les fichiers et dossiers dans un chemin donné
     getAllFiles: (folderPath) => ipcRenderer.invoke('get-all-files', folderPath),
-    
+
+    // API pour lister les fichiers d'un projet (flat list) - utile pour Ctrl+P / index
+    listProjectFiles: (projectPath, options) => ipcRenderer.invoke('list-project-files', projectPath, options),
+
+    // API pour rechercher dans le projet (recherche globale)
+    searchInProject: (projectPath, query, options) => ipcRenderer.invoke('search-in-project', projectPath, query, options),
+
     // API pour charger les enfants d'un dossier spécifique
-    getFolderChildren: (folderPath) => ipcRenderer.invoke('get-folder-children', folderPath),
+    getFolderChildren: (projectPath, folderPath) => ipcRenderer.invoke('get-folder-children', projectPath, folderPath),
 
     // API pour lire le contenu d'un fichier
     readFile: (projectPath, filename) => ipcRenderer.invoke('read-file', projectPath, filename),
-    
+
     // API pour écrire/créer un fichier
     writeFile: (projectPath, filename, content) => ipcRenderer.invoke('write-file', projectPath, filename, content),
-    
+
     // API pour supprimer un fichier
     deleteFile: (projectPath, filename) => ipcRenderer.invoke('delete-file', projectPath, filename),
-    
+
     // API pour créer un nouveau fichier
     createNewFile: (projectPath, filename, initialContent) => ipcRenderer.invoke('createNewFile', projectPath, filename, initialContent),
 
@@ -51,12 +57,12 @@ try {
     deleteDirectory: (projectPath, dirname) => ipcRenderer.invoke('deleteDirectory', projectPath, dirname),
 
     // API pour lire tous les fichiers du projet
-    getAllProjectFiles: (projectPath) => ipcRenderer.invoke('getAllProjectFiles', projectPath),
+    getAllProjectFiles: (projectPath, options) => ipcRenderer.invoke('getAllProjectFiles', projectPath, options),
 
     // API pour l'appel Gemini avec contexte complet du projet
     getGeminiCompletion: (history, currentCode, allProjectFiles, options) =>
       ipcRenderer.invoke('get-gemini-completion', history, currentCode, allProjectFiles, options),
-    
+
     // API pour lister les modèles Gemini disponibles
     listGeminiModels: (apiKey) => ipcRenderer.invoke('list-gemini-models', apiKey),
 
@@ -95,23 +101,44 @@ try {
     renameFile: (projectPath, oldFilename, newFilename) => ipcRenderer.invoke('renameFile', projectPath, oldFilename, newFilename),
     copyFile: (projectPath, sourceFilename, destFilename) => ipcRenderer.invoke('copyFile', projectPath, sourceFilename, destFilename),
     moveFile: (projectPath, sourceFilename, destFilename) => ipcRenderer.invoke('moveFile', projectPath, sourceFilename, destFilename),
+
+    // Workflow APIs
+    listWorkflows: (projectPath) => ipcRenderer.invoke('list-workflows', projectPath),
+    getWorkflow: (name, scope, projectPath) => ipcRenderer.invoke('get-workflow', name, scope, projectPath),
+    saveWorkflow: (name, content, scope, projectPath) => ipcRenderer.invoke('save-workflow', name, content, scope, projectPath),
+    deleteWorkflow: (name, scope, projectPath) => ipcRenderer.invoke('delete-workflow', name, scope, projectPath),
+
+    // Agents APIs
+    listAgents: (projectPath) => ipcRenderer.invoke('list-agents', projectPath),
+    getAgent: (name, scope, projectPath) => ipcRenderer.invoke('get-agent', name, scope, projectPath),
+    saveAgent: (name, content, scope, projectPath) => ipcRenderer.invoke('save-agent', name, content, scope, projectPath),
+    deleteAgent: (name, scope, projectPath) => ipcRenderer.invoke('delete-agent', name, scope, projectPath),
+
+    // Skills APIs
+    listSkills: (projectPath) => ipcRenderer.invoke('list-skills', projectPath),
+    getSkill: (name, scope, projectPath) => ipcRenderer.invoke('get-skill', name, scope, projectPath),
+    installSkillFromUrl: (url, scope, projectPath, options) => ipcRenderer.invoke('install-skill-from-url', url, scope, projectPath, options),
+
+    // VoltAgent catalogs & packs
+    getVoltAgentCatalog: (catalogId) => ipcRenderer.invoke('get-voltagent-catalog', catalogId),
+    syncVoltAgentSubagents: (options) => ipcRenderer.invoke('sync-voltagent-subagents', options),
   };
 
   // Afficher les méthodes disponibles
   console.log('[Preload] 4. Méthodes disponibles:', Object.keys(electronAPI));
-  
+
   // Exposer l'API
   console.log('[Preload] 5. Exposition de l\'API sur window.electronAPI');
   contextBridge.exposeInMainWorld('electronAPI', electronAPI);
-  
+
   // Vérification que l'API est bien exposée
   console.log('[Preload] 6. Vérification de l\'exposition de l\'API:', {
     isExposed: 'electronAPI' in window,
     methods: window.electronAPI ? Object.keys(window.electronAPI) : 'non défini'
   });
-  
+
   console.log('[Preload] 7. Script de préchargement terminé avec succès');
-  
+
 } catch (error) {
   console.error('[Preload] ERREUR dans le script de préchargement:', error);
 }

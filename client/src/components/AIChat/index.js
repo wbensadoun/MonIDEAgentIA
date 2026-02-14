@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import './AIChat.css';
 import { LoadingSteps, LoadingPulse } from '../LoadingAnimations';
 
@@ -15,6 +15,8 @@ const AIChat = ({
   onProviderChange,
   thinkingMode = false,
   onThinkingModeChange,
+  deepContextEnabled = false,
+  onDeepContextEnabledChange,
   onPasteImage,
   multiAIState,
   conversations = [],
@@ -22,11 +24,24 @@ const AIChat = ({
   isConversationLoading = false,
   onNewConversation,
   onSelectConversation,
-  onStopGeneration
+  onStopGeneration,
+  workflows = [],
+  getWorkflow,
+  parseSlashCommand,
+  activeFile,
+  agents = [],
+  skills = [],
+  activeAgent,
+  activeSkill,
+  onActiveAgentChange,
+  onActiveSkillChange
 }) => {
   const conversationHistoryRef = useRef(null);
+  const promptInputRef = useRef(null);
   const [showConversations, setShowConversations] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showWorkflowSuggestions, setShowWorkflowSuggestions] = useState(false);
+  const [workflowFilter, setWorkflowFilter] = useState('');
 
   useEffect(() => {
     if (conversationHistoryRef.current) {
@@ -34,17 +49,41 @@ const AIChat = ({
     }
   }, [conversationHistory, isLoading]);
 
-  const handleSend = () => {
-    console.log('[AIChat] handleSend appelé:', { prompt: prompt.trim(), isLoading, onSend: !!onSend });
-    if (prompt.trim() && !isLoading) {
-      console.log('[AIChat] Conditions OK, appel de onSend()');
-      onSend();
+  const handlePromptChange = (value) => {
+    onPromptChange(value);
+
+    if (value.startsWith('/') && parseSlashCommand) {
+      const parsed = parseSlashCommand(value);
+      if (parsed) {
+        setWorkflowFilter(parsed.command);
+        setShowWorkflowSuggestions(true);
+        setShowConversations(false);
+      }
     } else {
-      console.log('[AIChat] Conditions non remplies:', { 
-        hasPrompt: !!prompt.trim(), 
-        isLoading, 
-        prompt: prompt.trim() 
-      });
+      setShowWorkflowSuggestions(false);
+      setWorkflowFilter('');
+    }
+  };
+
+  const filteredWorkflows = workflows.filter(w =>
+    w.name.toLowerCase().includes(workflowFilter.toLowerCase())
+  );
+
+  const handleSelectWorkflow = async (workflow) => {
+    if (getWorkflow) {
+      const fullWorkflow = await getWorkflow(workflow.name, workflow.scope);
+      if (fullWorkflow && fullWorkflow.body) {
+        onPromptChange(fullWorkflow.body);
+      }
+    }
+    setShowWorkflowSuggestions(false);
+    setWorkflowFilter('');
+  };
+
+  const handleSend = () => {
+    if (prompt.trim() && !isLoading) {
+      setShowWorkflowSuggestions(false);
+      onSend();
     }
   };
 
@@ -83,7 +122,7 @@ const AIChat = ({
   const getRoleMeta = (msg) => {
     if (msg.role === 'system') {
       return {
-        label: 'Système',
+        label: 'Systeme',
         badgeClass: 'chat-badge-system',
         bubbleClass: 'chat-bubble-system',
         alignClass: 'chat-row-system'
@@ -99,19 +138,55 @@ const AIChat = ({
       };
     }
 
-    // role === 'model'
-    if (msg.isArchitect) {
+    // 5 Agents Multi-IA
+    if (msg.isChefDeProjet) {
       return {
-        label: 'Architecte · Gemini',
+        label: '🎯 Chef (Gemini 2.5)',
+        badgeClass: 'chat-badge-chef-projet',
+        bubbleClass: 'chat-bubble-chef-projet',
+        alignClass: 'chat-row-ai'
+      };
+    }
+
+    if (msg.isFrontendDev) {
+      return {
+        label: '🎨 Front (Kimi)',
+        badgeClass: 'chat-badge-frontend-dev',
+        bubbleClass: 'chat-bubble-frontend-dev',
+        alignClass: 'chat-row-ai'
+      };
+    }
+
+    if (msg.isBackendDev) {
+      return {
+        label: '⚙️ Back (Kimi)',
+        badgeClass: 'chat-badge-backend-dev',
+        bubbleClass: 'chat-bubble-backend-dev',
+        alignClass: 'chat-row-ai'
+      };
+    }
+
+    if (msg.isArchitectEngineer || msg.isArchitect) {
+      return {
+        label: '🏗️ Archi (Kimi)',
         badgeClass: 'chat-badge-architect',
         bubbleClass: 'chat-bubble-architect',
         alignClass: 'chat-row-ai'
       };
     }
 
+    if (msg.isScrumMaster) {
+      return {
+        label: '📋 Scrum (Gemini 2.5)',
+        badgeClass: 'chat-badge-scrum-master',
+        bubbleClass: 'chat-bubble-scrum-master',
+        alignClass: 'chat-row-ai'
+      };
+    }
+
     if (msg.isReviewer) {
       return {
-        label: 'Relecteur · Kimi',
+        label: 'Relecteur',
         badgeClass: 'chat-badge-reviewer',
         bubbleClass: 'chat-bubble-reviewer',
         alignClass: 'chat-row-ai'
@@ -120,7 +195,7 @@ const AIChat = ({
 
     if (msg.isCoder) {
       return {
-        label: 'Codeur · Kimi',
+        label: 'Codeur',
         badgeClass: 'chat-badge-coder',
         bubbleClass: 'chat-bubble-coder',
         alignClass: 'chat-row-ai'
@@ -137,10 +212,6 @@ const AIChat = ({
 
   const activeConversation = conversations.find(c => c.fileName === activeConversationFile) || null;
   const headerTitle = activeConversation ? activeConversation.title : 'Nouvelle conversation';
-  const headerSubtitle = activeConversation
-    ? new Date(activeConversation.createdAt).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-    : (currentProjectPath ? currentProjectPath : 'Aucun projet ouvert');
-
   const filteredConversations = conversations.filter((conv) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -156,16 +227,53 @@ const AIChat = ({
     setShowConversations(false);
   };
 
+  const activeAgentValue = activeAgent ? `${activeAgent.scope}:${activeAgent.name}` : '';
+  const activeSkillValue = activeSkill ? `${activeSkill.scope}:${activeSkill.name}` : '';
+
+  const quickActions = useMemo(() => ([
+    {
+      id: 'explain',
+      label: 'Expliquer',
+      prompt: activeFile ? `Explique le fichier ${activeFile} et ses responsabilites.` : 'Explique le projet et sa structure.'
+    },
+    {
+      id: 'refactor',
+      label: 'Refactor',
+      prompt: activeFile ? `Refactorise ${activeFile} en gardant le comportement.` : 'Propose un refactor global.'
+    },
+    {
+      id: 'tests',
+      label: 'Tests',
+      prompt: activeFile ? `Ecris des tests pour ${activeFile}.` : 'Ecris des tests prioritaires.'
+    },
+    {
+      id: 'docs',
+      label: 'Docs',
+      prompt: activeFile ? `Documente ${activeFile} (README court).` : 'Redige un README rapide.'
+    },
+    {
+      id: 'plan',
+      label: 'Plan',
+      prompt: 'Donne un plan clair avant d agir.'
+    }
+  ]), [activeFile]);
+
+  const applyQuickPrompt = (text) => {
+    const next = prompt && prompt.trim() ? `${prompt}\n${text}` : text;
+    onPromptChange(next);
+    setShowWorkflowSuggestions(false);
+    promptInputRef.current?.focus();
+  };
+
   return (
-    <div className="flex flex-col h-full relative">
-      <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-700/50">
-        <div className="flex items-center space-x-2 overflow-hidden">
-          <span className="text-xs text-cyan-400 font-medium">Agent IA</span>
-          <span className="text-xs text-gray-400">|</span>
-          <span className="text-xs text-gray-300 truncate max-w-[120px]">{headerTitle}</span>
+    <div className="ai-chat-container">
+      <div className="ai-header">
+        <div className="ai-header-left">
+          <div className="ai-title">Agent IA</div>
+          <div className="ai-subtitle">{headerTitle}</div>
         </div>
 
-        <div className="flex items-center space-x-1">
+        <div className="ai-controls">
           <button
             type="button"
             onClick={() => {
@@ -174,27 +282,24 @@ const AIChat = ({
               }
               setShowConversations(false);
             }}
-            className="p-1 text-[10px] text-gray-400 hover:text-cyan-400"
-            title="Nouvelle conversation"
+            className="ai-control-btn"
             disabled={!currentProjectPath || !isElectronApiAvailable}
           >
-            + New
+            New
           </button>
 
           <button
             type="button"
             onClick={() => setShowConversations(prev => !prev)}
-            className="p-1 text-[10px] text-gray-400 hover:text-cyan-400"
-            title="Historique"
+            className="ai-control-btn"
             disabled={!currentProjectPath || !isElectronApiAvailable}
           >
             History
           </button>
 
-          <label className="flex items-center space-x-1 text-[10px] text-gray-400">
+          <label className="ai-toggle">
             <input
               type="checkbox"
-              className="h-3 w-3"
               checked={thinkingMode}
               onChange={(e) => onThinkingModeChange && onThinkingModeChange(e.target.checked)}
               disabled={!isElectronApiAvailable || isLoading}
@@ -202,23 +307,86 @@ const AIChat = ({
             <span>Think</span>
           </label>
 
+          <label className="ai-toggle" title="Inclure le contexte du projet (scan)">
+            <input
+              type="checkbox"
+              checked={deepContextEnabled}
+              onChange={(e) => onDeepContextEnabledChange && onDeepContextEnabledChange(e.target.checked)}
+              disabled={!isElectronApiAvailable || isLoading}
+            />
+            <span>Ctx</span>
+          </label>
+
+          <select
+            value={activeAgentValue}
+            onChange={(e) => {
+              const next = e.target.value || '';
+              if (!next) {
+                onActiveAgentChange && onActiveAgentChange(null);
+                return;
+              }
+              const [scope, ...rest] = next.split(':');
+              const name = rest.join(':');
+              onActiveAgentChange && onActiveAgentChange({ scope, name });
+            }}
+            className="ai-select"
+            disabled={!isElectronApiAvailable || isLoading}
+            title="Agent (persona)"
+          >
+            <option value="">Agent: Default</option>
+            {Array.isArray(agents) && agents.map((agent) => (
+              <option
+                key={`${agent.scope}:${agent.name}`}
+                value={`${agent.scope}:${agent.name}`}
+              >
+                {agent.scope === 'workspace' ? 'WS' : 'G'}:{agent.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={activeSkillValue}
+            onChange={(e) => {
+              const next = e.target.value || '';
+              if (!next) {
+                onActiveSkillChange && onActiveSkillChange(null);
+                return;
+              }
+              const [scope, ...rest] = next.split(':');
+              const name = rest.join(':');
+              onActiveSkillChange && onActiveSkillChange({ scope, name });
+            }}
+            className="ai-select"
+            disabled={!isElectronApiAvailable || isLoading}
+            title="Skill (instructions)"
+          >
+            <option value="">Skill: None</option>
+            {Array.isArray(skills) && skills.map((skill) => (
+              <option
+                key={`${skill.scope}:${skill.name}`}
+                value={`${skill.scope}:${skill.name}`}
+              >
+                {skill.scope === 'workspace' ? 'WS' : 'G'}:{skill.name}
+              </option>
+            ))}
+          </select>
+
           <select
             value={aiProvider}
             onChange={(e) => onProviderChange && onProviderChange(e.target.value)}
-            className="bg-transparent border-none text-[10px] text-gray-300 focus:outline-none"
+            className="ai-select"
             disabled={!isElectronApiAvailable || isLoading}
             title="IA"
           >
             <option value="gemini">Gemini</option>
             <option value="kimi">Kimi K2.5</option>
-            <option value="multi">Multi-IA (Gemini+Kimi)</option>
+            <option value="multi">Multi-IA (5 Agents)</option>
           </select>
 
           <button
             onClick={onSaveConversation}
-            className="text-[10px] text-gray-400 hover:text-cyan-400"
+            className="ai-control-btn"
             disabled={!currentProjectPath || conversationHistory.length === 0 || !isElectronApiAvailable}
-            title="Sauver"
           >
             Save
           </button>
@@ -226,60 +394,55 @@ const AIChat = ({
       </div>
 
       {showConversations && (
-        <div className="absolute top-8 left-0 right-0 z-20">
-          <div className="bg-gray-900 border border-gray-700 rounded shadow-lg max-h-60 flex flex-col">
-            <div className="flex items-center justify-between px-2 py-1 border-b border-gray-700">
-              <span className="text-[10px] text-gray-300">Conversations</span>
-              <span className="text-[9px] text-gray-500">{conversations.length}</span>
-            </div>
-            <div className="px-2 py-1 border-b border-gray-700">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Rechercher..."
-                className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-[10px] text-gray-200 focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-            <div className="overflow-y-auto text-[10px]">
-              {isConversationLoading && (
-                <div className="px-2 py-1 text-gray-500">Chargement...</div>
-              )}
-              {!isConversationLoading && filteredConversations.length === 0 && (
-                <div className="px-2 py-1 text-gray-500">Aucune</div>
-              )}
-              {!isConversationLoading && filteredConversations.length > 0 && (
-                <ul className="text-gray-300">
-                  {filteredConversations.map((conv) => (
-                    <li
-                      key={conv.fileName}
-                      className={`px-2 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-800 ${
-                        conv.fileName === activeConversationFile ? 'bg-gray-800' : ''
-                      }`}
-                      onClick={() => handleSelectConversation(conv.fileName)}
-                    >
-                      <span className="truncate">{conv.title}</span>
-                      <span className="text-gray-500 whitespace-nowrap ml-2">
-                        {new Date(conv.createdAt).toLocaleDateString('fr-FR', { month: 'numeric', day: 'numeric' })}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+        <div className="ai-dropdown">
+          <div className="ai-dropdown-header">
+            <span>Conversations</span>
+            <span>{conversations.length}</span>
+          </div>
+          <div className="ai-dropdown-search">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Rechercher..."
+            />
+          </div>
+          <div className="ai-dropdown-list">
+            {isConversationLoading && (
+              <div className="ai-dropdown-empty">Chargement...</div>
+            )}
+            {!isConversationLoading && filteredConversations.length === 0 && (
+              <div className="ai-dropdown-empty">Aucune</div>
+            )}
+            {!isConversationLoading && filteredConversations.length > 0 && (
+              <ul>
+                {filteredConversations.map((conv) => (
+                  <li
+                    key={conv.fileName}
+                    className={`ai-dropdown-item ${conv.fileName === activeConversationFile ? 'is-active' : ''}`}
+                    onClick={() => handleSelectConversation(conv.fileName)}
+                  >
+                    <span className="ai-dropdown-title">{conv.title}</span>
+                    <span className="ai-dropdown-date">
+                      {new Date(conv.createdAt).toLocaleDateString('fr-FR', { month: 'numeric', day: 'numeric' })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       )}
 
       {multiAIState?.isActive && (
-        <div className="mb-3">
-          <LoadingSteps 
-            steps={multiAIState.steps} 
-            currentStep={multiAIState.steps.findIndex(s => s.status === 'active')} 
+        <div className="ai-loading">
+          <LoadingSteps
+            steps={multiAIState.steps}
+            currentStep={multiAIState.steps.findIndex(s => s.status === 'active')}
           />
           {multiAIState.currentPhase && (
             <div className="multi-ai-phase-hint">
-              <span className="phase-label">Phase actuelle :</span>
+              <span className="phase-label">Phase :</span>
               <span className="phase-value">{multiAIState.currentPhase}</span>
               {multiAIState.error && (
                 <span className="phase-error">Erreur : {multiAIState.error}</span>
@@ -290,52 +453,77 @@ const AIChat = ({
       )}
 
       {isLoading && !multiAIState?.isActive && (
-        <div className="mb-3">
-          <LoadingPulse text="L'IA réfléchit..." variant="default" />
+        <div className="ai-loading">
+          <LoadingPulse text="L'IA reflechit..." variant="default" />
         </div>
       )}
 
-      <textarea
-        id="ai-prompt"
-        className="focus-ring w-full bg-black bg-opacity-20 text-gray-100 p-3 rounded-lg border border-gray-600 resize-y text-sm custom-scrollbar mb-3"
-        value={prompt}
-        onChange={(e) => onPromptChange(e.target.value)}
-        onKeyPress={handleKeyPress}
-        onPaste={handlePaste}
-        placeholder="Votre requête..."
-        rows={2}
-      />
+      <div className="ai-input-wrap">
+        <textarea
+          ref={promptInputRef}
+          id="ai-prompt"
+          className="ai-input"
+          value={prompt}
+          onChange={(e) => handlePromptChange(e.target.value)}
+          onKeyPress={handleKeyPress}
+          onPaste={handlePaste}
+          placeholder="Votre requete... (tapez / pour les workflows)"
+          rows={3}
+        />
+
+        {showWorkflowSuggestions && filteredWorkflows.length > 0 && (
+          <div className="ai-workflow-suggest">
+            <div className="ai-workflow-title">Workflows disponibles</div>
+            {filteredWorkflows.map((workflow) => (
+              <button
+                key={`${workflow.scope}-${workflow.name}`}
+                onClick={() => handleSelectWorkflow(workflow)}
+                className="ai-workflow-item"
+              >
+                <div>
+                  <span className="ai-workflow-name">/{workflow.name}</span>
+                  {workflow.description && (
+                    <span className="ai-workflow-desc">{workflow.description}</span>
+                  )}
+                </div>
+                <span className={`ai-workflow-scope ${workflow.scope}`}>
+                  {workflow.scope}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="ai-actions">
+        {quickActions.map((action) => (
+          <button
+            key={action.id}
+            className="ai-chip"
+            onClick={() => applyQuickPrompt(action.prompt)}
+            disabled={!isElectronApiAvailable}
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
 
       <button
-        onClick={isLoading ? (onStopGeneration || (() => {})) : handleSend}
-        className={`btn-hover-effect focus-ring font-bold py-3 px-4 rounded-lg shadow-lg text-md transition-all ${
-          isLoading 
-            ? 'bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700' 
-            : 'bg-gradient-to-r from-green-500 to-cyan-600 hover:from-green-600 hover:to-cyan-700'
-        } text-white`}
+        onClick={isLoading ? (onStopGeneration || (() => { })) : handleSend}
+        className={`ai-send-btn ${isLoading ? 'is-stop' : ''}`}
         disabled={!currentProjectPath || !isElectronApiAvailable}
       >
-        {isLoading ? (
-          <span className="flex items-center justify-center">
-            <svg className="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-            Arrêter
-          </span>
-        ) : (
-          "Envoyer  l'IA"
-        )}
+        {isLoading ? 'Arreter' : 'Envoyer a l IA'}
       </button>
 
       <div
         ref={conversationHistoryRef}
-        className="ai-chat-history flex-grow bg-black bg-opacity-20 p-2 rounded-lg text-gray-200 overflow-y-auto custom-scrollbar mt-3 text-sm"
+        className="ai-history custom-scrollbar"
       >
         {conversationHistory.length === 0 && !isLoading && (
-          <div className="text-center text-gray-500 p-4">
-            <p>Commencez à discuter avec l&apos;IA</p>
-            <p className="text-xs mt-1">L&apos;IA comprend le contexte complet de votre projet</p>
+          <div className="ai-empty">
+            <p>Commencez a discuter avec l&apos;IA</p>
+            <p>Contexte complet du projet pris en compte.</p>
           </div>
         )}
 
@@ -355,7 +543,7 @@ const AIChat = ({
                       <div key={i} className="chat-image-wrapper">
                         <img
                           src={img.dataUrl}
-                          alt="Image collée"
+                          alt="Image collee"
                           className="chat-image-thumb"
                         />
                       </div>
@@ -368,8 +556,8 @@ const AIChat = ({
         })}
 
         {isLoading && !multiAIState?.isActive && (
-          <div className="text-center p-2">
-            <p className="text-xs text-gray-400 animate-pulse">L&apos;IA réfléchit...</p>
+          <div className="ai-loading-inline">
+            <p>L&apos;IA reflechit...</p>
           </div>
         )}
       </div>

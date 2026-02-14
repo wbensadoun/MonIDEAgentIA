@@ -1,0 +1,343 @@
+.workflow-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 10, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 70;
+  backdrop-filter: blur(6px);
+}
+
+.workflow-modal {
+  width: min(560px, 92vw);
+  max-height: 82vh;
+  background: rgba(12, 18, 28, 0.98);
+  border: 1px solid var(--border-0);
+  border-radius: 18px;
+  box-shadow: var(--shadow-1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-0);
+}
+
+.workflow-modal.workflow-editor {
+  width: min(760px, 94vw);
+  max-height: 88vh;
+}
+
+.workflow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-0);
+}
+
+.workflow-title {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+}
+
+.workflow-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  border: 1px solid var(--border-0);
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.workflow-scope-chip {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent-2);
+  border: 1px solid rgba(255, 209, 102, 0.4);
+  background: rgba(255, 209, 102, 0.12);
+}
+
+.workflow-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-0);
+}
+
+.workflow-tab {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 0.75rem;
+  color: var(--text-2);
+  background: transparent;
+  border-bottom: 2px solid transparent;
+}
+
+.workflow-tab.is-active {
+  color: var(--accent-1);
+  border-bottom-color: rgba(0, 245, 212, 0.6);
+}
+
+.workflow-body {
+  flex: 1;
+  padding: 14px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.workflow-empty {
+  padding: 20px 0;
+  text-align: center;
+  color: var(--text-2);
+  font-size: 0.8rem;
+}
+
+.workflow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workflow-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-0);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.workflow-card-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.workflow-name {
+  font-family: var(--font-code);
+  color: var(--accent-1);
+  font-size: 0.82rem;
+}
+
+.workflow-desc {
+  color: var(--text-2);
+  font-size: 0.74rem;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workflow-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.workflow-action {
+  font-size: 0.65rem;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.workflow-action.run {
+  color: var(--accent-3);
+  border-color: rgba(74, 222, 128, 0.45);
+  background: rgba(74, 222, 128, 0.12);
+}
+
+.workflow-action.edit {
+  color: var(--accent-2);
+  border-color: rgba(255, 209, 102, 0.45);
+  background: rgba(255, 209, 102, 0.12);
+}
+
+.workflow-action.delete {
+  color: var(--accent-4);
+  border-color: rgba(255, 107, 107, 0.45);
+  background: rgba(255, 107, 107, 0.12);
+}
+
+.workflow-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workflow-field label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--text-2);
+}
+
+.workflow-field input,
+.workflow-field textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border-0);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-0);
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  font-family: var(--font-ui);
+}
+
+.workflow-field textarea {
+  font-family: var(--font-code);
+  min-height: 220px;
+  resize: none;
+}
+
+.workflow-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-0);
+}
+
+.workflow-create {
+  width: 100%;
+}
+
+.packs-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.packs-intro {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border-0);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.packs-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.packs-subtitle {
+  margin-top: 4px;
+  color: var(--text-2);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.packs-status {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 245, 212, 0.22);
+  background: rgba(0, 245, 212, 0.08);
+  color: var(--text-1);
+  font-size: 0.75rem;
+}
+
+.pack-card {
+  border-radius: 14px;
+  border: 1px solid var(--border-0);
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.pack-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.pack-card-title {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--text-0);
+}
+
+.pack-card-desc {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--text-2);
+  line-height: 1.3;
+}
+
+.packs-controls {
+  padding: 0 12px 10px;
+  display: flex;
+}
+
+.packs-input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border-0);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-0);
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  font-family: var(--font-ui);
+  outline: none;
+}
+
+.packs-input:focus {
+  border-color: var(--border-1);
+  box-shadow: var(--glow-1);
+}
+
+.packs-list {
+  border-top: 1px solid var(--border-0);
+  display: flex;
+  flex-direction: column;
+}
+
+.packs-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.packs-item + .packs-item {
+  border-top: 1px solid var(--border-0);
+}
+
+.packs-item-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.packs-item-title {
+  font-family: var(--font-code);
+  font-size: 0.78rem;
+  color: var(--accent-1);
+}
+
+.packs-item-desc {
+  margin-top: 4px;
+  color: var(--text-2);
+  font-size: 0.7rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.packs-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
