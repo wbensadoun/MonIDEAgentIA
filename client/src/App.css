@@ -131,6 +131,59 @@ body {
   gap: 10px;
 }
 
+.ai-select-mini {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-0);
+  color: var(--text-0);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  max-width: 150px;
+}
+
+.ai-select-mini option {
+  background: var(--bg-1);
+  color: var(--text-0);
+}
+
+.ai-select-mini:hover,
+.ai-select-mini:focus {
+  border-color: var(--accent-1);
+  background: rgba(0, 245, 212, 0.1);
+}
+
+.ai-toggle-mini {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: var(--text-1);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.ai-toggle-mini:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ai-toggle-mini:has(input:checked) {
+  background: rgba(0, 245, 212, 0.15);
+  color: var(--accent-1);
+  border-color: rgba(0, 245, 212, 0.3);
+}
+
+.ai-toggle-mini input {
+  display: none;
+}
+
+
 .brand-mark {
   width: 34px;
   height: 34px;
@@ -704,6 +757,7 @@ body {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -715,8 +769,14 @@ body {
     padding: 10px 12px;
   }
 
+  .topbar {
+    flex-wrap: wrap;
+  }
+
   .topbar-center {
-    display: none;
+    order: 3;
+    flex-basis: 100%;
+    margin-top: 8px;
   }
 }
 
@@ -733,5 +793,10 @@ body {
 
   .panel-resizer {
     display: none;
+  }
+
+  .ai-expert-controls {
+    flex-wrap: wrap;
+    justify-content: center;
   }
 }

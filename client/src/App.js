@@ -12,6 +12,8 @@ import useFileOperations from './hooks/useFileOperations';
 import useAI from './hooks/useAI';
 import useWorkflows from './hooks/useWorkflows';
 import WorkflowManager from './components/WorkflowManager';
+import GitPanel from './components/GitPanel';
+import VisualWorkflowEditor from './components/VisualWorkflowEditor';
 
 const AppContent = () => {
   const [currentProjectPath, setCurrentProjectPath] = useState(() => {
@@ -50,6 +52,21 @@ const AppContent = () => {
   const [workflowManagerOpen, setWorkflowManagerOpen] = useState(false);
   const [centerView, setCenterView] = useState('code');
   const [devPort, setDevPort] = useState('3004');
+  const [isExpertMode, setIsExpertMode] = useState(() => {
+    try {
+      return localStorage.getItem('vibeIDE_expertMode') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vibeIDE_expertMode', isExpertMode ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [isExpertMode]);
 
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
@@ -243,7 +260,8 @@ const AppContent = () => {
     thinkingMode,
     deepContextEnabled,
     activeAgent,
-    activeSkill
+    activeSkill,
+    availableSkills
   );
 
   const {
@@ -930,13 +948,101 @@ const AppContent = () => {
           )}
         </div>
 
-        <div className="topbar-center">
-          <button className="command-trigger" onClick={() => setCommandOpen(true)}>
+        <div className="topbar-center" style={{ display: 'flex', gap: '8px', flex: 1, justifyContent: 'center' }}>
+          <button className="command-trigger" onClick={() => setCommandOpen(true)} style={{ maxWidth: '300px' }}>
             Ctrl+K pour les commandes
           </button>
+
+          {isExpertMode && (
+            <div className="ai-expert-controls" style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <select
+                value={aiProvider}
+                onChange={(e) => setAiProvider(e.target.value)}
+                className="ai-select-mini"
+                disabled={!isElectronApiAvailable || isLoading}
+                title="Modèle IA"
+              >
+                <option value="gemini">Gemini</option>
+                <option value="claude">Claude</option>
+                <option value="kimi">Kimi K2.5</option>
+                <option value="multi">Multi-IA (5 Agents)</option>
+                <option value="ollama">🦙 Ollama</option>
+                <option value="ollama-multi">🦙🦙 Multi-Ollama</option>
+              </select>
+
+              <select
+                value={activeAgent ? `${activeAgent.scope}:${activeAgent.name}` : ''}
+                onChange={(e) => {
+                  const next = e.target.value || '';
+                  if (!next) { setActiveAgent(null); return; }
+                  const [scope, ...rest] = next.split(':');
+                  setActiveAgent({ scope, name: rest.join(':') });
+                }}
+                className="ai-select-mini"
+                disabled={!isElectronApiAvailable || isLoading}
+                title="Agent (persona)"
+              >
+                <option value="">Agent: Défaut</option>
+                {Array.isArray(availableAgents) && availableAgents.map(a => (
+                  <option key={`${a.scope}:${a.name}`} value={`${a.scope}:${a.name}`}>
+                    {a.scope === 'workspace' ? 'WS' : 'G'}:{a.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={activeSkill ? `${activeSkill.scope}:${activeSkill.name}` : ''}
+                onChange={(e) => {
+                  const next = e.target.value || '';
+                  if (!next) { setActiveSkill(null); return; }
+                  const [scope, ...rest] = next.split(':');
+                  setActiveSkill({ scope, name: rest.join(':') });
+                }}
+                className="ai-select-mini"
+                disabled={!isElectronApiAvailable || isLoading}
+                title="Skill (instructions)"
+              >
+                <option value="">Skill: Aucun</option>
+                {Array.isArray(availableSkills) && availableSkills.map(s => (
+                  <option key={`${s.scope}:${s.name}`} value={`${s.scope}:${s.name}`}>
+                    {s.scope === 'workspace' ? 'WS' : 'G'}:{s.name}
+                  </option>
+                ))}
+              </select>
+
+              <label className="ai-toggle-mini" title="Mode réflexion">
+                <input
+                  type="checkbox"
+                  checked={thinkingMode}
+                  onChange={e => setThinkingMode(e.target.checked)}
+                  disabled={!isElectronApiAvailable || isLoading}
+                />
+                Réflexion
+              </label>
+
+              <label className="ai-toggle-mini" title="Deep Context (scan projet)">
+                <input
+                  type="checkbox"
+                  checked={deepContextEnabled}
+                  onChange={e => setDeepContextEnabled(e.target.checked)}
+                  disabled={!isElectronApiAvailable || isLoading}
+                />
+                Contexte
+              </label>
+            </div>
+          )}
         </div>
 
         <div className="topbar-right">
+          <button
+            onClick={() => setIsExpertMode(!isExpertMode)}
+            className={`btn btn-pill ${isExpertMode ? 'btn-live' : 'btn-idle'}`}
+            style={{ marginRight: '8px' }}
+            title={isExpertMode ? 'Désactiver le mode Expert pour simplifier l\'interface' : 'Activer le mode Expert pour plus d\'options IA'}
+          >
+            {isExpertMode ? '🧑‍💻 Expert' : '🌱 Novice'}
+          </button>
+
           <button
             onClick={handleOpenFolder}
             className="btn btn-ghost"
@@ -948,7 +1054,7 @@ const AppContent = () => {
             onClick={handleTogglePreview}
             className={`btn btn-pill ${previewStatus === 'running' ? 'btn-live' : 'btn-idle'}`}
           >
-            {previewStatus === 'running' ? 'Preview LIVE' : 'Lancer Preview'}
+            {previewStatus === 'running' ? 'Aperçu Actif' : 'Lancer Aperçu'}
           </button>
           <button
             onClick={toggleLeftPanel}
@@ -962,17 +1068,16 @@ const AppContent = () => {
           >
             IA
           </button>
-          <button
-            onClick={() => setWorkflowManagerOpen(true)}
-            className="btn btn-ghost"
-          >
-            Workflows
-          </button>
+          {isExpertMode && (
+            <button onClick={() => setWorkflowManagerOpen(true)} className="btn btn-ghost">
+              Workflows
+            </button>
+          )}
           <button
             onClick={() => setSettingsOpen(true)}
             className="btn btn-ghost"
           >
-            Settings
+            Paramètres
           </button>
         </div>
       </header>
@@ -1023,13 +1128,27 @@ const AppContent = () => {
                 onClick={() => setCenterView('preview')}
                 className={`tab ${centerView === 'preview' ? 'is-active' : ''}`}
               >
-                Preview
+                Aperçu
               </button>
               <button
                 onClick={() => setCenterView('terminal')}
                 className={`tab ${centerView === 'terminal' ? 'is-active' : ''}`}
               >
                 Terminal
+              </button>
+              <button
+                onClick={() => setCenterView('git')}
+                className={`tab ${centerView === 'git' ? 'is-active' : ''}`}
+                style={{ color: centerView === 'git' ? '#00c49a' : undefined }}
+              >
+                ⎇ Git
+              </button>
+              <button
+                onClick={() => setCenterView('workflows')}
+                className={`tab ${centerView === 'workflows' ? 'is-active' : ''}`}
+                style={{ color: centerView === 'workflows' ? '#a78bfa' : undefined }}
+              >
+                ⚡ Flux
               </button>
             </div>
             <div className="tab-actions">
@@ -1072,6 +1191,20 @@ const AppContent = () => {
                 showMessage={showMessage}
               />
             )}
+            {centerView === 'git' && (
+              <GitPanel
+                currentProjectPath={currentProjectPath}
+                isElectronApiAvailable={isElectronApiAvailable}
+                showMessage={showMessage}
+              />
+            )}
+            {centerView === 'workflows' && (
+              <VisualWorkflowEditor
+                currentProjectPath={currentProjectPath}
+                isElectronApiAvailable={isElectronApiAvailable}
+                showMessage={showMessage}
+              />
+            )}
           </div>
         </main>
 
@@ -1087,43 +1220,44 @@ const AppContent = () => {
             className="panel ai-panel"
             style={{ width: `${rightWidth}%` }}
           >
-              <AIChat
-                prompt={prompt}
-                conversationHistory={aiConversationHistory}
-                isLoading={isLoading}
-                currentProjectPath={currentProjectPath}
-                isElectronApiAvailable={isElectronApiAvailable}
-                onPromptChange={setPrompt}
-                onSend={generateAIResponse}
-                onSaveConversation={saveConversation}
-                aiProvider={aiProvider}
-                onProviderChange={setAiProvider}
-                thinkingMode={thinkingMode}
-                onThinkingModeChange={setThinkingMode}
-                deepContextEnabled={deepContextEnabled}
-                onDeepContextEnabledChange={setDeepContextEnabled}
-                onPasteImage={addImageMessage}
-                multiAIState={multiAIState}
-                conversations={conversations}
-                activeConversationFile={activeConversationFile}
-                isConversationLoading={isConversationLoading}
-                onNewConversation={startNewConversation}
-                onSelectConversation={loadConversationByFile}
-                onStopGeneration={stopGeneration}
-                workflows={workflows}
-                findWorkflow={findWorkflow}
-                getWorkflow={getWorkflow}
-                parseSlashCommand={parseSlashCommand}
-                activeFile={activeFile}
-                agents={availableAgents}
-                skills={availableSkills}
-                activeAgent={activeAgent}
-                activeSkill={activeSkill}
-                onActiveAgentChange={setActiveAgent}
-                onActiveSkillChange={setActiveSkill}
-              />
-            </aside>
-          )}
+            <AIChat
+              prompt={prompt}
+              conversationHistory={aiConversationHistory}
+              isLoading={isLoading}
+              currentProjectPath={currentProjectPath}
+              isElectronApiAvailable={isElectronApiAvailable}
+              onPromptChange={setPrompt}
+              onSend={generateAIResponse}
+              onSaveConversation={saveConversation}
+              aiProvider={aiProvider}
+              onProviderChange={setAiProvider}
+              thinkingMode={thinkingMode}
+              onThinkingModeChange={setThinkingMode}
+              deepContextEnabled={deepContextEnabled}
+              onDeepContextEnabledChange={setDeepContextEnabled}
+              onPasteImage={addImageMessage}
+              multiAIState={multiAIState}
+              conversations={conversations}
+              activeConversationFile={activeConversationFile}
+              isConversationLoading={isConversationLoading}
+              onNewConversation={startNewConversation}
+              onSelectConversation={loadConversationByFile}
+              onStopGeneration={stopGeneration}
+              workflows={workflows}
+              findWorkflow={findWorkflow}
+              getWorkflow={getWorkflow}
+              parseSlashCommand={parseSlashCommand}
+              activeFile={activeFile}
+              agents={availableAgents}
+              skills={availableSkills}
+              activeAgent={activeAgent}
+              activeSkill={activeSkill}
+              onActiveAgentChange={setActiveAgent}
+              onActiveSkillChange={setActiveSkill}
+              globalSkillsCount={availableSkills.filter(s => s.scope === 'global').length}
+            />
+          </aside>
+        )}
       </div>
 
       <footer className="statusbar">

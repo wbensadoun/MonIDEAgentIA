@@ -149,6 +149,86 @@ const WorkflowManager = ({
     }
   };
 
+  const [installedSkills, setInstalledSkills] = useState({ global: [], workspace: [] });
+  const [isInstalledSkillsLoading, setIsInstalledSkillsLoading] = useState(false);
+
+  const loadInstalledSkills = async () => {
+    if (!isElectronApiAvailable || !window.electronAPI?.listSkills) return;
+    setIsInstalledSkillsLoading(true);
+    try {
+      const res = await window.electronAPI.listSkills(currentProjectPath);
+      if (res?.success && Array.isArray(res.skills)) {
+        const global = res.skills.filter(s => s.scope === 'global');
+        const workspace = res.skills.filter(s => s.scope === 'workspace');
+        setInstalledSkills({ global, workspace });
+      }
+    } catch (e) {
+      console.error('Erreur chargement skills installes:', e);
+    } finally {
+      setIsInstalledSkillsLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    loadInstalledSkills();
+  }, [loadInstalledSkills]);
+
+  const getDerivedSkillName = (entry) => {
+    let nameBase = entry.label || entry.url || '';
+    if (!entry.label && entry.url) {
+      const match = entry.url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)/i);
+      if (match) {
+        let repo = match[2].replace(/\.git$/i, '');
+        nameBase = `${match[1]}-${repo}`;
+      }
+    }
+    return String(nameBase).replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, '-').trim();
+  };
+
+  const checkIsSkillInstalled = (entry, scope) => {
+    const safeName = getDerivedSkillName(entry);
+    if (scope === 'global') {
+      return installedSkills.global.some(s => s.name === safeName);
+    }
+    return installedSkills.workspace.some(s => s.name === safeName);
+  };
+
+  const installAllAgentSkills = async () => {
+    if (!isElectronApiAvailable || !window.electronAPI?.installAllSkills) return;
+    if (!Array.isArray(agentSkills) || agentSkills.length === 0) {
+      showMessage && showMessage("Veuillez d'abord charger le catalogue Agent Skills", 3000);
+      return;
+    }
+
+    if (!window.confirm(`Voulez-vous vraiment installer les ${agentSkills.length} skills du catalogue globalement ? Cela peut prendre plusieurs minutes.`)) {
+      return;
+    }
+
+    setIsInstalling(true);
+    setPacksStatus(`Installation de ${agentSkills.length} skills en cours... (Ne fermez pas cette fenetre)`);
+
+    try {
+      const res = await window.electronAPI.installAllSkills(agentSkills);
+      if (res?.success) {
+        const msg = `Installation terminee. Succes: ${res.results?.successful?.length || 0}, Echecs: ${res.results?.failed?.length || 0}`;
+        setPacksStatus(msg);
+        showMessage && showMessage(msg, 5000);
+        onLibraryUpdated && onLibraryUpdated();
+        if (activeTab === 'installed_skills') loadInstalledSkills();
+      } else {
+        const msg = res?.error ? String(res.error) : 'Erreur lors de l\'installation massive';
+        setPacksStatus(msg);
+        showMessage && showMessage(msg, 4500);
+      }
+    } catch (e) {
+      const msg = `Erreur critique installation: ${e.message}`;
+      setPacksStatus(msg);
+      showMessage && showMessage(msg, 4500);
+    } finally {
+      setIsInstalling(false);
+    }
+  };
+
   const handleCreate = (scope) => {
     setFormData({ name: '', description: '', body: '' });
     setEditingWorkflow({ scope, isNew: true });
@@ -275,6 +355,15 @@ ${formData.body}`;
             Workspace
           </button>
           <button
+            onClick={() => {
+              setActiveTab('installed_skills');
+              loadInstalledSkills();
+            }}
+            className={`workflow-tab ${activeTab === 'installed_skills' ? 'is-active' : ''}`}
+          >
+            Installed Skills
+          </button>
+          <button
             onClick={() => setActiveTab('packs')}
             className={`workflow-tab ${activeTab === 'packs' ? 'is-active' : ''}`}
           >
@@ -315,13 +404,25 @@ ${formData.body}`;
                     <div className="pack-card-title">Agent Skills (awesome-agent-skills)</div>
                     <div className="pack-card-desc">Catalogue (200+). Installe une skill en 1 clic.</div>
                   </div>
-                  <button
-                    className="btn btn-ghost"
-                    onClick={() => loadCatalog('agent-skills')}
-                    disabled={!isElectronApiAvailable || isAgentSkillsLoading}
-                  >
-                    {isAgentSkillsLoading ? 'Chargement...' : 'Charger'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => loadCatalog('agent-skills')}
+                      disabled={!isElectronApiAvailable || isAgentSkillsLoading}
+                    >
+                      {isAgentSkillsLoading ? 'Chargement...' : 'Charger'}
+                    </button>
+                    {Array.isArray(agentSkills) && agentSkills.length > 0 && (
+                      <button
+                        className="btn btn-primary"
+                        onClick={installAllAgentSkills}
+                        disabled={isInstalling || !isElectronApiAvailable}
+                        title="Installer TOUS les skills globalement"
+                      >
+                        {isInstalling ? 'Installation...' : 'Tout installer'}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="packs-controls">
@@ -345,18 +446,18 @@ ${formData.body}`;
                           <button
                             className="workflow-action run"
                             onClick={() => installSkill(entry, 'workspace')}
-                            disabled={!currentProjectPath || isInstalling}
+                            disabled={!currentProjectPath || isInstalling || checkIsSkillInstalled(entry, 'workspace')}
                             title={currentProjectPath ? 'Installer dans le projet' : 'Ouvrez un projet'}
                           >
-                            Install (WS)
+                            {checkIsSkillInstalled(entry, 'workspace') ? 'Installé (WS)' : 'Install (WS)'}
                           </button>
                           <button
                             className="workflow-action edit"
                             onClick={() => installSkill(entry, 'global')}
-                            disabled={isInstalling}
+                            disabled={isInstalling || checkIsSkillInstalled(entry, 'global')}
                             title="Installer global"
                           >
-                            Install (G)
+                            {checkIsSkillInstalled(entry, 'global') ? 'Installé (G)' : 'Install (G)'}
                           </button>
                         </div>
                       </div>
@@ -405,18 +506,18 @@ ${formData.body}`;
                           <button
                             className="workflow-action run"
                             onClick={() => installSkill(entry, 'workspace')}
-                            disabled={!currentProjectPath || isInstalling}
+                            disabled={!currentProjectPath || isInstalling || checkIsSkillInstalled(entry, 'workspace')}
                             title={currentProjectPath ? 'Installer dans le projet' : 'Ouvrez un projet'}
                           >
-                            Install (WS)
+                            {checkIsSkillInstalled(entry, 'workspace') ? 'Installé (WS)' : 'Install (WS)'}
                           </button>
                           <button
                             className="workflow-action edit"
                             onClick={() => installSkill(entry, 'global')}
-                            disabled={isInstalling}
+                            disabled={isInstalling || checkIsSkillInstalled(entry, 'global')}
                             title="Installer global"
                           >
-                            Install (G)
+                            {checkIsSkillInstalled(entry, 'global') ? 'Installé (G)' : 'Install (G)'}
                           </button>
                         </div>
                       </div>
@@ -427,7 +528,122 @@ ${formData.body}`;
             </div>
           )}
 
-          {activeTab !== 'packs' && (
+          {activeTab === 'installed_skills' && (
+            <div className="packs-root">
+              <div className="packs-intro">
+                <div className="packs-title">Skills Installés</div>
+                <div className="packs-subtitle">
+                  Gérez vos skills ici. Les skills globaux sont <strong>toujours actifs</strong> automatiquement.
+                </div>
+              </div>
+
+              {isInstalledSkillsLoading ? (
+                <div className="workflow-empty">Chargement des skills...</div>
+              ) : (
+                <>
+                  {/* GLOBAL SKILLS — AUTOMATIC */}
+                  <div className="pack-card" style={{ marginBottom: '16px' }}>
+                    <div className="pack-card-head">
+                      <div>
+                        <div className="pack-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span>🌐 Skills Globaux</span>
+                          <span style={{
+                            background: installedSkills.global.length > 0 ? '#00c49a22' : '#ff444422',
+                            color: installedSkills.global.length > 0 ? '#00c49a' : '#ff6b6b',
+                            border: `1px solid ${installedSkills.global.length > 0 ? '#00c49a55' : '#ff444455'}`,
+                            borderRadius: '20px',
+                            padding: '2px 10px',
+                            fontSize: '12px',
+                            fontWeight: 600
+                          }}>
+                            {installedSkills.global.length > 0 ? `✓ ${installedSkills.global.length} actifs` : '0 installés'}
+                          </span>
+                        </div>
+                        <div className="pack-card-desc" style={{ marginTop: '6px' }}>
+                          <span style={{ display: 'inline-block', background: '#00c49a18', border: '1px solid #00c49a44', borderRadius: '6px', padding: '4px 10px', color: '#00c49a', fontSize: '12px', marginBottom: '4px' }}>
+                            ⚡ Injection automatique — aucune action requise
+                          </span>
+                          <br />
+                          Ces skills sont injectés dans <strong>chaque requête IA</strong> (Gemini &amp; Kimi), sans que vous ayez à les sélectionner. Installez-en via l&apos;onglet <strong>Packs</strong>.
+                        </div>
+                      </div>
+                    </div>
+                    {installedSkills.global.length > 0 ? (
+                      <div className="packs-list">
+                        {installedSkills.global.map(s => (
+                          <div key={s.name} className="packs-item" style={{ borderBottom: '1px solid #333' }}>
+                            <div className="packs-item-info">
+                              <div className="packs-item-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ color: '#00c49a', fontSize: '10px' }}>●</span>
+                                {s.name}
+                                {!s.hasSkillMd && <span style={{ color: '#888', fontSize: '10px', fontStyle: 'italic' }}>(pas de SKILL.md)</span>}
+                              </div>
+                              <div className="packs-item-desc" style={{ fontSize: '11px', opacity: 0.5 }}>{s.path}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="workflow-empty" style={{ paddingTop: '10px', paddingBottom: '10px' }}>
+                        Aucun skill global. Allez dans <strong>Packs</strong> pour en installer.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* WORKSPACE SKILLS — MANUAL */}
+                  <div className="pack-card">
+                    <div className="pack-card-head">
+                      <div>
+                        <div className="pack-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span>📁 Skills Workspace</span>
+                          <span style={{
+                            background: '#ffffff11',
+                            color: '#aaa',
+                            border: '1px solid #444',
+                            borderRadius: '20px',
+                            padding: '2px 10px',
+                            fontSize: '12px',
+                            fontWeight: 600
+                          }}>
+                            {installedSkills.workspace.length} installés
+                          </span>
+                        </div>
+                        <div className="pack-card-desc" style={{ marginTop: '6px' }}>
+                          <span style={{ display: 'inline-block', background: '#ffffff0a', border: '1px solid #444', borderRadius: '6px', padding: '4px 10px', color: '#aaa', fontSize: '12px', marginBottom: '4px' }}>
+                            🖐 Sélection manuelle dans le chat IA
+                          </span>
+                          <br />
+                          Ces skills sont spécifiques au projet <code style={{ fontSize: '11px', opacity: 0.7 }}>{currentProjectPath || 'aucun projet ouvert'}</code>.
+                          Choisissez-en un via le menu déroulant <strong>Skill</strong> dans la barre du chat.
+                        </div>
+                      </div>
+                    </div>
+                    {installedSkills.workspace.length > 0 ? (
+                      <div className="packs-list">
+                        {installedSkills.workspace.map(s => (
+                          <div key={s.name} className="packs-item" style={{ borderBottom: '1px solid #333' }}>
+                            <div className="packs-item-info">
+                              <div className="packs-item-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ color: '#888', fontSize: '10px' }}>◎</span>
+                                {s.name}
+                              </div>
+                              <div className="packs-item-desc" style={{ fontSize: '11px', opacity: 0.5 }}>{s.path}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="workflow-empty" style={{ paddingTop: '10px', paddingBottom: '10px' }}>
+                        Aucun skill workspace. Installez via <strong>Packs</strong> avec le bouton &quot;Install (WS)&quot;.
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab !== 'packs' && activeTab !== 'installed_skills' && (
             isLoading ? (
               <div className="workflow-empty">Chargement...</div>
             ) : filteredWorkflows.length === 0 ? (
@@ -480,10 +696,10 @@ ${formData.body}`;
         <div className="workflow-footer">
           <button
             onClick={() => handleCreate(activeTab)}
-            disabled={activeTab === 'packs' || (activeTab === 'workspace' && !currentProjectPath)}
+            disabled={activeTab === 'packs' || activeTab === 'installed_skills' || (activeTab === 'workspace' && !currentProjectPath)}
             className="btn btn-primary workflow-create"
           >
-            Nouveau Workflow {activeTab === 'global' ? 'Global' : 'Workspace'}
+            Nouveau Workflow {activeTab === 'global' ? 'Global' : activeTab === 'workspace' ? 'Workspace' : ''}
           </button>
         </div>
       </div>

@@ -13,14 +13,15 @@ export const useAI = (
   thinkingMode = false,
   deepContextEnabled = false,
   activeAgent = null,
-  activeSkill = null
+  activeSkill = null,
+  skills = []
 ) => {
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [aiConversationHistory, setAiConversationHistory] = useState([]);
   const [previousCode, setPreviousCode] = useState('');
-  const [apiKeys, setApiKeys] = useState({ gemini: '', kimi: '' });
-  const { gemini: geminiApiKey, kimi: kimiApiKey } = apiKeys;
+  const [apiKeys, setApiKeys] = useState({ gemini: '', kimi: '', claude: '', ollamaModel: '' });
+  const { gemini: geminiApiKey, kimi: kimiApiKey, claude: claudeApiKey, ollamaModel } = apiKeys;
   const [projectScanPreset, setProjectScanPreset] = useState('safe'); // safe | full | god
   const [projectScanIncludeSecrets, setProjectScanIncludeSecrets] = useState(false);
   const [projectScanLargeFileStrategy, setProjectScanLargeFileStrategy] = useState('skip'); // skip | truncate
@@ -46,7 +47,8 @@ export const useAI = (
         if (response.success && response.settings) {
           setApiKeys({
             gemini: response.settings.geminiApiKey || '',
-            kimi: response.settings.kimiApiKey || ''
+            kimi: response.settings.kimiApiKey || '',
+            claude: response.settings.claudeApiKey || ''
           });
 
           const preset = response.settings.aiContextPreset;
@@ -73,7 +75,8 @@ export const useAI = (
 
       setApiKeys({
         gemini: next.geminiApiKey || '',
-        kimi: next.kimiApiKey || ''
+        kimi: next.kimiApiKey || '',
+        claude: next.claudeApiKey || ''
       });
 
       if (next.aiContextPreset === 'safe' || next.aiContextPreset === 'full' || next.aiContextPreset === 'god') {
@@ -841,6 +844,89 @@ CONSIGNES:
             allProjectFiles,
             kimiOptions
           );
+        } else if (aiProvider === 'ollama-multi') {
+          // Multi-Ollama: 3 agents séquentiels avec steps live
+          const multiSteps = [
+            { label: '🏗️ Architecte', status: 'pending' },
+            { label: '💻 Codeur', status: 'pending' },
+            { label: '🔍 Relecteur', status: 'pending' }
+          ];
+          setMultiAIState({ isActive: true, currentPhase: '🏗️ Architecte...', steps: multiSteps, error: null });
+
+          if (window.electronAPI?.onOllamaMultiStep) {
+            window.electronAPI.onOllamaMultiStep((data) => {
+              setMultiAIState(prev => ({
+                ...prev,
+                currentPhase: data.status === 'active' ? data.label : prev.currentPhase,
+                steps: prev.steps.map(s =>
+                  s.label === data.label ? { ...s, status: data.status } : s
+                )
+              }));
+            });
+          }
+
+          const ollamaMultiOptions = {
+            model: ollamaModel || 'qwen3-coder:30b',
+            projectPath: currentProjectPath,
+            agent: activeAgent,
+            skill: activeSkill,
+            // Pass all skills to the Architecte for distribution
+            skillsContent: Array.isArray(skills)
+              ? await Promise.all(
+                skills.map(async (s) => {
+                  try {
+                    const res = await window.electronAPI.getSkill(s.name, s.scope, currentProjectPath);
+                    return { name: s.name, content: res?.content || '' };
+                  } catch { return { name: s.name, content: '' }; }
+                })
+              )
+              : []
+          };
+          response = await window.electronAPI.getOllamaMultiCompletion(
+            updatedHistory, code, allProjectFiles, ollamaMultiOptions
+          );
+          setMultiAIState({ isActive: false, currentPhase: null, steps: [], error: null });
+
+        } else if (aiProvider === 'claude') {
+          const images = updatedHistory
+            .filter(msg => Array.isArray(msg.images))
+            .flatMap(msg =>
+              msg.images.map(img => ({
+                dataUrl: img.dataUrl,
+                mimeType: img.mimeType
+              }))
+            );
+
+          const claudeOptions = {
+            model: 'claude-4.6',
+            thinkingMode,
+            images,
+            apiKey: claudeApiKey,
+            projectPath: currentProjectPath,
+            agent: activeAgent,
+            skill: activeSkill
+          };
+
+          response = await window.electronAPI.getClaudeCompletion(
+            updatedHistory,
+            code,
+            allProjectFiles,
+            claudeOptions
+          );
+
+        } else if (aiProvider === 'ollama') {
+          const ollamaOptions = {
+            model: ollamaModel || 'qwen2.5-coder:7b',
+            projectPath: currentProjectPath,
+            agent: activeAgent,
+            skill: activeSkill
+          };
+          response = await window.electronAPI.getOllamaCompletion(
+            updatedHistory,
+            code,
+            allProjectFiles,
+            ollamaOptions
+          );
         } else {
           const geminiOptions = {
             thinkingMode,
@@ -894,8 +980,16 @@ CONSIGNES:
     projectScanLargeFileStrategy,
     geminiApiKey,
     kimiApiKey,
+    claudeApiKey,
+    ollamaModel,
     activeAgent,
     activeSkill,
+    skills,
+    AGENT_MODELS.architectEngineer,
+    AGENT_MODELS.backendDev,
+    AGENT_MODELS.chefDeProjet,
+    AGENT_MODELS.frontendDev,
+    AGENT_MODELS.scrumMaster,
     processAIFileModifications,
     autoSaveConversation,
     resetMultiAIState

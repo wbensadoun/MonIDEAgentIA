@@ -11,12 +11,6 @@ const AIChat = ({
   onPromptChange,
   onSend,
   onSaveConversation,
-  aiProvider = 'gemini',
-  onProviderChange,
-  thinkingMode = false,
-  onThinkingModeChange,
-  deepContextEnabled = false,
-  onDeepContextEnabledChange,
   onPasteImage,
   multiAIState,
   conversations = [],
@@ -26,15 +20,12 @@ const AIChat = ({
   onSelectConversation,
   onStopGeneration,
   workflows = [],
+  // eslint-disable-next-line no-unused-vars
+  findWorkflow,
   getWorkflow,
   parseSlashCommand,
   activeFile,
-  agents = [],
-  skills = [],
-  activeAgent,
-  activeSkill,
-  onActiveAgentChange,
-  onActiveSkillChange
+  globalSkillsCount = 0
 }) => {
   const conversationHistoryRef = useRef(null);
   const promptInputRef = useRef(null);
@@ -42,6 +33,27 @@ const AIChat = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showWorkflowSuggestions, setShowWorkflowSuggestions] = useState(false);
   const [workflowFilter, setWorkflowFilter] = useState('');
+  const [terminalActions, setTerminalActions] = useState([]); // AI terminal ReAct cards
+
+  // Register AI terminal IPC events
+  useEffect(() => {
+    if (!isElectronApiAvailable || !window.electronAPI?.onAITerminalAction) return;
+    window.electronAPI.onAITerminalAction((data) => {
+      setTerminalActions(prev => [...prev, { type: 'running', command: data.command, iteration: data.iteration, output: null }]);
+    });
+    window.electronAPI.onAITerminalResult((data) => {
+      setTerminalActions(prev => prev.map((a, i) =>
+        i === prev.length - 1 && a.command === data.command
+          ? { ...a, type: 'done', output: data.output }
+          : a
+      ));
+    });
+  }, [isElectronApiAvailable]);
+
+  // Clear terminal actions when loading starts
+  useEffect(() => {
+    if (isLoading) setTerminalActions([]);
+  }, [isLoading]);
 
   useEffect(() => {
     if (conversationHistoryRef.current) {
@@ -116,6 +128,12 @@ const AIChat = ({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const handleStop = () => {
+    if (typeof onStopGeneration === 'function') {
+      onStopGeneration();
     }
   };
 
@@ -227,9 +245,6 @@ const AIChat = ({
     setShowConversations(false);
   };
 
-  const activeAgentValue = activeAgent ? `${activeAgent.scope}:${activeAgent.name}` : '';
-  const activeSkillValue = activeSkill ? `${activeSkill.scope}:${activeSkill.name}` : '';
-
   const quickActions = useMemo(() => ([
     {
       id: 'explain',
@@ -271,6 +286,17 @@ const AIChat = ({
         <div className="ai-header-left">
           <div className="ai-title">Agent IA</div>
           <div className="ai-subtitle">{headerTitle}</div>
+          {globalSkillsCount > 0 && (
+            <div title={`${globalSkillsCount} skills globaux injectés automatiquement dans chaque requête IA`} style={{
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
+              background: '#00c49a18', border: '1px solid #00c49a44',
+              borderRadius: '20px', padding: '2px 8px',
+              color: '#00c49a', fontSize: '11px', fontWeight: 600,
+              cursor: 'help', marginTop: '2px'
+            }}>
+              ⚡ {globalSkillsCount} skills actifs
+            </div>
+          )}
         </div>
 
         <div className="ai-controls">
@@ -285,7 +311,7 @@ const AIChat = ({
             className="ai-control-btn"
             disabled={!currentProjectPath || !isElectronApiAvailable}
           >
-            New
+            Nouveau
           </button>
 
           <button
@@ -294,101 +320,15 @@ const AIChat = ({
             className="ai-control-btn"
             disabled={!currentProjectPath || !isElectronApiAvailable}
           >
-            History
+            Historique
           </button>
-
-          <label className="ai-toggle">
-            <input
-              type="checkbox"
-              checked={thinkingMode}
-              onChange={(e) => onThinkingModeChange && onThinkingModeChange(e.target.checked)}
-              disabled={!isElectronApiAvailable || isLoading}
-            />
-            <span>Think</span>
-          </label>
-
-          <label className="ai-toggle" title="Inclure le contexte du projet (scan)">
-            <input
-              type="checkbox"
-              checked={deepContextEnabled}
-              onChange={(e) => onDeepContextEnabledChange && onDeepContextEnabledChange(e.target.checked)}
-              disabled={!isElectronApiAvailable || isLoading}
-            />
-            <span>Ctx</span>
-          </label>
-
-          <select
-            value={activeAgentValue}
-            onChange={(e) => {
-              const next = e.target.value || '';
-              if (!next) {
-                onActiveAgentChange && onActiveAgentChange(null);
-                return;
-              }
-              const [scope, ...rest] = next.split(':');
-              const name = rest.join(':');
-              onActiveAgentChange && onActiveAgentChange({ scope, name });
-            }}
-            className="ai-select"
-            disabled={!isElectronApiAvailable || isLoading}
-            title="Agent (persona)"
-          >
-            <option value="">Agent: Default</option>
-            {Array.isArray(agents) && agents.map((agent) => (
-              <option
-                key={`${agent.scope}:${agent.name}`}
-                value={`${agent.scope}:${agent.name}`}
-              >
-                {agent.scope === 'workspace' ? 'WS' : 'G'}:{agent.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={activeSkillValue}
-            onChange={(e) => {
-              const next = e.target.value || '';
-              if (!next) {
-                onActiveSkillChange && onActiveSkillChange(null);
-                return;
-              }
-              const [scope, ...rest] = next.split(':');
-              const name = rest.join(':');
-              onActiveSkillChange && onActiveSkillChange({ scope, name });
-            }}
-            className="ai-select"
-            disabled={!isElectronApiAvailable || isLoading}
-            title="Skill (instructions)"
-          >
-            <option value="">Skill: None</option>
-            {Array.isArray(skills) && skills.map((skill) => (
-              <option
-                key={`${skill.scope}:${skill.name}`}
-                value={`${skill.scope}:${skill.name}`}
-              >
-                {skill.scope === 'workspace' ? 'WS' : 'G'}:{skill.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={aiProvider}
-            onChange={(e) => onProviderChange && onProviderChange(e.target.value)}
-            className="ai-select"
-            disabled={!isElectronApiAvailable || isLoading}
-            title="IA"
-          >
-            <option value="gemini">Gemini</option>
-            <option value="kimi">Kimi K2.5</option>
-            <option value="multi">Multi-IA (5 Agents)</option>
-          </select>
 
           <button
             onClick={onSaveConversation}
             className="ai-control-btn"
             disabled={!currentProjectPath || conversationHistory.length === 0 || !isElectronApiAvailable}
           >
-            Save
+            Sauvegarder
           </button>
         </div>
       </div>
@@ -509,11 +449,20 @@ const AIChat = ({
       </div>
 
       <button
-        onClick={isLoading ? (onStopGeneration || (() => { })) : handleSend}
+        type="button"
+        onClick={isLoading ? handleStop : handleSend}
         className={`ai-send-btn ${isLoading ? 'is-stop' : ''}`}
         disabled={!currentProjectPath || !isElectronApiAvailable}
+        aria-label={isLoading ? 'Arreter la generation de l IA' : "Envoyer a l IA"}
       >
-        {isLoading ? 'Arreter' : 'Envoyer a l IA'}
+        {isLoading ? (
+          <span className="ai-send-btn-content">
+            <span className="ai-stop-icon" aria-hidden="true" />
+            <span>Arreter</span>
+          </span>
+        ) : (
+          'Envoyer a l IA'
+        )}
       </button>
 
       <div
@@ -555,9 +504,44 @@ const AIChat = ({
           );
         })}
 
+        {/* AI Terminal Action Cards (ReAct Loop) */}
+        {isLoading && terminalActions.length > 0 && (
+          <div style={{ padding: '8px 0' }}>
+            {terminalActions.map((action, i) => (
+              <div key={i} style={{
+                background: '#0d1a0d',
+                border: `1px solid ${action.type === 'done' ? '#00c49a44' : '#f5a62344'}`,
+                borderRadius: '8px',
+                margin: '4px 12px',
+                overflow: 'hidden',
+                fontSize: '12px'
+              }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '6px 10px',
+                  background: action.type === 'done' ? '#00c49a18' : '#f5a62318',
+                  borderBottom: action.output ? '1px solid #1a1a1a' : 'none'
+                }}>
+                  <span style={{ fontSize: '14px' }}>{action.type === 'done' ? '✅' : '⏳'}</span>
+                  <span style={{ fontFamily: 'monospace', color: '#e0e0e0', flex: 1 }}>{action.command}</span>
+                  <span style={{ color: '#666', fontSize: '10px' }}>#{action.iteration}</span>
+                </div>
+                {action.output && (
+                  <pre style={{
+                    margin: 0, padding: '6px 10px',
+                    fontSize: '10px', color: '#aaa',
+                    fontFamily: 'Fira Code, monospace',
+                    whiteSpace: 'pre-wrap', maxHeight: '120px', overflowY: 'auto'
+                  }}>{action.output.substring(0, 800)}{action.output.length > 800 ? '...' : ''}</pre>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {isLoading && !multiAIState?.isActive && (
           <div className="ai-loading-inline">
-            <p>L&apos;IA reflechit...</p>
+            <p>{terminalActions.length > 0 ? `🖥️ Exécution... (${terminalActions.filter(a => a.type === 'done').length}/${terminalActions.length})` : "L'IA réfléchit..."}</p>
           </div>
         )}
       </div>

@@ -1853,6 +1853,201 @@ function generateConversationTitle(conversationHistory) {
   }
 }
 
+// ==================== AI TERMINAL AGENT LOOP ====================
+
+/**
+ * Executes a shell command on behalf of the AI agent and returns the output.
+ * Commands are run with a 30s timeout in the project directory.
+ * Output is capped at 4000 chars to stay within token limits.
+ */
+const BLOCKED_COMMANDS = /^(rm\s+-rf\s+(\/|~)|format|del\s+\/[sfq]+|shutdown|reboot|halt|rmdir\s+\/[sq]+)/i;
+const MAX_CMD_OUTPUT = 4000;
+
+const executeCommandForAI = (cmd, projectPath) => {
+  return new Promise(async (resolve) => {
+    if (!cmd || typeof cmd !== 'string' || !cmd.trim()) {
+      return resolve({ success: false, output: '[AI TERMINAL] Commande vide ignorée.' });
+    }
+    const trimmedCmd = cmd.trim();
+    if (BLOCKED_COMMANDS.test(trimmedCmd)) {
+      return resolve({ success: false, output: `[AI TERMINAL] Commande bloquée pour sécurité: ${trimmedCmd}` });
+    }
+
+    // --- Pseudo-commandes N8N Catalog ---
+    if (trimmedCmd.startsWith('n8n-search')) {
+      const query = trimmedCmd.replace('n8n-search', '').trim().toLowerCase();
+      try {
+        const url = `https://api.github.com/repos/Danitilahun/n8n-workflow-templates/contents/workflows?per_page=100`;
+        const response = await axios.get(url, {
+          headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'MonIDEAgentIA' },
+          timeout: 15000,
+        });
+        const items = response.data
+          .filter(f => f.name.endsWith('.json') && (!query || f.name.toLowerCase().includes(query)))
+          .map(f => `- ${f.name.replace('.json', '')} (URL: ${f.download_url})`);
+
+        let out = `[N8N CATALOG SEARCH RESULTS - ${items.length} trouvés]\n`;
+        out += items.length > 0 ? items.slice(0, 30).join('\n') : "Aucun workflow trouvé pour cette requête.";
+        if (items.length > 30) out += `\n...et ${items.length - 30} autres.`;
+        return resolve({ success: true, output: out });
+      } catch (e) {
+        return resolve({ success: false, output: `[N8N SEARCH ERROR] ${e.message}` });
+      }
+    }
+
+    if (trimmedCmd.startsWith('n8n-import')) {
+      const args = trimmedCmd.replace('n8n-import', '').trim().split(' ');
+      const url = args[0];
+      let saveName = args.slice(1).join(' ') || 'imported_n8n_workflow';
+      if (!saveName.endsWith('.json')) saveName += '.json';
+
+      if (!url || !url.startsWith('https://')) {
+        return resolve({ success: false, output: `[N8N IMPORT ERROR] URL invalide. Usage: n8n-import <url_du_workflow> <nom_sauvegarde>` });
+      }
+
+      try {
+        const response = await axios.get(url, { timeout: 15000 });
+        const n8nWf = response.data;
+        if (!n8nWf || !Array.isArray(n8nWf.nodes)) {
+          return resolve({ success: false, output: `[N8N IMPORT ERROR] Le fichier téléchargé ne semble pas être un workflow n8n valide.` });
+        }
+
+        const guessNodeType = (n8nType) => {
+          if (!n8nType) return 'action';
+          const t = n8nType.toLowerCase();
+          if (t.includes('trigger') || t.includes('cron') || t.includes('schedule') || t.includes('webhook') || t.includes('manual')) return 'trigger';
+          if (t.includes('openai') || t.includes('ai') || t.includes('gpt') || t.includes('llm')) return 'ai';
+          if (t.includes('if') || t.includes('switch') || t.includes('merge') || t.includes('loop') || t.includes('wait')) return 'logic';
+          if (t.includes('slack') || t.includes('email') || t.includes('telegram') || t.includes('discord') || t.includes('notification')) return 'output';
+          return 'action';
+        };
+
+        const guessNodeIcon = (n8nType) => {
+          if (!n8nType) return '⚡';
+          const t = n8nType.toLowerCase();
+          if (t.includes('trigger') || t.includes('manual')) return '▶️';
+          if (t.includes('cron') || t.includes('schedule')) return '⏰';
+          if (t.includes('webhook')) return '🌐';
+          if (t.includes('openai') || t.includes('ai') || t.includes('gpt')) return '🤖';
+          if (t.includes('http')) return '🔗';
+          if (t.includes('git')) return '📦';
+          if (t.includes('if') || t.includes('switch')) return '🔀';
+          if (t.includes('loop') || t.includes('merge')) return '🔁';
+          if (t.includes('slack') || t.includes('email') || t.includes('telegram') || t.includes('discord')) return '📢';
+          return '⚡';
+        };
+
+        const adapted = {
+          name: n8nWf.name || saveName.replace('.json', ''),
+          nodes: (n8nWf.nodes || []).map((n, i) => ({
+            id: `node_${i + 1}`,
+            type: guessNodeType(n.type),
+            label: n.name || n.type,
+            icon: guessNodeIcon(n.type),
+            position: n.position ? { x: n.position[0] || 100, y: n.position[1] || 100 } : { x: 100 + i * 220, y: 150 },
+            config: {
+              command: n.parameters?.command || '',
+              prompt: n.parameters?.text || n.parameters?.prompt || '',
+              message: n.parameters?.message || '',
+            },
+          })),
+          edges: [],
+        };
+
+        if (n8nWf.connections) {
+          Object.entries(n8nWf.connections).forEach(([sourceName, conns]) => {
+            const sourceNode = adapted.nodes.find(n => n.label === sourceName);
+            if (!sourceNode) return;
+            Object.values(conns).forEach(outputs => {
+              outputs.forEach(outputArr => {
+                outputArr.forEach(conn => {
+                  const targetNode = adapted.nodes.find(n => n.label === conn.node);
+                  if (targetNode) {
+                    adapted.edges.push({ source: sourceNode.id, target: targetNode.id });
+                  }
+                });
+              });
+            });
+          });
+        }
+
+        const workflowsDir = path.join(projectPath || process.cwd(), '.vibe-workflows');
+        await fs.mkdir(workflowsDir, { recursive: true });
+        const filePath = path.join(workflowsDir, saveName);
+        await fs.writeFile(filePath, JSON.stringify(adapted, null, 2), 'utf-8');
+
+        return resolve({ success: true, output: `[N8N IMPORT SUCCESS] Workflow n8n adapté et sauvegardé sous : ${filePath}` });
+      } catch (e) {
+        return resolve({ success: false, output: `[N8N IMPORT ERROR] ${e.message}` });
+      }
+    }
+
+    console.log(`[AI Terminal] Exécution: ${trimmedCmd}`);
+    const child = spawn(trimmedCmd, [], {
+      shell: true,
+      cwd: projectPath || process.cwd(),
+      timeout: 30000
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout?.on('data', (d) => { stdout += d.toString(); });
+    child.stderr?.on('data', (d) => { stderr += d.toString(); });
+
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch (e) { /* ignore */ }
+      const output = `[AI TERMINAL - TIMEOUT après 30s]\nstdout: ${stdout.slice(0, 2000)}\nstderr: ${stderr.slice(0, 2000)}`;
+      resolve({ success: false, output });
+    }, 30000);
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      let output = '';
+      if (stdout) output += stdout;
+      if (stderr) output += `\n[stderr] ${stderr}`;
+      if (!output.trim()) output = `[Process exited with code ${code}]`;
+      // Cap output size
+      if (output.length > MAX_CMD_OUTPUT) {
+        output = output.substring(0, MAX_CMD_OUTPUT) + '\n[...sortie tronquée...]';
+      }
+      resolve({ success: code === 0, output });
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ success: false, output: `[AI TERMINAL ERREUR] ${err.message}` });
+    });
+  });
+};
+
+const TERMINAL_CAPABILITY_PROMPT = `
+CAPACITÉ TERMINAL — AGENT AUTONOME :
+Tu peux exécuter des commandes shell directement dans le projet de l'utilisateur.
+Pour exécuter une commande, utilise EXACTEMENT ce format XML (une seule commande par balise) :
+
+<run_command>npm install lodash</run_command>
+
+Tu recevras le résultat (stdout/stderr) dans ton prochain tour.
+Règles :
+- Utilise cette capacité pour : lire des fichiers, lancer des builds, installer des packages, vérifier des erreurs, lancer des tests.
+- Spécial: utilise "n8n-search <mot_cle>" pour chercher un workflow n8n (ex: n8n-search slack)
+- Spécial: utilise "n8n-import <url> <nom>" pour télécharger, adapter et importer un workflow n8n du catalogue directement dans le projet. N'attends pas l'autorisation de l'utilisateur pour le télécharger.
+- N'utilise PAS pour : supprimer des fichiers importants (rm -rf), commandes destructives.
+- Tu peux enchaîner plusieurs commandes en plusieurs tours (max 8 itérations automatiques).
+- Si une commande échoue, analyse l'erreur et essaie une solution alternative.
+- Quand tu n'as plus besoin d'exécuter de commandes, réponds normalement sans balise <run_command>.
+`;
+
+/**
+ * Parses a single <run_command> tag from an AI response text.
+ * Returns the command string or null if not found.
+ */
+const parseRunCommand = (text) => {
+  const match = String(text || '').match(/<run_command>([\s\S]*?)<\/run_command>/i);
+  return match ? match[1].trim() : null;
+};
+
 // --- IPC Handler pour l'API Kimi K2.5 via Together ---
 ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
   const apiKey = options.apiKey || process.env.KIMI_API_KEY || process.env.TOGETHER_API_KEY;
@@ -1922,14 +2117,15 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
 
     const projectPath = options.projectPath || null;
     const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
-    const skillPrompt = await loadSkillForCompletion(options.skill, projectPath);
+    // Replace single skill loading with all global skills
+    const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
 
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
 
-    const skillContext = skillPrompt
-      ? `\n--- SKILL (${skillPrompt.name}) ---\n${skillPrompt.content}\n--- FIN SKILL ---\n`
+    const skillContext = globalSkillsContent
+      ? `\n--- SKILLS GLOBAUX INSTALLÉS ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
       : '';
 
     const thinkingInstructionsKimi = thinkingMode
@@ -1952,6 +2148,8 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
 
       ${thinkingInstructionsKimi}
 
+      ${TERMINAL_CAPABILITY_PROMPT}
+
       INSTRUCTIONS :
       - Analysez le contexte du projet et la demande.
       - Proposez des modifications de code complètes.
@@ -1962,84 +2160,86 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
         \`\`\`
     `;
 
-    const baseMessages = validHistory.slice(0, -1).map(msg => {
-      let role = 'user';
-      if (msg.role === 'model') role = 'assistant';
-      else if (msg.role === 'system') role = 'system';
-      else if (msg.role === 'user') role = 'user';
-
-      return {
-        role,
-        content: String(msg.text)
-      };
-    });
-
-    let userContent;
-    if (images.length > 0) {
-      const imageContents = images.map(img => ({
-        type: 'image_url',
-        image_url: {
-          url: img.dataUrl || img.url || ''
-        }
-      }));
-
-      userContent = [
-        { type: 'text', text: prompt },
-        ...imageContents
-      ];
-    } else {
-      userContent = prompt;
-    }
-
-    const messages = [
-      ...baseMessages,
-      {
-        role: 'user',
-        content: userContent
+    const buildMessages = (baseHistory, userPrompt) => {
+      const base = baseHistory.slice(0, -1).map(msg => {
+        let role = 'user';
+        if (msg.role === 'model') role = 'assistant';
+        else if (msg.role === 'system') role = 'system';
+        else if (msg.role === 'user') role = 'user';
+        return { role, content: String(msg.text) };
+      });
+      let userContent;
+      if (images.length > 0) {
+        const imageContents = images.map(img => ({ type: 'image_url', image_url: { url: img.dataUrl || img.url || '' } }));
+        userContent = [{ type: 'text', text: userPrompt }, ...imageContents];
+      } else {
+        userContent = userPrompt;
       }
-    ];
+      return [...base, { role: 'user', content: userContent }];
+    };
 
-    const url = 'https://api.together.xyz/v1/chat/completions';
-    console.log('[Main][Kimi] Envoi de la requête à Together avec clé Kimi...');
-
-    try {
+    const kimiUrl = 'https://api.together.xyz/v1/chat/completions';
+    const kimiCallWithMessages = async (msgs) => {
       const requestBody = {
-        model: model,
-        messages: messages,
+        model,
+        messages: msgs,
         max_tokens: options.maxTokens || 16384,
         temperature: options.temperature || 0.7,
       };
-
-      const response = await axios.post(url, requestBody, {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
+      const resp = await axios.post(kimiUrl, requestBody, {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         timeout: 180000,
       });
-
-      if (
-        !response.data ||
-        !response.data.choices ||
-        !response.data.choices[0] ||
-        !response.data.choices[0].message ||
-        response.data.choices[0].message.content === undefined
-      ) {
+      if (!resp.data?.choices?.[0]?.message?.content === undefined) {
         throw new Error("Réponse de l'API Kimi mal formatée");
       }
+      return resp.data.choices[0].message.content;
+    };
 
-      const aiText = response.data.choices[0].message.content;
-      return { success: true, text: aiText };
-    } catch (error) {
-      console.error("[Main][Kimi] Erreur lors de l'appel à l'API Together:", error.response ? error.response.data : error.message);
-      if (error.response) {
-        console.error('[Main][Kimi] Statut:', error.response.status);
-        console.error('[Main][Kimi] Données:', error.response.data);
-      } else if (error.request) {
-        console.error('[Main][Kimi] Requête sans réponse:', error.request);
+    console.log('[Main][Kimi] Envoi de la requête à Together avec clé Kimi...');
+
+    try {
+      // ReAct agent loop — max 8 iterations
+      const projectPath = options.projectPath || null;
+      let messages = buildMessages(validHistory, prompt);
+      let fullTranscript = '';
+      const MAX_ITERATIONS = 8;
+
+      for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+        const aiText = await kimiCallWithMessages(messages);
+        fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
+
+        const cmd = parseRunCommand(aiText);
+        if (!cmd) {
+          // No command → done
+          return { success: true, text: fullTranscript, terminalActions: iter };
+        }
+
+        // Emit terminal action event to renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
+        }
+
+        const { output } = await executeCommandForAI(cmd, projectPath);
+
+        // Feed result back as new user message
+        messages = [
+          ...messages,
+          { role: 'assistant', content: aiText },
+          { role: 'user', content: `[RÉSULTAT TERMINAL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans balise <run_command>.` }
+        ];
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1 });
+        }
       }
 
-      dialog.showErrorBox('Erreur API Kimi', `Erreur lors de l'appel à l'API Kimi: ${error.message}. Voir la console pour plus de détails.`);
+      // Reached max iterations — return what we have
+      return { success: true, text: fullTranscript, terminalActions: MAX_ITERATIONS };
+
+    } catch (error) {
+      console.error("[Main][Kimi] Erreur lors de l'appel à l'API Together:", error.response ? error.response.data : error.message);
+      dialog.showErrorBox('Erreur API Kimi', `Erreur lors de l'appel à l'API Kimi: ${error.message}.`);
       return { success: false, error: error.message };
     }
   } catch (error) {
@@ -2214,14 +2414,15 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
 
     const projectPath = options.projectPath || null;
     const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
-    const skillPrompt = await loadSkillForCompletion(options.skill, projectPath);
+    // Replace single skill loading with all global skills
+    const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
 
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
 
-    const skillContext = skillPrompt
-      ? `\n--- SKILL (${skillPrompt.name}) ---\n${skillPrompt.content}\n--- FIN SKILL ---\n`
+    const skillContext = globalSkillsContent
+      ? `\n--- SKILLS GLOBAUX INSTALLÉS ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
       : '';
 
     const thinkingInstructionsGemini = thinkingMode
@@ -2248,6 +2449,8 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       ${lastMessage.parts[0].text}
 
       ${thinkingInstructionsGemini}
+
+      ${TERMINAL_CAPABILITY_PROMPT}
 
       INSTRUCTIONS POUR AGIR COMME UN AGENT AUTONOME :
       
@@ -2309,41 +2512,61 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       ...inlineImageParts
     ];
 
-    const contents = [
+    const buildGeminiContents = (extraMessages = []) => [
       ...formattedHistory.slice(0, -1),
-      { role: 'user', parts: finalUserParts }
+      { role: 'user', parts: finalUserParts },
+      ...extraMessages
     ];
+
     console.log('[Main] Envoi de la requête à Gemini...');
 
     try {
-      const response = await axios.post(url, { contents });
-      console.log('[Main] Réponse de Gemini reçue.');
+      const geminiCallWithContents = async (contents) => {
+        const resp = await axios.post(url, { contents });
+        if (!resp.data?.candidates?.[0]?.content?.parts?.[0]?.text === undefined) {
+          throw new Error("Réponse de l'API Gemini mal formatée");
+        }
+        return resp.data.candidates[0].content.parts[0].text;
+      };
 
-      // Vérifier que la réponse est bien formatée
-      if (!response.data || !response.data.candidates || !response.data.candidates[0] ||
-        !response.data.candidates[0].content || !response.data.candidates[0].content.parts ||
-        !response.data.candidates[0].content.parts[0] || response.data.candidates[0].content.parts[0].text === undefined) {
-        throw new Error('Réponse de l\'API Gemini mal formatée');
+      // ReAct agent loop — max 8 iterations
+      const projectPath = options.projectPath || null;
+      let contents = buildGeminiContents();
+      let fullTranscript = '';
+      const MAX_ITERATIONS = 8;
+
+      for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+        const aiText = await geminiCallWithContents(contents);
+        fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
+
+        const cmd = parseRunCommand(aiText);
+        if (!cmd) {
+          return { success: true, text: fullTranscript, terminalActions: iter };
+        }
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
+        }
+
+        const { output } = await executeCommandForAI(cmd, projectPath);
+
+        // Append model response and new tool result
+        contents = [
+          ...contents,
+          { role: 'model', parts: [{ text: aiText }] },
+          { role: 'user', parts: [{ text: `[RÉSULTAT TERMINAL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans balise <run_command>.` }] }
+        ];
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1 });
+        }
       }
 
-      const aiText = response.data.candidates[0].content.parts[0].text;
-      return { success: true, text: aiText };
+      return { success: true, text: fullTranscript, terminalActions: MAX_ITERATIONS };
+
     } catch (error) {
       console.error("[Main] Erreur lors de l'appel à l'API Gemini:", error.response ? error.response.data : error.message);
-      // Log plus détaillé de l'erreur Axios si disponible
-      if (error.response) {
-        console.error("[Main] Statut de l'erreur Axios:", error.response.status);
-        console.error("[Main] Données de l'erreur Axios:", error.response.data);
-        console.error("[Main] En-têtes de l'erreur Axios:", error.response.headers);
-      } else if (error.request) {
-        // La requête a été faite mais aucune réponse n'a été reçue
-        console.error("[Main] Requête Axios sans réponse:", error.request);
-      } else {
-        // Quelque chose s'est passé lors de la configuration de la requête
-        console.error("[Main] Erreur de configuration Axios:", error.message);
-      }
-
-      dialog.showErrorBox('Erreur API Gemini', `Erreur lors de l'appel à l'API Gemini: ${error.message}. Voir la console pour plus de détails.`);
+      dialog.showErrorBox('Erreur API Gemini', `Erreur lors de l'appel à l'API Gemini: ${error.message}.`);
       return { success: false, error: error.message };
     }
   } catch (error) {
@@ -2394,6 +2617,207 @@ const parseWorkflowFile = (content) => {
 
   return { description, body };
 };
+
+// ==================== CLAUDE API INTEGRATION ====================
+const Anthropic = require('@anthropic-ai/sdk');
+
+ipcMain.handle('get-claude-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
+  const apiKey = options.apiKey || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
+  const modelFromEnv = process.env.CLAUDE_MODEL;
+  const model = options.model || modelFromEnv || 'claude-4.6';
+  const thinkingMode = !!options.thinkingMode;
+  const images = Array.isArray(options.images) ? options.images : [];
+
+  console.log(`[Main] Appel Claude (${model}): Vérification de la clé API...`);
+
+  if (!apiKey) {
+    const errorMsg = "La clé API Claude n'est pas configurée. Veuillez définir CLAUDE_API_KEY dans votre environnement ou les paramètres.";
+    console.error('[Main][Claude] Erreur:', errorMsg);
+    dialog.showErrorBox('Erreur API Claude', errorMsg);
+    return { success: false, error: errorMsg };
+  }
+
+  if (!history || !Array.isArray(history) || history.length === 0) {
+    const errorMsg = "Aucun historique de conversation n'a été fourni pour Claude.";
+    console.error('[Main][Claude] Erreur:', errorMsg);
+    return { success: false, error: errorMsg };
+  }
+
+  try {
+    const validHistory = history.filter(msg =>
+      msg && typeof msg === 'object' && msg.text !== undefined
+    );
+
+    if (validHistory.length === 0) {
+      return { success: false, error: "Aucun message valide trouvé." };
+    }
+
+    let projectContext = '';
+    if (allProjectFiles && allProjectFiles.files) {
+      projectContext = '\n--- CONTEXTE COMPLET DU PROJET ---\n';
+      const fileEntries = Object.entries(allProjectFiles.files);
+      const maxFiles = 20;
+      const filesToShow = pickFilesForContext(allProjectFiles.files, maxFiles);
+
+      for (const [filePath, fileData] of filesToShow) {
+        projectContext += `\n=== FICHIER: ${filePath} ===\n`;
+        if (fileData.content && !String(fileData.content).startsWith('[')) {
+          const maxContentLength = 2000;
+          const content = fileData.content.length > maxContentLength
+            ? fileData.content.substring(0, maxContentLength) + '\n[...CONTENU TRONQUÉ...]'
+            : fileData.content;
+          projectContext += content;
+        } else {
+          projectContext += fileData.content || '[Contenu non disponible]';
+        }
+        projectContext += '\n=== FIN FICHIER ===\n';
+      }
+      if (fileEntries.length > maxFiles) {
+        projectContext += `\n[...ET ${fileEntries.length - maxFiles} AUTRES FICHIERS]\n`;
+      }
+      projectContext += '--- FIN CONTEXTE PROJET ---\n';
+    }
+
+    const projectPath = options.projectPath || null;
+    const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
+    const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
+
+    const agentContext = agentPrompt
+      ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
+      : '';
+
+    const skillContext = globalSkillsContent
+      ? `\n--- SKILLS GLOBAUX INSTALLÉS ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
+      : '';
+
+    const thinkingInstructions = thinkingMode
+      ? `\nMODE THINKING ACTIVÉ : Détaillez explicitement votre raisonnement étape par étape dans des balises <thinking> avant de proposer le code final.\n`
+      : '';
+
+    const systemPrompt = `
+      Vous êtes un assistant de développement expert et autonome, comme Cascade AI.
+      ${agentContext}
+      ${skillContext}
+      ${projectContext}
+      
+      FICHIER ACTUELLEMENT OUVERT :
+      --- CODE ACTUEL ---
+      ${currentCode || 'Aucun code fourni'}
+      ---
+      
+      ${thinkingInstructions}
+      ${TERMINAL_CAPABILITY_PROMPT}
+      
+      INSTRUCTIONS POUR AGIR COMME UN AGENT AUTONOME :
+      1. **ANALYSE COMPLÈTE** : Analysez le contexte complet du projet
+      2. **MODIFICATIONS PRÉCISES** : Pour chaque fichier à modifier, utilisez ce format strict :
+         **FICHIER: nom_du_fichier.ext**
+         \`\`\`langage
+         // Code complet du fichier avec vos modifications
+         \`\`\`
+      3. **ACTIONS AUTONOMES** : Utilisez <run_command> pour interagir avec le terminal si besoin.
+    `;
+
+    const anthropic = new Anthropic({ apiKey });
+
+    // Convert history to Anthropic format
+    const messages = validHistory.map((msg, index) => {
+      // Anthropic requires alternating user/assistant messages, starting with user.
+      // For simplicity in this implementation, we map roles directly but keep in mind consecutive roles might need merging in production
+      let role = msg.role === 'model' ? 'assistant' : 'user';
+      let content = [];
+
+      content.push({ type: 'text', text: String(msg.text) });
+
+      if (msg.images && Array.isArray(msg.images)) {
+        msg.images.forEach(img => {
+          if (!img || !img.dataUrl) return;
+          const match = String(img.dataUrl).match(/^data:(image\/[^;]+);base64,(.+)$/);
+          if (match) {
+            content.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: match[1],
+                data: match[2],
+              }
+            });
+          }
+        });
+      }
+      return { role, content };
+    });
+
+    // Enforce role alternating for Anthropic API
+    let mergedMessages = [];
+    for (const msg of messages) {
+      if (mergedMessages.length > 0 && mergedMessages[mergedMessages.length - 1].role === msg.role) {
+        // Merge content
+        mergedMessages[mergedMessages.length - 1].content = [
+          ...mergedMessages[mergedMessages.length - 1].content,
+          { type: 'text', text: '\n\n' },
+          ...msg.content
+        ];
+      } else {
+        mergedMessages.push(msg);
+      }
+    }
+
+    // Anthropic API requires first message to be role 'user'
+    if (mergedMessages.length > 0 && mergedMessages[0].role !== 'user') {
+      mergedMessages.unshift({ role: 'user', content: [{ type: 'text', text: '(Contexte initial)' }] });
+    }
+
+    console.log('[Main][Claude] Envoi de la requête à Anthropic...');
+
+    const claudeCallWithMessages = async (msgs) => {
+      const response = await anthropic.messages.create({
+        model: model,
+        max_tokens: options.maxTokens || 4096,
+        temperature: options.temperature || 0.7,
+        system: systemPrompt,
+        messages: msgs
+      });
+      return response.content[0].text;
+    };
+
+    const MAX_ITERATIONS = 8;
+    let fullTranscript = '';
+    let currentMessages = [...mergedMessages];
+
+    for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+      const aiText = await claudeCallWithMessages(currentMessages);
+      fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
+
+      const cmd = parseRunCommand(aiText);
+      if (!cmd) {
+        return { success: true, text: fullTranscript, terminalActions: iter };
+      }
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
+      }
+
+      const { output } = await executeCommandForAI(cmd, projectPath);
+
+      currentMessages = [
+        ...currentMessages,
+        { role: 'assistant', content: [{ type: 'text', text: aiText }] },
+        { role: 'user', content: [{ type: 'text', text: `[RÉSULTAT TERMINAL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans balise <run_command>.` }] }
+      ];
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1 });
+      }
+    }
+
+    return { success: true, text: fullTranscript, terminalActions: MAX_ITERATIONS };
+
+  } catch (error) {
+    console.error("[Main][Claude] Erreur API:", error);
+    return { success: false, error: error.message };
+  }
+});
 
 // List all workflows (global + workspace)
 ipcMain.handle('list-workflows', async (event, projectPath) => {
@@ -2528,6 +2952,117 @@ ipcMain.handle('delete-workflow', async (event, name, scope, projectPath) => {
   }
 });
 
+// ==================== VISUAL WORKFLOW SYSTEM ====================
+
+const getVisualWorkflowsDir = (projectPath) => {
+  return path.join(projectPath, '.vibe-workflows');
+};
+
+// List all visual workflows in the project
+ipcMain.handle('list-visual-workflows', async (event, projectPath) => {
+  try {
+    if (!projectPath) return { success: false, error: 'No project path' };
+    const dir = getVisualWorkflowsDir(projectPath);
+    try {
+      await fs.mkdir(dir, { recursive: true });
+    } catch (e) { /* ok */ }
+
+    const files = await fs.readdir(dir);
+    const workflows = [];
+    for (const file of files) {
+      if (file.endsWith('.json')) {
+        try {
+          const content = await fs.readFile(path.join(dir, file), 'utf-8');
+          const wf = JSON.parse(content);
+          workflows.push({
+            filename: file,
+            name: wf.name || file.replace('.json', ''),
+            nodeCount: (wf.nodes || []).length,
+            edgeCount: (wf.edges || []).length,
+            updatedAt: wf.updatedAt || null,
+          });
+        } catch (e) {
+          // skip invalid JSON
+        }
+      }
+    }
+    return { success: true, workflows };
+  } catch (error) {
+    console.error('[VisualWorkflows] Error listing:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Save a visual workflow
+ipcMain.handle('save-visual-workflow', async (event, projectPath, workflowJson) => {
+  try {
+    if (!projectPath) return { success: false, error: 'No project path' };
+    const dir = getVisualWorkflowsDir(projectPath);
+    await fs.mkdir(dir, { recursive: true });
+
+    const wf = typeof workflowJson === 'string' ? JSON.parse(workflowJson) : workflowJson;
+    wf.updatedAt = new Date().toISOString();
+
+    const safeName = (wf.name || 'workflow').replace(/[<>:"/\\|?*]/g, '_').trim();
+    const filePath = path.join(dir, `${safeName}.json`);
+    await fs.writeFile(filePath, JSON.stringify(wf, null, 2), 'utf-8');
+
+    console.log(`[VisualWorkflows] Saved: ${filePath}`);
+    return { success: true, path: filePath, name: safeName };
+  } catch (error) {
+    console.error('[VisualWorkflows] Error saving:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Delete a visual workflow
+ipcMain.handle('delete-visual-workflow', async (event, projectPath, filename) => {
+  try {
+    if (!projectPath || !filename) return { success: false, error: 'Missing params' };
+    const filePath = path.join(getVisualWorkflowsDir(projectPath), filename);
+    await fs.unlink(filePath);
+    console.log(`[VisualWorkflows] Deleted: ${filePath}`);
+    return { success: true };
+  } catch (error) {
+    console.error('[VisualWorkflows] Error deleting:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Fetch n8n community workflow catalog from GitHub
+ipcMain.handle('fetch-n8n-catalog', async (event, page = 1, perPage = 50) => {
+  try {
+    const url = `https://api.github.com/repos/Danitilahun/n8n-workflow-templates/contents/workflows?per_page=${perPage}&page=${page}`;
+    const response = await axios.get(url, {
+      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'MonIDEAgentIA' },
+      timeout: 15000,
+    });
+    const items = response.data
+      .filter(f => f.name.endsWith('.json'))
+      .map(f => ({
+        name: f.name.replace('.json', '').replace(/_/g, ' '),
+        filename: f.name,
+        downloadUrl: f.download_url,
+        size: f.size,
+      }));
+    return { success: true, items, total: items.length };
+  } catch (error) {
+    console.error('[n8nCatalog] Error fetching:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+// Download a single n8n workflow from GitHub
+ipcMain.handle('download-n8n-workflow', async (event, downloadUrl) => {
+  try {
+    const response = await axios.get(downloadUrl, { timeout: 15000 });
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('[n8nCatalog] Error downloading:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
 // ==================== AGENTS & SKILLS LIBRARY ====================
 
 const getGlobalAgentsDir = () => path.join(app.getPath('userData'), 'agents');
@@ -2648,6 +3183,34 @@ const loadSkillForCompletion = async (skillSpec, projectPath) => {
     };
   } catch {
     return null;
+  }
+};
+
+const loadAllGlobalSkillsForCompletion = async () => {
+  try {
+    const globalDir = getGlobalSkillsDir();
+    if (!fsSync.existsSync(globalDir)) return '';
+
+    const entries = await fs.readdir(globalDir, { withFileTypes: true });
+    let combinedContent = '';
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const skillName = entry.name;
+      const skillFile = path.join(globalDir, skillName, 'SKILL.md');
+
+      if (fsSync.existsSync(skillFile)) {
+        const content = await fs.readFile(skillFile, 'utf-8');
+        // We truncate each skill to prevent context blowup, but keep the limit generous
+        const truncated = truncateTextForPrompt(content, 16000, '\n[...TRUNCATED SKILL...]');
+        combinedContent += `\n\n--- SKILL GLOBAL: ${skillName} ---\n${truncated}\n--- FIN SKILL GLOBAL ---`;
+      }
+    }
+
+    return combinedContent;
+  } catch (error) {
+    console.error('[Skills] Erreur chargement all global skills:', error);
+    return '';
   }
 };
 
@@ -3021,93 +3584,128 @@ const pickBestSkillRepoPath = (repoRoot, skillMdFiles) => {
   return candidates[0]?.posix ?? null;
 };
 
-ipcMain.handle('install-skill-from-url', async (event, url, scope, projectPath, options = {}) => {
+const installSkillInternal = async (url, scope, projectPath, options = {}) => {
+  const parsed = parseGitHubTreeUrl(url);
+  if (!parsed) {
+    return { success: false, error: 'URL GitHub non supportee' };
+  }
+
+  const safeOptions = options && typeof options === 'object' ? options : {};
+  const overwrite = !!safeOptions.overwrite;
+
+  let destBaseDir;
+  if (scope === 'global') destBaseDir = getGlobalSkillsDir();
+  else if (scope === 'workspace' && projectPath) destBaseDir = getWorkspaceSkillsDir(projectPath);
+  else return { success: false, error: 'Invalid scope or missing project path' };
+
+  await fs.mkdir(destBaseDir, { recursive: true });
+
+  const tempRoot = path.join(app.getPath('userData'), 'tmp');
+  const tempDir = path.join(tempRoot, `skill-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  ensureEmptyDirSync(tempDir);
+
   try {
-    const parsed = parseGitHubTreeUrl(url);
-    if (!parsed) {
-      return { success: false, error: 'URL GitHub non supportee' };
-    }
+    let repoPathToInstall = String(parsed.repoPath || '');
+    const wantsSparse = !!parsed.ref && !!repoPathToInstall;
 
-    const safeOptions = options && typeof options === 'object' ? options : {};
-    const overwrite = !!safeOptions.overwrite;
+    const cloneRepo = async ({ sparse }) => {
+      const args = ['clone', '--depth', '1'];
+      if (sparse) args.push('--filter=blob:none', '--sparse');
+      if (parsed.ref) args.push('--branch', parsed.ref);
+      args.push(parsed.repoUrl, tempDir);
+      await runGit(args, tempRoot);
 
-    let destBaseDir;
-    if (scope === 'global') destBaseDir = getGlobalSkillsDir();
-    else if (scope === 'workspace' && projectPath) destBaseDir = getWorkspaceSkillsDir(projectPath);
-    else return { success: false, error: 'Invalid scope or missing project path' };
-
-    await fs.mkdir(destBaseDir, { recursive: true });
-
-    const tempRoot = path.join(app.getPath('userData'), 'tmp');
-    const tempDir = path.join(tempRoot, `skill-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-    ensureEmptyDirSync(tempDir);
+      if (sparse) {
+        await runGit(['-C', tempDir, 'sparse-checkout', 'set', repoPathToInstall], tempRoot);
+      }
+    };
 
     try {
-      let repoPathToInstall = String(parsed.repoPath || '');
-      const wantsSparse = !!parsed.ref && !!repoPathToInstall;
-
-      const cloneRepo = async ({ sparse }) => {
-        const args = ['clone', '--depth', '1'];
-        if (sparse) args.push('--filter=blob:none', '--sparse');
-        if (parsed.ref) args.push('--branch', parsed.ref);
-        args.push(parsed.repoUrl, tempDir);
-        await runGit(args, tempRoot);
-
-        if (sparse) {
-          await runGit(['-C', tempDir, 'sparse-checkout', 'set', repoPathToInstall], tempRoot);
-        }
-      };
-
-      try {
-        await cloneRepo({ sparse: wantsSparse });
-      } catch (cloneError) {
-        if (!wantsSparse) throw cloneError;
-        ensureEmptyDirSync(tempDir);
-        await cloneRepo({ sparse: false });
-      }
-
-      if (!repoPathToInstall) {
-        const skillMdFiles = await collectSkillMdFilesRecursive(tempDir);
-        const bestRepoPath = pickBestSkillRepoPath(tempDir, skillMdFiles);
-        if (bestRepoPath === null) {
-          return { success: false, error: 'Aucun SKILL.md trouve dans ce repo (utilisez un lien /tree/... vers une skill)' };
-        }
-        repoPathToInstall = bestRepoPath || '';
-      }
-
-      const derivedNameBase =
-        safeOptions.name ||
-        (repoPathToInstall ? path.basename(repoPathToInstall) : `${parsed.owner}-${parsed.repo}`);
-      const derivedName = safeFileBase(derivedNameBase);
-      if (!derivedName) return { success: false, error: 'Nom skill invalide' };
-
-      const destDir = path.join(destBaseDir, derivedName);
-      const fromDir = repoPathToInstall
-        ? path.join(tempDir, ...String(repoPathToInstall).split('/'))
-        : tempDir;
-      copyDirSync(fromDir, destDir, overwrite);
-
-      const skillMd = path.join(destDir, 'SKILL.md');
-      const hasSkillMd = fsSync.existsSync(skillMd);
-
-      return {
-        success: true,
-        name: derivedName,
-        scope,
-        path: destDir,
-        hasSkillMd
-      };
-    } finally {
-      try {
-        fsSync.rmSync(tempDir, { recursive: true, force: true });
-      } catch {
-        // ignore
-      }
+      await cloneRepo({ sparse: wantsSparse });
+    } catch (cloneError) {
+      if (!wantsSparse) throw cloneError;
+      ensureEmptyDirSync(tempDir);
+      await cloneRepo({ sparse: false });
     }
+
+    if (!repoPathToInstall) {
+      const skillMdFiles = await collectSkillMdFilesRecursive(tempDir);
+      const bestRepoPath = pickBestSkillRepoPath(tempDir, skillMdFiles);
+      if (bestRepoPath === null) {
+        return { success: false, error: 'Aucun SKILL.md trouve dans ce repo (utilisez un lien /tree/... vers une skill)' };
+      }
+      repoPathToInstall = bestRepoPath || '';
+    }
+
+    const derivedNameBase =
+      safeOptions.name ||
+      (repoPathToInstall ? path.basename(repoPathToInstall) : `${parsed.owner}-${parsed.repo}`);
+    const derivedName = safeFileBase(derivedNameBase);
+    if (!derivedName) return { success: false, error: 'Nom skill invalide' };
+
+    const destDir = path.join(destBaseDir, derivedName);
+    const fromDir = repoPathToInstall
+      ? path.join(tempDir, ...String(repoPathToInstall).split('/'))
+      : tempDir;
+
+    // Copy the skill directory
+    copyDirSync(fromDir, destDir, overwrite);
+
+    const skillMd = path.join(destDir, 'SKILL.md');
+    const hasSkillMd = fsSync.existsSync(skillMd);
+
+    return {
+      success: true,
+      name: derivedName,
+      scope,
+      path: destDir,
+      hasSkillMd
+    };
+  } finally {
+    try {
+      fsSync.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  }
+};
+
+ipcMain.handle('install-skill-from-url', async (event, url, scope, projectPath, options = {}) => {
+  try {
+    return await installSkillInternal(url, scope, projectPath, options);
   } catch (error) {
     console.error('[Skills] Error installing skill:', error);
     return { success: false, error: error.message };
   }
+});
+
+ipcMain.handle('install-all-skills', async (event, catalogEntries) => {
+  if (!Array.isArray(catalogEntries)) {
+    return { success: false, error: 'Invalid catalog entries format' };
+  }
+
+  const results = {
+    successful: [],
+    failed: []
+  };
+
+  // Process sequentially to avoid overwhelming github/disk
+  for (const entry of catalogEntries) {
+    if (!entry || !entry.url) continue;
+    try {
+      // Install all globally
+      const res = await installSkillInternal(entry.url, 'global', null, { overwrite: true, name: entry.label });
+      if (res.success) {
+        results.successful.push(entry.label || entry.url);
+      } else {
+        results.failed.push({ skill: entry.label || entry.url, error: res.error });
+      }
+    } catch (e) {
+      results.failed.push({ skill: entry.label || entry.url, error: e.message });
+    }
+  }
+
+  return { success: true, results };
 });
 
 const voltCatalogCache = new Map();
@@ -3264,3 +3862,364 @@ ipcMain.handle('sync-voltagent-subagents', async (event, options = {}) => {
     return { success: false, error: error.message };
   }
 });
+
+// ==================== GIT INTEGRATION ====================
+
+/**
+ * Helper: run a git command in a given directory and return stdout.
+ * Reuses the existing runGit helper (defined earlier in the file).
+ */
+
+ipcMain.handle('git-status', async (event, projectPath) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const stdout = await runGit(['status', '--porcelain', '-u'], projectPath);
+    const lines = stdout.split('\n').filter(Boolean).map(line => ({
+      status: line.substring(0, 2).trim(),
+      file: line.substring(3).trim()
+    }));
+    return { success: true, files: lines };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-diff', async (event, projectPath, filePath) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const args = filePath ? ['diff', 'HEAD', '--', filePath] : ['diff', 'HEAD'];
+    const stdout = await runGit(args, projectPath);
+    return { success: true, diff: stdout };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-add', async (event, projectPath, files = []) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const args = files && files.length > 0 ? ['add', ...files] : ['add', '-A'];
+    await runGit(args, projectPath);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-commit', async (event, projectPath, message) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    if (!message || !message.trim()) return { success: false, error: 'Message de commit manquant' };
+    const stdout = await runGit(['commit', '-m', message.trim()], projectPath);
+    return { success: true, output: stdout };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-push', async (event, projectPath, remote, branch) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const args = ['push'];
+    if (remote) args.push(remote);
+    if (branch) args.push(branch);
+    const stdout = await runGit(args, projectPath);
+    return { success: true, output: stdout };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-pull', async (event, projectPath) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const stdout = await runGit(['pull'], projectPath);
+    return { success: true, output: stdout };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-log', async (event, projectPath, limit = 20) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const stdout = await runGit(['log', `--max-count=${limit}`, '--pretty=format:%H|%an|%ae|%ar|%s'], projectPath);
+    const commits = stdout.split('\n').filter(Boolean).map(line => {
+      const parts = line.split('|');
+      return { hash: parts[0], author: parts[1], email: parts[2], date: parts[3], message: parts.slice(4).join('|') };
+    });
+    return { success: true, commits };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-init', async (event, projectPath) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const stdout = await runGit(['init'], projectPath);
+    return { success: true, output: stdout };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-branch', async (event, projectPath) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const stdout = await runGit(['branch', '--show-current'], projectPath);
+    return { success: true, branch: stdout.trim() };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-remotes', async (event, projectPath) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const stdout = await runGit(['remote', '-v'], projectPath);
+    return { success: true, remotes: stdout.trim() };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// ==================== OLLAMA LOCAL AI ====================
+
+const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+
+ipcMain.handle('list-ollama-models', async () => {
+  try {
+    const response = await axios.get(`${OLLAMA_BASE_URL}/api/tags`, { timeout: 5000 });
+    const models = (response.data?.models || []).map(m => ({
+      name: m.name,
+      size: m.size,
+      modified: m.modified_at
+    }));
+    return { success: true, models };
+  } catch (error) {
+    return { success: false, error: `Ollama non disponible: ${error.message}. Installez Ollama sur https://ollama.ai` };
+  }
+});
+
+ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
+  const model = options.model || process.env.OLLAMA_MODEL || 'qwen2.5-coder:7b';
+  const projectPath = options.projectPath || null;
+
+  if (!history || !Array.isArray(history) || history.length === 0) {
+    return { success: false, error: "Aucun historique fourni pour Ollama." };
+  }
+
+  try {
+    const validHistory = history.filter(msg => msg && typeof msg === 'object' && msg.text !== undefined);
+    if (validHistory.length === 0) return { success: false, error: "Historique vide pour Ollama." };
+
+    const lastMessage = validHistory[validHistory.length - 1];
+
+    let projectContext = '';
+    if (allProjectFiles?.files) {
+      const filesToShow = pickFilesForContext(allProjectFiles.files, 15);
+      projectContext = '\n--- CONTEXTE PROJET ---\n';
+      for (const [filePath, fileData] of filesToShow) {
+        projectContext += `\n=== ${filePath} ===\n${(fileData.content || '').substring(0, 1500)}\n`;
+      }
+      projectContext += '--- FIN CONTEXTE ---\n';
+    }
+
+    const systemPrompt = `Tu es un assistant de développement expert et autonome.
+${projectContext}
+FICHIER OUVERT: ${currentCode ? currentCode.substring(0, 2000) : 'Aucun'}
+
+${TERMINAL_CAPABILITY_PROMPT}
+
+Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code complet\n\`\`\``;
+
+    const buildOllamaMessages = (baseHistory, userPrompt) => {
+      const msgs = [{ role: 'system', content: systemPrompt }];
+      baseHistory.slice(0, -1).forEach(msg => {
+        if (msg.role === 'model') msgs.push({ role: 'assistant', content: String(msg.text) });
+        else if (msg.role === 'user') msgs.push({ role: 'user', content: String(msg.text) });
+      });
+      msgs.push({ role: 'user', content: userPrompt });
+      return msgs;
+    };
+
+    const ollamaCall = async (messages) => {
+      const resp = await axios.post(`${OLLAMA_BASE_URL}/api/chat`, {
+        model,
+        messages,
+        stream: false,
+        options: { temperature: options.temperature || 0.7, num_predict: options.maxTokens || 8192 }
+      }, { timeout: 180000 });
+      return resp.data?.message?.content || '';
+    };
+
+    let messages = buildOllamaMessages(validHistory, String(lastMessage.text));
+    let fullTranscript = '';
+    const MAX_ITERATIONS = 8;
+
+    for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+      const aiText = await ollamaCall(messages);
+      fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
+
+      const cmd = parseRunCommand(aiText);
+      if (!cmd) return { success: true, text: fullTranscript, terminalActions: iter };
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
+      }
+      const { output } = await executeCommandForAI(cmd, projectPath);
+      messages = [
+        ...messages,
+        { role: 'assistant', content: aiText },
+        { role: 'user', content: `[RÉSULTAT TERMINAL]\n\`\`\`\n${output}\n\`\`\`\nContinue ou termine.` }
+      ];
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1 });
+      }
+    }
+
+    return { success: true, text: fullTranscript, terminalActions: MAX_ITERATIONS };
+  } catch (error) {
+    console.error('[Ollama] Erreur:', error.message);
+    return { success: false, error: `Ollama: ${error.message}` };
+  }
+});
+
+// ==================== MULTI-OLLAMA 3 AGENTS ====================
+
+ipcMain.handle('get-ollama-multi-completion', async (event, history, currentCode, allProjectFiles, options = {}) => {
+  try {
+    const OLLAMA_BASE_URL_MULTI = process.env.OLLAMA_URL || 'http://localhost:11434';
+    const model = options.model || process.env.OLLAMA_MODEL || 'qwen3-coder:30b';
+
+    const validHistory = Array.isArray(history) ? history : [];
+    const lastMessage = validHistory[validHistory.length - 1];
+    if (!lastMessage || !lastMessage.text) return { success: false, error: 'Aucune question.' };
+    const userPrompt = String(lastMessage.text);
+
+    // ── Load skills content ──────────────────────────────────────
+    // options.skillsContent = array of { name, content } from frontend
+    const skillsList = Array.isArray(options.skillsContent) ? options.skillsContent : [];
+    const allSkillsText = skillsList.length > 0
+      ? '--- SKILLS DISPONIBLES ---\n' + skillsList.map(s => `## SKILL: ${s.name}\n${s.content}`).join('\n\n') + '\n--- FIN SKILLS ---'
+      : '';
+
+    // ── Build project context ─────────────────────────────────────
+    let projectContext = '';
+    if (allProjectFiles?.files) {
+      const filesToShow = pickFilesForContext(allProjectFiles.files, 10);
+      projectContext = '\n--- CONTEXTE PROJET ---\n';
+      for (const [fp, fd] of filesToShow) {
+        projectContext += `\n=== ${fp} ===\n${(fd.content || '').substring(0, 1000)}\n`;
+      }
+      projectContext += '--- FIN CONTEXTE ---\n';
+    }
+    const codeCtx = currentCode ? `\nFICHIER OUVERT:\n${currentCode.substring(0, 2000)}` : '';
+
+    // ── Ollama call helper ────────────────────────────────────────
+    const ollamaCall = async (messages) => {
+      const resp = await axios.post(`${OLLAMA_BASE_URL_MULTI}/api/chat`, {
+        model,
+        messages,
+        stream: false,
+        options: { temperature: 0.7, num_predict: options.maxTokens || 8192 }
+      }, { timeout: 180000 });
+      return resp.data?.message?.content || '';
+    };
+
+    const sendStep = (label, status, text) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ai-multi-ollama-step', { label, status, text });
+      }
+    };
+
+    // ────────── Agent 1 : Architecte ──────────
+    // Reçoit TOUS les skills, décide lesquels attribuer à chaque agent
+    sendStep('🏗️ Architecte', 'active', '');
+    const archSystemPrompt = [
+      `Tu es un architecte logiciel senior et chef de projet IA.`,
+      projectContext,
+      codeCtx,
+      allSkillsText,
+      `
+RÔLE: Analyse la demande, produis un plan technique structuré ET attribue explicitement les skills pertinents aux agents suivants:
+- **Codeur** : chargé de l'implémentation complète
+- **Relecteur** : chargé de la revue qualité, sécurité et optimisation
+
+Dans ton plan, inclus une section:
+## Skills attribués
+- Codeur: [liste des noms de skills à utiliser]
+- Relecteur: [liste des noms de skills à utiliser]
+
+Sois concis et précis.`
+    ].filter(Boolean).join('\n');
+
+    const archPlan = await ollamaCall([
+      { role: 'system', content: archSystemPrompt },
+      { role: 'user', content: userPrompt }
+    ]);
+    sendStep('🏗️ Architecte', 'done', archPlan);
+
+    // Parse skill assignments from Architecte plan (best-effort)
+    const parseAssignedSkills = (plan, agentName) => {
+      try {
+        const regex = new RegExp(`${agentName}\\s*:\\s*(.+?)(?:\\n|$)`, 'i');
+        const match = plan.match(regex);
+        if (!match) return allSkillsText; // fallback: give all skills
+        const assigned = match[1].split(',').map(s => s.trim().replace(/[\[\]]/g, ''));
+        const filtered = skillsList.filter(s => assigned.some(a => a.toLowerCase().includes(s.name.toLowerCase())));
+        return filtered.length > 0
+          ? '--- SKILLS ASSIGNÉS ---\n' + filtered.map(s => `## SKILL: ${s.name}\n${s.content}`).join('\n\n') + '\n--- FIN SKILLS ---'
+          : allSkillsText;
+      } catch { return allSkillsText; }
+    };
+
+    const coderSkills = parseAssignedSkills(archPlan, 'Codeur');
+    const reviewSkills = parseAssignedSkills(archPlan, 'Relecteur');
+
+    // ────────── Agent 2 : Codeur ──────────
+    sendStep('💻 Codeur', 'active', '');
+    const coderSystem = [
+      `Tu es un expert développeur full-stack.`,
+      projectContext,
+      codeCtx,
+      coderSkills,
+      `Implémente le plan de l'architecte. Produis du code complet, fonctionnel et bien commenté.\nPour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code complet\n\`\`\`\n${TERMINAL_CAPABILITY_PROMPT}`
+    ].filter(Boolean).join('\n');
+
+    const coderOutput = await ollamaCall([
+      { role: 'system', content: coderSystem },
+      { role: 'user', content: `Demande originale: ${userPrompt}\n\nPLAN DE L'ARCHITECTE:\n${archPlan}` }
+    ]);
+    sendStep('💻 Codeur', 'done', coderOutput);
+
+    // ────────── Agent 3 : Relecteur ──────────
+    sendStep('🔍 Relecteur', 'active', '');
+    const reviewSystem = [
+      `Tu es un expert en revue de code, sécurité et optimisation.`,
+      projectContext,
+      reviewSkills,
+      `Examine le code produit. Identifie bugs, failles de sécurité, problèmes de performance et lisibilité. Propose une version finale corrigée avec le même format FICHIER: ... si tu modifies du code.`
+    ].filter(Boolean).join('\n');
+
+    const reviewOutput = await ollamaCall([
+      { role: 'system', content: reviewSystem },
+      { role: 'user', content: `Demande: ${userPrompt}\n\nPLAN:\n${archPlan}\n\nCODE PRODUIT:\n${coderOutput}\n\nFournis ta revue complète et la version finale.` }
+    ]);
+    sendStep('🔍 Relecteur', 'done', reviewOutput);
+
+    // ────────── Synthèse ──────────
+    const finalText = [
+      `## 🏗️ Plan & Attribution Skills (Architecte)\n${archPlan}`,
+      `## 💻 Implémentation (Codeur)\n${coderOutput}`,
+      `## 🔍 Revue & Version finale (Relecteur)\n${reviewOutput}`
+    ].join('\n\n---\n\n');
+
+    return { success: true, text: finalText, multiAgent: true };
+  } catch (error) {
+    console.error('[Ollama Multi] Erreur:', error.message);
+    return { success: false, error: `Ollama Multi: ${error.message}` };
+  }
+});
+

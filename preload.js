@@ -70,6 +70,10 @@ try {
     getKimiCompletion: (history, currentCode, allProjectFiles, options) =>
       ipcRenderer.invoke('get-kimi-completion', history, currentCode, allProjectFiles, options),
 
+    // API pour l'appel Claude 3.5 Sonnet / Opus via Anthropic
+    getClaudeCompletion: (history, currentCode, allProjectFiles, options) =>
+      ipcRenderer.invoke('get-claude-completion', history, currentCode, allProjectFiles, options),
+
     // API pour sauvegarder une conversation
     saveConversation: (projectPath, conversationHistory) => ipcRenderer.invoke('saveConversation', projectPath, conversationHistory),
     listConversations: (projectPath) => ipcRenderer.invoke('listConversations', projectPath),
@@ -108,6 +112,13 @@ try {
     saveWorkflow: (name, content, scope, projectPath) => ipcRenderer.invoke('save-workflow', name, content, scope, projectPath),
     deleteWorkflow: (name, scope, projectPath) => ipcRenderer.invoke('delete-workflow', name, scope, projectPath),
 
+    // Visual Workflow APIs
+    listVisualWorkflows: (projectPath) => ipcRenderer.invoke('list-visual-workflows', projectPath),
+    saveVisualWorkflow: (projectPath, workflowJson) => ipcRenderer.invoke('save-visual-workflow', projectPath, workflowJson),
+    deleteVisualWorkflow: (projectPath, filename) => ipcRenderer.invoke('delete-visual-workflow', projectPath, filename),
+    fetchN8nCatalog: (page, perPage) => ipcRenderer.invoke('fetch-n8n-catalog', page, perPage),
+    downloadN8nWorkflow: (downloadUrl) => ipcRenderer.invoke('download-n8n-workflow', downloadUrl),
+
     // Agents APIs
     listAgents: (projectPath) => ipcRenderer.invoke('list-agents', projectPath),
     getAgent: (name, scope, projectPath) => ipcRenderer.invoke('get-agent', name, scope, projectPath),
@@ -118,10 +129,49 @@ try {
     listSkills: (projectPath) => ipcRenderer.invoke('list-skills', projectPath),
     getSkill: (name, scope, projectPath) => ipcRenderer.invoke('get-skill', name, scope, projectPath),
     installSkillFromUrl: (url, scope, projectPath, options) => ipcRenderer.invoke('install-skill-from-url', url, scope, projectPath, options),
+    installAllSkills: (catalogEntries) => ipcRenderer.invoke('install-all-skills', catalogEntries),
 
     // VoltAgent catalogs & packs
     getVoltAgentCatalog: (catalogId) => ipcRenderer.invoke('get-voltagent-catalog', catalogId),
     syncVoltAgentSubagents: (options) => ipcRenderer.invoke('sync-voltagent-subagents', options),
+
+    // Git Integration
+    gitStatus: (projectPath) => ipcRenderer.invoke('git-status', projectPath),
+    gitDiff: (projectPath, filePath) => ipcRenderer.invoke('git-diff', projectPath, filePath),
+    gitAdd: (projectPath, files) => ipcRenderer.invoke('git-add', projectPath, files),
+    gitCommit: (projectPath, message) => ipcRenderer.invoke('git-commit', projectPath, message),
+    gitPush: (projectPath, remote, branch) => ipcRenderer.invoke('git-push', projectPath, remote, branch),
+    gitPull: (projectPath) => ipcRenderer.invoke('git-pull', projectPath),
+    gitLog: (projectPath, limit) => ipcRenderer.invoke('git-log', projectPath, limit),
+    gitInit: (projectPath) => ipcRenderer.invoke('git-init', projectPath),
+    gitBranch: (projectPath) => ipcRenderer.invoke('git-branch', projectPath),
+    gitRemotes: (projectPath) => ipcRenderer.invoke('git-remotes', projectPath),
+
+    // Ollama Local AI
+    listOllamaModels: () => ipcRenderer.invoke('list-ollama-models'),
+    getOllamaCompletion: (history, currentCode, allProjectFiles, options) =>
+      ipcRenderer.invoke('get-ollama-completion', history, currentCode, allProjectFiles, options),
+
+    // Multi-Ollama (3 agents)
+    getOllamaMultiCompletion: (history, currentCode, allProjectFiles, options) =>
+      ipcRenderer.invoke('get-ollama-multi-completion', history, currentCode, allProjectFiles, options),
+    onOllamaMultiStep: (callback) => {
+      if (typeof callback !== 'function') return;
+      ipcRenderer.removeAllListeners('ai-multi-ollama-step');
+      ipcRenderer.on('ai-multi-ollama-step', (_event, data) => callback(data));
+    },
+
+    // AI Terminal events (emitted by main process during agent ReAct loop)
+    onAITerminalAction: (callback) => {
+      if (typeof callback !== 'function') return;
+      ipcRenderer.removeAllListeners('ai-terminal-action');
+      ipcRenderer.on('ai-terminal-action', (_event, data) => callback(data));
+    },
+    onAITerminalResult: (callback) => {
+      if (typeof callback !== 'function') return;
+      ipcRenderer.removeAllListeners('ai-terminal-result');
+      ipcRenderer.on('ai-terminal-result', (_event, data) => callback(data));
+    },
   };
 
   // Afficher les méthodes disponibles

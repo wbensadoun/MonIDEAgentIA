@@ -1,0 +1,744 @@
+/* ═══════════════════════════════════════════
+   Visual Workflow Editor – n8n-style
+   ═══════════════════════════════════════════ */
+
+.vw-editor {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    background: var(--bg-1);
+}
+
+/* ── Toolbar ── */
+.vw-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-0);
+    background: rgba(10, 15, 23, 0.7);
+    flex-shrink: 0;
+}
+
+.vw-toolbar-left,
+.vw-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.vw-toolbar-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-2);
+    margin-right: 8px;
+}
+
+.vw-btn {
+    font-size: 0.7rem;
+    padding: 5px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-0);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-1);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.vw-btn:hover {
+    background: rgba(0, 245, 212, 0.1);
+    border-color: var(--accent-1);
+    color: var(--text-0);
+}
+
+.vw-btn-primary {
+    background: linear-gradient(135deg, var(--accent-1), #48e5c2);
+    color: #041017;
+    border: none;
+    font-weight: 600;
+}
+
+.vw-btn-primary:hover {
+    box-shadow: var(--glow-1);
+}
+
+.vw-btn-danger {
+    border-color: rgba(255, 107, 107, 0.4);
+    color: var(--accent-4);
+}
+
+.vw-btn-danger:hover {
+    background: rgba(255, 107, 107, 0.15);
+}
+
+.vw-workflow-name {
+    font-size: 0.78rem;
+    padding: 4px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border-0);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-0);
+    max-width: 200px;
+}
+
+.vw-workflow-name:focus {
+    outline: none;
+    border-color: var(--accent-1);
+    box-shadow: 0 0 0 2px rgba(0, 245, 212, 0.15);
+}
+
+/* ── React Flow container ── */
+.vw-canvas {
+    flex: 1;
+    position: relative;
+}
+
+.vw-canvas .react-flow__background {
+    background: var(--bg-1) !important;
+}
+
+.vw-canvas .react-flow__minimap {
+    background: var(--bg-0) !important;
+    border: 1px solid var(--border-0);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.vw-canvas .react-flow__controls {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border-0);
+    box-shadow: var(--shadow-1);
+}
+
+.vw-canvas .react-flow__controls-button {
+    background: rgba(10, 15, 23, 0.92) !important;
+    border-bottom: 1px solid var(--border-0) !important;
+    fill: var(--text-1) !important;
+    width: 28px;
+    height: 28px;
+}
+
+.vw-canvas .react-flow__controls-button:hover {
+    background: rgba(0, 245, 212, 0.12) !important;
+    fill: var(--accent-1) !important;
+}
+
+.vw-canvas .react-flow__edge-path {
+    stroke: rgba(0, 245, 212, 0.5);
+    stroke-width: 2;
+}
+
+.vw-canvas .react-flow__edge.selected .react-flow__edge-path {
+    stroke: var(--accent-1);
+    stroke-width: 3;
+}
+
+.vw-canvas .react-flow__connection-line {
+    stroke: var(--accent-2) !important;
+    stroke-width: 2;
+}
+
+/* ── Custom Node Styles ── */
+.vw-node {
+    min-width: 180px;
+    border-radius: 12px;
+    border: 1px solid var(--border-0);
+    background: rgba(14, 20, 30, 0.95);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+}
+
+.vw-node:hover {
+    box-shadow: 0 8px 30px rgba(0, 245, 212, 0.15);
+}
+
+.vw-node.selected {
+    border-color: var(--accent-1);
+    box-shadow: 0 0 0 2px rgba(0, 245, 212, 0.3), 0 8px 30px rgba(0, 245, 212, 0.2);
+}
+
+.vw-node-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-0);
+    cursor: grab;
+}
+
+.vw-node-icon {
+    font-size: 1rem;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.vw-node-icon.trigger {
+    background: rgba(255, 209, 102, 0.2);
+}
+
+.vw-node-icon.action {
+    background: rgba(0, 245, 212, 0.15);
+}
+
+.vw-node-icon.ai {
+    background: rgba(167, 139, 250, 0.2);
+}
+
+.vw-node-icon.output {
+    background: rgba(74, 222, 128, 0.15);
+}
+
+.vw-node-icon.logic {
+    background: rgba(251, 146, 60, 0.2);
+}
+
+.vw-node-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-0);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.vw-node-body {
+    padding: 8px 12px;
+}
+
+.vw-node-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 6px;
+}
+
+.vw-node-field:last-child {
+    margin-bottom: 0;
+}
+
+.vw-node-label {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-2);
+}
+
+.vw-node-input {
+    font-size: 0.7rem;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border-0);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-0);
+    resize: none;
+}
+
+.vw-node-input:focus {
+    outline: none;
+    border-color: rgba(0, 245, 212, 0.5);
+}
+
+.vw-node-select {
+    font-size: 0.7rem;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border-0);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-0);
+}
+
+.vw-node-select option {
+    background: var(--bg-1);
+    color: var(--text-0);
+}
+
+/* Handle styling */
+.vw-canvas .react-flow__handle {
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--accent-1);
+    background: var(--bg-0);
+    transition: all 0.2s;
+}
+
+.vw-canvas .react-flow__handle:hover {
+    background: var(--accent-1);
+    box-shadow: 0 0 8px rgba(0, 245, 212, 0.5);
+}
+
+.vw-canvas .react-flow__handle-left {
+    left: -5px;
+}
+
+.vw-canvas .react-flow__handle-right {
+    right: -5px;
+}
+
+/* ── Add-Node Panel ── */
+.vw-add-panel {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 240px;
+    max-height: 400px;
+    overflow-y: auto;
+    border-radius: 14px;
+    border: 1px solid var(--border-0);
+    background: rgba(12, 18, 28, 0.96);
+    box-shadow: var(--shadow-1);
+    backdrop-filter: blur(16px);
+    z-index: 10;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.vw-add-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-0);
+}
+
+.vw-add-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-2);
+}
+
+.vw-add-close {
+    background: none;
+    border: none;
+    color: var(--text-2);
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.vw-add-category {
+    padding: 6px 12px;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-2);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.vw-add-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    background: transparent;
+    color: var(--text-1);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+}
+
+.vw-add-item:hover {
+    background: rgba(0, 245, 212, 0.08);
+    color: var(--text-0);
+}
+
+.vw-add-item-icon {
+    font-size: 1rem;
+    width: 28px;
+    text-align: center;
+}
+
+.vw-add-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.vw-add-item-name {
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.vw-add-item-desc {
+    font-size: 0.6rem;
+    color: var(--text-2);
+}
+
+/* ── Empty state ── */
+.vw-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    color: var(--text-2);
+}
+
+.vw-empty-icon {
+    font-size: 3rem;
+    opacity: 0.4;
+}
+
+.vw-empty-text {
+    font-size: 0.85rem;
+    text-align: center;
+    max-width: 300px;
+    line-height: 1.5;
+}
+
+.vw-empty-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+/* ── Badge ── */
+.vw-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    font-size: 0.55rem;
+    font-weight: 700;
+    background: var(--accent-1);
+    color: #041017;
+    margin-left: 4px;
+}
+
+/* ── Success button ── */
+.vw-btn-success {
+    border-color: rgba(74, 222, 128, 0.4);
+    color: #4ade80;
+}
+
+.vw-btn-success:hover {
+    background: rgba(74, 222, 128, 0.15);
+    border-color: #4ade80;
+}
+
+/* ── Catalog button ── */
+.vw-btn-catalog {
+    border-color: rgba(167, 139, 250, 0.4);
+    color: #a78bfa;
+}
+
+.vw-btn-catalog:hover {
+    background: rgba(167, 139, 250, 0.15);
+    border-color: #a78bfa;
+}
+
+/* ── Catalog panel wider ── */
+.vw-catalog-panel {
+    width: 300px;
+    max-height: 500px;
+}
+
+.vw-catalog-search {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-0);
+}
+
+.vw-catalog-search .vw-node-input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.vw-catalog-loading,
+.vw-catalog-empty {
+    padding: 24px 12px;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-2);
+    line-height: 1.6;
+}
+
+.vw-catalog-count {
+    padding: 4px 12px;
+    font-size: 0.6rem;
+    color: var(--text-2);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* ── Saved workflow item ── */
+.vw-saved-item {
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.vw-saved-item .vw-add-item {
+    flex: 1;
+    padding-right: 36px;
+}
+
+.vw-saved-delete {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.8rem;
+    opacity: 0;
+    transition: opacity 0.15s;
+    padding: 4px;
+}
+
+.vw-saved-item:hover .vw-saved-delete {
+    opacity: 0.7;
+}
+
+.vw-saved-delete:hover {
+    opacity: 1 !important;
+}
+
+/* ── Run button ── */
+.vw-btn-run {
+    border-color: rgba(74, 222, 128, 0.5);
+    color: #4ade80;
+    font-weight: 600;
+}
+
+.vw-btn-run:hover {
+    background: rgba(74, 222, 128, 0.18);
+    border-color: #4ade80;
+    box-shadow: 0 0 12px rgba(74, 222, 128, 0.2);
+}
+
+.vw-btn-run:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* ── Node execution states ── */
+.vw-node.exec-running {
+    border-color: #fbbf24;
+    box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.4), 0 0 20px rgba(251, 191, 36, 0.3);
+    animation: vw-pulse 1.2s ease-in-out infinite;
+}
+
+.vw-node.exec-success {
+    border-color: #4ade80;
+    box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.3), 0 0 15px rgba(74, 222, 128, 0.15);
+}
+
+.vw-node.exec-error {
+    border-color: #f87171;
+    box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.4), 0 0 15px rgba(248, 113, 113, 0.2);
+}
+
+@keyframes vw-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
+}
+
+/* ── Execution Log Panel ── */
+.vw-log-panel {
+    border-top: 1px solid var(--border-0);
+    background: rgba(8, 12, 20, 0.95);
+    max-height: 200px;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.vw-log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border-0);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.vw-log-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-2);
+}
+
+.vw-log-running {
+    color: #fbbf24;
+    animation: vw-pulse 1s ease-in-out infinite;
+}
+
+.vw-log-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.vw-log-body {
+    overflow-y: auto;
+    flex: 1;
+    padding: 4px 0;
+}
+
+.vw-log-entry {
+    display: flex;
+    gap: 8px;
+    padding: 3px 12px;
+    font-size: 0.68rem;
+    font-family: 'Fira Code', 'Cascadia Code', monospace;
+    line-height: 1.5;
+}
+
+.vw-log-time {
+    color: var(--text-2);
+    white-space: nowrap;
+    min-width: 60px;
+}
+
+.vw-log-msg {
+    word-break: break-word;
+}
+
+.vw-log-info .vw-log-msg {
+    color: var(--text-1);
+}
+
+.vw-log-success .vw-log-msg {
+    color: #4ade80;
+}
+
+.vw-log-error .vw-log-msg {
+    color: #f87171;
+}
+
+.vw-log-output .vw-log-msg {
+    color: var(--text-2);
+    font-style: italic;
+}
+
+/* ── AI button ── */
+.vw-btn-ai {
+    border-color: rgba(251, 191, 36, 0.4);
+    color: #fbbf24;
+}
+
+.vw-btn-ai:hover,
+.vw-btn-ai.active {
+    background: rgba(251, 191, 36, 0.15);
+    border-color: #fbbf24;
+}
+
+/* ── AI Generation Panel ── */
+.vw-ai-panel {
+    width: 300px;
+}
+
+.vw-ai-body {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.vw-ai-prompt {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 0.72rem;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-0);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-0);
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
+    line-height: 1.5;
+}
+
+.vw-ai-prompt:focus {
+    outline: none;
+    border-color: #fbbf24;
+    box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.15);
+}
+
+.vw-ai-prompt::placeholder {
+    color: var(--text-2);
+    opacity: 0.7;
+}
+
+.vw-ai-generate-btn {
+    width: 100%;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    color: #041017;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.vw-ai-generate-btn:hover:not(:disabled) {
+    box-shadow: 0 0 16px rgba(251, 191, 36, 0.3);
+    transform: translateY(-1px);
+}
+
+.vw-ai-generate-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.vw-ai-hints {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.vw-ai-hint-title {
+    font-size: 0.6rem;
+    color: var(--text-2);
+    width: 100%;
+}
+
+.vw-ai-hint {
+    font-size: 0.6rem;
+    padding: 3px 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(251, 191, 36, 0.25);
+    background: rgba(251, 191, 36, 0.06);
+    color: #fbbf24;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.vw-ai-hint:hover {
+    background: rgba(251, 191, 36, 0.15);
+    border-color: #fbbf24;
+}

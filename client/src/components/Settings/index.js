@@ -16,7 +16,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
 
   const [loading, setLoading] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
-  const [validation, setValidation] = useState({ gemini: null, kimi: null });
+  const [validation, setValidation] = useState({ gemini: null, kimi: null, claude: null });
 
   const loadSettings = useCallback(async () => {
     if (!isElectronApiAvailable || !window.electronAPI?.loadSettings) return;
@@ -139,6 +139,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
               className="settings-input"
             >
               <option value="gemini">Gemini</option>
+              <option value="claude">Claude</option>
               <option value="kimi">Kimi</option>
               <option value="multi">Multi-IA</option>
             </select>
@@ -245,12 +246,26 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
               </label>
               <input
                 type={showApiKeys ? 'text' : 'password'}
-                value={settings.kimiApiKey}
+                value={settings.kimiApiKey || ''}
                 onChange={(e) => handleChange('kimiApiKey', e.target.value)}
                 placeholder="tgp_v1_..."
                 className={`settings-input ${validation.kimi === 'invalid' ? 'is-invalid' : ''}`}
               />
               {getValidationMessage('kimi')}
+            </div>
+
+            <div className="settings-key">
+              <label className="settings-key-label">
+                Claude API Key {getValidationIcon(validation.claude)}
+              </label>
+              <input
+                type={showApiKeys ? 'text' : 'password'}
+                value={settings.claudeApiKey || ''}
+                onChange={(e) => handleChange('claudeApiKey', e.target.value)}
+                placeholder="sk-ant-api..."
+                className={`settings-input ${validation.claude === 'invalid' ? 'is-invalid' : ''}`}
+              />
+              {getValidationMessage('claude')}
             </div>
           </div>
         </div>
