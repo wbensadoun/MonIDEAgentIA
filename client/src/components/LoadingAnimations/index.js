@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './LoadingAnimations.css';
 
+// ─────────────────────────────────────────────────────────
+// LoadingSteps (unchanged)
+// ─────────────────────────────────────────────────────────
 export const LoadingSteps = ({ steps, currentStep }) => {
   const getStepStatus = (stepIndex) => {
     if (stepIndex < currentStep) return 'completed';
@@ -36,6 +39,9 @@ export const LoadingSteps = ({ steps, currentStep }) => {
   );
 };
 
+// ─────────────────────────────────────────────────────────
+// LoadingPulse (unchanged)
+// ─────────────────────────────────────────────────────────
 export const LoadingPulse = ({ text, variant = 'default' }) => {
   const variants = {
     default: 'from-cyan-500 to-blue-600',
@@ -54,6 +60,60 @@ export const LoadingPulse = ({ text, variant = 'default' }) => {
   );
 };
 
+const PROVIDER_LABELS = {
+  gemini: '🔷 Gemini',
+  kimi: '🌙 Kimi K2.5',
+  ollama: '🦙 Ollama',
+  'ollama-multi': '🦙 Multi-Ollama',
+  multi: '🤖 Multi-IA',
+  claude: '🟠 Claude',
+};
+
+export const AIWorkingIndicator = ({ provider = 'gemini', statusText = 'L\'IA réfléchit...' }) => {
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef(Date.now());
+
+  useEffect(() => {
+    const timerInterval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => {
+      clearInterval(timerInterval);
+    };
+  }, []);
+
+  const providerLabel = PROVIDER_LABELS[provider] || `🤖 ${provider}`;
+
+  return (
+    <div className="ai-working">
+      <div className="ai-working-top">
+        <span className="ai-working-icon">🧠</span>
+        <div className="ai-working-right">
+          <span className="ai-working-phrase">
+            {statusText}
+          </span>
+          <div className="ai-working-meta">
+            <span className="ai-working-provider">{providerLabel}</span>
+            {elapsed > 0 && (
+              <span className="ai-working-timer">{elapsed}s</span>
+            )}
+          </div>
+        </div>
+        <div className="ai-dots">
+          <div className="ai-dot" />
+          <div className="ai-dot" />
+          <div className="ai-dot" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+
+// ─────────────────────────────────────────────────────────
+// SuccessAnimation
+// ─────────────────────────────────────────────────────────
 export const SuccessAnimation = ({ message, onComplete }) => {
   React.useEffect(() => {
     const timer = setTimeout(onComplete, 2000);
@@ -73,6 +133,9 @@ export const SuccessAnimation = ({ message, onComplete }) => {
   );
 };
 
+// ─────────────────────────────────────────────────────────
+// ErrorAnimation
+// ─────────────────────────────────────────────────────────
 export const ErrorAnimation = ({ message, onRetry, onDismiss }) => {
   return (
     <div className="error-animation">
@@ -98,6 +161,9 @@ export const ErrorAnimation = ({ message, onRetry, onDismiss }) => {
   );
 };
 
+// ─────────────────────────────────────────────────────────
+// VotingAnimation
+// ─────────────────────────────────────────────────────────
 export const VotingAnimation = ({ votes, total }) => {
   return (
     <div className="voting-animation">
@@ -107,8 +173,8 @@ export const VotingAnimation = ({ votes, total }) => {
       </div>
       <div className="voting-bars">
         {Array.from({ length: total }).map((_, i) => (
-          <div 
-            key={i} 
+          <div
+            key={i}
             className={`voting-bar ${i < votes ? 'voted' : ''}`}
             style={{ animationDelay: `${i * 0.1}s` }}
           />
@@ -121,6 +187,7 @@ export const VotingAnimation = ({ votes, total }) => {
 export default {
   LoadingSteps,
   LoadingPulse,
+  AIWorkingIndicator,
   SuccessAnimation,
   ErrorAnimation,
   VotingAnimation

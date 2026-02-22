@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import './AIChat.css';
-import { LoadingSteps, LoadingPulse } from '../LoadingAnimations';
+import { LoadingSteps, AIWorkingIndicator } from '../LoadingAnimations';
 
 const AIChat = ({
   prompt,
@@ -25,7 +25,12 @@ const AIChat = ({
   getWorkflow,
   parseSlashCommand,
   activeFile,
-  globalSkillsCount = 0
+  globalSkillsCount = 0,
+  aiProvider = 'gemini',
+  pendingImages = [],
+  onRemovePendingImage,
+  pendingMessage = null,
+  projectFileList = []
 }) => {
   const conversationHistoryRef = useRef(null);
   const promptInputRef = useRef(null);
@@ -33,7 +38,16 @@ const AIChat = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showWorkflowSuggestions, setShowWorkflowSuggestions] = useState(false);
   const [workflowFilter, setWorkflowFilter] = useState('');
+
+  // Mentions Context
+  const [showContextSuggestions, setShowContextSuggestions] = useState(false);
+  const [contextFilter, setContextFilter] = useState('');
+  const [explicitContext, setExplicitContext] = useState([]); // List of explicitly mentioned files
+
   const [terminalActions, setTerminalActions] = useState([]); // AI terminal ReAct cards
+  const [streamingText, setStreamingText] = useState('');       // live streaming output
+  const [streamingAgent, setStreamingAgent] = useState('');     // which agent is streaming
+  const streamingRef = useRef(null);
 
   // Register AI terminal IPC events
   useEffect(() => {
@@ -50,9 +64,35 @@ const AIChat = ({
     });
   }, [isElectronApiAvailable]);
 
-  // Clear terminal actions when loading starts
+  // Register Ollama multi-agent streaming tokens
   useEffect(() => {
-    if (isLoading) setTerminalActions([]);
+    if (!isElectronApiAvailable || !window.electronAPI?.onOllamaMultiToken) return;
+    window.electronAPI.onOllamaMultiToken((data) => {
+      if (data.done) {
+        // agent finished, keep text visible briefly
+        return;
+      }
+      setStreamingAgent(data.agent || '');
+      setStreamingText(prev => prev + data.token);
+      // auto-scroll streaming box
+      if (streamingRef.current) {
+        streamingRef.current.scrollTop = streamingRef.current.scrollHeight;
+      }
+    });
+    return () => {
+      if (window.electronAPI?.removeOllamaMultiListeners) {
+        window.electronAPI.removeOllamaMultiListeners();
+      }
+    };
+  }, [isElectronApiAvailable]);
+
+  // Clear terminal actions and streaming when loading starts
+  useEffect(() => {
+    if (isLoading) {
+      setTerminalActions([]);
+      setStreamingText('');
+      setStreamingAgent('');
+    }
   }, [isLoading]);
 
   useEffect(() => {
@@ -64,16 +104,31 @@ const AIChat = ({
   const handlePromptChange = (value) => {
     onPromptChange(value);
 
+    // Slash command detection
     if (value.startsWith('/') && parseSlashCommand) {
       const parsed = parseSlashCommand(value);
       if (parsed) {
         setWorkflowFilter(parsed.command);
         setShowWorkflowSuggestions(true);
         setShowConversations(false);
+        setShowContextSuggestions(false);
+        return;
       }
     } else {
       setShowWorkflowSuggestions(false);
       setWorkflowFilter('');
+    }
+
+    // Mention detection (@file)
+    const lastAtMatch = value.match(/@([^\s]*)$/);
+    if (lastAtMatch) {
+      setContextFilter(lastAtMatch[1]);
+      setShowContextSuggestions(true);
+      setShowWorkflowSuggestions(false);
+      setShowConversations(false);
+    } else {
+      setShowContextSuggestions(false);
+      setContextFilter('');
     }
   };
 
@@ -92,10 +147,46 @@ const AIChat = ({
     setWorkflowFilter('');
   };
 
+  const filteredContextFiles = (projectFileList || []).filter(path =>
+    path.toLowerCase().includes(contextFilter.toLowerCase())
+  ).slice(0, 50); // limit to 50 for performance
+
+  const handleSelectContextFile = (filePath) => {
+    if (!explicitContext.includes(filePath)) {
+      setExplicitContext(prev => [...prev, filePath]);
+    }
+    // Remove the @search part from the prompt
+    const newPrompt = prompt.replace(/@[^\s]*$/, '');
+    onPromptChange(newPrompt);
+    setShowContextSuggestions(false);
+    setContextFilter('');
+    setTimeout(() => {
+      promptInputRef.current?.focus();
+    }, 10);
+  };
+
+  const removeExplicitContext = (filePath) => {
+    setExplicitContext(prev => prev.filter(p => p !== filePath));
+  };
+
   const handleSend = () => {
-    if (prompt.trim() && !isLoading) {
+    if ((prompt.trim() || explicitContext.length > 0 || pendingImages.length > 0) && !isLoading) {
       setShowWorkflowSuggestions(false);
-      onSend();
+      setShowContextSuggestions(false);
+      // We'll pass explicitContext via onSend if needed, or modify the prompt
+      // Let's modify the prompt to prepend the explicit context requested
+      if (explicitContext.length > 0 && typeof onSend === 'function') {
+        const contextString = `[Contexte forcé: ${explicitContext.join(', ')}]\n\n`;
+        // Hack: trigger onSend with context. We need to update useAI to handle this or just modify state.
+        // Easiest is to modify prompt immediately before send, or let useAI handle it.
+        // Actually since onSend reads state, let's just append it to the prompt.
+        const augmentedPrompt = contextString + prompt;
+        onPromptChange(augmentedPrompt);
+        setExplicitContext([]);
+        setTimeout(() => onSend(augmentedPrompt), 50);
+      } else {
+        onSend();
+      }
     }
   };
 
@@ -376,17 +467,38 @@ const AIChat = ({
 
       {multiAIState?.isActive && (
         <div className="ai-loading">
+          <AIWorkingIndicator
+            provider={aiProvider}
+            statusText={multiAIState.currentPhase ? `${streamingAgent || multiAIState.currentPhase} en cours...` : "Multi-IA en cours..."}
+          />
           <LoadingSteps
             steps={multiAIState.steps}
             currentStep={multiAIState.steps.findIndex(s => s.status === 'active')}
           />
-          {multiAIState.currentPhase && (
+          {streamingText && (
+            <div
+              ref={streamingRef}
+              style={{
+                marginTop: 8,
+                background: '#0d1117',
+                border: '1px solid #30363d',
+                borderRadius: 6,
+                padding: '8px 12px',
+                maxHeight: 160,
+                overflowY: 'auto',
+                fontFamily: 'monospace',
+                fontSize: 11,
+                color: '#7ee787',
+                whiteSpace: 'pre-wrap',
+                lineHeight: 1.5
+              }}
+            >
+              {streamingText}
+            </div>
+          )}
+          {multiAIState.error && (
             <div className="multi-ai-phase-hint">
-              <span className="phase-label">Phase :</span>
-              <span className="phase-value">{multiAIState.currentPhase}</span>
-              {multiAIState.error && (
-                <span className="phase-error">Erreur : {multiAIState.error}</span>
-              )}
+              <span className="phase-error">Erreur : {multiAIState.error}</span>
             </div>
           )}
         </div>
@@ -394,76 +506,9 @@ const AIChat = ({
 
       {isLoading && !multiAIState?.isActive && (
         <div className="ai-loading">
-          <LoadingPulse text="L'IA reflechit..." variant="default" />
+          <AIWorkingIndicator provider={aiProvider} statusText="Traitement en cours..." />
         </div>
       )}
-
-      <div className="ai-input-wrap">
-        <textarea
-          ref={promptInputRef}
-          id="ai-prompt"
-          className="ai-input"
-          value={prompt}
-          onChange={(e) => handlePromptChange(e.target.value)}
-          onKeyPress={handleKeyPress}
-          onPaste={handlePaste}
-          placeholder="Votre requete... (tapez / pour les workflows)"
-          rows={3}
-        />
-
-        {showWorkflowSuggestions && filteredWorkflows.length > 0 && (
-          <div className="ai-workflow-suggest">
-            <div className="ai-workflow-title">Workflows disponibles</div>
-            {filteredWorkflows.map((workflow) => (
-              <button
-                key={`${workflow.scope}-${workflow.name}`}
-                onClick={() => handleSelectWorkflow(workflow)}
-                className="ai-workflow-item"
-              >
-                <div>
-                  <span className="ai-workflow-name">/{workflow.name}</span>
-                  {workflow.description && (
-                    <span className="ai-workflow-desc">{workflow.description}</span>
-                  )}
-                </div>
-                <span className={`ai-workflow-scope ${workflow.scope}`}>
-                  {workflow.scope}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="ai-actions">
-        {quickActions.map((action) => (
-          <button
-            key={action.id}
-            className="ai-chip"
-            onClick={() => applyQuickPrompt(action.prompt)}
-            disabled={!isElectronApiAvailable}
-          >
-            {action.label}
-          </button>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={isLoading ? handleStop : handleSend}
-        className={`ai-send-btn ${isLoading ? 'is-stop' : ''}`}
-        disabled={!currentProjectPath || !isElectronApiAvailable}
-        aria-label={isLoading ? 'Arreter la generation de l IA' : "Envoyer a l IA"}
-      >
-        {isLoading ? (
-          <span className="ai-send-btn-content">
-            <span className="ai-stop-icon" aria-hidden="true" />
-            <span>Arreter</span>
-          </span>
-        ) : (
-          'Envoyer a l IA'
-        )}
-      </button>
 
       <div
         ref={conversationHistoryRef}
@@ -539,12 +584,139 @@ const AIChat = ({
           </div>
         )}
 
-        {isLoading && !multiAIState?.isActive && (
+        {isLoading && !multiAIState?.isActive && terminalActions.length > 0 && (
           <div className="ai-loading-inline">
-            <p>{terminalActions.length > 0 ? `🖥️ Exécution... (${terminalActions.filter(a => a.type === 'done').length}/${terminalActions.length})` : "L'IA réfléchit..."}</p>
+            <p>🖥️ Exécution... ({terminalActions.filter(a => a.type === 'done').length}/{terminalActions.length} commandes)</p>
           </div>
         )}
       </div>
+
+      <div className="ai-input-wrap">
+        {/* Pending message indicator */}
+        {pendingMessage && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '5px 10px',
+            background: 'rgba(251,191,36,0.12)',
+            border: '1px solid rgba(251,191,36,0.3)',
+            borderRadius: '8px',
+            marginBottom: '6px',
+            fontSize: '11px',
+            color: 'rgba(251,191,36,0.9)'
+          }}>
+            <span>⏳</span>
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              En attente&#x202F;: <em>{pendingMessage.text}</em>
+            </span>
+            <span style={{ opacity: 0.6 }}>sera envoyé automatiquement</span>
+          </div>
+        )}
+        {pendingImages && pendingImages.length > 0 && (
+          <div className="ai-pending-images" style={{ display: 'flex', gap: '8px', padding: '8px', flexWrap: 'wrap', borderBottom: '1px solid #333' }}>
+            {pendingImages.map((img, idx) => (
+              <div key={idx} style={{ position: 'relative', width: '60px', height: '60px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #444' }}>
+                <img src={img.dataUrl} alt="Pending" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <button
+                  onClick={() => onRemovePendingImage && onRemovePendingImage(idx)}
+                  style={{
+                    position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff',
+                    borderRadius: '50%', width: '16px', height: '16px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+                  }}
+                >×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Explicit Context Tags */}
+        {explicitContext.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '8px 10px 0 10px' }}>
+            {explicitContext.map(filePath => {
+              const fileName = filePath.split(/[\\/]/).pop();
+              return (
+                <div key={filePath} style={{
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                  background: 'rgba(168, 255, 181, 0.15)',
+                  border: '1px solid rgba(168, 255, 181, 0.3)',
+                  color: '#a8ffb5', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', cursor: 'default'
+                }}>
+                  <span title={filePath}>@{fileName}</span>
+                  <button onClick={() => removeExplicitContext(filePath)} style={{
+                    background: 'none', border: 'none', color: '#a8ffb5', cursor: 'pointer', padding: 0, marginLeft: '4px', fontSize: '14px', lineHeight: 1
+                  }}>×</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <textarea
+          ref={promptInputRef}
+          id="ai-prompt"
+          className="ai-input"
+          value={prompt}
+          onChange={(e) => handlePromptChange(e.target.value)}
+          onKeyPress={handleKeyPress}
+          onPaste={handlePaste}
+          placeholder="Votre requête... (Tapez @ pour mentionner un fichier, / pour workflows)"
+          rows={3}
+        />
+
+        {showWorkflowSuggestions && filteredWorkflows.length > 0 && (
+          <div className="ai-workflow-suggest">
+            <div className="ai-workflow-title">Workflows disponibles</div>
+            {filteredWorkflows.map((workflow) => (
+              <button
+                key={`${workflow.scope}-${workflow.name}`}
+                onClick={() => handleSelectWorkflow(workflow)}
+                className="ai-workflow-item"
+              >
+                <div>
+                  <span className="ai-workflow-name">/{workflow.name}</span>
+                  {workflow.description && (
+                    <span className="ai-workflow-desc">{workflow.description}</span>
+                  )}
+                </div>
+                <span className={`ai-workflow-scope ${workflow.scope}`}>
+                  {workflow.scope}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="ai-actions">
+        {quickActions.map((action) => (
+          <button
+            key={action.id}
+            className="ai-chip"
+            onClick={() => applyQuickPrompt(action.prompt)}
+            disabled={!isElectronApiAvailable}
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={isLoading ? handleStop : handleSend}
+        className={`ai-send-btn ${isLoading ? 'is-stop' : ''}`}
+        disabled={!currentProjectPath || !isElectronApiAvailable}
+        aria-label={isLoading ? 'Arreter la generation de l IA' : "Envoyer a l IA"}
+      >
+        {isLoading ? (
+          <span className="ai-send-btn-content">
+            <span className="ai-stop-icon" aria-hidden="true" />
+            <span>Arreter</span>
+          </span>
+        ) : (
+          'Envoyer a l IA'
+        )}
+      </button>
     </div>
   );
 };

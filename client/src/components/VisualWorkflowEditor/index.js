@@ -330,15 +330,24 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
     const loadSavedWorkflow = useCallback(async (filename) => {
         if (!api || !currentProjectPath) return;
         try {
-            const content = await api.readFile(currentProjectPath, `.vibe-workflows/${filename}`);
-            if (content) {
-                const wf = JSON.parse(content);
-                loadWorkflowIntoCanvas(wf);
-                setActivePanel(null);
-                if (showMessage) showMessage(`Workflow "${wf.name}" chargé !`, 2000);
+            const res = await api.readFile(currentProjectPath, `.vibe-workflows/${filename}`);
+            if (res && res.success && res.content) {
+                try {
+                    const cleanContent = res.content.replace(/```(?:json)?|```/gi, '').trim();
+                    const wf = JSON.parse(cleanContent);
+                    loadWorkflowIntoCanvas(wf);
+                    setActivePanel(null);
+                    if (showMessage) showMessage(`Workflow "${wf.name}" chargé !`, 2000);
+                } catch (parseErr) {
+                    console.error('Erreur parsing workflow:', parseErr);
+                    if (showMessage) showMessage(`Workflow corrompu: ${filename}`, 3000);
+                }
+            } else if (res && !res.success) {
+                if (showMessage) showMessage(`Erreur lecture workflow: ${res.error || filename}`, 3000);
             }
         } catch (e) {
-            if (showMessage) showMessage('Erreur de chargement', 2000);
+            console.error('Erreur IO lecture workflow:', e);
+            if (showMessage) showMessage('Erreur de lecture du fichier', 3000);
         }
     }, [api, currentProjectPath, loadWorkflowIntoCanvas, showMessage]);
 

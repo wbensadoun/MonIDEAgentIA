@@ -13,6 +13,18 @@ const logger = require('./logger');
 let mainWindow;
 const processes = {};
 
+/**
+ * Security guard: ensures `sub` (resolved) is within `root`.
+ * Throws an error if path traversal is detected.
+ */
+function assertSafePath(root, sub) {
+  const rootResolved = path.resolve(root) + path.sep;
+  const subResolved = path.resolve(sub);
+  if (subResolved !== path.resolve(root) && !subResolved.startsWith(rootResolved)) {
+    throw new Error(`Accès refusé: chemin hors projet "${sub}"`);
+  }
+}
+
 const getLogsDir = () => {
   return path.join(app.getPath('userData'), 'logs');
 };
@@ -182,7 +194,9 @@ const createAppMenu = () => {
     <pre id="log">${escaped}</pre>
   </body>
 </html>`;
-              logsWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+              const tempHtmlPath = path.join(app.getPath('temp'), 'vibe-logs-viewer.html');
+              await fs.writeFile(tempHtmlPath, html, 'utf-8');
+              logsWindow.loadFile(tempHtmlPath);
             } catch (e) {
               dialog.showErrorBox('Erreur logs', e.message || String(e));
             }
@@ -488,6 +502,29 @@ async function createWindow() {
   if (isDev) {
     mainWindow.webContents.openDevTools();
   }
+
+  // --- Menu Contextuel Natif (Clic Droit) ---
+  mainWindow.webContents.on('context-menu', (event, params) => {
+    const contextMenuTemplate = [
+      { role: 'cut', label: 'Couper' },
+      { role: 'copy', label: 'Copier' },
+      { role: 'paste', label: 'Coller' },
+      { type: 'separator' },
+      { role: 'selectAll', label: 'Tout sélectionner' }
+    ];
+
+    // Ajouter l'inspecteur uniquement si pas de sélection de texte brut ou pour le confort dev
+    contextMenuTemplate.push({ type: 'separator' });
+    contextMenuTemplate.push({
+      label: 'Inspecter l\'élément',
+      click: () => {
+        mainWindow.webContents.inspectElement(params.x, params.y);
+      }
+    });
+
+    const contextMenu = Menu.buildFromTemplate(contextMenuTemplate);
+    contextMenu.popup({ window: mainWindow });
+  });
 
   // Événements de débogage
   mainWindow.webContents.on('did-finish-load', async () => {
@@ -1101,6 +1138,7 @@ ipcMain.handle('search-in-project', async (event, projectPath, query, options = 
 ipcMain.handle('read-file', async (event, projectPath, filename) => {
   try {
     const filePath = path.join(projectPath, filename);
+    assertSafePath(projectPath, filePath);
 
     // Vérifier si le fichier existe avant de le lire
     await fs.access(filePath);
@@ -1117,6 +1155,7 @@ ipcMain.handle('read-file', async (event, projectPath, filename) => {
 ipcMain.handle('write-file', async (event, projectPath, filename, content) => {
   try {
     const filePath = path.join(projectPath, filename);
+    assertSafePath(projectPath, filePath);
 
     // Créer les dossiers parents si nécessaire
     const dirPath = path.dirname(filePath);
@@ -1139,6 +1178,7 @@ ipcMain.handle('write-file', async (event, projectPath, filename, content) => {
 ipcMain.handle('delete-file', async (event, projectPath, filename) => {
   try {
     const filePath = path.join(projectPath, filename);
+    assertSafePath(projectPath, filePath);
     await fs.unlink(filePath);
     return { success: true };
   } catch (error) {
@@ -1151,6 +1191,7 @@ ipcMain.handle('delete-file', async (event, projectPath, filename) => {
 ipcMain.handle('createNewFile', async (event, projectPath, filename, initialContent = '') => {
   try {
     const filePath = path.join(projectPath, filename);
+    assertSafePath(projectPath, filePath);
 
     console.log(`Tentative de création du fichier: ${filePath}`);
 
@@ -1193,6 +1234,7 @@ ipcMain.handle('createNewFile', async (event, projectPath, filename, initialCont
 ipcMain.handle('createDirectory', async (event, projectPath, dirname) => {
   try {
     const dirPath = path.join(projectPath, dirname);
+    assertSafePath(projectPath, dirPath);
     // Vérifier si le dossier existe
     try {
       await fs.access(dirPath);
@@ -1211,6 +1253,7 @@ ipcMain.handle('createDirectory', async (event, projectPath, dirname) => {
 ipcMain.handle('deleteDirectory', async (event, projectPath, dirname) => {
   try {
     const dirPath = path.join(projectPath, dirname);
+    assertSafePath(projectPath, dirPath);
     await fs.rm(dirPath, { recursive: true, force: true }); // fs.rm est plus moderne que fs.rmdir
     return { success: true };
   } catch (error) {
@@ -1223,6 +1266,7 @@ ipcMain.handle('deleteDirectory', async (event, projectPath, dirname) => {
 ipcMain.handle('editFile', async (event, projectPath, filename, searchText, replaceText) => {
   try {
     const filePath = path.join(projectPath, filename);
+    assertSafePath(projectPath, filePath);
 
     // Lire le contenu actuel
     const currentContent = await fs.readFile(filePath, 'utf-8');
@@ -1260,6 +1304,8 @@ ipcMain.handle('renameFile', async (event, projectPath, oldFilename, newFilename
   try {
     const oldPath = path.join(projectPath, oldFilename);
     const newPath = path.join(projectPath, newFilename);
+    assertSafePath(projectPath, oldPath);
+    assertSafePath(projectPath, newPath);
 
     // Vérifier si le fichier source existe
     try {
@@ -1304,6 +1350,8 @@ ipcMain.handle('copyFile', async (event, projectPath, sourceFilename, destFilena
   try {
     const sourcePath = path.join(projectPath, sourceFilename);
     const destPath = path.join(projectPath, destFilename);
+    assertSafePath(projectPath, sourcePath);
+    assertSafePath(projectPath, destPath);
 
     // Vérifier si le fichier source existe
     try {
@@ -1352,6 +1400,8 @@ ipcMain.handle('moveFile', async (event, projectPath, sourceFilename, destFilena
   try {
     const sourcePath = path.join(projectPath, sourceFilename);
     const destPath = path.join(projectPath, destFilename);
+    assertSafePath(projectPath, sourcePath);
+    assertSafePath(projectPath, destPath);
 
     // Vérifier si le fichier source existe
     try {
@@ -1860,7 +1910,7 @@ function generateConversationTitle(conversationHistory) {
  * Commands are run with a 30s timeout in the project directory.
  * Output is capped at 4000 chars to stay within token limits.
  */
-const BLOCKED_COMMANDS = /^(rm\s+-rf\s+(\/|~)|format|del\s+\/[sfq]+|shutdown|reboot|halt|rmdir\s+\/[sq]+)/i;
+const ALLOWED_COMMANDS = /^(npm|node|npx|git|ls|dir|cd|mkdir|echo|cat|type|python|py|go|cargo|rustc|gradlew|mvn)(?:\s|$)/i;
 const MAX_CMD_OUTPUT = 4000;
 
 const executeCommandForAI = (cmd, projectPath) => {
@@ -1869,8 +1919,13 @@ const executeCommandForAI = (cmd, projectPath) => {
       return resolve({ success: false, output: '[AI TERMINAL] Commande vide ignorée.' });
     }
     const trimmedCmd = cmd.trim();
-    if (BLOCKED_COMMANDS.test(trimmedCmd)) {
-      return resolve({ success: false, output: `[AI TERMINAL] Commande bloquée pour sécurité: ${trimmedCmd}` });
+
+    // Check if the command starts with an allowed word
+    if (!ALLOWED_COMMANDS.test(trimmedCmd)) {
+      return resolve({
+        success: false,
+        output: `[AI TERMINAL] ❌ Commande bloquée par sécurité.\nSeules les commandes de build/dev standards sont autorisées (npm, git, python, etc.).\nCommande refusée: ${trimmedCmd}`
+      });
     }
 
     // --- Pseudo-commandes N8N Catalog ---
@@ -2037,7 +2092,46 @@ Règles :
 - Tu peux enchaîner plusieurs commandes en plusieurs tours (max 8 itérations automatiques).
 - Si une commande échoue, analyse l'erreur et essaie une solution alternative.
 - Quand tu n'as plus besoin d'exécuter de commandes, réponds normalement sans balise <run_command>.
+
+CRÉATION DE FICHIERS — AGENT AUTONOME :
+Pour créer ou modifier un fichier, utilise EXACTEMENT ce format (appliqué automatiquement) :
+
+**FICHIER: chemin/relatif/nom.ext**
+\`\`\`langage
+// contenu complet du fichier
+\`\`\`
+
+Règles fichiers :
+- Utilise toujours ce format quand l'utilisateur demande du code, une appli, un composant, une config.
+- Mets le chemin relatif complet (ex: src/components/Button.jsx, backend/routes/auth.js).
+- Produis le contenu COMPLET du fichier, jamais un extrait.
+- Tu peux créer plusieurs fichiers en un seul message.
+- NE décris PAS les fichiers — CRÉE-les directement.
+
+CRÉATION DE WORKFLOW VISUEL — AGENT AUTONOME :
+Si l'utilisateur demande un workflow, un plan d'architecture, ou un diagramme de processus, génère aussi un workflow visuel avec ce format (importé automatiquement dans l'éditeur visuel) :
+
+**WORKFLOW: NomDuWorkflow**
+\`\`\`json
+{
+  "name": "NomDuWorkflow",
+  "nodes": [
+    {"id":"node_1","type":"trigger","label":"Démarrage","icon":"▶️","position":{"x":100,"y":150},"config":{"triggerType":"manual"}},
+    {"id":"node_2","type":"ai","label":"Analyse IA","icon":"🤖","position":{"x":350,"y":150},"config":{"model":"gemini","prompt":"Analysez..."}},
+    {"id":"node_3","type":"action","label":"Créer fichiers","icon":"💻","position":{"x":600,"y":150},"config":{"command":"npm install"}},
+    {"id":"node_4","type":"output","label":"Résultat","icon":"🔔","position":{"x":850,"y":150},"config":{"message":"Terminé !"}}
+  ],
+  "edges": [
+    {"source":"node_1","target":"node_2"},
+    {"source":"node_2","target":"node_3"},
+    {"source":"node_3","target":"node_4"}
+  ]
+}
+\`\`\`
+
+Types de nœuds disponibles : trigger (▶️) | ai (🤖) | action (💻) | logic (🔀) | output (🔔)
 `;
+
 
 /**
  * Parses a single <run_command> tag from an AI response text.
@@ -2186,6 +2280,7 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
         max_tokens: options.maxTokens || 16384,
         temperature: options.temperature || 0.7,
       };
+      logger.info(`[Kimi Agent API] Payload envoyé : ${JSON.stringify(requestBody, null, 2)}`);
       const resp = await axios.post(kimiUrl, requestBody, {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         timeout: 180000,
@@ -2196,7 +2291,7 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       return resp.data.choices[0].message.content;
     };
 
-    console.log('[Main][Kimi] Envoi de la requête à Together avec clé Kimi...');
+    logger.info(`[Kimi Agent API] Création du prompt et appel du modèle ${model}...`);
 
     try {
       // ReAct agent loop — max 8 iterations
@@ -2206,7 +2301,10 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       const MAX_ITERATIONS = 8;
 
       for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+        logger.info(`[Kimi Agent API] Itération ReAct ${iter + 1}/${MAX_ITERATIONS}...`);
         const aiText = await kimiCallWithMessages(messages);
+        logger.info(`[Kimi Agent API] Réponse de l'IA (Itération ${iter + 1}):\n${aiText}`);
+
         fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
 
         const cmd = parseRunCommand(aiText);
@@ -2238,7 +2336,13 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       return { success: true, text: fullTranscript, terminalActions: MAX_ITERATIONS };
 
     } catch (error) {
-      console.error("[Main][Kimi] Erreur lors de l'appel à l'API Together:", error.response ? error.response.data : error.message);
+      if (error.response && error.response.status === 429) {
+        const errorMsg = "Limite de requêtes atteinte (Quota API Together/Kimi épuisé ou trop de requêtes). Veuillez patienter quelques instants avant de réessayer.";
+        logger.error('[Kimi Agent API] Erreur 429 Rate Limit:', error.response.data);
+        dialog.showErrorBox('Erreur API Kimi (Trop de requêtes)', errorMsg);
+        return { success: false, error: 'Rate limit (429)' };
+      }
+      logger.error("[Kimi Agent API] Erreur lors de l'appel à l'API Together:", error.response ? error.response.data : error.message);
       dialog.showErrorBox('Erreur API Kimi', `Erreur lors de l'appel à l'API Kimi: ${error.message}.`);
       return { success: false, error: error.message };
     }
@@ -2288,6 +2392,114 @@ ipcMain.handle('list-gemini-models', async (event, apiKey) => {
       success: false,
       error: error.response?.data?.message || error.message
     };
+  }
+});
+
+// --- IPC Handler for Inline Completion (Ghost Text / Ctrl+K) ---
+ipcMain.handle('get-inline-completion', async (event, prompt, code, options = {}) => {
+  const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
+  const model = options.model || 'gemini-2.5-flash';
+
+  if (!apiKey) return { success: false, error: "La clé API Gemini est requise pour l'autocomplétion." };
+
+  const systemInstruction = `Tu es un assistant de complétion de code ultra-strict.
+RÈGLES ABSOLUES:
+1. Ne renvoie QUE le code complété ou modifié.
+2. N'ajoute AUCUN bloc markdown (\`\`\`), ni préfixe, ni texte explicatif.
+3. Le texte que tu renvoies remplacera EXACTEMENT la sélection de l'utilisateur.`;
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const payload = {
+    system_instruction: { parts: [{ text: systemInstruction }] },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: `CONTEXTE DU FICHIER:\n${code}\n\nINSTRUCTION OU CODE SÉLECTIONNÉ:\n${prompt}` }
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.1, // Très faible pour éviter les hallucinations
+      maxOutputTokens: 2048
+    }
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error?.message || `Erreur HTTP: ${response.status}`);
+    }
+
+    let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    // Strip markdown blocks if the AI still included them
+    text = text.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trim();
+
+    return { success: true, text };
+  } catch (error) {
+    console.error('[Main] Erreur Inline Completion:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// --- IPC Handler for Ghost Text / Autocomplete (FIM) ---
+ipcMain.handle('get-ghost-completion', async (event, prefix, suffix, options = {}) => {
+  const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
+  const model = options.model || 'gemini-2.5-flash';
+
+  if (!apiKey) return { success: false, error: "La clé API Gemini est requise." };
+
+  const systemInstruction = `Tu es une IA ultra-rapide d'autocomplétion de code (Fill-In-The-Middle).
+Ton but est de prédire EXACTEMENT le code qui manque entre le <PREFIX> (avant le curseur) et le <SUFFIX> (après le curseur).
+RÈGLES ABSOLUES:
+1. NE RENVOIE QUE LE TEXTE MANQUANT. Rien d'autre.
+2. N'ajoute AUCUN bloc markdown (\`\`\`), ni préfixe, ni explication.
+3. Si aucune complétion n'est logique, renvoie une chaîne vide.`;
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const payload = {
+    system_instruction: { parts: [{ text: systemInstruction }] },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: `<PREFIX>\n${prefix}\n</PREFIX>\n\n<SUFFIX>\n${suffix}\n</SUFFIX>` }
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 256 // We want fast, short predictions
+    }
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error?.message || `Erreur HTTP: ${response.status}`);
+    }
+
+    let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    text = text.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trimEnd();
+
+    return { success: true, text };
+  } catch (error) {
+    console.error('[Main] Erreur Ghost Completion:', error);
+    return { success: false, error: error.message };
   }
 });
 
@@ -2518,7 +2730,7 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       ...extraMessages
     ];
 
-    console.log('[Main] Envoi de la requête à Gemini...');
+    logger.info('[Gemini Agent API] Création du prompt et appel du modèle...');
 
     try {
       const geminiCallWithContents = async (contents) => {
@@ -2536,7 +2748,10 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       const MAX_ITERATIONS = 8;
 
       for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+        logger.info(`[Gemini Agent API] Itération ReAct ${iter + 1}/${MAX_ITERATIONS}...`);
         const aiText = await geminiCallWithContents(contents);
+        logger.info(`[Gemini Agent API] Réponse de l'IA (Itération ${iter + 1}):\n${aiText}`);
+
         fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
 
         const cmd = parseRunCommand(aiText);
@@ -2565,7 +2780,14 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       return { success: true, text: fullTranscript, terminalActions: MAX_ITERATIONS };
 
     } catch (error) {
-      console.error("[Main] Erreur lors de l'appel à l'API Gemini:", error.response ? error.response.data : error.message);
+      if (error.response && error.response.status === 429) {
+        const errorMsg = "Limite de requêtes atteinte (Quota API Gemini épuisé ou trop de requêtes rapides). Veuillez patienter quelques instants avant de réessayer.";
+        logger.error('[Gemini Agent API] Erreur 429 Rate Limit:', error.response.data);
+        dialog.showErrorBox('Erreur API Gemini (Trop de requêtes)', errorMsg);
+        return { success: false, error: 'Rate limit (429)' };
+      }
+
+      logger.error("[Gemini Agent API] Erreur lors de l'appel à l'API Gemini:", error.response ? error.response.data : error.message);
       dialog.showErrorBox('Erreur API Gemini', `Erreur lors de l'appel à l'API Gemini: ${error.message}.`);
       return { success: false, error: error.message };
     }
@@ -2768,7 +2990,7 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
       mergedMessages.unshift({ role: 'user', content: [{ type: 'text', text: '(Contexte initial)' }] });
     }
 
-    console.log('[Main][Claude] Envoi de la requête à Anthropic...');
+    logger.info(`[Claude Agent API] Création du prompt et appel du modèle ${model}...`);
 
     const claudeCallWithMessages = async (msgs) => {
       const response = await anthropic.messages.create({
@@ -2786,7 +3008,10 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
     let currentMessages = [...mergedMessages];
 
     for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+      logger.info(`[Claude Agent API] Itération ReAct ${iter + 1}/${MAX_ITERATIONS}...`);
       const aiText = await claudeCallWithMessages(currentMessages);
+      logger.info(`[Claude Agent API] Réponse de l'IA (Itération ${iter + 1}):\n${aiText}`);
+
       fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
 
       const cmd = parseRunCommand(aiText);
@@ -2814,10 +3039,19 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
     return { success: true, text: fullTranscript, terminalActions: MAX_ITERATIONS };
 
   } catch (error) {
-    console.error("[Main][Claude] Erreur API:", error);
+    if (error.status === 429) {
+      const errorMsg = "Limite de requêtes atteinte (Quota API Anthropic/Claude épuisé ou trop de requêtes). Veuillez patienter quelques instants avant de réessayer.";
+      logger.error('[Claude Agent API] Erreur 429 Rate Limit:', error);
+      dialog.showErrorBox('Erreur API Claude (Trop de requêtes)', errorMsg);
+      return { success: false, error: 'Rate limit (429)' };
+    }
+    logger.error("[Claude Agent API] Erreur API:", error);
+    dialog.showErrorBox('Erreur API Claude', `Erreur lors de l'appel à l'API Claude: ${error.message}.`);
     return { success: false, error: error.message };
   }
 });
+
+
 
 // List all workflows (global + workspace)
 ipcMain.handle('list-workflows', async (event, projectPath) => {
@@ -3020,6 +3254,7 @@ ipcMain.handle('delete-visual-workflow', async (event, projectPath, filename) =>
   try {
     if (!projectPath || !filename) return { success: false, error: 'Missing params' };
     const filePath = path.join(getVisualWorkflowsDir(projectPath), filename);
+    assertSafePath(getVisualWorkflowsDir(projectPath), filePath);
     await fs.unlink(filePath);
     console.log(`[VisualWorkflows] Deleted: ${filePath}`);
     return { success: true };
@@ -3201,9 +3436,19 @@ const loadAllGlobalSkillsForCompletion = async () => {
 
       if (fsSync.existsSync(skillFile)) {
         const content = await fs.readFile(skillFile, 'utf-8');
-        // We truncate each skill to prevent context blowup, but keep the limit generous
-        const truncated = truncateTextForPrompt(content, 16000, '\n[...TRUNCATED SKILL...]');
-        combinedContent += `\n\n--- SKILL GLOBAL: ${skillName} ---\n${truncated}\n--- FIN SKILL GLOBAL ---`;
+
+        // Extraire uniquement le frontmatter YAML pour réduire drastiquement la taille du payload
+        let summary = '';
+        const yamlMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+
+        if (yamlMatch) {
+          summary = `---\n${yamlMatch[1]}\n---\n(Pour lire les détails complets de ce skill, utilisez un outil de style view_file ou fs.readFile sur le fichier : ${skillFile})`;
+        } else {
+          // Si pas de frontmatter, on prend juste les 300 premiers caractères
+          summary = truncateTextForPrompt(content, 300, '\n[...TRUNCATED SKILL...]');
+        }
+
+        combinedContent += `\n\n--- SKILL GLOBAL: ${skillName} ---\n${summary}\n--- FIN SKILL GLOBAL ---`;
       }
     }
 
@@ -3402,6 +3647,10 @@ ipcMain.handle('get-skill', async (event, name, scope, projectPath) => {
 
     const skillDir = path.join(dir, safeName);
     const skillFile = path.join(skillDir, 'SKILL.md');
+    if (!fsSync.existsSync(skillFile)) {
+      console.warn(`[Skills] SKILL.md introuvable pour "${safeName}" (${scope}): ${skillFile}`);
+      return { success: false, error: `SKILL.md introuvable pour le skill "${safeName}"` };
+    }
     const content = await fs.readFile(skillFile, 'utf-8');
 
     return {
@@ -3873,7 +4122,7 @@ ipcMain.handle('sync-voltagent-subagents', async (event, options = {}) => {
 ipcMain.handle('git-status', async (event, projectPath) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const stdout = await runGit(['status', '--porcelain', '-u'], projectPath);
+    const { stdout } = await runGit(['status', '--porcelain', '-u'], projectPath);
     const lines = stdout.split('\n').filter(Boolean).map(line => ({
       status: line.substring(0, 2).trim(),
       file: line.substring(3).trim()
@@ -3888,7 +4137,7 @@ ipcMain.handle('git-diff', async (event, projectPath, filePath) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
     const args = filePath ? ['diff', 'HEAD', '--', filePath] : ['diff', 'HEAD'];
-    const stdout = await runGit(args, projectPath);
+    const { stdout } = await runGit(args, projectPath);
     return { success: true, diff: stdout };
   } catch (error) {
     return { success: false, error: error.message };
@@ -3933,7 +4182,7 @@ ipcMain.handle('git-push', async (event, projectPath, remote, branch) => {
 ipcMain.handle('git-pull', async (event, projectPath) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const stdout = await runGit(['pull'], projectPath);
+    const { stdout } = await runGit(['pull'], projectPath);
     return { success: true, output: stdout };
   } catch (error) {
     return { success: false, error: error.message };
@@ -3943,7 +4192,7 @@ ipcMain.handle('git-pull', async (event, projectPath) => {
 ipcMain.handle('git-log', async (event, projectPath, limit = 20) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const stdout = await runGit(['log', `--max-count=${limit}`, '--pretty=format:%H|%an|%ae|%ar|%s'], projectPath);
+    const { stdout } = await runGit(['log', `--max-count=${limit}`, '--pretty=format:%H|%an|%ae|%ar|%s'], projectPath);
     const commits = stdout.split('\n').filter(Boolean).map(line => {
       const parts = line.split('|');
       return { hash: parts[0], author: parts[1], email: parts[2], date: parts[3], message: parts.slice(4).join('|') };
@@ -3957,7 +4206,7 @@ ipcMain.handle('git-log', async (event, projectPath, limit = 20) => {
 ipcMain.handle('git-init', async (event, projectPath) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const stdout = await runGit(['init'], projectPath);
+    const { stdout } = await runGit(['init'], projectPath);
     return { success: true, output: stdout };
   } catch (error) {
     return { success: false, error: error.message };
@@ -3967,7 +4216,7 @@ ipcMain.handle('git-init', async (event, projectPath) => {
 ipcMain.handle('git-branch', async (event, projectPath) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const stdout = await runGit(['branch', '--show-current'], projectPath);
+    const { stdout } = await runGit(['branch', '--show-current'], projectPath);
     return { success: true, branch: stdout.trim() };
   } catch (error) {
     return { success: false, error: error.message };
@@ -3977,7 +4226,7 @@ ipcMain.handle('git-branch', async (event, projectPath) => {
 ipcMain.handle('git-remotes', async (event, projectPath) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const stdout = await runGit(['remote', '-v'], projectPath);
+    const { stdout } = await runGit(['remote', '-v'], projectPath);
     return { success: true, remotes: stdout.trim() };
   } catch (error) {
     return { success: false, error: error.message };
@@ -4048,9 +4297,8 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
       const resp = await axios.post(`${OLLAMA_BASE_URL}/api/chat`, {
         model,
         messages,
-        stream: false,
         options: { temperature: options.temperature || 0.7, num_predict: options.maxTokens || 8192 }
-      }, { timeout: 180000 });
+      }); // no timeout
       return resp.data?.message?.content || '';
     };
 
@@ -4098,34 +4346,89 @@ ipcMain.handle('get-ollama-multi-completion', async (event, history, currentCode
     if (!lastMessage || !lastMessage.text) return { success: false, error: 'Aucune question.' };
     const userPrompt = String(lastMessage.text);
 
-    // ── Load skills content ──────────────────────────────────────
-    // options.skillsContent = array of { name, content } from frontend
+    // ── Skill names only (lightweight) ──────────────────────────
     const skillsList = Array.isArray(options.skillsContent) ? options.skillsContent : [];
-    const allSkillsText = skillsList.length > 0
-      ? '--- SKILLS DISPONIBLES ---\n' + skillsList.map(s => `## SKILL: ${s.name}\n${s.content}`).join('\n\n') + '\n--- FIN SKILLS ---'
+    const skillNamesText = skillsList.length > 0
+      ? '\nSkills disponibles: ' + skillsList.map(s => s.name).join(', ') + '\nChoisis max 5 skills pertinents.'
       : '';
 
-    // ── Build project context ─────────────────────────────────────
+    // ── Build compact project context ─────────────────────────────
     let projectContext = '';
     if (allProjectFiles?.files) {
-      const filesToShow = pickFilesForContext(allProjectFiles.files, 10);
-      projectContext = '\n--- CONTEXTE PROJET ---\n';
+      const filesToShow = pickFilesForContext(allProjectFiles.files, 8);
+      projectContext = '\n--- PROJET ---\n';
       for (const [fp, fd] of filesToShow) {
-        projectContext += `\n=== ${fp} ===\n${(fd.content || '').substring(0, 1000)}\n`;
+        projectContext += `== ${fp} ==\n${(fd.content || '').substring(0, 800)}\n`;
       }
-      projectContext += '--- FIN CONTEXTE ---\n';
+      projectContext += '---\n';
     }
-    const codeCtx = currentCode ? `\nFICHIER OUVERT:\n${currentCode.substring(0, 2000)}` : '';
+    const codeCtx = currentCode ? `\nFICHIER OUVERT:\n${currentCode.substring(0, 1500)}` : '';
 
-    // ── Ollama call helper ────────────────────────────────────────
-    const ollamaCall = async (messages) => {
-      const resp = await axios.post(`${OLLAMA_BASE_URL_MULTI}/api/chat`, {
+    // ── Streaming Ollama call: sends tokens live to frontend ─────────
+    const ollamaCall = async (messages, maxTokens, agentLabel) => {
+      const response = await axios.post(`${OLLAMA_BASE_URL_MULTI}/api/chat`, {
         model,
         messages,
-        stream: false,
-        options: { temperature: 0.7, num_predict: options.maxTokens || 8192 }
-      }, { timeout: 180000 });
-      return resp.data?.message?.content || '';
+        stream: true,
+        options: { temperature: 0.7, num_predict: maxTokens || 2048 }
+      }, {
+        responseType: 'stream'
+        // no timeout, wait as long as needed
+      });
+
+      return new Promise((resolve, reject) => {
+        let fullText = '';
+        let hasStarted = false;
+
+        // Soft timeout warnings (non-blocking)
+        const loadWarning = setTimeout(() => {
+          if (!hasStarted && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('ai-multi-ollama-step', { label: `${agentLabel} ⏳ (Chargement long...)`, status: 'active', text: '' });
+          }
+        }, 45000);
+
+        const execWarning = setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('ai-multi-ollama-step', { label: `${agentLabel} ⏳ (Génération longue...)`, status: 'active', text: '' });
+          }
+        }, 120000);
+
+        const cleanupTimers = () => { clearTimeout(loadWarning); clearTimeout(execWarning); };
+
+        response.data.on('data', (chunk) => {
+          try {
+            hasStarted = true;
+            const lines = chunk.toString().split('\n').filter(l => l.trim());
+            for (const line of lines) {
+              const json = JSON.parse(line);
+              const token = json?.message?.content || '';
+              if (token) {
+                fullText += token;
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('ollama-multi-token', {
+                    agent: agentLabel,
+                    token,
+                    done: false
+                  });
+                }
+              }
+              if (json.done) {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('ollama-multi-token', {
+                    agent: agentLabel,
+                    token: '',
+                    done: true
+                  });
+                }
+                cleanupTimers();
+                resolve(fullText);
+              }
+            }
+          } catch (e) { /* ignore malformed chunk */ }
+        });
+        response.data.on('end', () => { cleanupTimers(); resolve(fullText); });
+        response.data.on('error', (err) => { cleanupTimers(); reject(err); });
+      });
     };
 
     const sendStep = (label, status, text) => {
@@ -4134,86 +4437,205 @@ ipcMain.handle('get-ollama-multi-completion', async (event, history, currentCode
       }
     };
 
-    // ────────── Agent 1 : Architecte ──────────
-    // Reçoit TOUS les skills, décide lesquels attribuer à chaque agent
+    // ────────── Agent 1 : Architecte (RAPIDE — 4096 tokens) ──────────
     sendStep('🏗️ Architecte', 'active', '');
-    const archSystemPrompt = [
-      `Tu es un architecte logiciel senior et chef de projet IA.`,
-      projectContext,
-      codeCtx,
-      allSkillsText,
-      `
-RÔLE: Analyse la demande, produis un plan technique structuré ET attribue explicitement les skills pertinents aux agents suivants:
-- **Codeur** : chargé de l'implémentation complète
-- **Relecteur** : chargé de la revue qualité, sécurité et optimisation
+    const archSystem = `Tu es un architecte logiciel senior. Sois CONCIS (max 300 mots).
+${projectContext}${codeCtx}${skillNamesText}
 
-Dans ton plan, inclus une section:
-## Skills attribués
-- Codeur: [liste des noms de skills à utiliser]
-- Relecteur: [liste des noms de skills à utiliser]
+RÉPONDS avec:
+1. Plan technique en bullet points (structure fichiers, technologies, architecture)
+2. Section "## Skills attribués" avec:
+   - Codeur: [max 5 noms de skills]
+   - Relecteur: [max 3 noms de skills]
 
-Sois concis et précis.`
-    ].filter(Boolean).join('\n');
+PAS de code. PAS d'explications longues. Juste le plan.`;
 
     const archPlan = await ollamaCall([
-      { role: 'system', content: archSystemPrompt },
+      { role: 'system', content: archSystem },
       { role: 'user', content: userPrompt }
-    ]);
+    ], 2048, '🏗️ Architecte');
     sendStep('🏗️ Architecte', 'done', archPlan);
 
-    // Parse skill assignments from Architecte plan (best-effort)
-    const parseAssignedSkills = (plan, agentName) => {
+    // ── Read only selected skills from disk ──────────────────────
+    const readSkillFile = async (name, scope, pPath) => {
+      try {
+        const safeName = safeFileBase(name);
+        if (!safeName) return '';
+        let dir;
+        if (scope === 'global') dir = getGlobalSkillsDir();
+        else if (scope === 'workspace' && pPath) dir = getWorkspaceSkillsDir(pPath);
+        else return '';
+        const skillFile = path.join(dir, safeName, 'SKILL.md');
+        if (fsSync.existsSync(skillFile)) {
+          return await fs.readFile(skillFile, 'utf-8');
+        }
+      } catch (e) { }
+      return '';
+    };
+
+    const parseAssignedSkills = async (plan, agentName) => {
       try {
         const regex = new RegExp(`${agentName}\\s*:\\s*(.+?)(?:\\n|$)`, 'i');
         const match = plan.match(regex);
-        if (!match) return allSkillsText; // fallback: give all skills
-        const assigned = match[1].split(',').map(s => s.trim().replace(/[\[\]]/g, ''));
-        const filtered = skillsList.filter(s => assigned.some(a => a.toLowerCase().includes(s.name.toLowerCase())));
-        return filtered.length > 0
-          ? '--- SKILLS ASSIGNÉS ---\n' + filtered.map(s => `## SKILL: ${s.name}\n${s.content}`).join('\n\n') + '\n--- FIN SKILLS ---'
-          : allSkillsText;
-      } catch { return allSkillsText; }
+        if (!match) return '';
+        const assignedNames = match[1].split(',').map(s => s.trim().replace(/[\[\]]/g, ''));
+        const filtered = skillsList.filter(s => assignedNames.some(a => a.toLowerCase().includes(s.name.toLowerCase())));
+        if (filtered.length === 0) return '';
+        let content = '--- SKILLS ---\n';
+        for (const s of filtered.slice(0, 5)) {
+          const fileContent = await readSkillFile(s.name, s.scope, options.projectPath);
+          if (fileContent) content += `## ${s.name}\n${fileContent.substring(0, 3000)}\n\n`;
+        }
+        return content + '---';
+      } catch { return ''; }
     };
 
-    const coderSkills = parseAssignedSkills(archPlan, 'Codeur');
-    const reviewSkills = parseAssignedSkills(archPlan, 'Relecteur');
+    const coderSkills = await parseAssignedSkills(archPlan, 'Codeur');
+    const reviewSkills = await parseAssignedSkills(archPlan, 'Relecteur');
 
-    // ────────── Agent 2 : Codeur ──────────
+    // ────────── Agent 2 : Codeur (ACTION — 8192 tokens) ──────────
     sendStep('💻 Codeur', 'active', '');
-    const coderSystem = [
-      `Tu es un expert développeur full-stack.`,
-      projectContext,
-      codeCtx,
-      coderSkills,
-      `Implémente le plan de l'architecte. Produis du code complet, fonctionnel et bien commenté.\nPour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code complet\n\`\`\`\n${TERMINAL_CAPABILITY_PROMPT}`
-    ].filter(Boolean).join('\n');
+    const coderSystem = `Tu es un développeur full-stack expert. Tu CRÉES les fichiers, tu ne décris pas.
+${projectContext}${codeCtx}
+${coderSkills}
+
+RÈGLES STRICTES:
+- Pour chaque fichier à créer/modifier: **FICHIER: chemin/nom.ext** \`\`\`langage\n// code complet\n\`\`\`
+- Si un workflow visuel est demandé, produis: **WORKFLOW: NomDuWorkflow** \`\`\`json
+{
+  "name": "Nom",
+  "nodes": [{"id":"node_1","type":"trigger|ai|action|logic|output","label":"Nom","icon":"▶️|🤖|💻|🔀|🔔","position":{"x":100,"y":150},"config":{}}],
+  "edges": [{"source":"node_1","target":"node_2"}]
+}
+\`\`\`
+- Produis du code COMPLET et FONCTIONNEL, pas des extraits.
+${TERMINAL_CAPABILITY_PROMPT}`;
 
     const coderOutput = await ollamaCall([
       { role: 'system', content: coderSystem },
-      { role: 'user', content: `Demande originale: ${userPrompt}\n\nPLAN DE L'ARCHITECTE:\n${archPlan}` }
-    ]);
+      { role: 'user', content: `${userPrompt}\n\nPLAN:\n${archPlan}` }
+    ], 4096, '💻 Codeur');
     sendStep('💻 Codeur', 'done', coderOutput);
 
-    // ────────── Agent 3 : Relecteur ──────────
-    sendStep('🔍 Relecteur', 'active', '');
-    const reviewSystem = [
-      `Tu es un expert en revue de code, sécurité et optimisation.`,
-      projectContext,
-      reviewSkills,
-      `Examine le code produit. Identifie bugs, failles de sécurité, problèmes de performance et lisibilité. Propose une version finale corrigée avec le même format FICHIER: ... si tu modifies du code.`
-    ].filter(Boolean).join('\n');
+    // ── Helper to run a shell command and get its output ──────────────────
+    const runShellCommand = (cmd, cwd) => new Promise((resolve) => {
+      const proc = spawn(process.platform === 'win32' ? 'cmd' : 'sh',
+        process.platform === 'win32' ? ['/c', cmd] : ['-c', cmd],
+        { cwd: cwd || options.projectPath || process.cwd(), shell: false });
+      let stdout = '';
+      let stderr = '';
+      proc.stdout?.on('data', d => { stdout += d.toString(); });
+      proc.stderr?.on('data', d => { stderr += d.toString(); });
+      proc.on('close', (code) => {
+        resolve({ code, stdout: stdout.substring(0, 2000), stderr: stderr.substring(0, 2000) });
+      });
+      proc.on('error', (e) => resolve({ code: -1, stdout: '', stderr: e.message }));
+      // No timeout: let long-running commands (npm install, tests) finish
+    });
 
-    const reviewOutput = await ollamaCall([
-      { role: 'system', content: reviewSystem },
-      { role: 'user', content: `Demande: ${userPrompt}\n\nPLAN:\n${archPlan}\n\nCODE PRODUIT:\n${coderOutput}\n\nFournis ta revue complète et la version finale.` }
-    ]);
-    sendStep('🔍 Relecteur', 'done', reviewOutput);
+    // ── Parse <run_command>...</run_command> blocks ──
+    const parseTestCommands = (text) => {
+      const results = [];
+      const regex = /<run_command>([\s\S]*?)<\/run_command>/gi;
+      let m;
+      while ((m = regex.exec(text)) !== null) {
+        const cmd = m[1].trim();
+        if (cmd) results.push(cmd);
+      }
+      return results;
+    };
 
-    // ────────── Synthèse ──────────
+    // ────────── Testeur + Correction Loop ──────────
+    const MAX_CORRECTIONS = 3;
+    let currentCode = coderOutput;
+    let testLog = '';
+    const correctionHistory = [];
+
+    for (let iteration = 0; iteration <= MAX_CORRECTIONS; iteration++) {
+      sendStep('🧪 Testeur', 'active', `Itération ${iteration + 1}`);
+
+      const testerSystem = `Tu es un ingénieur QA senior. Tu crées des tests, testes les routes API, crées des données de test (JSON fixtures) et détectes les bugs réels.
+
+RÈGLES STRICTES:
+- Pour exécuter une commande (curl, node, npm test...): <run_command>commande</run_command>
+- Pour créer un fichier de test: **FICHIER: tests/nom.ext** \`\`\`langage\\ncontenu\`\`\`
+- Liste les erreurs avec: **ERREUR:** description précise de l'erreur
+- Si tout passe: **STATUT: OK**
+${testLog ? `\nRÉSULTATS DES COMMANDES PRÉCÉDENTES:\n${testLog}` : ''}`;
+
+      const testerOutput = await ollamaCall([
+        { role: 'system', content: testerSystem },
+        { role: 'user', content: `Teste ce code:\n\n${currentCode.substring(0, 3000)}\n\nDemande originale: ${userPrompt}` }
+      ], 2048, '🧪 Testeur');
+
+      sendStep('🧪 Testeur', 'done', testerOutput);
+
+      // Run shell commands the Testeur requested
+      const commands = parseTestCommands(testerOutput);
+      let commandResults = '';
+      for (const cmd of commands.slice(0, 5)) {
+        const cmdLabel = `⚡ ${cmd.substring(0, 50)}`;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('ai-multi-ollama-step', { label: cmdLabel, status: 'active', text: '' });
+        }
+
+        // Soft timeout warning for long commands (30s)
+        const cmdWarningId = setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('ai-multi-ollama-step', { label: `${cmdLabel} ⏳ (Long...)`, status: 'active', text: '' });
+          }
+        }, 30000);
+
+        const result = await runShellCommand(cmd);
+        clearTimeout(cmdWarningId);
+
+        commandResults += `\n$ ${cmd}\n→ exit: ${result.code}\n${result.stdout}${result.stderr ? '\nSTDERR: ' + result.stderr : ''}\n`;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('ai-multi-ollama-step', { label: cmdLabel, status: 'done', text: commandResults });
+        }
+      }
+      if (commandResults) testLog += commandResults;
+
+      const hasErrors = /\*\*ERREUR:/i.test(testerOutput);
+      const allOK = /\*\*STATUT:\s*OK/i.test(testerOutput);
+
+      correctionHistory.push({
+        iteration: iteration + 1,
+        testerReport: testerOutput,
+        commandResults,
+        passed: allOK && !hasErrors
+      });
+
+      if ((allOK && !hasErrors) || iteration >= MAX_CORRECTIONS) break;
+
+      // ── Architecte correction round ──
+      sendStep('🏗️ Architecte', 'active', `Correction ${iteration + 1}`);
+      const errorSummary = testerOutput.match(/\*\*ERREUR:[\s\S]*?(?=\*\*|\n\n|$)/gi)?.join('\n') || testerOutput.substring(0, 800);
+      const correctionPlan = await ollamaCall([
+        { role: 'system', content: `${archSystem}\n\nCorrige uniquement les erreurs signalées. Sois minimal.` },
+        { role: 'user', content: `ERREURS:\n${errorSummary}\n\nCODE:\n${currentCode.substring(0, 2000)}` }
+      ], 1024, '🏗️ Architecte (correction)');
+      sendStep('🏗️ Architecte', 'done', correctionPlan);
+
+      // ── Codeur correction round ──
+      sendStep('💻 Codeur', 'active', `Correction ${iteration + 1}`);
+      const correctedCode = await ollamaCall([
+        { role: 'system', content: `${coderSystem}\n\nApplique UNIQUEMENT les corrections. Ne régénère pas tout.` },
+        { role: 'user', content: `PLAN DE CORRECTION:\n${correctionPlan}\n\nERREURS:\n${errorSummary}` }
+      ], 2048, '💻 Codeur (correction)');
+      sendStep('💻 Codeur', 'done', correctedCode);
+      currentCode += '\n\n---CORRECTION---\n\n' + correctedCode;
+    }
+
+    // ────────── Synthèse finale ──────────
+    const testSummary = correctionHistory.map(h =>
+      `### Itération ${h.iteration}\n${h.passed ? '✅ Tests OK' : '❌ Erreurs détectées'}\n${h.commandResults ? '```\n' + h.commandResults + '\n```' : ''}`
+    ).join('\n\n');
+
     const finalText = [
-      `## 🏗️ Plan & Attribution Skills (Architecte)\n${archPlan}`,
-      `## 💻 Implémentation (Codeur)\n${coderOutput}`,
-      `## 🔍 Revue & Version finale (Relecteur)\n${reviewOutput}`
+      `## 🏗️ Plan (Architecte)\n${archPlan}`,
+      `## 💻 Code (Codeur)\n${currentCode}`,
+      `## 🧪 Rapport de tests\n${testSummary}`
     ].join('\n\n---\n\n');
 
     return { success: true, text: finalText, multiAgent: true };
@@ -4222,4 +4644,5 @@ Sois concis et précis.`
     return { success: false, error: `Ollama Multi: ${error.message}` };
   }
 });
+
 

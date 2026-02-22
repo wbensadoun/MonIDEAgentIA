@@ -152,6 +152,12 @@ try {
     getOllamaCompletion: (history, currentCode, allProjectFiles, options) =>
       ipcRenderer.invoke('get-ollama-completion', history, currentCode, allProjectFiles, options),
 
+    // Inline Completion (Ctrl+K / Ghost Text)
+    getInlineCompletion: (prompt, code, options) =>
+      ipcRenderer.invoke('get-inline-completion', prompt, code, options),
+    getGhostCompletion: (prefix, suffix, options) =>
+      ipcRenderer.invoke('get-ghost-completion', prefix, suffix, options),
+
     // Multi-Ollama (3 agents)
     getOllamaMultiCompletion: (history, currentCode, allProjectFiles, options) =>
       ipcRenderer.invoke('get-ollama-multi-completion', history, currentCode, allProjectFiles, options),
@@ -159,6 +165,19 @@ try {
       if (typeof callback !== 'function') return;
       ipcRenderer.removeAllListeners('ai-multi-ollama-step');
       ipcRenderer.on('ai-multi-ollama-step', (_event, data) => callback(data));
+    },
+
+    // Streaming tokens for Multi-Ollama agents
+    onOllamaMultiToken: (callback) => {
+      if (typeof callback !== 'function') return;
+      ipcRenderer.removeAllListeners('ollama-multi-token');
+      ipcRenderer.on('ollama-multi-token', (_event, data) => callback(data));
+    },
+
+    // Unsubscribe all ollama streaming listeners (call on unmount)
+    removeOllamaMultiListeners: () => {
+      ipcRenderer.removeAllListeners('ai-multi-ollama-step');
+      ipcRenderer.removeAllListeners('ollama-multi-token');
     },
 
     // AI Terminal events (emitted by main process during agent ReAct loop)

@@ -20,6 +20,7 @@ export const useAI = (
   const [isLoading, setIsLoading] = useState(false);
   const [aiConversationHistory, setAiConversationHistory] = useState([]);
   const [previousCode, setPreviousCode] = useState('');
+  const [isDiffMode, setIsDiffMode] = useState(false);
   const [apiKeys, setApiKeys] = useState({ gemini: '', kimi: '', claude: '', ollamaModel: '' });
   const { gemini: geminiApiKey, kimi: kimiApiKey, claude: claudeApiKey, ollamaModel } = apiKeys;
   const [projectScanPreset, setProjectScanPreset] = useState('safe'); // safe | full | god
@@ -37,6 +38,8 @@ export const useAI = (
   const [activeConversationFile, setActiveConversationFile] = useState(null);
   const [isConversationLoading, setIsConversationLoading] = useState(false);
   const [abortController, setAbortController] = useState(null);
+  const [pendingImages, setPendingImages] = useState([]);
+  const [pendingMessage, setPendingMessage] = useState(null); // { text, images }
 
   // Charger les settings (clés API) au montage
   useEffect(() => {
@@ -148,16 +151,15 @@ CAHIER_DES_CHARGES:
 CONSIGNES:
 - Sois exhaustif et précis
 - Pense aux cas limites et à la gestion d'erreurs
-- Reste cohérent avec l'architecture existante du projet`;
+- Reste cohérent avec l'architecture existante du projet
+NE GÉNÈRE JAMAIS de syntaxe de type **WORKFLOW: nom** ou **FICHIER: nom** dans ta réponse, car ton rôle est uniquement de rédiger le plan. C'est le rôle des codeurs.`;
   };
 
-  const generateFrontendDevPrompt = (cahierDesCharges, userRequest, projectContext, currentCode) => {
+  const generateFrontendDevPrompt = (cahierDesCharges, projectContext, currentCode) => {
     return `Tu es le DÉVELOPPEUR FRONTEND. Tu ne codes QUE le frontend (HTML, CSS, JavaScript, React, composants UI).
 
 CAHIER DES CHARGES:
 ${cahierDesCharges}
-
-DEMANDE ORIGINALE: "${userRequest}"
 
 CONTEXTE DU PROJET: ${projectContext}
 CODE ACTUEL: ${currentCode || 'Aucun'}
@@ -174,20 +176,18 @@ INSTRUCTIONS:
    \`\`\`
 
 CONSIGNES:
-- Code complet et fonctionnel, pas de placeholders
-- Respecte le style et les conventions du projet existant
-- Ajoute les imports nécessaires
-- Pense à la réactivité et à l'accessibilité
-- Gère les états de chargement et d'erreur côté UI`;
+- Focus UNIQUEMENT sur l'UI, les composants React/Vue, le state management, les appels API côté client, les hooks, le CSS.
+- NE PAS écrire de code Backend (Node.js, Express, BD).
+- Si un mock est nécessaire, crée-le.
+- FOURNIS le code complet, prêt à être intégré, au format **FICHIER: chemin/nom.ext** \`\`\`lang\ncode\n\`\`\`.
+- NE GÉNÈRE PAS de **WORKFLOW: nom** car tu ne crées que du code.`;
   };
 
-  const generateBackendDevPrompt = (cahierDesCharges, userRequest, projectContext, currentCode) => {
+  const generateBackendDevPrompt = (cahierDesCharges, frontendResponse, projectContext, currentCode) => {
     return `Tu es le DÉVELOPPEUR BACKEND. Tu ne codes QUE le backend (API, routes, modèles, services, base de données).
 
 CAHIER DES CHARGES:
 ${cahierDesCharges}
-
-DEMANDE ORIGINALE: "${userRequest}"
 
 CONTEXTE DU PROJET: ${projectContext}
 CODE ACTUEL: ${currentCode || 'Aucun'}
@@ -204,23 +204,23 @@ INSTRUCTIONS:
    \`\`\`
 
 CONSIGNES:
-- Code complet et fonctionnel, pas de placeholders
-- Respecte les conventions REST pour les API
-- Valide les entrées utilisateur
-- Gère les erreurs proprement (try/catch, codes HTTP appropriés)
-- Pense à la sécurité (sanitization, auth si nécessaire)`;
+- Focus UNIQUEMENT sur les serveurs, les routes d'API, la logique métier, l'accès BDD (Mongoose, Prisma), l'auth, etc.
+- Fournis des mocks ou fixtures si besoin.
+- Relie ton code à celui du Frontend Dev si nécessaire.
+- FOURNIS le code complet, prêt à être intégré, au format **FICHIER: chemin/nom.ext** \`\`\`lang\ncode\n\`\`\`.
+- NE GÉNÈRE PAS de **WORKFLOW: nom**.`;
   };
 
   const generateArchitectEngineerPrompt = (cahierDesCharges, frontendCode, backendCode, userRequest, projectContext) => {
-    return `Tu es l'ARCHITECTE ENGINEER. Ton rôle est de vérifier la cohérence technique entre le frontend et le backend produits par les développeurs.
-
-CAHIER DES CHARGES INITIAL:
+    return `Tu es l'ARCHITECTE LOGICIEL / DEVOPS. Ton rôle est de lier le frontend et le backend, d'optimiser, et de créer la configuration de déploiement.
+    
+CAHIER DES CHARGES:
 ${cahierDesCharges}
 
-CODE FRONTEND PRODUIT:
+CODE FRONTEND GÉNÉRÉ:
 ${frontendCode}
 
-CODE BACKEND PRODUIT:
+CODE BACKEND GÉNÉRÉ:
 ${backendCode}
 
 DEMANDE ORIGINALE: "${userRequest}"
@@ -228,38 +228,17 @@ DEMANDE ORIGINALE: "${userRequest}"
 CONTEXTE DU PROJET: ${projectContext}
 
 INSTRUCTIONS:
-1. Vérifie que le frontend et le backend sont compatibles (endpoints, formats de données, noms de champs)
-2. Vérifie la cohérence avec le cahier des charges
-3. Identifie les problèmes potentiels (imports manquants, incohérences d'API, bugs évidents)
-4. Propose des CORRECTIONS si nécessaire
+1. Analyse l'intégration entre le frontend et le backend
+2. Propose des optimisations et refactorisations si nécessaires
+3. Code les fichiers de configuration (Docker, CI/CD, Nginx, etc.) s'ils sont pertinents
+4. Assure la cohérence globale de l'application
 
-FORMAT DE SORTIE OBLIGATOIRE:
-
-REVIEW:
-
-## Cohérence Frontend ↔ Backend
-- [OK/PROBLÈME] Description de chaque point vérifié
-
-## Cohérence avec le Cahier des Charges
-- [OK/MANQUANT] Critère d'acceptation 1
-- [OK/MANQUANT] Critère d'acceptation 2
-...
-
-## Problèmes détectés
-1. [Description du problème + correction proposée]
-
-## CORRECTIONS (si nécessaire)
-Pour chaque fichier corrigé, utilise le format:
-
-**FICHIER: chemin/du/fichier.ext**
-\`\`\`langage
-// code complet corrigé
-\`\`\`
-
-VERDICT: [VALIDATED/NEEDS_FIXES]
-
-Si VALIDATED: confirme que tout est cohérent.
-Si NEEDS_FIXES: liste les corrections appliquées.`;
+FORMAT OBLIGATOIRE:
+- Fais le lien entre le Frontend et le Backend. Crée les scripts d'intégration, configurations Docker, CI/CD, etc.
+- Optimise, refactorise si nécessaire. 
+- Vérifie la cohérence globale.
+- FOURNIS le code manquant ou les modifications sous forme de **FICHIER: chemin/nom.ext** \`\`\`lang\ncode\n\`\`\`.
+- NE GENERÈ JAMAIS LA SYNTAXE **WORKFLOW:**. L'utilisateur utilise un autre format pour cela.`;
   };
 
   const generateScrumMasterPrompt = (cahierDesCharges, frontendCode, backendCode, architectReview, userRequest) => {
@@ -292,22 +271,13 @@ FORMAT DE SORTIE OBLIGATOIRE:
 
 ## Fichiers livrés
 
-Pour CHAQUE fichier (frontend + backend), utilise le format:
-
+Pour CHAQUE fichier (frontend + backend), utilise EXACTEMENT ce format stricte !
 **FICHIER: chemin/du/fichier.ext**
 \`\`\`langage
 // code complet final
 \`\`\`
 
-## Notes de livraison
-- Instructions d'installation/configuration si nécessaire
-- Points d'attention
-- Prochaines étapes suggérées
-
-CONSIGNES:
-- Chaque fichier doit contenir le code COMPLET et FINAL
-- Intègre les corrections de l'architecte
-- Le résultat doit être directement utilisable sans modifications supplémentaires`;
+NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre-toi sur le code source.`;
   };
 
 
@@ -385,7 +355,9 @@ CONSIGNES:
         if (writeResp.success) {
           await loadProjectItems();
           if (activeFile === cleanFileName) {
+            setPreviousCode(code);
             setCode(fileContent);
+            setIsDiffMode(true); // Active the Smart Diff Viewer for the user
           }
           return true;
         }
@@ -411,16 +383,44 @@ CONSIGNES:
     try {
       let modificationsApplied = 0;
 
-      const fileBlockRegex1 = /\*\*FICHIER:\s*([^*\n]+)\*\*\s*```([\w]*)?\s*([\s\S]*?)```/gi;
+      // Match **FICHIER: path** ```lang\ncode\n```
+      const fileBlockRegex1 = /\*\*FICHIER:\s*(.+?)\*\*\s*```[\w]*\s * ([\s\S] *?)```/gi;
 
       let match;
       while ((match = fileBlockRegex1.exec(aiResponse)) !== null) {
         const fileName = match[1].trim();
-        const fileContent = match[3].trim();
+        const fileContent = match[2].trim();
 
         if (fileName && fileContent) {
+          // eslint-disable-next-line no-console
+          console.log(`[IA] Fichier détecté: ${fileName} (${fileContent.length} chars)`);
           const success = await createOrUpdateFile(fileName, fileContent);
           if (success) modificationsApplied++;
+        }
+      }
+
+      // Match **WORKFLOW: name** ```json\n{... } \n```
+      const workflowRegex = /\*\*WORKFLOW:\s*(.+?)\*\*\s*```(?: json) ?\s * ([\s\S] *?)```/gi;
+      let wfMatch;
+      while ((wfMatch = workflowRegex.exec(aiResponse)) !== null) {
+        try {
+          const wfName = wfMatch[1].trim();
+          let jsonStr = wfMatch[2].trim();
+          const firstBrace = jsonStr.indexOf('{');
+          const lastBrace = jsonStr.lastIndexOf('}');
+          if (firstBrace >= 0 && lastBrace > firstBrace) {
+            jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+          }
+          const wfData = JSON.parse(jsonStr);
+          if (wfData && window.electronAPI?.saveVisualWorkflow && currentProjectPath) {
+            wfData.name = wfData.name || wfName;
+            await window.electronAPI.saveVisualWorkflow(currentProjectPath, JSON.stringify(wfData));
+            showMessage(`Workflow visuel "${wfData.name}" créé automatiquement! ⚡`, 4000);
+            // eslint-disable-next-line no-console
+            console.log(`[IA] Workflow visuel créé: ${wfData.name} `);
+          }
+        } catch (wfErr) {
+          console.warn('[IA] Erreur parsing workflow JSON:', wfErr.message);
         }
       }
 
@@ -430,7 +430,7 @@ CONSIGNES:
     } catch (error) {
       // silencieux
     }
-  }, [createOrUpdateFile, showMessage]);
+  }, [createOrUpdateFile, showMessage, currentProjectPath]);
 
   const addImageMessage = useCallback((dataUrl) => {
     if (!dataUrl) return;
@@ -441,19 +441,13 @@ CONSIGNES:
         : null;
       const mimeType = match ? match[1] : 'image/png';
 
-      const newMessage = {
-        role: 'user',
-        text: '[Image collee]',
-        images: [
-          {
-            type: 'inline',
-            mimeType,
-            dataUrl
-          }
-        ]
+      const newImg = {
+        type: 'inline',
+        mimeType,
+        dataUrl
       };
 
-      setAiConversationHistory(prev => [...prev, newMessage]);
+      setPendingImages(prev => [...prev, newImg]);
     } catch (error) {
       // silencieux
     }
@@ -472,9 +466,33 @@ CONSIGNES:
     }
   }, [currentProjectPath, refreshConversations]);
 
-  const generateAIResponse = useCallback(async () => {
-    if (!prompt.trim()) {
+  // Auto-trigger pending message when loading completes
+  useEffect(() => {
+    if (!isLoading && pendingMessage) {
+      const { text, images } = pendingMessage;
+      setPendingMessage(null);
+      setPrompt(text);
+      if (images && images.length > 0) setPendingImages(images);
+      // Small delay to let state settle before triggering
+      setTimeout(() => {
+        generateAIResponse(text);
+      }, 100);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
+
+  const generateAIResponse = useCallback(async (overridePrompt) => {
+    const effectivePrompt = overridePrompt !== undefined ? overridePrompt : prompt;
+    if (!effectivePrompt.trim()) {
       showMessage("Veuillez entrer une requête.");
+      return;
+    }
+    // If already loading, queue the message
+    if (isLoading) {
+      setPendingMessage({ text: effectivePrompt, images: pendingImages });
+      setPrompt('');
+      setPendingImages([]);
+      showMessage("⏳ Message mis en attente...", 3000);
       return;
     }
     if (!currentProjectPath) {
@@ -493,16 +511,49 @@ CONSIGNES:
     const controller = new AbortController();
     setAbortController(controller);
 
-    const updatedHistory = [...aiConversationHistory, { role: 'user', text: prompt }];
+    const newMessage = { role: 'user', text: effectivePrompt };
+    if (pendingImages.length > 0) {
+      newMessage.images = pendingImages;
+      setPendingImages([]);
+    }
+
+    const updatedHistory = [...aiConversationHistory, newMessage];
     setAiConversationHistory(updatedHistory);
-    setPrompt('');
+    if (overridePrompt === undefined) setPrompt('');
 
     try {
-      const trimmedPrompt = prompt.trim();
+      let trimmedPrompt = effectivePrompt.trim();
+      let explicitContextFilesContent = '';
+
+      // Extraction du contexte explicite (@mentions)
+      const explicitContextMatch = trimmedPrompt.match(/^\[Contexte forcé:\s*(.+?)\]\n\n/);
+      if (explicitContextMatch) {
+        try {
+          const filePaths = explicitContextMatch[1].split(', ');
+          const readPromises = filePaths.map(async (filePath) => {
+            const res = await window.electronAPI.readFile(currentProjectPath, filePath);
+            if (res && res.success) {
+              return `\n--- Contenu de ${filePath} ---\n${res.content}\n--- Fin de ${filePath} ---\n`;
+            }
+            return '';
+          });
+          const contents = await Promise.all(readPromises);
+          explicitContextFilesContent = contents.join('\n');
+        } catch (err) {
+          console.warn("[IA] Impossible de charger le contexte explicite:", err);
+        }
+      }
+
+      // Ajout du contenu explicite au prompt final envoyé à l'IA
+      const promptToSend = explicitContextFilesContent
+        ? `${trimmedPrompt}\n\nVoici le contenu des fichiers explicitement mentionnés :\n${explicitContextFilesContent}`
+        : trimmedPrompt;
+
       const projectIntentRegex = /\b(projet|project|repo|repository|structure|arborescence|architecture|analyse|audit|overview|contexte|context|scan|lire|lis|read)\b/i;
       const wantsProjectContext =
         !!deepContextEnabled ||
         aiProvider === 'multi' ||
+        aiProvider === 'ollama-multi' ||
         projectIntentRegex.test(trimmedPrompt) ||
         trimmedPrompt.length > 140;
 
@@ -544,7 +595,7 @@ CONSIGNES:
           }
         };
 
-        const presetKey = deepContextEnabled || aiProvider === 'multi' ? projectScanPreset : 'safe';
+        const presetKey = deepContextEnabled || aiProvider === 'multi' || aiProvider === 'ollama-multi' ? projectScanPreset : 'safe';
         const baseOptions = scanPresets[presetKey] || scanPresets.safe;
         const scanOptions = {
           ...baseOptions,
@@ -839,7 +890,7 @@ CONSIGNES:
           };
 
           response = await window.electronAPI.getKimiCompletion(
-            updatedHistory,
+            [...aiConversationHistory, Object.assign({}, newMessage, { text: promptToSend })],
             code,
             allProjectFiles,
             kimiOptions
@@ -883,7 +934,7 @@ CONSIGNES:
               : []
           };
           response = await window.electronAPI.getOllamaMultiCompletion(
-            updatedHistory, code, allProjectFiles, ollamaMultiOptions
+            [...aiConversationHistory, Object.assign({}, newMessage, { text: promptToSend })], code, allProjectFiles, ollamaMultiOptions
           );
           setMultiAIState({ isActive: false, currentPhase: null, steps: [], error: null });
 
@@ -908,7 +959,7 @@ CONSIGNES:
           };
 
           response = await window.electronAPI.getClaudeCompletion(
-            updatedHistory,
+            [...aiConversationHistory, Object.assign({}, newMessage, { text: promptToSend })],
             code,
             allProjectFiles,
             claudeOptions
@@ -922,7 +973,7 @@ CONSIGNES:
             skill: activeSkill
           };
           response = await window.electronAPI.getOllamaCompletion(
-            updatedHistory,
+            [...aiConversationHistory, Object.assign({}, newMessage, { text: promptToSend })],
             code,
             allProjectFiles,
             ollamaOptions
@@ -937,7 +988,7 @@ CONSIGNES:
           };
 
           response = await window.electronAPI.getGeminiCompletion(
-            updatedHistory,
+            [...aiConversationHistory, Object.assign({}, newMessage, { text: promptToSend })],
             code,
             allProjectFiles,
             geminiOptions
@@ -992,7 +1043,8 @@ CONSIGNES:
     AGENT_MODELS.scrumMaster,
     processAIFileModifications,
     autoSaveConversation,
-    resetMultiAIState
+    resetMultiAIState,
+    pendingImages
   ]);
 
   const saveConversation = useCallback(async () => {
@@ -1063,6 +1115,7 @@ CONSIGNES:
         if (response.success) {
           setCode(previousCode);
           setPreviousCode('');
+          setIsDiffMode(false);
           setAiConversationHistory(prev => [...prev, { role: 'system', text: "Modification IA annulée." }]);
           showMessage("Modification annulée.");
         }
@@ -1070,7 +1123,14 @@ CONSIGNES:
         showMessage(`Erreur: ${error.message}`, 5000);
       }
     }
-  }, [previousCode, activeFile, currentProjectPath, setCode, showMessage]);
+  }, [activeFile, currentProjectPath, previousCode, setCode, showMessage, setIsDiffMode]);
+
+  const handleAcceptDiff = useCallback(() => {
+    setIsDiffMode(false);
+    setPreviousCode('');
+    setAiConversationHistory(prev => [...prev, { role: 'system', text: "Modifications IA acceptées." }]);
+    showMessage("Modifications acceptées.");
+  }, [showMessage, setIsDiffMode]);
 
   return {
     prompt,
@@ -1082,13 +1142,20 @@ CONSIGNES:
     addImageMessage,
     saveConversation,
     handleUndo,
+    isDiffMode,
+    setIsDiffMode,
+    handleAcceptDiff,
     multiAIState,
     conversations,
     activeConversationFile,
     isConversationLoading,
     startNewConversation,
     loadConversationByFile,
-    stopGeneration
+    stopGeneration,
+    pendingImages,
+    setPendingImages,
+    pendingMessage,
+    setPendingMessage
   };
 };
 

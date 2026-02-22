@@ -32,14 +32,17 @@ body {
   font-family: var(--font-ui);
   background: var(--bg-0);
   color: var(--text-0);
+  height: 100vh;
+  overflow: hidden;
 }
 
 #root {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -365,6 +368,7 @@ body {
   display: flex;
   gap: 12px;
   padding: 12px 16px 10px;
+  min-height: 0;
   z-index: 1;
 }
 
@@ -377,6 +381,7 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .nav-panel {
@@ -389,6 +394,9 @@ body {
 
 .ai-panel {
   padding: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .center-tabs {

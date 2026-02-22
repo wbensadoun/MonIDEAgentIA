@@ -113,3 +113,74 @@
   flex: 1;
   min-height: 0;
 }
+
+/* --- Inline AI Prompt (Ctrl+K) --- */
+.inline-prompt-box {
+  position: absolute;
+  z-index: 100;
+  width: 500px;
+  background: rgba(15, 22, 34, 0.95);
+  border: 1px solid rgba(0, 245, 212, 0.3);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  transform: translateY(-100%);
+  /* position above the cursor */
+  margin-top: -10px;
+  /* little gap */
+  overflow: hidden;
+  animation: inlinePromptAppear 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes inlinePromptAppear {
+  from {
+    opacity: 0;
+    transform: translateY(-90%) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(-100%) scale(1);
+  }
+}
+
+.inline-prompt-header {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-2);
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.inline-prompt-input-wrapper {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 8px;
+}
+
+.inline-prompt-icon {
+  font-size: 14px;
+}
+
+.inline-prompt-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.inline-prompt-input::placeholder {
+  color: var(--text-3);
+}
+
+.inline-prompt-spinner {
+  font-size: 14px;
+  animation: spin 2s linear infinite;
+}

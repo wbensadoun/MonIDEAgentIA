@@ -240,13 +240,18 @@ const AppContent = () => {
     addImageMessage,
     saveConversation,
     handleUndo,
+    isDiffMode,
+    handleAcceptDiff,
     multiAIState,
     conversations,
     activeConversationFile,
     isConversationLoading,
     startNewConversation,
     loadConversationByFile,
-    stopGeneration
+    stopGeneration,
+    pendingImages,
+    setPendingImages,
+    pendingMessage
   } = useAI(
     currentProjectPath,
     code,
@@ -970,45 +975,6 @@ const AppContent = () => {
                 <option value="ollama-multi">🦙🦙 Multi-Ollama</option>
               </select>
 
-              <select
-                value={activeAgent ? `${activeAgent.scope}:${activeAgent.name}` : ''}
-                onChange={(e) => {
-                  const next = e.target.value || '';
-                  if (!next) { setActiveAgent(null); return; }
-                  const [scope, ...rest] = next.split(':');
-                  setActiveAgent({ scope, name: rest.join(':') });
-                }}
-                className="ai-select-mini"
-                disabled={!isElectronApiAvailable || isLoading}
-                title="Agent (persona)"
-              >
-                <option value="">Agent: Défaut</option>
-                {Array.isArray(availableAgents) && availableAgents.map(a => (
-                  <option key={`${a.scope}:${a.name}`} value={`${a.scope}:${a.name}`}>
-                    {a.scope === 'workspace' ? 'WS' : 'G'}:{a.name}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={activeSkill ? `${activeSkill.scope}:${activeSkill.name}` : ''}
-                onChange={(e) => {
-                  const next = e.target.value || '';
-                  if (!next) { setActiveSkill(null); return; }
-                  const [scope, ...rest] = next.split(':');
-                  setActiveSkill({ scope, name: rest.join(':') });
-                }}
-                className="ai-select-mini"
-                disabled={!isElectronApiAvailable || isLoading}
-                title="Skill (instructions)"
-              >
-                <option value="">Skill: Aucun</option>
-                {Array.isArray(availableSkills) && availableSkills.map(s => (
-                  <option key={`${s.scope}:${s.name}`} value={`${s.scope}:${s.name}`}>
-                    {s.scope === 'workspace' ? 'WS' : 'G'}:{s.name}
-                  </option>
-                ))}
-              </select>
 
               <label className="ai-toggle-mini" title="Mode réflexion">
                 <input
@@ -1170,6 +1136,8 @@ const AppContent = () => {
                 previousCode={previousCode}
                 onCodeChange={handleCodeChange}
                 onUndo={handleUndo}
+                onAcceptDiff={handleAcceptDiff}
+                isDiffMode={isDiffMode}
                 onSelectFile={openFile}
                 onCloseFile={closeFileTab}
                 revealRequest={revealRequest}
@@ -1255,6 +1223,10 @@ const AppContent = () => {
               onActiveAgentChange={setActiveAgent}
               onActiveSkillChange={setActiveSkill}
               globalSkillsCount={availableSkills.filter(s => s.scope === 'global').length}
+              pendingImages={pendingImages}
+              onRemovePendingImage={(idx) => setPendingImages(prev => prev.filter((_, i) => i !== idx))}
+              pendingMessage={pendingMessage}
+              projectFileList={projectFileList}
             />
           </aside>
         )}
