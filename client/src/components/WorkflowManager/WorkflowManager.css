@@ -280,6 +280,39 @@
   display: flex;
 }
 
+.pack-transfer-controls {
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pack-transfer-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pack-inline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--text-2);
+}
+
+.pack-inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--text-2);
+}
+
+.pack-inline-check input {
+  accent-color: var(--accent-1);
+}
+
 .packs-input {
   width: 100%;
   border-radius: 12px;
@@ -295,6 +328,10 @@
 .packs-input:focus {
   border-color: var(--border-1);
   box-shadow: var(--glow-1);
+}
+
+.pack-select {
+  width: 160px;
 }
 
 .packs-list {

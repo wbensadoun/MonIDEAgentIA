@@ -57,6 +57,38 @@
     border-bottom: 1px solid #222;
 }
 
+.git-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #222;
+    background: #101010;
+}
+
+.git-toolbar-row {
+    display: flex;
+    gap: 6px;
+}
+
+.git-select,
+.git-input {
+    flex: 1;
+    min-width: 0;
+    background: #0d0d0d;
+    border: 1px solid #333;
+    color: #ddd;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+}
+
+.git-select:focus,
+.git-input:focus {
+    outline: none;
+    border-color: #00c49a55;
+}
+
 .git-tab {
     flex: 1;
     padding: 8px 4px;
@@ -205,7 +237,7 @@
 }
 
 .git-icon-btn {
-    width: 22px;
+    min-width: 22px;
     height: 22px;
     background: #1e1e1e;
     border: 1px solid #333;

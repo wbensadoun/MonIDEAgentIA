@@ -167,6 +167,119 @@
   color: var(--text-2);
 }
 
+.ai-context-estimate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.68rem;
+  color: var(--text-2);
+  padding: 8px 10px;
+  border: 1px solid var(--border-0);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ai-pending-changes {
+  border: 1px solid rgba(0, 245, 212, 0.24);
+  border-radius: 12px;
+  background: rgba(0, 245, 212, 0.07);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-pending-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.74rem;
+  color: var(--text-0);
+}
+
+.ai-pending-head-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ai-pending-meta {
+  font-size: 0.66rem;
+  color: var(--text-2);
+}
+
+.ai-pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-pending-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--border-0);
+  border-radius: 10px;
+  background: rgba(12, 18, 28, 0.7);
+  padding: 5px 7px;
+}
+
+.ai-pending-item.is-active {
+  border-color: rgba(0, 245, 212, 0.45);
+}
+
+.ai-pending-file {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-0);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-pending-item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ai-mini-btn {
+  border: 1px solid var(--border-0);
+  border-radius: 7px;
+  padding: 2px 7px;
+  font-size: 0.66rem;
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ai-mini-btn.is-apply {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.ai-mini-btn.is-reject {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.4);
+}
+
+.ai-mini-btn:disabled,
+.ai-pending-file:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-pending-more {
+  font-size: 0.68rem;
+  color: var(--text-2);
+  text-align: right;
+}
+
 .ai-loading {
   margin: 6px 0;
 }
@@ -564,6 +677,120 @@
   height: 56px;
   object-fit: cover;
   display: block;
+}
+
+.ai-stream-box {
+  margin-top: 8px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 8px 12px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.ai-stream-text {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: #7ee787;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.ai-stream-anim {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-stream-anim-title {
+  color: #d4d4d8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ai-stream-anim-subtitle {
+  color: #9ca3af;
+  font-size: 11px;
+}
+
+.ai-workflow-pulse {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.wf-node {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: #22d3ee;
+  box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.6);
+  animation: wfPulse 1.2s ease-out infinite;
+}
+
+.wf-node-b {
+  animation-delay: 0.2s;
+}
+
+.wf-node-c {
+  animation-delay: 0.4s;
+}
+
+.wf-link {
+  flex: 1;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.2), rgba(34, 211, 238, 0.9));
+  background-size: 200% 100%;
+  animation: wfLinkFlow 1.5s linear infinite;
+}
+
+.ai-diff-file {
+  width: 68px;
+  height: 78px;
+  border-radius: 10px;
+  border: 1px solid rgba(132, 204, 22, 0.45);
+  background: linear-gradient(180deg, rgba(132, 204, 22, 0.14), rgba(10, 15, 20, 0.95));
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.diff-line {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(190, 242, 100, 0.82);
+  transform-origin: left;
+  animation: diffWrite 1.3s ease-in-out infinite;
+}
+
+.diff-line-2 {
+  width: 78%;
+  animation-delay: 0.2s;
+}
+
+.diff-line-3 {
+  width: 62%;
+  animation-delay: 0.4s;
+}
+
+@keyframes wfPulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(34, 211, 238, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
+}
+
+@keyframes wfLinkFlow {
+  0% { background-position: 0 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes diffWrite {
+  0%, 100% { transform: scaleX(0.35); opacity: 0.55; }
+  50% { transform: scaleX(1); opacity: 1; }
 }
 
 @keyframes fadeIn {

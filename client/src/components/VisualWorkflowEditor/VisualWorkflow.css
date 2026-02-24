@@ -98,6 +98,22 @@
     position: relative;
 }
 
+.vw-editor.vw-editor-ai-write .vw-toolbar {
+    box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.35), 0 0 18px rgba(0, 245, 212, 0.2);
+    animation: vw-ai-toolbar-flash 1.25s ease-out;
+}
+
+.vw-editor.vw-editor-ai-write .vw-canvas::after {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    border-radius: 14px;
+    border: 1px solid rgba(0, 245, 212, 0.42);
+    box-shadow: 0 0 24px rgba(0, 245, 212, 0.16);
+    pointer-events: none;
+    animation: vw-ai-canvas-flash 1.25s ease-out;
+}
+
 .vw-canvas .react-flow__background {
     background: var(--bg-1) !important;
 }
@@ -490,6 +506,12 @@
     position: relative;
 }
 
+.vw-saved-item.is-ai-updated .vw-add-item {
+    border-left: 2px solid var(--accent-1);
+    background: rgba(0, 245, 212, 0.14);
+    animation: vw-ai-saved-highlight 1.8s ease-out;
+}
+
 .vw-saved-item .vw-add-item {
     flex: 1;
     padding-right: 36px;
@@ -741,4 +763,57 @@
 .vw-ai-hint:hover {
     background: rgba(251, 191, 36, 0.15);
     border-color: #fbbf24;
+}
+
+@keyframes vw-ai-toolbar-flash {
+    0% {
+        box-shadow: 0 0 0 0 rgba(0, 245, 212, 0.48), 0 0 0 rgba(0, 245, 212, 0);
+    }
+
+    35% {
+        box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.4), 0 0 24px rgba(0, 245, 212, 0.28);
+    }
+
+    100% {
+        box-shadow: none;
+    }
+}
+
+@keyframes vw-ai-canvas-flash {
+    0% {
+        opacity: 0;
+        transform: scale(0.992);
+    }
+
+    30% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(1.004);
+    }
+}
+
+@keyframes vw-ai-saved-highlight {
+    0% {
+        transform: translateX(0);
+        filter: brightness(1);
+    }
+
+    25% {
+        transform: translateX(-2px);
+        filter: brightness(1.08);
+    }
+
+    50% {
+        transform: translateX(2px);
+        filter: brightness(1.04);
+    }
+
+    100% {
+        transform: translateX(0);
+        filter: brightness(1);
+    }
 }

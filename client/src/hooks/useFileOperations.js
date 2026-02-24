@@ -1,9 +1,16 @@
 import { useState, useCallback, useEffect } from 'react';
 
-export const useFileOperations = (currentProjectPath, isElectronApiAvailable, showMessage, setActiveFile) => {
+export const useFileOperations = (
+  currentProjectPath,
+  isElectronApiAvailable,
+  showMessage,
+  setActiveFile,
+  permissionMode = 'edit_terminal'
+) => {
   const [projectItems, setProjectItems] = useState([]);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [allowDangerousActions, setAllowDangerousActions] = useState(false);
+  const isReadOnly = permissionMode === 'read_only';
 
   const loadProjectItems = useCallback(async () => {
     if (!isElectronApiAvailable || !currentProjectPath) {
@@ -85,6 +92,11 @@ export const useFileOperations = (currentProjectPath, isElectronApiAvailable, sh
   }, [loadFolderChildren]);
 
   const createNewItem = useCallback(async (type, itemName) => {
+    if (isReadOnly) {
+      showMessage('Mode lecture seule actif: creation bloquee.', 3000);
+      return false;
+    }
+
     const name = String(itemName || '').trim();
     if (!name) {
       showMessage(`Veuillez entrer un nom pour le nouveau ${type === 'file' ? 'fichier' : 'dossier'}.`);
@@ -122,9 +134,14 @@ export const useFileOperations = (currentProjectPath, isElectronApiAvailable, sh
       showMessage(`Erreur IPC: ${error.message}`, 5000);
       return false;
     }
-  }, [currentProjectPath, isElectronApiAvailable, showMessage, loadProjectItems, setActiveFile]);
+  }, [currentProjectPath, isElectronApiAvailable, showMessage, loadProjectItems, setActiveFile, isReadOnly]);
 
   const deleteItem = useCallback(async (itemName, type) => {
+    if (isReadOnly) {
+      showMessage('Mode lecture seule actif: suppression bloquee.', 3000);
+      return;
+    }
+
     if (!allowDangerousActions) {
       if (!window.confirm(`Supprimer ${type === 'file' ? 'le fichier' : 'le dossier'} "${itemName}" ?`)) {
         return;
@@ -152,7 +169,7 @@ export const useFileOperations = (currentProjectPath, isElectronApiAvailable, sh
     } catch (error) {
       showMessage(`Erreur IPC: ${error.message}`, 5000);
     }
-  }, [currentProjectPath, isElectronApiAvailable, showMessage, loadProjectItems, allowDangerousActions]);
+  }, [currentProjectPath, isElectronApiAvailable, showMessage, loadProjectItems, allowDangerousActions, isReadOnly]);
 
   const openFolder = useCallback(async () => {
     if (!isElectronApiAvailable) {

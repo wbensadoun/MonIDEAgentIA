@@ -5,18 +5,34 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
   const [settings, setSettings] = useState({
     geminiApiKey: '',
     kimiApiKey: '',
+    claudeApiKey: '',
     defaultProvider: 'gemini',
     thinkingMode: false,
+    ollamaModel: 'qwen2.5-coder:7b',
+    ollamaModelArchitect: 'qwen2.5-coder:7b',
+    ollamaModelCoder: 'qwen3-coder:30b',
+    ollamaModelTester: 'qwen2.5-coder:7b',
     devPort: '3004',
     allowDangerousActions: false,
     aiContextPreset: 'safe',
     aiContextIncludeSecrets: false,
-    aiContextLargeFileStrategy: 'skip'
+    aiContextLargeFileStrategy: 'skip',
+    aiTerminalApprovalMode: true,
+    permissionMode: 'edit_terminal',
+    qualityGateOnApply: false,
+    qualityGateLint: true,
+    qualityGateTest: false,
+    qualityGateBuild: false,
+    qualityGateBlockOnFail: true,
+    onboardingCompleted: false,
+    contextMode: 'auto',
+    contextMaxFiles: 120
   });
 
   const [loading, setLoading] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
   const [validation, setValidation] = useState({ gemini: null, kimi: null, claude: null });
+  const [ollamaModels, setOllamaModels] = useState([]);
 
   const loadSettings = useCallback(async () => {
     if (!isElectronApiAvailable || !window.electronAPI?.loadSettings) return;
@@ -35,6 +51,30 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
       loadSettings();
     }
   }, [isOpen, loadSettings]);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchOllamaModels = async () => {
+      if (!isOpen || !isElectronApiAvailable || !window.electronAPI?.listOllamaModels) return;
+      try {
+        const response = await window.electronAPI.listOllamaModels();
+        if (!mounted) return;
+        if (response?.success && Array.isArray(response.models)) {
+          const models = response.models
+            .map((m) => String(m || '').trim())
+            .filter(Boolean);
+          setOllamaModels(models);
+        } else {
+          setOllamaModels([]);
+        }
+      } catch {
+        if (mounted) setOllamaModels([]);
+      }
+    };
+
+    fetchOllamaModels();
+    return () => { mounted = false; };
+  }, [isOpen, isElectronApiAvailable]);
 
   useEffect(() => {
     if (!isElectronApiAvailable) return;
@@ -117,6 +157,14 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
     setSettings(prev => ({ ...prev, [field]: value }));
   };
 
+  const availableOllamaModels = Array.from(new Set([
+    settings.ollamaModel,
+    settings.ollamaModelArchitect,
+    settings.ollamaModelCoder,
+    settings.ollamaModelTester,
+    ...ollamaModels
+  ].map((m) => String(m || '').trim()).filter(Boolean)));
+
   if (!isOpen) return null;
 
   return (
@@ -142,6 +190,64 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
               <option value="claude">Claude</option>
               <option value="kimi">Kimi</option>
               <option value="multi">Multi-IA</option>
+              <option value="ollama">Ollama</option>
+              <option value="ollama-multi">Multi-Ollama</option>
+            </select>
+          </div>
+
+          <div className="settings-section">
+            <label className="settings-label">Modeles Ollama</label>
+            <div className="settings-hint">
+              Utilises pour Ollama simple et Multi-Ollama (Architecte / Codeur / Relecteur).
+            </div>
+
+            <label className="settings-label">Modele Ollama simple</label>
+            <select
+              value={settings.ollamaModel || 'qwen2.5-coder:7b'}
+              onChange={(e) => handleChange('ollamaModel', e.target.value)}
+              className="settings-input"
+            >
+              {availableOllamaModels.length === 0 && (
+                <option value={settings.ollamaModel || 'qwen2.5-coder:7b'}>
+                  {settings.ollamaModel || 'qwen2.5-coder:7b'}
+                </option>
+              )}
+              {availableOllamaModels.map((modelName) => (
+                <option key={`ollama-${modelName}`} value={modelName}>{modelName}</option>
+              ))}
+            </select>
+
+            <label className="settings-label">Architecte (Multi-Ollama)</label>
+            <select
+              value={settings.ollamaModelArchitect || settings.ollamaModel || 'qwen2.5-coder:7b'}
+              onChange={(e) => handleChange('ollamaModelArchitect', e.target.value)}
+              className="settings-input"
+            >
+              {availableOllamaModels.map((modelName) => (
+                <option key={`arch-${modelName}`} value={modelName}>{modelName}</option>
+              ))}
+            </select>
+
+            <label className="settings-label">Codeur (Multi-Ollama)</label>
+            <select
+              value={settings.ollamaModelCoder || settings.ollamaModel || 'qwen3-coder:30b'}
+              onChange={(e) => handleChange('ollamaModelCoder', e.target.value)}
+              className="settings-input"
+            >
+              {availableOllamaModels.map((modelName) => (
+                <option key={`coder-${modelName}`} value={modelName}>{modelName}</option>
+              ))}
+            </select>
+
+            <label className="settings-label">Relecteur (Multi-Ollama)</label>
+            <select
+              value={settings.ollamaModelTester || settings.ollamaModel || 'qwen2.5-coder:7b'}
+              onChange={(e) => handleChange('ollamaModelTester', e.target.value)}
+              className="settings-input"
+            >
+              {availableOllamaModels.map((modelName) => (
+                <option key={`tester-${modelName}`} value={modelName}>{modelName}</option>
+              ))}
             </select>
           </div>
 
@@ -163,6 +269,30 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
               />
               <span>Autoriser les actions risquees sans confirmation</span>
             </label>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.aiTerminalApprovalMode !== false}
+                onChange={(e) => handleChange('aiTerminalApprovalMode', e.target.checked)}
+              />
+              <span>Demander confirmation avant chaque commande terminal IA</span>
+            </label>
+          </div>
+
+          <div className="settings-section">
+            <label className="settings-label">Mode permissions</label>
+            <select
+              value={settings.permissionMode || 'edit_terminal'}
+              onChange={(e) => handleChange('permissionMode', e.target.value)}
+              className="settings-input"
+            >
+              <option value="read_only">Lecture seule</option>
+              <option value="edit">Edition (sans terminal)</option>
+              <option value="edit_terminal">Edition + terminal</option>
+            </select>
+            <div className="settings-hint">
+              Lecture seule bloque les modifications. Edition bloque uniquement les commandes terminal.
+            </div>
           </div>
 
           <div className="settings-section">
@@ -174,7 +304,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
             >
               <option value="safe">Safe (rapide)</option>
               <option value="full">Full (configs + dotfiles)</option>
-              <option value="god">God (build + node_modules)</option>
+              <option value="god">God (build + node_modules + .git)</option>
             </select>
             <div className="settings-hint">
               Safe = le plus rapide. Full = meilleur contexte sans exploser. God = peut être long et gourmand.
@@ -201,6 +331,71 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
               <option value="skip">Ignorer</option>
               <option value="truncate">Tronquer</option>
             </select>
+
+            <label className="settings-label" style={{ marginTop: '10px' }}>Mode de contexte injecte</label>
+            <select
+              value={settings.contextMode || 'auto'}
+              onChange={(e) => handleChange('contextMode', e.target.value)}
+              className="settings-input"
+            >
+              <option value="auto">Auto (intention detectee)</option>
+              <option value="mentions">Mentions uniquement (@fichier)</option>
+              <option value="none">Aucun contexte projet</option>
+            </select>
+
+            <label className="settings-label" style={{ marginTop: '10px' }}>Max fichiers contexte</label>
+            <input
+              type="number"
+              min="10"
+              max="50000"
+              value={settings.contextMaxFiles ?? 120}
+              onChange={(e) => handleChange('contextMaxFiles', Number(e.target.value || 120))}
+              className="settings-input"
+            />
+          </div>
+
+          <div className="settings-section">
+            <label className="settings-label">Quality gates avant application IA</label>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={!!settings.qualityGateOnApply}
+                onChange={(e) => handleChange('qualityGateOnApply', e.target.checked)}
+              />
+              <span>Activer les quality gates</span>
+            </label>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.qualityGateLint !== false}
+                onChange={(e) => handleChange('qualityGateLint', e.target.checked)}
+              />
+              <span>Lancer lint</span>
+            </label>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={!!settings.qualityGateTest}
+                onChange={(e) => handleChange('qualityGateTest', e.target.checked)}
+              />
+              <span>Lancer tests</span>
+            </label>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={!!settings.qualityGateBuild}
+                onChange={(e) => handleChange('qualityGateBuild', e.target.checked)}
+              />
+              <span>Lancer build</span>
+            </label>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.qualityGateBlockOnFail !== false}
+                onChange={(e) => handleChange('qualityGateBlockOnFail', e.target.checked)}
+              />
+              <span>Bloquer l&apos;application si un gate echoue</span>
+            </label>
           </div>
 
           <div className="settings-section">

@@ -24,7 +24,16 @@ const ChevronIcon = ({ isExpanded }) => (
   </svg>
 );
 
-const FileItem = ({ item, depth = 0, activeFile, expandedFolders, onToggleFolder, onFileClick, onDelete }) => {
+const FileItem = ({
+  item,
+  depth = 0,
+  activeFile,
+  expandedFolders,
+  onToggleFolder,
+  onFileClick,
+  onDelete,
+  isReadOnly = false
+}) => {
   const isExpanded = expandedFolders.has(item.path);
   const isActive = activeFile === (item.path || item.name);
   const paddingLeft = depth * 18;
@@ -63,6 +72,8 @@ const FileItem = ({ item, depth = 0, activeFile, expandedFolders, onToggleFolder
         <button
           onClick={() => onDelete(item.path || item.name, item.type)}
           className="file-item-delete"
+          disabled={isReadOnly}
+          title={isReadOnly ? 'Mode lecture seule' : 'Supprimer'}
         >
           <svg className="file-delete-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -82,6 +93,7 @@ const FileItem = ({ item, depth = 0, activeFile, expandedFolders, onToggleFolder
               onToggleFolder={onToggleFolder}
               onFileClick={onFileClick}
               onDelete={onDelete}
+              isReadOnly={isReadOnly}
             />
           ))}
         </div>
@@ -114,7 +126,8 @@ const FileExplorer = ({
   onDeleteItem,
   onToggleFolder,
   onFileClick,
-  onNewItemNameChange
+  onNewItemNameChange,
+  isReadOnly = false
 }) => {
   const [filterQuery, setFilterQuery] = useState('');
 
@@ -173,7 +186,7 @@ const FileExplorer = ({
           <button
             onClick={() => handleCreate('file')}
             className="btn btn-ghost"
-            disabled={!isElectronApiAvailable || !newItemName}
+            disabled={!isElectronApiAvailable || !newItemName || isReadOnly}
           >
             + Fichier
           </button>
@@ -190,19 +203,20 @@ const FileExplorer = ({
             value={newItemName}
             onChange={(e) => onNewItemNameChange(e.target.value)}
             onKeyPress={handleKeyPress}
+            disabled={isReadOnly}
           />
           <div className="nav-create-actions">
             <button
               onClick={() => handleCreate('file')}
               className="btn btn-success"
-              disabled={!isElectronApiAvailable || !newItemName}
+              disabled={!isElectronApiAvailable || !newItemName || isReadOnly}
             >
               Fichier
             </button>
             <button
               onClick={() => handleCreate('directory')}
               className="btn btn-accent"
-              disabled={!isElectronApiAvailable || !newItemName}
+              disabled={!isElectronApiAvailable || !newItemName || isReadOnly}
             >
               Dossier
             </button>
@@ -263,6 +277,7 @@ const FileExplorer = ({
                 onToggleFolder={onToggleFolder}
                 onFileClick={onFileClick}
                 onDelete={onDeleteItem}
+                isReadOnly={isReadOnly}
               />
             ))}
           </div>

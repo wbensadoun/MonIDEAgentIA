@@ -52,6 +52,18 @@ const AppContent = () => {
   const [workflowManagerOpen, setWorkflowManagerOpen] = useState(false);
   const [centerView, setCenterView] = useState('code');
   const [devPort, setDevPort] = useState('3004');
+  const [runtimeDevPort, setRuntimeDevPort] = useState('');
+  const [permissionMode, setPermissionMode] = useState('edit_terminal');
+  const [contextMode, setContextMode] = useState('auto');
+  const [contextMaxFiles, setContextMaxFiles] = useState(120);
+  const [qualityGateConfig, setQualityGateConfig] = useState({
+    onApply: false,
+    lint: true,
+    test: false,
+    build: false,
+    blockOnFail: true
+  });
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [isExpertMode, setIsExpertMode] = useState(() => {
     try {
       return localStorage.getItem('vibeIDE_expertMode') === '1';
@@ -94,6 +106,7 @@ const AppContent = () => {
   const fileListCacheRef = useRef({ projectPath: '', files: [] });
   const saveTimerRef = useRef(null);
   const pendingSaveRef = useRef({ projectPath: '', filePath: '', content: '' });
+  const sessionLoadedRef = useRef(false);
 
   const { isAvailable: isElectronApiAvailable, message, showMessage } = useElectronAPI();
 
@@ -188,7 +201,7 @@ const AppContent = () => {
       const res = await window.electronAPI.listProjectFiles(currentProjectPath, {
         includeHidden: true,
         includeSecrets: false,
-        includeGit: false,
+        includeGit: true,
         includeNodeModules: false,
         includeBuild: false,
         maxFiles: 60000,
@@ -228,7 +241,7 @@ const AppContent = () => {
     createNewItem,
     deleteItem,
     openFolder
-  } = useFileOperations(currentProjectPath, isElectronApiAvailable, showMessage, setActiveFile);
+  } = useFileOperations(currentProjectPath, isElectronApiAvailable, showMessage, setActiveFile, permissionMode);
 
   const {
     prompt,
@@ -242,6 +255,15 @@ const AppContent = () => {
     handleUndo,
     isDiffMode,
     handleAcceptDiff,
+    pendingFileChanges,
+    activePendingChangeId,
+    selectPendingChangeByIndex,
+    applyPendingChangeByIndex,
+    rejectPendingChangeByIndex,
+    applyAllPendingChanges,
+    rejectAllPendingChanges,
+    pendingSnapshotId,
+    contextEstimate,
     multiAIState,
     conversations,
     activeConversationFile,
@@ -266,7 +288,11 @@ const AppContent = () => {
     deepContextEnabled,
     activeAgent,
     activeSkill,
-    availableSkills
+    availableSkills,
+    permissionMode,
+    qualityGateConfig,
+    contextMode,
+    contextMaxFiles
   );
 
   const {
@@ -286,6 +312,7 @@ const AppContent = () => {
   const projectName = currentProjectPath
     ? currentProjectPath.split(/[\\/]/).pop()
     : 'Aucun projet';
+  const isReadOnlyMode = permissionMode === 'read_only';
 
   useEffect(() => {
     if (!activeFile) return;
@@ -296,6 +323,71 @@ const AppContent = () => {
     fileListCacheRef.current = { projectPath: '', files: [] };
     setProjectFileList([]);
   }, [currentProjectPath]);
+
+  useEffect(() => {
+    sessionLoadedRef.current = false;
+    if (!currentProjectPath) return;
+
+    try {
+      const key = `vibeIDE_session:${currentProjectPath}`;
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        sessionLoadedRef.current = true;
+        return;
+      }
+      const parsed = JSON.parse(raw);
+
+      if (Array.isArray(parsed.openFiles)) setOpenFiles(parsed.openFiles);
+      if (typeof parsed.activeFile === 'string') setActiveFile(parsed.activeFile);
+      if (typeof parsed.centerView === 'string') setCenterView(parsed.centerView);
+      if (Number.isFinite(Number(parsed.leftWidth))) setLeftWidth(Number(parsed.leftWidth));
+      if (Number.isFinite(Number(parsed.rightWidth))) setRightWidth(Number(parsed.rightWidth));
+      if (Number.isFinite(Number(parsed.leftBackup))) setLeftBackup(Number(parsed.leftBackup));
+      if (Number.isFinite(Number(parsed.rightBackup))) setRightBackup(Number(parsed.rightBackup));
+      if (typeof parsed.isLeftCollapsed === 'boolean') setIsLeftCollapsed(parsed.isLeftCollapsed);
+      if (typeof parsed.isRightCollapsed === 'boolean') setIsRightCollapsed(parsed.isRightCollapsed);
+      if (typeof parsed.isFocusMode === 'boolean') setIsFocusMode(parsed.isFocusMode);
+    } catch {
+      // ignore broken session
+    } finally {
+      sessionLoadedRef.current = true;
+    }
+  }, [currentProjectPath]);
+
+  useEffect(() => {
+    if (!currentProjectPath) return;
+    if (!sessionLoadedRef.current) return;
+    try {
+      const key = `vibeIDE_session:${currentProjectPath}`;
+      const payload = {
+        openFiles,
+        activeFile,
+        centerView,
+        leftWidth,
+        rightWidth,
+        leftBackup,
+        rightBackup,
+        isLeftCollapsed,
+        isRightCollapsed,
+        isFocusMode
+      };
+      localStorage.setItem(key, JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  }, [
+    currentProjectPath,
+    openFiles,
+    activeFile,
+    centerView,
+    leftWidth,
+    rightWidth,
+    leftBackup,
+    rightBackup,
+    isLeftCollapsed,
+    isRightCollapsed,
+    isFocusMode
+  ]);
 
   useEffect(() => {
     try {
@@ -379,11 +471,15 @@ const AppContent = () => {
   }, [activeFile, currentProjectPath, isElectronApiAvailable, showMessage]);
 
   const handleCodeChange = useCallback((newCode) => {
+    if (isReadOnlyMode) {
+      showMessage('Mode lecture seule actif: edition desactivee.', 2500);
+      return;
+    }
     if (newCode === code) return;
     setCode(newCode);
     if (!isElectronApiAvailable || !activeFile || !currentProjectPath) return;
     scheduleSave(currentProjectPath, activeFile, newCode);
-  }, [code, isElectronApiAvailable, activeFile, currentProjectPath, scheduleSave]);
+  }, [isReadOnlyMode, showMessage, code, isElectronApiAvailable, activeFile, currentProjectPath, scheduleSave]);
 
   const handleOpenFolder = useCallback(async () => {
     const path = await openFolder();
@@ -417,19 +513,72 @@ const AppContent = () => {
   }, [isElectronApiAvailable]);
 
   useEffect(() => {
-    const loadSettingsForPreview = async () => {
-      if (!isElectronApiAvailable || !window.electronAPI?.loadSettings) return;
+    if (!isElectronApiAvailable) return;
+
+    const applySettings = (settings) => {
+      if (!settings || typeof settings !== 'object') return;
+
+      if (settings.devPort) {
+        setDevPort(String(settings.devPort));
+      }
+
+      if (settings.defaultProvider) {
+        setAiProvider(String(settings.defaultProvider));
+      }
+
+      if (typeof settings.thinkingMode === 'boolean') {
+        setThinkingMode(settings.thinkingMode);
+      }
+
+      if (settings.permissionMode) {
+        setPermissionMode(String(settings.permissionMode));
+      }
+
+      if (settings.contextMode) {
+        setContextMode(String(settings.contextMode));
+      }
+
+      if (Number.isFinite(Number(settings.contextMaxFiles))) {
+        setContextMaxFiles(Number(settings.contextMaxFiles));
+      }
+
+      setQualityGateConfig({
+        onApply: !!settings.qualityGateOnApply,
+        lint: settings.qualityGateLint !== false,
+        test: !!settings.qualityGateTest,
+        build: !!settings.qualityGateBuild,
+        blockOnFail: settings.qualityGateBlockOnFail !== false
+      });
+
+      if (typeof settings.onboardingCompleted === 'boolean') {
+        setShowOnboarding(!settings.onboardingCompleted);
+      }
+    };
+
+    const loadSettings = async () => {
+      if (!window.electronAPI?.loadSettings) return;
       try {
         const res = await window.electronAPI.loadSettings();
-        if (res?.success && res.settings?.devPort) {
-          setDevPort(String(res.settings.devPort));
+        if (res?.success && res.settings) {
+          applySettings(res.settings);
         }
-      } catch (e) {
+      } catch {
         // silent
       }
     };
-    loadSettingsForPreview();
+
+    const onSettingsUpdated = (event) => {
+      applySettings(event?.detail);
+    };
+
+    loadSettings();
+    window.addEventListener('settings-updated', onSettingsUpdated);
+    return () => window.removeEventListener('settings-updated', onSettingsUpdated);
   }, [isElectronApiAvailable]);
+
+  useEffect(() => {
+    setRuntimeDevPort('');
+  }, [currentProjectPath]);
 
   const openFile = useCallback((filePath, opts = {}) => {
     if (!filePath) return;
@@ -774,7 +923,7 @@ const AppContent = () => {
         const res = await window.electronAPI.searchInProject(currentProjectPath, q, {
           includeHidden: true,
           includeSecrets: false,
-          includeGit: false,
+          includeGit: true,
           includeNodeModules: false,
           includeBuild: false,
           caseSensitive: false,
@@ -921,8 +1070,29 @@ const AppContent = () => {
     }
   };
 
+  const completeOnboarding = useCallback(async () => {
+    setShowOnboarding(false);
+    if (!isElectronApiAvailable || !window.electronAPI?.loadSettings || !window.electronAPI?.saveSettings) {
+      return;
+    }
+
+    try {
+      const current = await window.electronAPI.loadSettings();
+      const nextSettings = {
+        ...(current?.settings || {}),
+        onboardingCompleted: true
+      };
+      await window.electronAPI.saveSettings(nextSettings);
+      window.dispatchEvent(new CustomEvent('settings-updated', { detail: nextSettings }));
+      showMessage('Onboarding termine.', 2000);
+    } catch {
+      // silent
+    }
+  }, [isElectronApiAvailable, showMessage]);
+
   const middleWidth = Math.max(0, 100 - leftWidth - rightWidth);
-  const previewUrl = `http://localhost:${devPort}`;
+  const previewPort = String(runtimeDevPort || devPort || '3004');
+  const previewUrl = `http://localhost:${previewPort}`;
 
   return (
     <div className="app-shell">
@@ -1067,6 +1237,7 @@ const AppContent = () => {
               onToggleFolder={toggleFolderExpansion}
               onFileClick={openFile}
               onNewItemNameChange={setNewItemName}
+              isReadOnly={isReadOnlyMode}
             />
           </aside>
         )}
@@ -1141,6 +1312,7 @@ const AppContent = () => {
                 onSelectFile={openFile}
                 onCloseFile={closeFileTab}
                 revealRequest={revealRequest}
+                forceReadOnly={isReadOnlyMode}
               />
             )}
             {centerView === 'preview' && (
@@ -1157,6 +1329,9 @@ const AppContent = () => {
                 currentProjectPath={currentProjectPath}
                 isElectronApiAvailable={isElectronApiAvailable}
                 showMessage={showMessage}
+                permissionMode={permissionMode}
+                preferredDevPort={devPort}
+                onDevPortResolved={setRuntimeDevPort}
               />
             )}
             {centerView === 'git' && (
@@ -1164,15 +1339,22 @@ const AppContent = () => {
                 currentProjectPath={currentProjectPath}
                 isElectronApiAvailable={isElectronApiAvailable}
                 showMessage={showMessage}
+                permissionMode={permissionMode}
               />
             )}
-            {centerView === 'workflows' && (
+            <div
+              style={{
+                display: centerView === 'workflows' ? 'flex' : 'none',
+                flex: 1,
+                minHeight: 0
+              }}
+            >
               <VisualWorkflowEditor
                 currentProjectPath={currentProjectPath}
                 isElectronApiAvailable={isElectronApiAvailable}
                 showMessage={showMessage}
               />
-            )}
+            </div>
           </div>
         </main>
 
@@ -1226,6 +1408,16 @@ const AppContent = () => {
               pendingImages={pendingImages}
               onRemovePendingImage={(idx) => setPendingImages(prev => prev.filter((_, i) => i !== idx))}
               pendingMessage={pendingMessage}
+              pendingFileChanges={pendingFileChanges}
+              activePendingChangeId={activePendingChangeId}
+              onSelectPendingChange={selectPendingChangeByIndex}
+              onApplyPendingChange={applyPendingChangeByIndex}
+              onRejectPendingChange={rejectPendingChangeByIndex}
+              onApplyAllPendingChanges={applyAllPendingChanges}
+              onRejectAllPendingChanges={rejectAllPendingChanges}
+              pendingSnapshotId={pendingSnapshotId}
+              contextEstimate={contextEstimate}
+              permissionMode={permissionMode}
               projectFileList={projectFileList}
             />
           </aside>
@@ -1245,13 +1437,38 @@ const AppContent = () => {
         </div>
         <div className="status-group">
           <span className="status-label">IA</span>
-          <span className="status-value">{aiProvider}{thinkingMode ? ' +Think' : ''}{deepContextEnabled ? ' +Ctx' : ''}</span>
+          <span className="status-value">{aiProvider}{thinkingMode ? ' +Think' : ''}{deepContextEnabled ? ' +Ctx' : ''} {contextMode !== 'auto' ? `(${contextMode})` : ''}</span>
+        </div>
+        <div className="status-group">
+          <span className="status-label">Mode</span>
+          <span className="status-value">{permissionMode}</span>
         </div>
         <div className="status-group">
           <span className="status-label">Projet</span>
           <span className="status-value">{projectName}</span>
         </div>
       </footer>
+
+      {showOnboarding && (
+        <div className="command-overlay" onClick={completeOnboarding}>
+          <div className="command-modal is-wide" onClick={(e) => e.stopPropagation()}>
+            <div className="command-input-row" style={{ justifyContent: 'space-between' }}>
+              <strong>Bienvenue dans Vibe IDE</strong>
+              <span className="command-hint">Onboarding</span>
+            </div>
+            <div className="command-list custom-scrollbar is-tall" style={{ padding: '14px' }}>
+              <p style={{ marginTop: 0 }}>Checklist recommandee avant de commencer:</p>
+              <p>1. Configurer vos cles API (Gemini/Kimi/Claude).</p>
+              <p>2. Choisir un mode permissions adapte (lecture seule / edition / edition+terminal).</p>
+              <p>3. Activer les quality gates si vous voulez valider lint/test/build avant application IA.</p>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+                <button className="btn btn-primary" onClick={() => setSettingsOpen(true)}>Ouvrir settings</button>
+                <button className="btn btn-ghost" onClick={completeOnboarding}>Terminer</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {settingsOpen && (
         <Settings

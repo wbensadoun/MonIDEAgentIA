@@ -30,7 +30,17 @@ const AIChat = ({
   pendingImages = [],
   onRemovePendingImage,
   pendingMessage = null,
-  projectFileList = []
+  projectFileList = [],
+  pendingFileChanges = [],
+  activePendingChangeId = null,
+  onSelectPendingChange,
+  onApplyPendingChange,
+  onRejectPendingChange,
+  onApplyAllPendingChanges,
+  onRejectAllPendingChanges,
+  pendingSnapshotId = null,
+  contextEstimate = null,
+  permissionMode = 'edit_terminal'
 }) => {
   const conversationHistoryRef = useRef(null);
   const promptInputRef = useRef(null);
@@ -43,10 +53,13 @@ const AIChat = ({
   const [showContextSuggestions, setShowContextSuggestions] = useState(false);
   const [contextFilter, setContextFilter] = useState('');
   const [explicitContext, setExplicitContext] = useState([]); // List of explicitly mentioned files
+  const [isApplyingPending, setIsApplyingPending] = useState(false);
+  const [isBulkApplyingPending, setIsBulkApplyingPending] = useState(false);
 
   const [terminalActions, setTerminalActions] = useState([]); // AI terminal ReAct cards
   const [streamingText, setStreamingText] = useState('');       // live streaming output
   const [streamingAgent, setStreamingAgent] = useState('');     // which agent is streaming
+  const [streamingMode, setStreamingMode] = useState('text');   // text | workflow | diff
   const streamingRef = useRef(null);
 
   // Register AI terminal IPC events
@@ -92,8 +105,25 @@ const AIChat = ({
       setTerminalActions([]);
       setStreamingText('');
       setStreamingAgent('');
+      setStreamingMode('text');
     }
   }, [isLoading]);
+
+  useEffect(() => {
+    if (!streamingText) {
+      setStreamingMode('text');
+      return;
+    }
+    if (/\*\*WORKFLOW:/i.test(streamingText)) {
+      setStreamingMode('workflow');
+      return;
+    }
+    if (/<<<<\s*SEARCH/i.test(streamingText) || /(?:^|\n)FILE:\s*.+/i.test(streamingText)) {
+      setStreamingMode('diff');
+      return;
+    }
+    setStreamingMode('text');
+  }, [streamingText]);
 
   useEffect(() => {
     if (conversationHistoryRef.current) {
@@ -226,6 +256,48 @@ const AIChat = ({
     if (typeof onStopGeneration === 'function') {
       onStopGeneration();
     }
+  };
+
+  const canApplyPending = permissionMode !== 'read_only';
+  const safeMultiSteps = Array.isArray(multiAIState?.steps) ? multiAIState.steps : [];
+  const safeCurrentStepIndex = safeMultiSteps.findIndex((s) => s?.status === 'active');
+
+  const handleApplyPending = async (index) => {
+    if (typeof onApplyPendingChange !== 'function') return;
+    setIsApplyingPending(true);
+    try {
+      await onApplyPendingChange(index);
+    } finally {
+      setIsApplyingPending(false);
+    }
+  };
+
+  const handleRejectPending = async (index) => {
+    if (typeof onRejectPendingChange !== 'function') return;
+    await onRejectPendingChange(index);
+  };
+
+  const handleApplyAllPending = async () => {
+    if (typeof onApplyAllPendingChanges !== 'function') return;
+    setIsBulkApplyingPending(true);
+    try {
+      await onApplyAllPendingChanges();
+    } finally {
+      setIsBulkApplyingPending(false);
+    }
+  };
+
+  const handleRejectAllPending = async () => {
+    if (typeof onRejectAllPendingChanges !== 'function') return;
+    await onRejectAllPendingChanges();
+  };
+
+  const isPendingChangeActive = (change) => {
+    if (!change) return false;
+    if (activePendingChangeId && change.id) {
+      return change.id === activePendingChangeId;
+    }
+    return change.filePath === activeFile;
   };
 
   const getRoleMeta = (msg) => {
@@ -465,6 +537,86 @@ const AIChat = ({
         </div>
       )}
 
+      {contextEstimate && (
+        <div className="ai-context-estimate">
+          <span>Contexte: {Number(contextEstimate.contextChars || 0).toLocaleString('fr-FR')} chars</span>
+          <span>Prompt: {Number(contextEstimate.promptChars || 0).toLocaleString('fr-FR')} chars</span>
+          <span>Tokens est.: {Number(contextEstimate.estimatedTokens || 0).toLocaleString('fr-FR')}</span>
+          <span>Coût est.: ${Number(contextEstimate.estimatedCostUsd || 0).toFixed(4)}</span>
+        </div>
+      )}
+
+      {Array.isArray(pendingFileChanges) && pendingFileChanges.length > 0 && (
+        <div className="ai-pending-changes">
+          <div className="ai-pending-head">
+            <span>{pendingFileChanges.length} changement(s) IA en attente</span>
+            <div className="ai-pending-head-actions">
+              <button
+                type="button"
+                className="ai-control-btn"
+                onClick={handleApplyAllPending}
+                disabled={!canApplyPending || isApplyingPending || isBulkApplyingPending}
+                title={!canApplyPending ? 'Mode lecture seule' : 'Appliquer tous les changements IA'}
+              >
+                Appliquer tout
+              </button>
+              <button
+                type="button"
+                className="ai-control-btn"
+                onClick={handleRejectAllPending}
+                disabled={isApplyingPending || isBulkApplyingPending}
+                title="Rejeter tous les changements IA"
+              >
+                Rejeter tout
+              </button>
+            </div>
+          </div>
+
+          {pendingSnapshotId && (
+            <div className="ai-pending-meta">Snapshot: {pendingSnapshotId}</div>
+          )}
+
+          <div className="ai-pending-list">
+            {pendingFileChanges.slice(0, 8).map((change, index) => (
+              <div
+                key={change.id || `${change.filePath}-${index}`}
+                className={`ai-pending-item ${isPendingChangeActive(change) ? 'is-active' : ''}`}
+              >
+                <button
+                  type="button"
+                  className="ai-pending-file"
+                  onClick={() => onSelectPendingChange && onSelectPendingChange(index)}
+                  title={change.filePath}
+                >
+                  {change.filePath}
+                </button>
+                <div className="ai-pending-item-actions">
+                  <button
+                    type="button"
+                    className="ai-mini-btn is-apply"
+                    onClick={() => handleApplyPending(index)}
+                    disabled={!canApplyPending || isApplyingPending || isBulkApplyingPending}
+                  >
+                    Apply
+                  </button>
+                  <button
+                    type="button"
+                    className="ai-mini-btn is-reject"
+                    onClick={() => handleRejectPending(index)}
+                    disabled={isApplyingPending || isBulkApplyingPending}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+            {pendingFileChanges.length > 8 && (
+              <div className="ai-pending-more">+ {pendingFileChanges.length - 8} autre(s)</div>
+            )}
+          </div>
+        </div>
+      )}
+
       {multiAIState?.isActive && (
         <div className="ai-loading">
           <AIWorkingIndicator
@@ -472,28 +624,41 @@ const AIChat = ({
             statusText={multiAIState.currentPhase ? `${streamingAgent || multiAIState.currentPhase} en cours...` : "Multi-IA en cours..."}
           />
           <LoadingSteps
-            steps={multiAIState.steps}
-            currentStep={multiAIState.steps.findIndex(s => s.status === 'active')}
+            steps={safeMultiSteps}
+            currentStep={safeCurrentStepIndex}
           />
           {streamingText && (
             <div
               ref={streamingRef}
-              style={{
-                marginTop: 8,
-                background: '#0d1117',
-                border: '1px solid #30363d',
-                borderRadius: 6,
-                padding: '8px 12px',
-                maxHeight: 160,
-                overflowY: 'auto',
-                fontFamily: 'monospace',
-                fontSize: 11,
-                color: '#7ee787',
-                whiteSpace: 'pre-wrap',
-                lineHeight: 1.5
-              }}
+              className={`ai-stream-box ai-stream-${streamingMode}`}
             >
-              {streamingText}
+              {streamingMode === 'workflow' && (
+                <div className="ai-stream-anim ai-stream-workflow">
+                  <div className="ai-stream-anim-title">Creation du workflow visuel...</div>
+                  <div className="ai-workflow-pulse">
+                    <span className="wf-node wf-node-a" />
+                    <span className="wf-link wf-link-ab" />
+                    <span className="wf-node wf-node-b" />
+                    <span className="wf-link wf-link-bc" />
+                    <span className="wf-node wf-node-c" />
+                  </div>
+                  <div className="ai-stream-anim-subtitle">Tag detecte: **WORKFLOW:**</div>
+                </div>
+              )}
+              {streamingMode === 'diff' && (
+                <div className="ai-stream-anim ai-stream-diff">
+                  <div className="ai-stream-anim-title">Edition de fichier en cours...</div>
+                  <div className="ai-diff-file">
+                    <span className="diff-line diff-line-1" />
+                    <span className="diff-line diff-line-2" />
+                    <span className="diff-line diff-line-3" />
+                  </div>
+                  <div className="ai-stream-anim-subtitle">Syntaxe detectee: {'<<<< SEARCH ... >>>> REPLACE'}</div>
+                </div>
+              )}
+              {streamingMode === 'text' && (
+                <pre className="ai-stream-text">{streamingText}</pre>
+              )}
             </div>
           )}
           {multiAIState.error && (
@@ -684,6 +849,31 @@ const AIChat = ({
                 </span>
               </button>
             ))}
+          </div>
+        )}
+
+        {showContextSuggestions && (
+          <div className="ai-workflow-suggest">
+            <div className="ai-workflow-title">Fichiers du projet</div>
+            {filteredContextFiles.length === 0 && (
+              <div className="ai-dropdown-empty">Aucun fichier pour {contextFilter}</div>
+            )}
+            {filteredContextFiles.map((filePath) => {
+              const fileName = filePath.split(/[\\/]/).pop() || filePath;
+              return (
+                <button
+                  key={filePath}
+                  onClick={() => handleSelectContextFile(filePath)}
+                  className="ai-workflow-item"
+                >
+                  <div>
+                    <span className="ai-workflow-name">@{fileName}</span>
+                    <span className="ai-workflow-desc">{filePath}</span>
+                  </div>
+                  <span className="ai-workflow-scope workspace">ctx</span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

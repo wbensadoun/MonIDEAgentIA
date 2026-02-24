@@ -6,12 +6,71 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const readline = require('readline');
 const { spawn } = require('child_process');
+const net = require('net');
 const isDev = require('electron-is-dev');
 const axios = require('axios');
 const logger = require('./logger');
 
 let mainWindow;
 const processes = {};
+const processMeta = {};
+const DEFAULT_PORT_ENV_KEYS = ['PORT', 'VITE_PORT', 'NUXT_PORT', 'WEB_PORT'];
+
+const toPortNumber = (value, fallback = 3004) => {
+  const raw = Number.parseInt(String(value ?? ''), 10);
+  if (Number.isInteger(raw) && raw >= 1 && raw <= 65535) return raw;
+  return fallback;
+};
+
+const getReservedPorts = () => {
+  const reserved = new Set();
+  Object.values(processMeta).forEach((meta) => {
+    if (Number.isInteger(meta?.allocatedPort)) {
+      reserved.add(meta.allocatedPort);
+    }
+  });
+  return reserved;
+};
+
+const isPortAvailable = (port) =>
+  new Promise((resolve) => {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      resolve(false);
+      return;
+    }
+
+    const server = net.createServer();
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    server.once('error', () => finish(false));
+    server.once('listening', () => {
+      server.close(() => finish(true));
+    });
+
+    try {
+      server.listen(port, '127.0.0.1');
+    } catch {
+      finish(false);
+    }
+  });
+
+const findAvailablePort = async (preferredPort, maxAttempts = 200, reservedPorts = new Set()) => {
+  const startPort = toPortNumber(preferredPort, 3004);
+  for (let offset = 0; offset < maxAttempts; offset += 1) {
+    const candidate = startPort + offset;
+    if (candidate > 65535) break;
+    if (reservedPorts.has(candidate)) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const available = await isPortAvailable(candidate);
+    if (available) return candidate;
+  }
+  return null;
+};
 
 /**
  * Security guard: ensures `sub` (resolved) is within `root`.
@@ -22,6 +81,503 @@ function assertSafePath(root, sub) {
   const subResolved = path.resolve(sub);
   if (subResolved !== path.resolve(root) && !subResolved.startsWith(rootResolved)) {
     throw new Error(`Accès refusé: chemin hors projet "${sub}"`);
+  }
+}
+
+const AGENT_BLOCKED_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp', '.tif', '.tiff',
+  '.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac',
+  '.mp4', '.mov', '.avi', '.mkv', '.webm',
+  '.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx',
+  '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz',
+  '.exe', '.dll', '.so', '.dylib', '.bin', '.iso', '.jar',
+  '.woff', '.woff2', '.ttf', '.otf', '.eot'
+]);
+const VISUAL_WORKFLOW_SCHEMA_VERSION = 2;
+const VISUAL_WORKFLOW_MAX_NODES = 250;
+const VISUAL_WORKFLOW_MAX_EDGES = 800;
+const VISUAL_WORKFLOW_ALLOWED_NODE_TYPES = new Set(['trigger', 'ai', 'action', 'logic', 'output']);
+const AGENT_MAX_FILE_BYTES = 2 * 1024 * 1024;
+const AGENT_MAX_LINES_PER_CALL = 1000;
+const AGENT_MAX_TOOL_CALLS = 20;
+const AGENT_TOOL_MAX_ROUNDS = 6;
+const AGENT_TOOL_CONTENT_MAX_CHARS = 120000;
+
+const toPositiveInt = (value, fallback, min = 1, max = Number.MAX_SAFE_INTEGER) => {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+};
+
+function safeResolvePath(workspaceRoot, relativePath) {
+  const root = path.resolve(String(workspaceRoot || '').trim() || process.cwd());
+  const candidateRaw = String(relativePath || '').trim();
+  if (!candidateRaw) {
+    throw new Error('Chemin vide');
+  }
+  if (candidateRaw.includes('\0')) {
+    throw new Error('Chemin invalide');
+  }
+  if (path.isAbsolute(candidateRaw)) {
+    throw new Error(`Chemin absolu interdit: "${candidateRaw}"`);
+  }
+  const normalizedRelative = path.normalize(candidateRaw);
+  if (normalizedRelative === '..' || normalizedRelative.startsWith(`..${path.sep}`) || normalizedRelative.includes(`${path.sep}..${path.sep}`)) {
+    throw new Error(`Path traversal interdit: "${candidateRaw}"`);
+  }
+  const resolved = path.resolve(root, normalizedRelative);
+  assertSafePath(root, resolved);
+  return {
+    root,
+    resolved,
+    relative: normalizedRelative.replace(/\\/g, '/')
+  };
+}
+
+const hasAllowedAgentExtension = (filePath) => {
+  const ext = path.extname(String(filePath || '')).toLowerCase();
+  return !AGENT_BLOCKED_EXTENSIONS.has(ext);
+};
+
+const isLikelyBinary = (contentBuffer) => {
+  if (!Buffer.isBuffer(contentBuffer)) return false;
+  const sample = contentBuffer.subarray(0, Math.min(contentBuffer.length, 4096));
+  for (let i = 0; i < sample.length; i += 1) {
+    if (sample[i] === 0) return true;
+  }
+  return false;
+};
+
+const formatToolError = (name, message) => {
+  return `<tool_result name="${name}" status="error">\n${message}\n</tool_result>`;
+};
+
+async function validateAgentFileAccess(workspaceRoot, relativePath) {
+  const resolvedPathInfo = safeResolvePath(workspaceRoot, relativePath);
+  const { resolved, relative } = resolvedPathInfo;
+
+  if (!hasAllowedAgentExtension(relative)) {
+    throw new Error(`Extension non autorisee: ${relative}`);
+  }
+
+  let stats;
+  try {
+    stats = await fs.lstat(resolved);
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      throw new Error(`Fichier introuvable: ${relative}`);
+    }
+    throw error;
+  }
+
+  if (stats.isSymbolicLink()) {
+    throw new Error(`Liens symboliques interdits: ${relative}`);
+  }
+  if (!stats.isFile()) {
+    throw new Error(`Cible non-fichier: ${relative}`);
+  }
+  if (stats.size > AGENT_MAX_FILE_BYTES) {
+    throw new Error(`Fichier trop volumineux (${stats.size} bytes > ${AGENT_MAX_FILE_BYTES})`);
+  }
+
+  return { resolvedPath: resolved, relativePath: relative, stats };
+}
+
+async function readAgentFileWithLimits(workspaceRoot, relativePath) {
+  const { resolvedPath, relativePath: relPath } = await validateAgentFileAccess(workspaceRoot, relativePath);
+  const raw = await fs.readFile(resolvedPath);
+  if (isLikelyBinary(raw)) {
+    throw new Error(`Fichier binaire non supporte: ${relPath}`);
+  }
+  const content = raw.toString('utf8');
+  if (content.length > AGENT_TOOL_CONTENT_MAX_CHARS) {
+    return `${content.slice(0, AGENT_TOOL_CONTENT_MAX_CHARS)}\n[...TRUNCATED ${content.length - AGENT_TOOL_CONTENT_MAX_CHARS} chars...]`;
+  }
+  return content;
+}
+
+function readAgentLinesWithLimits(content, start, end, maxLines = AGENT_MAX_LINES_PER_CALL) {
+  const lines = String(content || '').split(/\r?\n/);
+  const total = lines.length;
+  const s = toPositiveInt(start, 1, 1, Math.max(1, total));
+  const eDefault = Math.min(total, s + maxLines - 1);
+  const eRaw = toPositiveInt(end, eDefault, s, Math.max(s, total));
+  const eCapped = Math.min(eRaw, s + maxLines - 1);
+  const excerpt = lines.slice(s - 1, eCapped);
+  return {
+    start: s,
+    end: eCapped,
+    total,
+    content: excerpt.join('\n')
+  };
+}
+
+const parseTagAttributes = (rawAttrs) => {
+  const attrs = {};
+  const text = String(rawAttrs || '');
+  const regex = /([a-zA-Z_][a-zA-Z0-9_-]*)\s*=\s*"([^"]*)"/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    attrs[match[1]] = match[2];
+  }
+  return attrs;
+};
+
+const parseAgentToolCalls = (text) => {
+  const source = String(text || '');
+  const calls = [];
+  const pushCall = (call) => {
+    if (calls.length >= AGENT_MAX_TOOL_CALLS) return;
+    calls.push(call);
+  };
+
+  const readFileRegex = /<read_file\b([^>]*)\/?>/gi;
+  const readLinesRegex = /<read_lines\b([^>]*)\/?>/gi;
+  const listWorkflowsRegex = /<list_workflows\s*\/?>/gi;
+  const readWorkflowRegex = /<read_workflow\b([^>]*)\/?>/gi;
+
+  let match;
+  while ((match = readFileRegex.exec(source)) !== null) {
+    const attrs = parseTagAttributes(match[1]);
+    pushCall({ name: 'read_file', attrs });
+  }
+  while ((match = readLinesRegex.exec(source)) !== null) {
+    const attrs = parseTagAttributes(match[1]);
+    pushCall({ name: 'read_lines', attrs });
+  }
+  while ((match = listWorkflowsRegex.exec(source)) !== null) {
+    pushCall({ name: 'list_workflows', attrs: {} });
+  }
+  while ((match = readWorkflowRegex.exec(source)) !== null) {
+    const attrs = parseTagAttributes(match[1]);
+    pushCall({ name: 'read_workflow', attrs });
+  }
+
+  return calls;
+};
+
+const summarizeWorkflow = (rawWorkflow, fallbackName) => {
+  const wf = rawWorkflow && typeof rawWorkflow === 'object' ? rawWorkflow : {};
+  const name = String(wf.name || fallbackName || 'workflow').trim() || 'workflow';
+  const descriptionRaw = String(wf.description || wf.summary || '').trim();
+  const description = descriptionRaw ? descriptionRaw.slice(0, 180) : '';
+  const nodes = Array.isArray(wf.nodes) ? wf.nodes.length : 0;
+  const edges = Array.isArray(wf.edges) ? wf.edges.length : 0;
+  return { name, description, nodes, edges };
+};
+
+const buildWorkflowIdFromFilename = (filename) => {
+  const base = String(filename || '').trim();
+  if (!base) return '';
+  return base.replace(/\.json$/i, '');
+};
+
+const resolveWorkflowFileById = async (projectPath, workflowId) => {
+  const baseDir = getWorkspaceVisualWorkflowsDir(projectPath);
+  const allFiles = await fs.readdir(baseDir);
+  const jsonFiles = allFiles.filter((name) => String(name).toLowerCase().endsWith('.json'));
+  if (jsonFiles.length === 0) return null;
+
+  const requested = String(workflowId || '').trim();
+  if (!requested) return null;
+  const requestedLower = requested.toLowerCase();
+
+  let selected = jsonFiles.find((name) => String(name).toLowerCase() === requestedLower);
+  if (!selected) {
+    selected = jsonFiles.find((name) => buildWorkflowIdFromFilename(name).toLowerCase() === requestedLower);
+  }
+
+  if (!selected) return null;
+  return path.join(baseDir, selected);
+};
+
+async function getVisualWorkflowIndex(projectPath, maxItems = 40) {
+  if (!projectPath) return [];
+  const baseDir = getWorkspaceVisualWorkflowsDir(projectPath);
+  if (!fsSync.existsSync(baseDir)) return [];
+
+  const entries = await fs.readdir(baseDir);
+  const jsonFiles = entries
+    .filter((name) => String(name).toLowerCase().endsWith('.json'))
+    .slice(0, maxItems);
+
+  const workflows = [];
+  for (const filename of jsonFiles) {
+    try {
+      const filePath = path.join(baseDir, filename);
+      const content = await fs.readFile(filePath, 'utf8');
+      const parsed = JSON.parse(content);
+      const { workflow } = sanitizeVisualWorkflowPayload(parsed, { strict: false });
+      const summary = summarizeWorkflow(workflow, buildWorkflowIdFromFilename(filename));
+      workflows.push({
+        id: buildWorkflowIdFromFilename(filename),
+        filename,
+        ...summary
+      });
+    } catch {
+      workflows.push({
+        id: buildWorkflowIdFromFilename(filename),
+        filename,
+        name: buildWorkflowIdFromFilename(filename),
+        description: '[invalid json]',
+        nodes: 0,
+        edges: 0
+      });
+    }
+  }
+
+  return workflows;
+}
+
+async function readVisualWorkflowById(projectPath, workflowId) {
+  if (!projectPath) {
+    throw new Error('Aucun projet actif');
+  }
+  const targetFile = await resolveWorkflowFileById(projectPath, workflowId);
+  if (!targetFile) {
+    throw new Error(`Workflow introuvable: ${workflowId}`);
+  }
+  const content = await fs.readFile(targetFile, 'utf8');
+  if (content.length > AGENT_TOOL_CONTENT_MAX_CHARS) {
+    return `${content.slice(0, AGENT_TOOL_CONTENT_MAX_CHARS)}\n[...TRUNCATED ${content.length - AGENT_TOOL_CONTENT_MAX_CHARS} chars...]`;
+  }
+  return content;
+}
+
+const VISUAL_WORKFLOW_INTENT_REGEX = /\b(workflow|workflows|flux|visuel|visuels|diagram|diagramme|n8n)\b/i;
+
+async function buildVisualWorkflowContextForPrompt(projectPath, userText = '', options = {}) {
+  if (!projectPath) return '';
+  const safeOptions = options && typeof options === 'object' ? options : {};
+  if (safeOptions.includeVisualWorkflows === false) return '';
+
+  const maxIndexItems = toPositiveInt(safeOptions.maxVisualWorkflowIndexItems, 20, 1, 60);
+  const maxDetailedItems = toPositiveInt(safeOptions.maxVisualWorkflowDetailedItems, 4, 0, 15);
+  const maxContentChars = toPositiveInt(safeOptions.maxVisualWorkflowContentChars, 7000, 800, 50000);
+  const workflowIntent = safeOptions.forceVisualWorkflowContext === true
+    || VISUAL_WORKFLOW_INTENT_REGEX.test(String(userText || ''));
+
+  let workflows = [];
+  try {
+    workflows = await getVisualWorkflowIndex(projectPath, maxIndexItems);
+  } catch {
+    return '';
+  }
+
+  if (!Array.isArray(workflows) || workflows.length === 0) {
+    return '\n--- WORKFLOWS VISUELS (.vibe-workflows) ---\nAucun workflow visuel trouve.\n--- FIN WORKFLOWS VISUELS ---\n';
+  }
+
+  let context = '\n--- WORKFLOWS VISUELS (.vibe-workflows) ---\n';
+  context += workflows.map((wf, idx) =>
+    `${idx + 1}. id=${wf.id} | name=${wf.name} | nodes=${wf.nodes} | edges=${wf.edges}${wf.description ? ` | desc=${wf.description}` : ''}`
+  ).join('\n');
+
+  if (!workflowIntent || maxDetailedItems <= 0) {
+    context += '\n\nUtilisez ces identifiants pour modifier un workflow existant via **WORKFLOW: NomDuWorkflow** avec un JSON complet.';
+    context += '\n--- FIN WORKFLOWS VISUELS ---\n';
+    return context;
+  }
+
+  const detailedList = workflows.slice(0, maxDetailedItems);
+  for (const wf of detailedList) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const rawContent = await readVisualWorkflowById(projectPath, wf.id);
+      const content = String(rawContent || '');
+      const rendered = content.length > maxContentChars
+        ? `${content.slice(0, maxContentChars)}\n/* ... TRUNCATED ${content.length - maxContentChars} chars ... */`
+        : content;
+      context += `\n\n### WORKFLOW_JSON: ${wf.id}\n\`\`\`json\n${rendered}\n\`\`\``;
+    } catch {
+      context += `\n\n### WORKFLOW_JSON: ${wf.id}\n[lecture impossible]`;
+    }
+  }
+
+  context += '\n--- FIN WORKFLOWS VISUELS ---\n';
+  return context;
+}
+
+const N8N_CATALOG_INTENT_REGEX = /\b(n8n|catalog|catalogue|template|templates)\b/i;
+const N8N_CATALOG_REPO_OWNER = 'Danitilahun';
+const N8N_CATALOG_REPO_NAME = 'n8n-workflow-templates';
+const N8N_CATALOG_WORKFLOWS_DIR = 'workflows/';
+const N8N_CATALOG_BRANCH_CANDIDATES = ['main', 'master'];
+let n8nCatalogPromptCache = {
+  fetchedAt: 0,
+  items: [],
+  total: 0,
+  source: 'none',
+  truncated: false
+};
+
+const toN8nCatalogItem = (entryPath, size = 0, branch = 'main') => {
+  const normalizedPath = String(entryPath || '').replace(/\\/g, '/');
+  const filename = path.posix.basename(normalizedPath);
+  const rawName = filename.replace(/\.json$/i, '');
+  const name = rawName.replace(/[_-]+/g, ' ').trim() || rawName || filename;
+  return {
+    name,
+    filename,
+    repoPath: normalizedPath,
+    downloadUrl: `https://raw.githubusercontent.com/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/${branch}/${normalizedPath}`,
+    size: Number(size) || 0
+  };
+};
+
+const sortN8nCatalogItems = (items) => {
+  return Array.isArray(items)
+    ? items.slice().sort((a, b) =>
+      String(a?.filename || '').localeCompare(String(b?.filename || ''), undefined, { numeric: true, sensitivity: 'base' }))
+    : [];
+};
+
+async function fetchN8nCatalogFromGitTree(timeoutMs = 12000) {
+  let lastError = null;
+  for (const branch of N8N_CATALOG_BRANCH_CANDIDATES) {
+    try {
+      const url = `https://api.github.com/repos/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/git/trees/${branch}?recursive=1`;
+      const response = await axios.get(url, {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'MonIDEAgentIA'
+        },
+        timeout: timeoutMs
+      });
+
+      const tree = Array.isArray(response.data?.tree) ? response.data.tree : [];
+      const truncated = response.data?.truncated === true;
+      const items = tree
+        .filter((entry) =>
+          entry &&
+          entry.type === 'blob' &&
+          typeof entry.path === 'string' &&
+          entry.path.toLowerCase().startsWith(N8N_CATALOG_WORKFLOWS_DIR) &&
+          entry.path.toLowerCase().endsWith('.json'))
+        .map((entry) => toN8nCatalogItem(entry.path, entry.size, branch));
+
+      if (items.length > 0) {
+        return {
+          items: sortN8nCatalogItems(items),
+          source: `git-tree:${branch}`,
+          truncated
+        };
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Impossible de lire le catalogue n8n (git tree)');
+}
+
+async function fetchN8nCatalogFromContents(timeoutMs = 12000) {
+  const url = `https://api.github.com/repos/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/contents/workflows`;
+  const response = await axios.get(url, {
+    headers: {
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'MonIDEAgentIA'
+    },
+    timeout: timeoutMs
+  });
+
+  const items = Array.isArray(response.data)
+    ? response.data
+      .filter((entry) => entry && typeof entry.name === 'string' && String(entry.name).toLowerCase().endsWith('.json'))
+      .map((entry) => ({
+        name: String(entry.name).replace(/\.json$/i, '').replace(/[_-]+/g, ' ').trim(),
+        filename: String(entry.name),
+        repoPath: String(entry.path || ''),
+        downloadUrl: String(entry.download_url || ''),
+        size: Number(entry.size) || 0
+      }))
+    : [];
+
+  return {
+    items: sortN8nCatalogItems(items),
+    source: 'contents',
+    truncated: false
+  };
+}
+
+async function getN8nCatalogEntries(timeoutMs = 12000) {
+  const now = Date.now();
+  const cacheAgeMs = now - Number(n8nCatalogPromptCache.fetchedAt || 0);
+  const cacheFreshMs = 3 * 60 * 1000;
+  if (Array.isArray(n8nCatalogPromptCache.items) && n8nCatalogPromptCache.items.length > 0 && cacheAgeMs < cacheFreshMs) {
+    return {
+      items: n8nCatalogPromptCache.items,
+      total: Number(n8nCatalogPromptCache.total) || n8nCatalogPromptCache.items.length,
+      source: n8nCatalogPromptCache.source || 'cache',
+      truncated: !!n8nCatalogPromptCache.truncated,
+      cached: true
+    };
+  }
+
+  let fetched;
+  try {
+    fetched = await fetchN8nCatalogFromGitTree(timeoutMs);
+  } catch {
+    fetched = await fetchN8nCatalogFromContents(timeoutMs);
+  }
+  const items = Array.isArray(fetched?.items) ? fetched.items : [];
+
+  n8nCatalogPromptCache = {
+    fetchedAt: now,
+    items,
+    total: items.length,
+    source: fetched?.source || 'unknown',
+    truncated: !!fetched?.truncated
+  };
+
+  return {
+    items,
+    total: items.length,
+    source: fetched?.source || 'unknown',
+    truncated: !!fetched?.truncated,
+    cached: false
+  };
+}
+
+async function fetchN8nCatalogForPrompt(maxItems = 50, timeoutMs = 12000) {
+  const catalog = await getN8nCatalogEntries(timeoutMs);
+  return {
+    items: catalog.items.slice(0, maxItems),
+    total: catalog.total,
+    source: catalog.source,
+    truncated: catalog.truncated
+  };
+}
+
+async function buildN8nCatalogContextForPrompt(userText = '', options = {}) {
+  const safeOptions = options && typeof options === 'object' ? options : {};
+  if (safeOptions.includeN8nCatalog === false) return '';
+
+  const intent = safeOptions.forceN8nCatalogContext === true
+    || N8N_CATALOG_INTENT_REGEX.test(String(userText || ''));
+  if (!intent) return '';
+
+  const maxItems = toPositiveInt(safeOptions.maxN8nCatalogItems, 50, 5, 500);
+  const timeoutMs = toPositiveInt(safeOptions.n8nCatalogTimeoutMs, 12000, 2000, 30000);
+
+  try {
+    const catalog = await fetchN8nCatalogForPrompt(maxItems, timeoutMs);
+    const entries = Array.isArray(catalog.items) ? catalog.items : [];
+    if (entries.length === 0) {
+      return '\n--- CATALOGUE N8N (COMMUNITY) ---\nAucun workflow trouve.\n--- FIN CATALOGUE N8N ---\n';
+    }
+
+    const totalCount = Number(catalog.total) || entries.length;
+    const lines = entries.map((item, idx) => {
+      const kb = (Number(item.size || 0) / 1024).toFixed(1);
+      return `${idx + 1}. ${item.name} (${kb} KB) | ${item.downloadUrl}`;
+    });
+    const shownCount = lines.length;
+    const sourceInfo = catalog.source ? `\nSource: ${catalog.source}` : '';
+    const truncInfo = catalog.truncated ? '\nAttention: API GitHub signale un arbre tronque.' : '';
+    const summary = `Total workflows detectes: ${totalCount}\nAffiches dans ce contexte: ${shownCount}`;
+    return `\n--- CATALOGUE N8N (COMMUNITY) ---\n${summary}${sourceInfo}${truncInfo}\n${lines.join('\n')}\n--- FIN CATALOGUE N8N ---\n`;
+  } catch (error) {
+    return `\n--- CATALOGUE N8N (COMMUNITY) ---\nIndisponible: ${error?.message || 'erreur reseau'}\n--- FIN CATALOGUE N8N ---\n`;
   }
 }
 
@@ -311,7 +867,18 @@ ipcMain.handle('open-logs-folder', async () => {
 // Process Runner (Terminal intégré)
 ipcMain.handle('start-process', async (event, payload) => {
   try {
-    const { id, command, args = [], cwd } = payload || {};
+    await ensureTerminalPermission();
+
+    const {
+      id,
+      command,
+      args = [],
+      cwd,
+      env: customEnv,
+      autoSelectPort = false,
+      preferredPort,
+      portEnvVars
+    } = payload || {};
     if (!id || !command) {
       return { success: false, error: 'Identifiant ou commande manquant' };
     }
@@ -324,6 +891,7 @@ ipcMain.handle('start-process', async (event, payload) => {
         // ignore
       }
       delete processes[id];
+      delete processMeta[id];
     }
 
     const options = {};
@@ -331,9 +899,40 @@ ipcMain.handle('start-process', async (event, payload) => {
       options.cwd = cwd;
     }
     options.shell = true;
+    options.env = { ...process.env };
+
+    if (customEnv && typeof customEnv === 'object' && !Array.isArray(customEnv)) {
+      Object.entries(customEnv).forEach(([key, value]) => {
+        if (typeof key !== 'string' || !key.trim()) return;
+        if (value === undefined || value === null) return;
+        options.env[key] = String(value);
+      });
+    }
+
+    let allocatedPort = null;
+    if (autoSelectPort) {
+      const preferred = toPortNumber(preferredPort, 3004);
+      const requestedKeys = Array.isArray(portEnvVars)
+        ? portEnvVars.filter((key) => typeof key === 'string' && key.trim())
+        : [];
+      const keys = requestedKeys.length > 0 ? requestedKeys : DEFAULT_PORT_ENV_KEYS;
+      const reservedPorts = getReservedPorts();
+      allocatedPort = await findAvailablePort(preferred, 200, reservedPorts);
+      if (!allocatedPort) {
+        return { success: false, error: 'Aucun port libre disponible.' };
+      }
+      keys.forEach((key) => {
+        options.env[key] = String(allocatedPort);
+      });
+    }
 
     const child = spawn(command, args, options);
     processes[id] = child;
+    if (allocatedPort) {
+      processMeta[id] = { allocatedPort };
+    } else {
+      delete processMeta[id];
+    }
 
     child.stdout.on('data', (data) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -360,6 +959,7 @@ ipcMain.handle('start-process', async (event, payload) => {
         mainWindow.webContents.send('process-exit', { id, code });
       }
       delete processes[id];
+      delete processMeta[id];
     });
 
     child.on('error', (error) => {
@@ -372,7 +972,7 @@ ipcMain.handle('start-process', async (event, payload) => {
       }
     });
 
-    return { success: true };
+    return { success: true, allocatedPort };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -386,6 +986,7 @@ ipcMain.handle('stop-process', async (event, id) => {
 
     processes[id].kill();
     delete processes[id];
+    delete processMeta[id];
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -395,10 +996,122 @@ ipcMain.handle('stop-process', async (event, id) => {
 // Settings
 const getSettingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 
+const DEFAULT_APP_SETTINGS = Object.freeze({
+  defaultProvider: 'gemini',
+  thinkingMode: false,
+  ollamaModel: 'qwen2.5-coder:7b',
+  ollamaModelArchitect: 'qwen2.5-coder:7b',
+  ollamaModelCoder: 'qwen3-coder:30b',
+  ollamaModelTester: 'qwen2.5-coder:7b',
+  devPort: '3004',
+  allowDangerousActions: false,
+  aiContextPreset: 'safe',
+  aiContextIncludeSecrets: false,
+  aiContextLargeFileStrategy: 'skip',
+  aiTerminalApprovalMode: true,
+  permissionMode: 'edit_terminal', // read_only | edit | edit_terminal
+  qualityGateOnApply: false,
+  qualityGateLint: true,
+  qualityGateTest: false,
+  qualityGateBuild: false,
+  qualityGateBlockOnFail: true,
+  onboardingCompleted: false,
+  contextMode: 'auto', // auto | mentions | none
+  contextMaxFiles: 120
+});
+
+const normalizePermissionMode = (value) => {
+  const mode = String(value || '').trim();
+  if (mode === 'read_only') return 'read_only';
+  if (mode === 'edit') return 'edit';
+  return 'edit_terminal';
+};
+
+const normalizeSettings = (raw) => {
+  const base = raw && typeof raw === 'object' ? raw : {};
+  const normalized = {
+    ...DEFAULT_APP_SETTINGS,
+    ...base
+  };
+
+  normalized.permissionMode = normalizePermissionMode(normalized.permissionMode);
+  normalized.aiTerminalApprovalMode = normalized.aiTerminalApprovalMode !== false;
+  normalized.qualityGateOnApply = !!normalized.qualityGateOnApply;
+  normalized.qualityGateLint = normalized.qualityGateLint !== false;
+  normalized.qualityGateTest = !!normalized.qualityGateTest;
+  normalized.qualityGateBuild = !!normalized.qualityGateBuild;
+  normalized.qualityGateBlockOnFail = normalized.qualityGateBlockOnFail !== false;
+
+  const contextMode = String(normalized.contextMode || '').trim();
+  normalized.contextMode = contextMode === 'mentions' || contextMode === 'none' ? contextMode : 'auto';
+
+  const maxFiles = Number(normalized.contextMaxFiles);
+  normalized.contextMaxFiles = Number.isFinite(maxFiles)
+    ? Math.min(50000, Math.max(10, Math.floor(maxFiles)))
+    : 120;
+
+  const devPort = String(normalized.devPort || '3004').trim();
+  normalized.devPort = devPort || '3004';
+
+  const normalizeModelName = (value, fallback) => {
+    const candidate = String(value || '').trim();
+    return candidate || fallback;
+  };
+  normalized.ollamaModel = normalizeModelName(normalized.ollamaModel, DEFAULT_APP_SETTINGS.ollamaModel);
+  normalized.ollamaModelArchitect = normalizeModelName(normalized.ollamaModelArchitect, normalized.ollamaModel);
+  normalized.ollamaModelCoder = normalizeModelName(normalized.ollamaModelCoder, normalized.ollamaModel);
+  normalized.ollamaModelTester = normalizeModelName(normalized.ollamaModelTester, normalized.ollamaModel);
+
+  const preset = String(normalized.aiContextPreset || 'safe');
+  normalized.aiContextPreset = preset === 'full' || preset === 'god' ? preset : 'safe';
+
+  const largeFileStrategy = String(normalized.aiContextLargeFileStrategy || 'skip');
+  normalized.aiContextLargeFileStrategy = largeFileStrategy === 'truncate' ? 'truncate' : 'skip';
+
+  return normalized;
+};
+
+const readSettingsSafe = async () => {
+  try {
+    const settingsPath = getSettingsPath();
+    if (!fsSync.existsSync(settingsPath)) {
+      return normalizeSettings({});
+    }
+    const content = await fs.readFile(settingsPath, 'utf8');
+    const parsed = JSON.parse(content);
+    return normalizeSettings(parsed);
+  } catch {
+    return normalizeSettings({});
+  }
+};
+
+const canEditFiles = (permissionMode) =>
+  permissionMode === 'edit' || permissionMode === 'edit_terminal';
+
+const canUseTerminal = (permissionMode) =>
+  permissionMode === 'edit_terminal';
+
+const ensureEditPermission = async () => {
+  const settings = await readSettingsSafe();
+  if (!canEditFiles(settings.permissionMode)) {
+    throw new Error('Le mode permissions actuel est en lecture seule.');
+  }
+  return settings;
+};
+
+const ensureTerminalPermission = async () => {
+  const settings = await readSettingsSafe();
+  if (!canUseTerminal(settings.permissionMode)) {
+    throw new Error("Le mode permissions actuel n'autorise pas le terminal.");
+  }
+  return settings;
+};
+
 ipcMain.handle('save-settings', async (event, settings) => {
   try {
+    const normalized = normalizeSettings(settings);
     await fs.mkdir(app.getPath('userData'), { recursive: true });
-    await fs.writeFile(getSettingsPath(), JSON.stringify(settings, null, 2), 'utf8');
+    await fs.writeFile(getSettingsPath(), JSON.stringify(normalized, null, 2), 'utf8');
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -407,13 +1120,7 @@ ipcMain.handle('save-settings', async (event, settings) => {
 
 ipcMain.handle('load-settings', async () => {
   try {
-    const settingsPath = getSettingsPath();
-    const exists = fsSync.existsSync(settingsPath);
-    if (!exists) {
-      return { success: true, settings: {} };
-    }
-    const content = await fs.readFile(settingsPath, 'utf8');
-    const settings = JSON.parse(content);
+    const settings = await readSettingsSafe();
     return { success: true, settings };
   } catch (error) {
     return { success: false, error: error.message };
@@ -1134,6 +1841,188 @@ ipcMain.handle('search-in-project', async (event, projectPath, query, options = 
   }
 });
 
+// Recherche de symboles (fonctions/classes/exports) dans le projet
+ipcMain.handle('search-symbols', async (event, projectPath, query, options = {}) => {
+  try {
+    if (!projectPath) {
+      return { success: false, error: 'Chemin du projet non fourni' };
+    }
+
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) {
+      return { success: true, results: [] };
+    }
+
+    const safeOptions = options && typeof options === 'object' ? options : {};
+    const maxResults = Math.min(5000, Math.max(20, Number(safeOptions.maxResults) || 300));
+    const maxDepth = Math.min(50, Math.max(2, Number(safeOptions.maxDepth) || 25));
+
+    const textExtensions = new Set([
+      '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
+      '.py', '.java', '.go', '.rs', '.php', '.rb',
+      '.json', '.md', '.yml', '.yaml'
+    ]);
+
+    const shouldSkipDirectory = (name) => {
+      const lower = String(name || '').toLowerCase();
+      return (
+        lower === '.git' ||
+        lower === 'node_modules' ||
+        lower === 'dist' ||
+        lower === 'build' ||
+        lower === 'out' ||
+        lower === '.next' ||
+        lower === 'coverage'
+      );
+    };
+
+    const symbolMatchers = [
+      { kind: 'function', regex: /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/ },
+      { kind: 'class', regex: /^\s*(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/ },
+      { kind: 'const', regex: /^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*/ },
+      { kind: 'let', regex: /^\s*(?:export\s+)?let\s+([A-Za-z_$][\w$]*)\s*=\s*/ },
+      { kind: 'type', regex: /^\s*(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=/ },
+      { kind: 'interface', regex: /^\s*(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/ },
+      { kind: 'enum', regex: /^\s*(?:export\s+)?enum\s+([A-Za-z_$][\w$]*)/ },
+      { kind: 'default', regex: /^\s*export\s+default\s+(?:function|class)?\s*([A-Za-z_$][\w$]*)?/ }
+    ];
+
+    const results = [];
+    let hitLimit = false;
+
+    const walk = async (dirPath, relativePath = '', depth = 0) => {
+      if (hitLimit) return;
+      if (depth > maxDepth) return;
+
+      let entries;
+      try {
+        entries = await fs.readdir(dirPath, { withFileTypes: true });
+      } catch {
+        return;
+      }
+
+      for (const entry of entries) {
+        if (hitLimit) return;
+        const fullPath = path.join(dirPath, entry.name);
+        const relPath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+
+        if (entry.isDirectory()) {
+          if (shouldSkipDirectory(entry.name)) continue;
+          await walk(fullPath, relPath, depth + 1);
+          continue;
+        }
+
+        if (!entry.isFile()) continue;
+        const ext = path.extname(entry.name).toLowerCase();
+        if (!textExtensions.has(ext)) continue;
+
+        let content = '';
+        try {
+          const stat = await fs.stat(fullPath);
+          if (stat.size > 1_200_000) continue;
+          content = await fs.readFile(fullPath, 'utf-8');
+        } catch {
+          continue;
+        }
+
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length; i += 1) {
+          const line = lines[i];
+          for (const matcher of symbolMatchers) {
+            const match = line.match(matcher.regex);
+            if (!match) continue;
+            const symbol = (match[1] || 'default').trim();
+            if (!symbol.toLowerCase().includes(q)) continue;
+
+            results.push({
+              file: relPath.replace(/\\/g, '/'),
+              line: i + 1,
+              column: Math.max(1, line.indexOf(symbol) + 1),
+              kind: matcher.kind,
+              symbol,
+              text: line.trim()
+            });
+
+            if (results.length >= maxResults) {
+              hitLimit = true;
+              return;
+            }
+          }
+        }
+      }
+    };
+
+    await walk(projectPath);
+
+    return {
+      success: true,
+      results,
+      stats: {
+        count: results.length,
+        hitLimit,
+        maxResults,
+        maxDepth
+      }
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// ExÃ©cute des quality gates (lint/test/build) avant application de modifications IA
+ipcMain.handle('run-quality-gates', async (event, projectPath, options = {}) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    await ensureTerminalPermission();
+
+    const settings = await readSettingsSafe();
+    const safeOptions = options && typeof options === 'object' ? options : {};
+
+    const enabled = {
+      lint: safeOptions.lint ?? settings.qualityGateLint,
+      test: safeOptions.test ?? settings.qualityGateTest,
+      build: safeOptions.build ?? settings.qualityGateBuild
+    };
+    const blockOnFail = safeOptions.blockOnFail ?? settings.qualityGateBlockOnFail;
+    const timeoutMs = Math.min(900000, Math.max(30000, Number(safeOptions.timeoutMs) || 180000));
+
+    const gates = [];
+    if (enabled.lint) gates.push({ id: 'lint', command: safeOptions.lintCommand || 'npm run lint --if-present' });
+    if (enabled.test) gates.push({ id: 'test', command: safeOptions.testCommand || 'npm test -- --watchAll=false --runInBand' });
+    if (enabled.build) gates.push({ id: 'build', command: safeOptions.buildCommand || 'npm run build --if-present' });
+
+    if (gates.length === 0) {
+      return { success: true, passed: true, skipped: true, results: [] };
+    }
+
+    const results = [];
+    let passed = true;
+
+    for (const gate of gates) {
+      const runResult = await runCommandForTask(gate.command, projectPath, timeoutMs);
+      const entry = {
+        id: gate.id,
+        command: gate.command,
+        ok: runResult.ok,
+        code: runResult.code,
+        timedOut: runResult.timedOut,
+        stdout: runResult.stdout,
+        stderr: runResult.stderr
+      };
+      results.push(entry);
+
+      if (!entry.ok) {
+        passed = false;
+        if (blockOnFail) break;
+      }
+    }
+
+    return { success: true, passed, results, blockOnFail };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Lire le contenu d'un fichier
 ipcMain.handle('read-file', async (event, projectPath, filename) => {
   try {
@@ -1143,19 +2032,57 @@ ipcMain.handle('read-file', async (event, projectPath, filename) => {
     // Vérifier si le fichier existe avant de le lire
     await fs.access(filePath);
 
+    const stats = await fs.stat(filePath);
     const content = await fs.readFile(filePath, 'utf-8');
-    return { success: true, content };
+    return {
+      success: true,
+      content,
+      size: Number(stats?.size || 0),
+      mtimeMs: Math.round(Number(stats?.mtimeMs || 0))
+    };
   } catch (error) {
-    console.error(`Erreur de lecture du fichier ${filename} dans ${projectPath}:`, error);
+    if (error && error.code !== 'ENOENT') {
+      console.error(`Erreur de lecture du fichier ${filename} dans ${projectPath}:`, error);
+    }
     return { success: false, error: error.message };
   }
 });
 
 // Écrire/créer un fichier
-ipcMain.handle('write-file', async (event, projectPath, filename, content) => {
+ipcMain.handle('write-file', async (event, projectPath, filename, content, writeOptions = {}) => {
   try {
+    await ensureEditPermission();
+
     const filePath = path.join(projectPath, filename);
     assertSafePath(projectPath, filePath);
+    const expectedMtimeMsRaw = Number(writeOptions?.expectedMtimeMs);
+    const hasExpectedMtime = Number.isFinite(expectedMtimeMsRaw);
+
+    if (hasExpectedMtime) {
+      try {
+        const statsBefore = await fs.stat(filePath);
+        const currentMtimeMs = Math.round(Number(statsBefore?.mtimeMs || 0));
+        const expectedMtimeMs = Math.round(expectedMtimeMsRaw);
+        if (currentMtimeMs !== expectedMtimeMs) {
+          return {
+            success: false,
+            code: 'FILE_MODIFIED',
+            error: `Conflit detecte: "${filename}" a ete modifie depuis la proposition IA.`,
+            expectedMtimeMs,
+            currentMtimeMs
+          };
+        }
+      } catch (error) {
+        if (error?.code === 'ENOENT') {
+          return {
+            success: false,
+            code: 'FILE_MISSING',
+            error: `Conflit detecte: "${filename}" n'existe plus.`
+          };
+        }
+        throw error;
+      }
+    }
 
     // Créer les dossiers parents si nécessaire
     const dirPath = path.dirname(filePath);
@@ -1166,8 +2093,13 @@ ipcMain.handle('write-file', async (event, projectPath, filename, content) => {
     }
 
     await fs.writeFile(filePath, content, 'utf-8');
+    const statsAfter = await fs.stat(filePath);
     console.log(`Fichier écrit: ${filePath}`);
-    return { success: true };
+    return {
+      success: true,
+      mtimeMs: Math.round(Number(statsAfter?.mtimeMs || 0)),
+      size: Number(statsAfter?.size || 0)
+    };
   } catch (error) {
     console.error(`Erreur d'écriture du fichier ${filename} dans ${projectPath}:`, error);
     return { success: false, error: error.message };
@@ -1175,10 +2107,27 @@ ipcMain.handle('write-file', async (event, projectPath, filename, content) => {
 });
 
 // Supprimer un fichier
-ipcMain.handle('delete-file', async (event, projectPath, filename) => {
+ipcMain.handle('delete-file', async (event, projectPath, filename, deleteOptions = {}) => {
   try {
+    await ensureEditPermission();
+
     const filePath = path.join(projectPath, filename);
     assertSafePath(projectPath, filePath);
+    const expectedMtimeMsRaw = Number(deleteOptions?.expectedMtimeMs);
+    if (Number.isFinite(expectedMtimeMsRaw)) {
+      const statsBefore = await fs.stat(filePath);
+      const currentMtimeMs = Math.round(Number(statsBefore?.mtimeMs || 0));
+      const expectedMtimeMs = Math.round(expectedMtimeMsRaw);
+      if (currentMtimeMs !== expectedMtimeMs) {
+        return {
+          success: false,
+          code: 'FILE_MODIFIED',
+          error: `Conflit detecte: "${filename}" a ete modifie depuis la proposition IA.`,
+          expectedMtimeMs,
+          currentMtimeMs
+        };
+      }
+    }
     await fs.unlink(filePath);
     return { success: true };
   } catch (error) {
@@ -1190,6 +2139,8 @@ ipcMain.handle('delete-file', async (event, projectPath, filename) => {
 // Créer un nouveau fichier (vide ou avec contenu initial)
 ipcMain.handle('createNewFile', async (event, projectPath, filename, initialContent = '') => {
   try {
+    await ensureEditPermission();
+
     const filePath = path.join(projectPath, filename);
     assertSafePath(projectPath, filePath);
 
@@ -1215,10 +2166,13 @@ ipcMain.handle('createNewFile', async (event, projectPath, filename, initialCont
     } catch (e) {
       // Si fs.access échoue, le fichier n'existe pas, on peut le créer
       await fs.writeFile(filePath, initialContent, 'utf-8');
+      const stats = await fs.stat(filePath);
       console.log(`Fichier créé avec succès: ${filePath}`);
       return {
         success: true,
-        message: `Fichier "${filename}" créé avec succès`
+        message: `Fichier "${filename}" créé avec succès`,
+        mtimeMs: Math.round(Number(stats?.mtimeMs || 0)),
+        size: Number(stats?.size || 0)
       };
     }
   } catch (error) {
@@ -1233,6 +2187,8 @@ ipcMain.handle('createNewFile', async (event, projectPath, filename, initialCont
 // Créer un nouveau dossier
 ipcMain.handle('createDirectory', async (event, projectPath, dirname) => {
   try {
+    await ensureEditPermission();
+
     const dirPath = path.join(projectPath, dirname);
     assertSafePath(projectPath, dirPath);
     // Vérifier si le dossier existe
@@ -1252,6 +2208,8 @@ ipcMain.handle('createDirectory', async (event, projectPath, dirname) => {
 // Supprimer un dossier (vide ou non vide)
 ipcMain.handle('deleteDirectory', async (event, projectPath, dirname) => {
   try {
+    await ensureEditPermission();
+
     const dirPath = path.join(projectPath, dirname);
     assertSafePath(projectPath, dirPath);
     await fs.rm(dirPath, { recursive: true, force: true }); // fs.rm est plus moderne que fs.rmdir
@@ -1265,6 +2223,8 @@ ipcMain.handle('deleteDirectory', async (event, projectPath, dirname) => {
 // Modifier partiellement un fichier (remplacer une section)
 ipcMain.handle('editFile', async (event, projectPath, filename, searchText, replaceText) => {
   try {
+    await ensureEditPermission();
+
     const filePath = path.join(projectPath, filename);
     assertSafePath(projectPath, filePath);
 
@@ -1302,6 +2262,8 @@ ipcMain.handle('editFile', async (event, projectPath, filename, searchText, repl
 // Renommer un fichier
 ipcMain.handle('renameFile', async (event, projectPath, oldFilename, newFilename) => {
   try {
+    await ensureEditPermission();
+
     const oldPath = path.join(projectPath, oldFilename);
     const newPath = path.join(projectPath, newFilename);
     assertSafePath(projectPath, oldPath);
@@ -1348,6 +2310,8 @@ ipcMain.handle('renameFile', async (event, projectPath, oldFilename, newFilename
 // Copier un fichier
 ipcMain.handle('copyFile', async (event, projectPath, sourceFilename, destFilename) => {
   try {
+    await ensureEditPermission();
+
     const sourcePath = path.join(projectPath, sourceFilename);
     const destPath = path.join(projectPath, destFilename);
     assertSafePath(projectPath, sourcePath);
@@ -1398,6 +2362,8 @@ ipcMain.handle('copyFile', async (event, projectPath, sourceFilename, destFilena
 // Déplacer un fichier
 ipcMain.handle('moveFile', async (event, projectPath, sourceFilename, destFilename) => {
   try {
+    await ensureEditPermission();
+
     const sourcePath = path.join(projectPath, sourceFilename);
     const destPath = path.join(projectPath, destFilename);
     assertSafePath(projectPath, sourcePath);
@@ -1461,6 +2427,7 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
     const includeGit = !!safeOptions.includeGit;
     const includeNodeModules = !!safeOptions.includeNodeModules;
     const includeBuild = !!safeOptions.includeBuild;
+    const includeVisualWorkflows = safeOptions.includeVisualWorkflows !== false;
     const largeFileStrategy = safeOptions.largeFileStrategy === 'truncate' ? 'truncate' : 'skip';
 
     const clampNumber = (value, min, max, fallback) => {
@@ -1602,7 +2569,8 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
         const itemName = item.name;
         if (!itemName) continue;
 
-        if (!includeHidden && itemName.startsWith('.')) {
+        const isVisualWorkflowDir = itemName === '.vibe-workflows';
+        if (!includeHidden && itemName.startsWith('.') && !(includeVisualWorkflows && isVisualWorkflowDir)) {
           skippedCount += 1;
           continue;
         }
@@ -1704,6 +2672,7 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
           includeGit,
           includeNodeModules,
           includeBuild,
+          includeVisualWorkflows,
           maxFileSize,
           maxFiles,
           maxTotalBytes,
@@ -1911,7 +2880,27 @@ function generateConversationTitle(conversationHistory) {
  * Output is capped at 4000 chars to stay within token limits.
  */
 const ALLOWED_COMMANDS = /^(npm|node|npx|git|ls|dir|cd|mkdir|echo|cat|type|python|py|go|cargo|rustc|gradlew|mvn)(?:\s|$)/i;
+const DANGEROUS_COMMAND_PATTERNS = /(rm\s+-rf|del\s+\/[a-z]+|rmdir\s+\/[a-z]+|format\s+|shutdown|reboot|halt|mkfs|diskpart|git\s+reset\s+--hard|git\s+clean\s+-fd|:\(\)\{:\|:&\};:)/i;
 const MAX_CMD_OUTPUT = 4000;
+
+const requestTerminalApproval = async (commandText) => {
+  try {
+    const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const result = await dialog.showMessageBox(targetWindow, {
+      type: 'warning',
+      title: 'Confirmation commande terminal IA',
+      message: "L'agent IA veut executer une commande shell.",
+      detail: commandText,
+      buttons: ['Autoriser', 'Refuser'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true
+    });
+    return result.response === 0;
+  } catch {
+    return false;
+  }
+};
 
 const executeCommandForAI = (cmd, projectPath) => {
   return new Promise(async (resolve) => {
@@ -1919,6 +2908,14 @@ const executeCommandForAI = (cmd, projectPath) => {
       return resolve({ success: false, output: '[AI TERMINAL] Commande vide ignorée.' });
     }
     const trimmedCmd = cmd.trim();
+    const settings = await readSettingsSafe();
+
+    if (!canUseTerminal(settings.permissionMode)) {
+      return resolve({
+        success: false,
+        output: "[AI TERMINAL] Le mode permissions actuel bloque l'execution de commandes terminal."
+      });
+    }
 
     // Check if the command starts with an allowed word
     if (!ALLOWED_COMMANDS.test(trimmedCmd)) {
@@ -1928,22 +2925,42 @@ const executeCommandForAI = (cmd, projectPath) => {
       });
     }
 
+    if (DANGEROUS_COMMAND_PATTERNS.test(trimmedCmd)) {
+      return resolve({
+        success: false,
+        output: `[AI TERMINAL] ❌ Commande jugee dangereuse et refusee: ${trimmedCmd}`
+      });
+    }
+
+    if (settings.aiTerminalApprovalMode !== false) {
+      const approved = await requestTerminalApproval(trimmedCmd);
+      if (!approved) {
+        return resolve({
+          success: false,
+          output: `[AI TERMINAL] Commande refusee par l'utilisateur: ${trimmedCmd}`
+        });
+      }
+    }
+
     // --- Pseudo-commandes N8N Catalog ---
     if (trimmedCmd.startsWith('n8n-search')) {
       const query = trimmedCmd.replace('n8n-search', '').trim().toLowerCase();
       try {
-        const url = `https://api.github.com/repos/Danitilahun/n8n-workflow-templates/contents/workflows?per_page=100`;
-        const response = await axios.get(url, {
-          headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'MonIDEAgentIA' },
-          timeout: 15000,
+        const catalog = await getN8nCatalogEntries(15000);
+        const entries = Array.isArray(catalog.items) ? catalog.items : [];
+        const matched = entries.filter((item) => {
+          if (!query) return true;
+          const haystack = `${item.name} ${item.filename} ${item.repoPath}`.toLowerCase();
+          return haystack.includes(query);
         });
-        const items = response.data
-          .filter(f => f.name.endsWith('.json') && (!query || f.name.toLowerCase().includes(query)))
-          .map(f => `- ${f.name.replace('.json', '')} (URL: ${f.download_url})`);
+        const displayLimit = 120;
+        const shown = matched.slice(0, displayLimit).map((item) =>
+          `- ${item.name} (URL: ${item.downloadUrl})`
+        );
 
-        let out = `[N8N CATALOG SEARCH RESULTS - ${items.length} trouvés]\n`;
-        out += items.length > 0 ? items.slice(0, 30).join('\n') : "Aucun workflow trouvé pour cette requête.";
-        if (items.length > 30) out += `\n...et ${items.length - 30} autres.`;
+        let out = `[N8N CATALOG SEARCH RESULTS - ${matched.length} trouvés | total catalogue: ${catalog.total}]\n`;
+        out += shown.length > 0 ? shown.join('\n') : "Aucun workflow trouvé pour cette requête.";
+        if (matched.length > shown.length) out += `\n...et ${matched.length - shown.length} autres.`;
         return resolve({ success: true, output: out });
       } catch (e) {
         return resolve({ success: false, output: `[N8N SEARCH ERROR] ${e.message}` });
@@ -2149,6 +3166,22 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
   const model = options.model || modelFromEnv || 'moonshotai/Kimi-K2.5';
   const thinkingMode = !!options.thinkingMode;
   const images = Array.isArray(options.images) ? options.images : [];
+  const fastMode = options.fastMode !== false;
+  const reactMode = options.reactMode === true;
+  const streamResponse = options.streamResponse === true;
+  const includeProjectContext = options.includeProjectContext !== false;
+  const includeGlobalSkills = options.includeGlobalSkills === true || !fastMode;
+  const parsePositiveInt = (value, fallback, min, max) => {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, parsed));
+  };
+  const maxHistoryMessages = parsePositiveInt(options.maxHistoryMessages, fastMode ? 8 : 20, 2, 80);
+  const contextFilesLimit = parsePositiveInt(options.contextFilesLimit, fastMode ? 8 : 20, 1, 40);
+  const contextCharsPerFile = parsePositiveInt(options.contextCharsPerFile, fastMode ? 1200 : 2000, 300, 4000);
+  const reactMaxIterations = reactMode
+    ? parsePositiveInt(options.maxIterations, fastMode ? 3 : 8, 1, 8)
+    : 1;
 
   console.log('[Main] Appel Kimi: vérification de la clé API Kimi/Together...');
 
@@ -2171,28 +3204,30 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       typeof msg === 'object' &&
       msg.text !== undefined
     );
+    const effectiveHistory = validHistory.slice(-maxHistoryMessages);
 
-    if (validHistory.length === 0) {
+    if (effectiveHistory.length === 0) {
       const errorMsg = "Aucun message valide trouvé dans l'historique pour Kimi.";
       console.error('[Main][Kimi] Erreur:', errorMsg);
       return { success: false, error: errorMsg };
     }
 
-    const lastMessage = validHistory[validHistory.length - 1];
+    const lastMessage = effectiveHistory[effectiveHistory.length - 1];
+    const projectPath = options.projectPath || null;
 
     // Construire le contexte du projet si disponible (similaire à Gemini)
     let projectContext = '';
-    if (allProjectFiles && allProjectFiles.files) {
+    if (includeProjectContext && allProjectFiles && allProjectFiles.files) {
       projectContext = '\n--- CONTEXTE COMPLET DU PROJET ---\n';
       const fileEntries = Object.entries(allProjectFiles.files);
 
-      const maxFiles = 20;
+      const maxFiles = contextFilesLimit;
       const filesToShow = pickFilesForContext(allProjectFiles.files, maxFiles);
 
       for (const [filePath, fileData] of filesToShow) {
         projectContext += `\n=== FICHIER: ${filePath} ===\n`;
         if (fileData.content && !String(fileData.content).startsWith('[')) {
-          const maxContentLength = 2000;
+          const maxContentLength = contextCharsPerFile;
           const content = fileData.content.length > maxContentLength
             ? fileData.content.substring(0, maxContentLength) + '\n[...CONTENU TRONQUÉ...]'
             : fileData.content;
@@ -2209,10 +3244,10 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       projectContext += '--- FIN CONTEXTE PROJET ---\n';
     }
 
-    const projectPath = options.projectPath || null;
     const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
-    // Replace single skill loading with all global skills
-    const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
+    const globalSkillsContent = includeGlobalSkills ? await loadAllGlobalSkillsForCompletion() : '';
+    const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, String(lastMessage.text), options);
+    const n8nCatalogContext = await buildN8nCatalogContextForPrompt(String(lastMessage.text), options);
 
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
@@ -2226,11 +3261,14 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       ? `\nMODE THINKING ACTIVÉ : détaillez explicitement votre raisonnement étape par étape avant de proposer le code final.\n`
       : '';
 
+    const terminalCapabilityPrompt = reactMode ? TERMINAL_CAPABILITY_PROMPT : '';
     const prompt = `
       Vous êtes un assistant de développement expert et autonome.
       ${agentContext}
       ${skillContext}
       ${projectContext}
+      ${visualWorkflowContext}
+      ${n8nCatalogContext}
 
       FICHIER ACTUELLEMENT OUVERT :
       --- CODE ACTUEL ---
@@ -2242,7 +3280,7 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
 
       ${thinkingInstructionsKimi}
 
-      ${TERMINAL_CAPABILITY_PROMPT}
+      ${terminalCapabilityPrompt}
 
       INSTRUCTIONS :
       - Analysez le contexte du projet et la demande.
@@ -2272,20 +3310,124 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       return [...base, { role: 'user', content: userContent }];
     };
 
-    const kimiUrl = 'https://api.together.xyz/v1/chat/completions';
+    const kimiUrl = options.apiUrl || process.env.KIMI_API_URL || 'https://api.together.xyz/v1/chat/completions';
+    const parsedMaxTokens = Number(options.maxTokens);
+    const defaultMaxTokens = 4096;
+    const kimiMaxTokens = Number.isFinite(parsedMaxTokens) && parsedMaxTokens > 0
+      ? Math.min(16384, Math.floor(parsedMaxTokens))
+      : defaultMaxTokens;
+    const parsedTemperature = Number(options.temperature);
+    const kimiTemperature = Number.isFinite(parsedTemperature) ? parsedTemperature : 0.7;
+    const parsedTimeoutMs = Number(options.requestTimeoutMs ?? options.timeoutMs);
+    const kimiTimeoutMs = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0
+      ? Math.floor(parsedTimeoutMs)
+      : 0;
     const kimiCallWithMessages = async (msgs) => {
       const requestBody = {
         model,
         messages: msgs,
-        max_tokens: options.maxTokens || 16384,
-        temperature: options.temperature || 0.7,
+        max_tokens: kimiMaxTokens,
+        temperature: kimiTemperature,
       };
+      if (streamResponse) {
+        requestBody.stream = true;
+      }
       logger.info(`[Kimi Agent API] Payload envoyé : ${JSON.stringify(requestBody, null, 2)}`);
-      const resp = await axios.post(kimiUrl, requestBody, {
+      logger.info(`[Kimi Agent API] Timeout HTTP: ${kimiTimeoutMs > 0 ? `${kimiTimeoutMs}ms` : 'disabled'}`);
+      const requestConfig = {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: 180000,
-      });
-      if (!resp.data?.choices?.[0]?.message?.content === undefined) {
+      };
+      if (kimiTimeoutMs > 0) {
+        requestConfig.timeout = kimiTimeoutMs;
+      }
+      if (streamResponse) {
+        requestConfig.responseType = 'stream';
+      }
+      const resp = await axios.post(kimiUrl, requestBody, requestConfig);
+      if (streamResponse) {
+        const stream = resp.data;
+        if (!stream || typeof stream.on !== 'function') {
+          if (resp.data?.choices?.[0]?.message?.content === undefined) {
+            throw new Error("Réponse de l'API Kimi mal formatée");
+          }
+          return resp.data.choices[0].message.content;
+        }
+        return await new Promise((resolve, reject) => {
+          let fullText = '';
+          let buffer = '';
+          let rawStreamData = '';
+
+          const appendToken = (token) => {
+            if (typeof token !== 'string' || token.length === 0) return;
+            fullText += token;
+          };
+
+          const processLine = (rawLine) => {
+            const line = String(rawLine || '').trim();
+            if (!line) return;
+
+            // Si la ligne ne commence pas par data:, on l'ignore sauf si on veut debugger
+            if (!line.startsWith('data:')) return;
+
+            const payload = line.slice(5).trim();
+            if (!payload || payload === '[DONE]') return;
+
+            let parsed;
+            try {
+              parsed = JSON.parse(payload);
+            } catch {
+              return;
+            }
+
+            const deltaContent = parsed?.choices?.[0]?.delta?.content;
+            if (typeof deltaContent === 'string') {
+              appendToken(deltaContent);
+              return;
+            }
+            if (Array.isArray(deltaContent)) {
+              deltaContent.forEach((part) => {
+                if (typeof part === 'string') appendToken(part);
+                else if (typeof part?.text === 'string') appendToken(part.text);
+              });
+              return;
+            }
+
+            // Fallback for providers sending full message chunks while streaming
+            const messageContent = parsed?.choices?.[0]?.message?.content;
+            if (typeof messageContent === 'string' && !fullText) {
+              appendToken(messageContent);
+            }
+          };
+
+          stream.on('data', (chunk) => {
+            const textChunk = chunk.toString('utf8');
+            if (rawStreamData.length < 2000) rawStreamData += textChunk;
+            buffer += textChunk;
+            let newlineIndex = buffer.indexOf('\n');
+            while (newlineIndex >= 0) {
+              const line = buffer.slice(0, newlineIndex);
+              buffer = buffer.slice(newlineIndex + 1);
+              processLine(line);
+              newlineIndex = buffer.indexOf('\n');
+            }
+          });
+
+          stream.on('end', () => {
+            if (buffer.trim()) processLine(buffer);
+            if (!fullText) {
+              const preview = rawStreamData.length > 500 ? rawStreamData.slice(0, 500) + '...' : rawStreamData;
+              reject(new Error(`Réponse de l'API Kimi mal formatée (stream vide). Raw: ${preview}`));
+              return;
+            }
+            resolve(fullText);
+          });
+
+          stream.on('error', (streamError) => {
+            reject(streamError);
+          });
+        });
+      }
+      if (resp.data?.choices?.[0]?.message?.content === undefined) {
         throw new Error("Réponse de l'API Kimi mal formatée");
       }
       return resp.data.choices[0].message.content;
@@ -2294,11 +3436,15 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
     logger.info(`[Kimi Agent API] Création du prompt et appel du modèle ${model}...`);
 
     try {
-      // ReAct agent loop — max 8 iterations
-      const projectPath = options.projectPath || null;
-      let messages = buildMessages(validHistory, prompt);
+      // Kimi fast path: no terminal tool loop unless explicitly enabled
+      let messages = buildMessages(effectiveHistory, prompt);
       let fullTranscript = '';
-      const MAX_ITERATIONS = 8;
+      if (!reactMode) {
+        const aiText = await kimiCallWithMessages(messages);
+        return { success: true, text: aiText, terminalActions: 0, mode: 'single' };
+      }
+
+      const MAX_ITERATIONS = reactMaxIterations;
 
       for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
         logger.info(`[Kimi Agent API] Itération ReAct ${iter + 1}/${MAX_ITERATIONS}...`);
@@ -2593,6 +3739,8 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       return { success: false, error: errorMsg };
     }
 
+    const projectPath = options.projectPath || null;
+
     // Construire le contexte du projet si disponible
     let projectContext = '';
     if (allProjectFiles && allProjectFiles.files) {
@@ -2624,10 +3772,11 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       projectContext += '--- FIN CONTEXTE PROJET ---\n';
     }
 
-    const projectPath = options.projectPath || null;
     const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
     // Replace single skill loading with all global skills
     const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
+    const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, lastMessage.parts?.[0]?.text || '', options);
+    const n8nCatalogContext = await buildN8nCatalogContextForPrompt(lastMessage.parts?.[0]?.text || '', options);
 
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
@@ -2651,6 +3800,8 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       ${agentContext}
       ${skillContext}
       ${projectContext}
+      ${visualWorkflowContext}
+      ${n8nCatalogContext}
       
       FICHIER ACTUELLEMENT OUVERT :
       --- CODE ACTUEL ---
@@ -2874,6 +4025,8 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
       return { success: false, error: "Aucun message valide trouvé." };
     }
 
+    const projectPath = options.projectPath || null;
+    const lastUserText = String(validHistory[validHistory.length - 1]?.text || '');
     let projectContext = '';
     if (allProjectFiles && allProjectFiles.files) {
       projectContext = '\n--- CONTEXTE COMPLET DU PROJET ---\n';
@@ -2900,9 +4053,10 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
       projectContext += '--- FIN CONTEXTE PROJET ---\n';
     }
 
-    const projectPath = options.projectPath || null;
     const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
     const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
+    const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, lastUserText, options);
+    const n8nCatalogContext = await buildN8nCatalogContextForPrompt(lastUserText, options);
 
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
@@ -2921,6 +4075,8 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
       ${agentContext}
       ${skillContext}
       ${projectContext}
+      ${visualWorkflowContext}
+      ${n8nCatalogContext}
       
       FICHIER ACTUELLEMENT OUVERT :
       --- CODE ACTUEL ---
@@ -3138,6 +4294,8 @@ ipcMain.handle('get-workflow', async (event, name, scope, projectPath) => {
 // Save a workflow
 ipcMain.handle('save-workflow', async (event, name, content, scope, projectPath) => {
   try {
+    await ensureEditPermission();
+
     let dir;
     if (scope === 'global') {
       dir = getGlobalWorkflowsDir();
@@ -3168,6 +4326,8 @@ ipcMain.handle('save-workflow', async (event, name, content, scope, projectPath)
 // Delete a workflow
 ipcMain.handle('delete-workflow', async (event, name, scope, projectPath) => {
   try {
+    await ensureEditPermission();
+
     let filePath;
     if (scope === 'global') {
       filePath = path.join(getGlobalWorkflowsDir(), `${name}.md`);
@@ -3192,6 +4352,143 @@ const getVisualWorkflowsDir = (projectPath) => {
   return path.join(projectPath, '.vibe-workflows');
 };
 
+const toFiniteNumberOr = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const sanitizeVisualWorkflowPayload = (rawWorkflow, options = {}) => {
+  const strict = options.strict !== false;
+  if (!rawWorkflow || typeof rawWorkflow !== 'object' || Array.isArray(rawWorkflow)) {
+    throw new Error('Workflow visuel invalide: objet attendu');
+  }
+
+  const sourceVersion = Number.parseInt(String(rawWorkflow.schemaVersion ?? ''), 10);
+  const schemaVersion = Number.isFinite(sourceVersion) ? sourceVersion : 1;
+  let migrated = schemaVersion !== VISUAL_WORKFLOW_SCHEMA_VERSION;
+
+  const workflowName = String(rawWorkflow.name || '').trim();
+  if (!workflowName) {
+    throw new Error('Workflow visuel invalide: champ "name" requis');
+  }
+
+  const nodesInput = Array.isArray(rawWorkflow.nodes) ? rawWorkflow.nodes : [];
+  const edgesInput = Array.isArray(rawWorkflow.edges) ? rawWorkflow.edges : [];
+
+  if (nodesInput.length > VISUAL_WORKFLOW_MAX_NODES) {
+    throw new Error(`Workflow trop volumineux: max ${VISUAL_WORKFLOW_MAX_NODES} noeuds`);
+  }
+  if (edgesInput.length > VISUAL_WORKFLOW_MAX_EDGES) {
+    throw new Error(`Workflow trop volumineux: max ${VISUAL_WORKFLOW_MAX_EDGES} liens`);
+  }
+
+  const usedNodeIds = new Set();
+  const nodes = [];
+  nodesInput.forEach((node, index) => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) {
+      if (strict) {
+        throw new Error(`Noeud invalide a l'index ${index}`);
+      }
+      migrated = true;
+      return;
+    }
+
+    let id = String(node.id ?? '').trim();
+    if (!id) {
+      id = `node_${index + 1}`;
+      migrated = true;
+    }
+    if (usedNodeIds.has(id)) {
+      throw new Error(`ID de noeud duplique: ${id}`);
+    }
+    usedNodeIds.add(id);
+
+    const rawType = String(node.type || 'action').trim();
+    const type = VISUAL_WORKFLOW_ALLOWED_NODE_TYPES.has(rawType) ? rawType : 'action';
+    if (type !== rawType) migrated = true;
+
+    const label = String(node.label || `Node ${index + 1}`).trim() || `Node ${index + 1}`;
+    const icon = String(node.icon || '').trim() || '⚡';
+
+    const rawPosition = node.position && typeof node.position === 'object' ? node.position : {};
+    const position = {
+      x: toFiniteNumberOr(rawPosition.x, 120 + (index % 4) * 240),
+      y: toFiniteNumberOr(rawPosition.y, 120 + Math.floor(index / 4) * 170)
+    };
+
+    const config = node.config && typeof node.config === 'object' && !Array.isArray(node.config)
+      ? node.config
+      : {};
+    if (config !== node.config) migrated = true;
+
+    nodes.push({
+      id,
+      type,
+      label,
+      icon,
+      position,
+      config
+    });
+  });
+
+  const edges = [];
+  const edgePairs = new Set();
+  edgesInput.forEach((edge, index) => {
+    if (!edge || typeof edge !== 'object' || Array.isArray(edge)) {
+      if (strict) {
+        throw new Error(`Lien invalide a l'index ${index}`);
+      }
+      migrated = true;
+      return;
+    }
+
+    const source = String(edge.source ?? '').trim();
+    const target = String(edge.target ?? '').trim();
+    if (!source || !target) {
+      if (strict) {
+        throw new Error(`Lien incomplet a l'index ${index}`);
+      }
+      migrated = true;
+      return;
+    }
+    if (!usedNodeIds.has(source) || !usedNodeIds.has(target)) {
+      if (strict) {
+        throw new Error(`Lien invalide (${source} -> ${target})`);
+      }
+      migrated = true;
+      return;
+    }
+
+    const pairKey = `${source}->${target}`;
+    if (edgePairs.has(pairKey)) {
+      migrated = true;
+      return;
+    }
+    edgePairs.add(pairKey);
+    edges.push({ source, target });
+  });
+
+  const normalized = {
+    schemaVersion: VISUAL_WORKFLOW_SCHEMA_VERSION,
+    name: workflowName,
+    nodes,
+    edges
+  };
+
+  if (typeof rawWorkflow.description === 'string' && rawWorkflow.description.trim()) {
+    normalized.description = rawWorkflow.description.trim().slice(0, 300);
+  }
+  if (typeof rawWorkflow.updatedAt === 'string' && rawWorkflow.updatedAt.trim()) {
+    normalized.updatedAt = rawWorkflow.updatedAt.trim();
+  }
+
+  return {
+    workflow: normalized,
+    migrated,
+    sourceVersion: schemaVersion
+  };
+};
+
 // List all visual workflows in the project
 ipcMain.handle('list-visual-workflows', async (event, projectPath) => {
   try {
@@ -3207,12 +4504,15 @@ ipcMain.handle('list-visual-workflows', async (event, projectPath) => {
       if (file.endsWith('.json')) {
         try {
           const content = await fs.readFile(path.join(dir, file), 'utf-8');
-          const wf = JSON.parse(content);
+          const wfRaw = JSON.parse(content);
+          const { workflow: wf, sourceVersion, migrated } = sanitizeVisualWorkflowPayload(wfRaw, { strict: false });
           workflows.push({
             filename: file,
             name: wf.name || file.replace('.json', ''),
             nodeCount: (wf.nodes || []).length,
             edgeCount: (wf.edges || []).length,
+            schemaVersion: sourceVersion,
+            migrated,
             updatedAt: wf.updatedAt || null,
           });
         } catch (e) {
@@ -3230,19 +4530,39 @@ ipcMain.handle('list-visual-workflows', async (event, projectPath) => {
 // Save a visual workflow
 ipcMain.handle('save-visual-workflow', async (event, projectPath, workflowJson) => {
   try {
+    await ensureEditPermission();
+
     if (!projectPath) return { success: false, error: 'No project path' };
     const dir = getVisualWorkflowsDir(projectPath);
     await fs.mkdir(dir, { recursive: true });
 
-    const wf = typeof workflowJson === 'string' ? JSON.parse(workflowJson) : workflowJson;
+    const wfRaw = typeof workflowJson === 'string' ? JSON.parse(workflowJson) : workflowJson;
+    const sanitized = sanitizeVisualWorkflowPayload(wfRaw, { strict: true });
+    const wf = sanitized.workflow;
     wf.updatedAt = new Date().toISOString();
 
     const safeName = (wf.name || 'workflow').replace(/[<>:"/\\|?*]/g, '_').trim();
     const filePath = path.join(dir, `${safeName}.json`);
+    let existedBefore = false;
+    try {
+      await fs.access(filePath);
+      existedBefore = true;
+    } catch {
+      existedBefore = false;
+    }
     await fs.writeFile(filePath, JSON.stringify(wf, null, 2), 'utf-8');
 
     console.log(`[VisualWorkflows] Saved: ${filePath}`);
-    return { success: true, path: filePath, name: safeName };
+    return {
+      success: true,
+      path: filePath,
+      name: safeName,
+      filename: `${safeName}.json`,
+      action: existedBefore ? 'updated' : 'created',
+      schemaVersion: VISUAL_WORKFLOW_SCHEMA_VERSION,
+      migrated: sanitized.migrated,
+      sourceVersion: sanitized.sourceVersion
+    };
   } catch (error) {
     console.error('[VisualWorkflows] Error saving:', error);
     return { success: false, error: error.message };
@@ -3252,6 +4572,8 @@ ipcMain.handle('save-visual-workflow', async (event, projectPath, workflowJson) 
 // Delete a visual workflow
 ipcMain.handle('delete-visual-workflow', async (event, projectPath, filename) => {
   try {
+    await ensureEditPermission();
+
     if (!projectPath || !filename) return { success: false, error: 'Missing params' };
     const filePath = path.join(getVisualWorkflowsDir(projectPath), filename);
     assertSafePath(getVisualWorkflowsDir(projectPath), filePath);
@@ -3264,23 +4586,150 @@ ipcMain.handle('delete-visual-workflow', async (event, projectPath, filename) =>
   }
 });
 
+// ==================== SNAPSHOTS (AI ROLLBACK) ====================
+
+ipcMain.handle('create-ai-snapshot', async (event, projectPath, files = [], label = 'ai') => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    if (!Array.isArray(files) || files.length === 0) {
+      return { success: false, error: 'Aucun fichier fourni pour le snapshot' };
+    }
+
+    const snapshotDir = getSnapshotDir(projectPath);
+    await fs.mkdir(snapshotDir, { recursive: true });
+
+    const snapshotId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+    const normalizedFiles = Array.from(new Set(
+      files
+        .map((f) => toRelativeSnapshotPath(f))
+        .filter(Boolean)
+    ));
+
+    const entries = [];
+    for (const relPath of normalizedFiles) {
+      const fullPath = path.join(projectPath, relPath);
+      assertSafePath(projectPath, fullPath);
+      const state = await readTextFileIfExists(fullPath);
+      entries.push({
+        path: relPath.replace(/\\/g, '/'),
+        exists: state.exists,
+        content: state.exists ? state.content : ''
+      });
+    }
+
+    const snapshot = {
+      id: snapshotId,
+      label: String(label || 'ai'),
+      createdAt: new Date().toISOString(),
+      files: entries
+    };
+
+    const snapshotPath = path.join(snapshotDir, `${snapshotId}.json`);
+    await fs.writeFile(snapshotPath, JSON.stringify(snapshot, null, 2), 'utf-8');
+    return { success: true, snapshotId, snapshotPath, files: entries.length };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('list-ai-snapshots', async (event, projectPath) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const snapshotDir = getSnapshotDir(projectPath);
+    let files = [];
+    try {
+      files = await fs.readdir(snapshotDir);
+    } catch {
+      return { success: true, snapshots: [] };
+    }
+
+    const snapshots = [];
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue;
+      const fullPath = path.join(snapshotDir, file);
+      try {
+        const raw = await fs.readFile(fullPath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        snapshots.push({
+          id: parsed.id || file.replace(/\.json$/, ''),
+          label: parsed.label || 'ai',
+          createdAt: parsed.createdAt || null,
+          fileCount: Array.isArray(parsed.files) ? parsed.files.length : 0
+        });
+      } catch {
+        // ignore malformed snapshot
+      }
+    }
+
+    snapshots.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    return { success: true, snapshots };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('restore-ai-snapshot', async (event, projectPath, snapshotId) => {
+  try {
+    await ensureEditPermission();
+
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    if (!snapshotId) return { success: false, error: 'snapshotId manquant' };
+
+    const snapshotFile = path.join(getSnapshotDir(projectPath), `${snapshotId}.json`);
+    assertSafePath(getSnapshotDir(projectPath), snapshotFile);
+    const raw = await fs.readFile(snapshotFile, 'utf-8');
+    const snapshot = JSON.parse(raw);
+    const fileEntries = Array.isArray(snapshot.files) ? snapshot.files : [];
+
+    let restored = 0;
+    for (const entry of fileEntries) {
+      const rel = toRelativeSnapshotPath(entry.path);
+      if (!rel) continue;
+      const fullPath = path.join(projectPath, rel);
+      assertSafePath(projectPath, fullPath);
+
+      if (!entry.exists) {
+        try {
+          await fs.unlink(fullPath);
+        } catch {
+          // ignore
+        }
+        restored += 1;
+        continue;
+      }
+
+      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+      await fs.writeFile(fullPath, String(entry.content || ''), 'utf-8');
+      restored += 1;
+    }
+
+    return { success: true, restored, snapshotId };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Fetch n8n community workflow catalog from GitHub
 ipcMain.handle('fetch-n8n-catalog', async (event, page = 1, perPage = 50) => {
   try {
-    const url = `https://api.github.com/repos/Danitilahun/n8n-workflow-templates/contents/workflows?per_page=${perPage}&page=${page}`;
-    const response = await axios.get(url, {
-      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'MonIDEAgentIA' },
-      timeout: 15000,
-    });
-    const items = response.data
-      .filter(f => f.name.endsWith('.json'))
-      .map(f => ({
-        name: f.name.replace('.json', '').replace(/_/g, ' '),
-        filename: f.name,
-        downloadUrl: f.download_url,
-        size: f.size,
-      }));
-    return { success: true, items, total: items.length };
+    const safePage = toPositiveInt(page, 1, 1, 100000);
+    const safePerPage = toPositiveInt(perPage, 50, 1, 5000);
+    const catalog = await getN8nCatalogEntries(15000);
+    const allItems = Array.isArray(catalog.items) ? catalog.items : [];
+    const startIndex = (safePage - 1) * safePerPage;
+    const pagedItems = allItems.slice(startIndex, startIndex + safePerPage);
+    const total = Number(catalog.total) || allItems.length;
+    const totalPages = Math.max(1, Math.ceil(total / safePerPage));
+    return {
+      success: true,
+      items: pagedItems,
+      total,
+      page: safePage,
+      perPage: safePerPage,
+      totalPages,
+      source: catalog.source || 'unknown',
+      truncated: !!catalog.truncated
+    };
   } catch (error) {
     console.error('[n8nCatalog] Error fetching:', error.message);
     return { success: false, error: error.message };
@@ -3305,6 +4754,142 @@ const getWorkspaceAgentsDir = (projectPath) => path.join(projectPath, '.agent', 
 
 const getGlobalSkillsDir = () => path.join(app.getPath('userData'), 'skills');
 const getWorkspaceSkillsDir = (projectPath) => path.join(projectPath, '.agent', 'skills');
+
+const getWorkspaceVisualWorkflowsDir = (projectPath) => path.join(projectPath, '.vibe-workflows');
+
+const getPackTargets = (projectPath) => ({
+  globalWorkflows: getGlobalWorkflowsDir(),
+  globalAgents: getGlobalAgentsDir(),
+  globalSkills: getGlobalSkillsDir(),
+  workspaceWorkflows: projectPath ? getWorkspaceWorkflowsDir(projectPath) : null,
+  workspaceAgents: projectPath ? getWorkspaceAgentsDir(projectPath) : null,
+  workspaceSkills: projectPath ? getWorkspaceSkillsDir(projectPath) : null,
+  workspaceVisualWorkflows: projectPath ? getWorkspaceVisualWorkflowsDir(projectPath) : null
+});
+
+ipcMain.handle('export-library-pack', async (event, projectPath, options = {}) => {
+  try {
+    const safeOptions = options && typeof options === 'object' ? options : {};
+    const scope = safeOptions.scope === 'global' || safeOptions.scope === 'both' ? safeOptions.scope : 'workspace';
+
+    const targets = getPackTargets(projectPath);
+    const includeTarget = (key) => {
+      if (scope === 'both') return true;
+      if (scope === 'global') return key.startsWith('global');
+      return key.startsWith('workspace');
+    };
+
+    const pack = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      app: 'MonIDEAgentIA',
+      scope,
+      sections: {}
+    };
+
+    for (const [section, dirPath] of Object.entries(targets)) {
+      if (!dirPath || !includeTarget(section)) continue;
+      const fileList = await collectFilesRecursive(dirPath, dirPath, []);
+      const files = [];
+      for (const relPath of fileList) {
+        const safeRelPath = sanitizePackPath(relPath);
+        if (!safeRelPath) continue;
+        const fullPath = path.join(dirPath, safeRelPath);
+        try {
+          const content = await fs.readFile(fullPath, 'utf-8');
+          files.push({ path: safeRelPath, content });
+        } catch {
+          // ignore unreadable file
+        }
+      }
+      if (files.length > 0) {
+        pack.sections[section] = files;
+      }
+    }
+
+    const defaultName = `vibe-library-pack-${Date.now()}.json`;
+    const saveResult = safeOptions.outputPath
+      ? { canceled: false, filePath: safeOptions.outputPath }
+      : await dialog.showSaveDialog(mainWindow, {
+        title: 'Exporter pack bibliotheque',
+        defaultPath: defaultName,
+        filters: [{ name: 'Vibe Pack', extensions: ['json'] }]
+      });
+
+    if (saveResult.canceled || !saveResult.filePath) {
+      return { success: false, canceled: true, error: 'Export annule' };
+    }
+
+    await fs.writeFile(saveResult.filePath, JSON.stringify(pack, null, 2), 'utf-8');
+    const sectionCount = Object.values(pack.sections).reduce((sum, arr) => sum + arr.length, 0);
+    return { success: true, path: saveResult.filePath, entries: sectionCount };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('import-library-pack', async (event, projectPath, options = {}) => {
+  try {
+    await ensureEditPermission();
+
+    const safeOptions = options && typeof options === 'object' ? options : {};
+    const overwrite = !!safeOptions.overwrite;
+
+    const openResult = safeOptions.inputPath
+      ? { canceled: false, filePaths: [safeOptions.inputPath] }
+      : await dialog.showOpenDialog(mainWindow, {
+        title: 'Importer pack bibliotheque',
+        properties: ['openFile'],
+        filters: [{ name: 'Vibe Pack', extensions: ['json'] }]
+      });
+
+    if (openResult.canceled || !Array.isArray(openResult.filePaths) || !openResult.filePaths[0]) {
+      return { success: false, canceled: true, error: 'Import annule' };
+    }
+
+    const sourcePath = openResult.filePaths[0];
+    const raw = await fs.readFile(sourcePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    const sections = parsed && typeof parsed === 'object' ? parsed.sections : null;
+    if (!sections || typeof sections !== 'object') {
+      return { success: false, error: 'Pack invalide: sections manquantes' };
+    }
+
+    const targets = getPackTargets(projectPath);
+    let imported = 0;
+    let skipped = 0;
+
+    for (const [section, files] of Object.entries(sections)) {
+      const targetRoot = targets[section];
+      if (!targetRoot || !Array.isArray(files)) continue;
+      await fs.mkdir(targetRoot, { recursive: true });
+
+      for (const fileEntry of files) {
+        const relPath = sanitizePackPath(fileEntry?.path);
+        if (!relPath) {
+          skipped += 1;
+          continue;
+        }
+        const fullPath = path.join(targetRoot, relPath);
+        assertSafePath(targetRoot, fullPath);
+
+        const exists = fsSync.existsSync(fullPath);
+        if (exists && !overwrite) {
+          skipped += 1;
+          continue;
+        }
+
+        await fs.mkdir(path.dirname(fullPath), { recursive: true });
+        await fs.writeFile(fullPath, String(fileEntry?.content || ''), 'utf-8');
+        imported += 1;
+      }
+    }
+
+    return { success: true, imported, skipped, sourcePath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
 
 const parseSimpleFrontMatter = (content) => {
   const raw = String(content || '');
@@ -3547,6 +5132,8 @@ ipcMain.handle('get-agent', async (event, name, scope, projectPath) => {
 
 ipcMain.handle('save-agent', async (event, name, content, scope, projectPath) => {
   try {
+    await ensureEditPermission();
+
     let dir;
     if (scope === 'global') {
       dir = getGlobalAgentsDir();
@@ -3572,6 +5159,8 @@ ipcMain.handle('save-agent', async (event, name, content, scope, projectPath) =>
 
 ipcMain.handle('delete-agent', async (event, name, scope, projectPath) => {
   try {
+    await ensureEditPermission();
+
     const safeName = safeFileBase(name);
     if (!safeName) return { success: false, error: 'Nom agent invalide' };
 
@@ -3745,6 +5334,109 @@ const runGit = (args, cwd) => {
       }
     });
   });
+};
+
+const runCommandForTask = (command, cwd, timeoutMs = 180000) => {
+  return new Promise((resolve) => {
+    const child = spawn(command, [], {
+      cwd,
+      shell: true,
+      windowsHide: true
+    });
+    let stdout = '';
+    let stderr = '';
+    let finished = false;
+
+    const done = (payload) => {
+      if (finished) return;
+      finished = true;
+      resolve(payload);
+    };
+
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch { /* ignore */ }
+      done({
+        ok: false,
+        code: -1,
+        timedOut: true,
+        stdout: stdout.slice(0, 6000),
+        stderr: stderr.slice(0, 6000)
+      });
+    }, timeoutMs);
+
+    child.stdout?.on('data', (data) => { stdout += String(data); });
+    child.stderr?.on('data', (data) => { stderr += String(data); });
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      done({
+        ok: false,
+        code: -1,
+        timedOut: false,
+        stdout: stdout.slice(0, 6000),
+        stderr: `${stderr}\n${error.message}`.slice(0, 6000)
+      });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      done({
+        ok: code === 0,
+        code: Number(code),
+        timedOut: false,
+        stdout: stdout.slice(0, 6000),
+        stderr: stderr.slice(0, 6000)
+      });
+    });
+  });
+};
+
+const sanitizePackPath = (value) => {
+  const normalized = String(value || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!normalized || normalized.includes('..') || path.isAbsolute(normalized)) {
+    return null;
+  }
+  return normalized;
+};
+
+const getSnapshotDir = (projectPath) => path.join(projectPath, '.agent', 'snapshots');
+
+const toRelativeSnapshotPath = (inputPath) => {
+  const candidate = String(inputPath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!candidate || candidate.includes('..')) return null;
+  return candidate;
+};
+
+const readTextFileIfExists = async (filePath) => {
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    return { exists: true, content };
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return { exists: false, content: '' };
+    }
+    throw error;
+  }
+};
+
+const collectFilesRecursive = async (dirPath, baseDir, fileList = []) => {
+  let entries;
+  try {
+    entries = await fs.readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return fileList;
+  }
+
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      await collectFilesRecursive(fullPath, baseDir, fileList);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const rel = path.relative(baseDir, fullPath).split(path.sep).join('/');
+    fileList.push(rel);
+  }
+
+  return fileList;
 };
 
 const ensureEmptyDirSync = (dirPath) => {
@@ -3921,6 +5613,7 @@ const installSkillInternal = async (url, scope, projectPath, options = {}) => {
 
 ipcMain.handle('install-skill-from-url', async (event, url, scope, projectPath, options = {}) => {
   try {
+    await ensureEditPermission();
     return await installSkillInternal(url, scope, projectPath, options);
   } catch (error) {
     console.error('[Skills] Error installing skill:', error);
@@ -3929,6 +5622,12 @@ ipcMain.handle('install-skill-from-url', async (event, url, scope, projectPath, 
 });
 
 ipcMain.handle('install-all-skills', async (event, catalogEntries) => {
+  try {
+    await ensureEditPermission();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+
   if (!Array.isArray(catalogEntries)) {
     return { success: false, error: 'Invalid catalog entries format' };
   }
@@ -4056,6 +5755,8 @@ const collectMarkdownFilesRecursive = async (dirPath) => {
 
 ipcMain.handle('sync-voltagent-subagents', async (event, options = {}) => {
   try {
+    await ensureEditPermission();
+
     const safeOptions = options && typeof options === 'object' ? options : {};
     const overwrite = !!safeOptions.overwrite;
 
@@ -4147,6 +5848,7 @@ ipcMain.handle('git-diff', async (event, projectPath, filePath) => {
 ipcMain.handle('git-add', async (event, projectPath, files = []) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    await ensureEditPermission();
     const args = files && files.length > 0 ? ['add', ...files] : ['add', '-A'];
     await runGit(args, projectPath);
     return { success: true };
@@ -4158,8 +5860,9 @@ ipcMain.handle('git-add', async (event, projectPath, files = []) => {
 ipcMain.handle('git-commit', async (event, projectPath, message) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    await ensureEditPermission();
     if (!message || !message.trim()) return { success: false, error: 'Message de commit manquant' };
-    const stdout = await runGit(['commit', '-m', message.trim()], projectPath);
+    const { stdout } = await runGit(['commit', '-m', message.trim()], projectPath);
     return { success: true, output: stdout };
   } catch (error) {
     return { success: false, error: error.message };
@@ -4169,10 +5872,11 @@ ipcMain.handle('git-commit', async (event, projectPath, message) => {
 ipcMain.handle('git-push', async (event, projectPath, remote, branch) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    await ensureEditPermission();
     const args = ['push'];
     if (remote) args.push(remote);
     if (branch) args.push(branch);
-    const stdout = await runGit(args, projectPath);
+    const { stdout } = await runGit(args, projectPath);
     return { success: true, output: stdout };
   } catch (error) {
     return { success: false, error: error.message };
@@ -4182,6 +5886,7 @@ ipcMain.handle('git-push', async (event, projectPath, remote, branch) => {
 ipcMain.handle('git-pull', async (event, projectPath) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    await ensureEditPermission();
     const { stdout } = await runGit(['pull'], projectPath);
     return { success: true, output: stdout };
   } catch (error) {
@@ -4206,6 +5911,7 @@ ipcMain.handle('git-log', async (event, projectPath, limit = 20) => {
 ipcMain.handle('git-init', async (event, projectPath) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    await ensureEditPermission();
     const { stdout } = await runGit(['init'], projectPath);
     return { success: true, output: stdout };
   } catch (error) {
@@ -4233,13 +5939,136 @@ ipcMain.handle('git-remotes', async (event, projectPath) => {
   }
 });
 
+ipcMain.handle('git-list-branches', async (event, projectPath) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const { stdout } = await runGit(['branch', '--all', '--no-color'], projectPath);
+    const branches = stdout
+      .split('\n')
+      .map((line) => String(line || '').trim())
+      .filter(Boolean)
+      .map((line) => ({
+        name: line.replace(/^\*\s*/, '').replace(/^remotes\//, ''),
+        current: line.startsWith('*')
+      }));
+    return { success: true, branches };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-checkout-branch', async (event, projectPath, branchName) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    await ensureEditPermission();
+    const target = String(branchName || '').trim();
+    if (!target) return { success: false, error: 'Nom de branche manquant' };
+    const { stdout } = await runGit(['checkout', target], projectPath);
+    return { success: true, output: stdout };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-create-branch', async (event, projectPath, branchName) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    await ensureEditPermission();
+    const target = String(branchName || '').trim();
+    if (!target) return { success: false, error: 'Nom de branche manquant' };
+    const { stdout } = await runGit(['checkout', '-b', target], projectPath);
+    return { success: true, output: stdout };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-stash-save', async (event, projectPath, message) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    await ensureEditPermission();
+    const stashMessage = String(message || '').trim() || `stash-${new Date().toISOString()}`;
+    const { stdout } = await runGit(['stash', 'push', '-u', '-m', stashMessage], projectPath);
+    return { success: true, output: stdout };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-stash-list', async (event, projectPath) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const { stdout } = await runGit(['stash', 'list', '--pretty=format:%gd|%cr|%s'], projectPath);
+    const stashes = stdout.split('\n').filter(Boolean).map((line) => {
+      const [ref, when, ...rest] = line.split('|');
+      return { ref: ref || '', when: when || '', message: rest.join('|') || '' };
+    });
+    return { success: true, stashes };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('git-stash-pop', async (event, projectPath, stashRef) => {
+  try {
+    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    await ensureEditPermission();
+    const ref = String(stashRef || '').trim();
+    const args = ref ? ['stash', 'pop', ref] : ['stash', 'pop'];
+    const { stdout } = await runGit(args, projectPath);
+    return { success: true, output: stdout };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // ==================== OLLAMA LOCAL AI ====================
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const normalizeOllamaModelName = (value) => String(value || '').trim();
+
+const extractOllamaModelNames = (tagsResponseData) => {
+  const modelsRaw = Array.isArray(tagsResponseData?.models) ? tagsResponseData.models : [];
+  return modelsRaw
+    .map((model) => normalizeOllamaModelName(model?.name || model))
+    .filter(Boolean);
+};
+
+const fetchOllamaTags = async (baseUrl, timeout = null) => {
+  const config = {};
+  if (Number.isFinite(Number(timeout)) && Number(timeout) > 0) {
+    config.timeout = Number(timeout);
+  }
+  return axios.get(`${baseUrl}/api/tags`, config);
+};
+
+const pickInstalledOllamaModel = (requestedModel, installedModels, preferredCandidates = []) => {
+  const requested = normalizeOllamaModelName(requestedModel);
+  const available = Array.isArray(installedModels)
+    ? installedModels.map((name) => normalizeOllamaModelName(name)).filter(Boolean)
+    : [];
+  const availableSet = new Set(available);
+  if (requested && availableSet.has(requested)) return requested;
+
+  const requestedBase = requested.includes(':') ? requested.split(':')[0] : requested;
+  if (requestedBase) {
+    const sameFamily = available.find((name) => name.startsWith(`${requestedBase}:`) || name === requestedBase);
+    if (sameFamily) return sameFamily;
+  }
+
+  for (const candidate of preferredCandidates) {
+    const normalizedCandidate = normalizeOllamaModelName(candidate);
+    if (normalizedCandidate && availableSet.has(normalizedCandidate)) {
+      return normalizedCandidate;
+    }
+  }
+
+  return available[0] || '';
+};
 
 ipcMain.handle('list-ollama-models', async () => {
   try {
-    const response = await axios.get(`${OLLAMA_BASE_URL}/api/tags`, { timeout: 5000 });
+    const response = await fetchOllamaTags(OLLAMA_BASE_URL, 5000);
     const models = (response.data?.models || []).map(m => ({
       name: m.name,
       size: m.size,
@@ -4264,6 +6093,7 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
     if (validHistory.length === 0) return { success: false, error: "Historique vide pour Ollama." };
 
     const lastMessage = validHistory[validHistory.length - 1];
+    const lastUserText = String(lastMessage.text || '');
 
     let projectContext = '';
     if (allProjectFiles?.files) {
@@ -4274,9 +6104,25 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
       }
       projectContext += '--- FIN CONTEXTE ---\n';
     }
+    const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
+    const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
+    const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, lastUserText, options);
+    const n8nCatalogContext = await buildN8nCatalogContextForPrompt(lastUserText, options);
+
+    const agentContext = agentPrompt
+      ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
+      : '';
+
+    const skillContext = globalSkillsContent
+      ? `\n--- SKILLS GLOBAUX INSTALLES ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
+      : '';
 
     const systemPrompt = `Tu es un assistant de développement expert et autonome.
+${agentContext}
+${skillContext}
 ${projectContext}
+${visualWorkflowContext}
+${n8nCatalogContext}
 FICHIER OUVERT: ${currentCode ? currentCode.substring(0, 2000) : 'Aucun'}
 
 ${TERMINAL_CAPABILITY_PROMPT}
@@ -4294,12 +6140,20 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
     };
 
     const ollamaCall = async (messages) => {
-      const resp = await axios.post(`${OLLAMA_BASE_URL}/api/chat`, {
-        model,
-        messages,
-        options: { temperature: options.temperature || 0.7, num_predict: options.maxTokens || 8192 }
-      }); // no timeout
-      return resp.data?.message?.content || '';
+      try {
+        const resp = await axios.post(`${OLLAMA_BASE_URL}/api/chat`, {
+          model,
+          messages,
+          options: { temperature: options.temperature || 0.7, num_predict: options.maxTokens || 8192 }
+        }); // no timeout
+        return resp.data?.message?.content || '';
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          const details = String(error.response?.data?.error || error.message || '404');
+          throw new Error(`Ollama 404 (modele="${model}"): ${details}`);
+        }
+        throw error;
+      }
     };
 
     let messages = buildOllamaMessages(validHistory, String(lastMessage.text));
@@ -4339,7 +6193,12 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
 ipcMain.handle('get-ollama-multi-completion', async (event, history, currentCode, allProjectFiles, options = {}) => {
   try {
     const OLLAMA_BASE_URL_MULTI = process.env.OLLAMA_URL || 'http://localhost:11434';
-    const model = options.model || process.env.OLLAMA_MODEL || 'qwen3-coder:30b';
+    const fallbackModel = String(options.model || process.env.OLLAMA_MODEL || 'qwen3-coder:30b').trim() || 'qwen3-coder:30b';
+    const modelArchitect = String(options.modelArchitect || fallbackModel).trim() || fallbackModel;
+    const modelCoder = String(options.modelCoder || fallbackModel).trim() || fallbackModel;
+    const modelTester = String(options.modelTester || fallbackModel).trim() || fallbackModel;
+    const retryCount = toPositiveInt(options.retryCount, 1, 0, 3);
+    const workspaceRoot = path.resolve(String(options.projectPath || process.cwd()));
 
     const validHistory = Array.isArray(history) ? history : [];
     const lastMessage = validHistory[validHistory.length - 1];
@@ -4352,84 +6211,35 @@ ipcMain.handle('get-ollama-multi-completion', async (event, history, currentCode
       ? '\nSkills disponibles: ' + skillsList.map(s => s.name).join(', ') + '\nChoisis max 5 skills pertinents.'
       : '';
 
-    // ── Build compact project context ─────────────────────────────
-    let projectContext = '';
-    if (allProjectFiles?.files) {
-      const filesToShow = pickFilesForContext(allProjectFiles.files, 8);
-      projectContext = '\n--- PROJET ---\n';
-      for (const [fp, fd] of filesToShow) {
-        projectContext += `== ${fp} ==\n${(fd.content || '').substring(0, 800)}\n`;
-      }
-      projectContext += '---\n';
+    // ── Build compact project index context (no raw full files) ───────────
+    const fileEntries = allProjectFiles?.files && typeof allProjectFiles.files === 'object'
+      ? Object.entries(allProjectFiles.files)
+      : [];
+    const fileIndexLines = fileEntries.slice(0, 200).map(([filePath, fileData]) => {
+      const size = Number(fileData?.size || 0);
+      return `- ${filePath} (${Number.isFinite(size) ? size : 0} bytes)`;
+    });
+    if (fileEntries.length > fileIndexLines.length) {
+      fileIndexLines.push(`- ... ${fileEntries.length - fileIndexLines.length} fichiers supplementaires`);
     }
-    const codeCtx = currentCode ? `\nFICHIER OUVERT:\n${currentCode.substring(0, 1500)}` : '';
+    const projectContext = fileIndexLines.length > 0
+      ? `\nINDEX PROJET (sans contenu brut):\n${fileIndexLines.join('\n')}\n`
+      : '\nINDEX PROJET indisponible.\n';
+    const codeCtx = currentCode ? `\nFICHIER OUVERT (extrait):\n${String(currentCode).substring(0, 2000)}` : '';
+    const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(options.projectPath, userPrompt, options);
+    const n8nCatalogContext = await buildN8nCatalogContextForPrompt(userPrompt, options);
+    const toolContractText = `OUTILS DISPONIBLES:
+- <read_file file="chemin/relatif.ext" />
+- <read_lines file="chemin/relatif.ext" start="10" end="80" />
+- <list_workflows />
+- <read_workflow id="workflow_id" />
 
-    // ── Streaming Ollama call: sends tokens live to frontend ─────────
-    const ollamaCall = async (messages, maxTokens, agentLabel) => {
-      const response = await axios.post(`${OLLAMA_BASE_URL_MULTI}/api/chat`, {
-        model,
-        messages,
-        stream: true,
-        options: { temperature: 0.7, num_predict: maxTokens || 2048 }
-      }, {
-        responseType: 'stream'
-        // no timeout, wait as long as needed
-      });
-
-      return new Promise((resolve, reject) => {
-        let fullText = '';
-        let hasStarted = false;
-
-        // Soft timeout warnings (non-blocking)
-        const loadWarning = setTimeout(() => {
-          if (!hasStarted && mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('ai-multi-ollama-step', { label: `${agentLabel} ⏳ (Chargement long...)`, status: 'active', text: '' });
-          }
-        }, 45000);
-
-        const execWarning = setTimeout(() => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('ai-multi-ollama-step', { label: `${agentLabel} ⏳ (Génération longue...)`, status: 'active', text: '' });
-          }
-        }, 120000);
-
-        const cleanupTimers = () => { clearTimeout(loadWarning); clearTimeout(execWarning); };
-
-        response.data.on('data', (chunk) => {
-          try {
-            hasStarted = true;
-            const lines = chunk.toString().split('\n').filter(l => l.trim());
-            for (const line of lines) {
-              const json = JSON.parse(line);
-              const token = json?.message?.content || '';
-              if (token) {
-                fullText += token;
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                  mainWindow.webContents.send('ollama-multi-token', {
-                    agent: agentLabel,
-                    token,
-                    done: false
-                  });
-                }
-              }
-              if (json.done) {
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                  mainWindow.webContents.send('ollama-multi-token', {
-                    agent: agentLabel,
-                    token: '',
-                    done: true
-                  });
-                }
-                cleanupTimers();
-                resolve(fullText);
-              }
-            }
-          } catch (e) { /* ignore malformed chunk */ }
-        });
-        response.data.on('end', () => { cleanupTimers(); resolve(fullText); });
-        response.data.on('error', (err) => { cleanupTimers(); reject(err); });
-      });
-    };
+REGLES OUTILS:
+- Utilise uniquement des chemins relatifs au workspace.
+- Extensions lues: tout fichier texte (dotfiles inclus), sauf formats binaires/media/archive courants.
+- Taille max fichier: ${AGENT_MAX_FILE_BYTES} bytes
+- read_lines renvoie au maximum ${AGENT_MAX_LINES_PER_CALL} lignes.
+- Quand tu appelles un outil, reponds uniquement avec les balises d'outil, sans texte autour.`;
 
     const sendStep = (label, status, text) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -4437,23 +6247,313 @@ ipcMain.handle('get-ollama-multi-completion', async (event, history, currentCode
       }
     };
 
+    let installedModelNames = [];
+    try {
+      const tagsResponse = await fetchOllamaTags(OLLAMA_BASE_URL_MULTI);
+      installedModelNames = extractOllamaModelNames(tagsResponse?.data);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return {
+          success: false,
+          error: `Ollama Multi: endpoint introuvable (${OLLAMA_BASE_URL_MULTI}/api/tags -> 404). Vérifiez OLLAMA_URL.`
+        };
+      }
+      return {
+        success: false,
+        error: `Ollama Multi: impossible de joindre Ollama (${OLLAMA_BASE_URL_MULTI}). ${error.message}`
+      };
+    }
+
+    if (!Array.isArray(installedModelNames) || installedModelNames.length === 0) {
+      return {
+        success: false,
+        error: 'Ollama Multi: aucun modele installe. Lancez par exemple: ollama pull qwen2.5-coder:7b'
+      };
+    }
+
+    const resolveRoleModel = (requestedModel, roleLabel, preferredCandidates = []) => {
+      const requested = normalizeOllamaModelName(requestedModel);
+      const selected = pickInstalledOllamaModel(requested, installedModelNames, preferredCandidates);
+      if (!selected) {
+        throw new Error(`Aucun modele valide disponible pour ${roleLabel}`);
+      }
+      if (requested && selected !== requested) {
+        sendStep('⚙️ Model Router', 'active', `${roleLabel}: "${requested}" indisponible, fallback "${selected}"`);
+      }
+      return selected;
+    };
+
+    const resolvedModelArchitect = resolveRoleModel(
+      modelArchitect,
+      'Architecte',
+      ['qwen2.5-coder:7b', 'qwen3-coder:30b']
+    );
+    const resolvedModelCoder = resolveRoleModel(
+      modelCoder,
+      'Codeur',
+      ['qwen3-coder:30b', 'qwen2.5-coder:7b']
+    );
+    const resolvedModelTester = resolveRoleModel(
+      modelTester,
+      'Relecteur',
+      ['qwen2.5-coder:7b', 'qwen3-coder:30b']
+    );
+
+    const emitStreamingDone = (agentLabel) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ollama-multi-token', {
+          agent: agentLabel,
+          token: '',
+          done: true
+        });
+      }
+    };
+
+    // ── Streaming Ollama call: sends tokens live to frontend ─────────
+    const ollamaCall = async (messages, maxTokens, agentLabel, modelName) => {
+      let response;
+      try {
+        response = await axios.post(`${OLLAMA_BASE_URL_MULTI}/api/chat`, {
+          model: modelName,
+          messages,
+          stream: true,
+          options: { temperature: 0.7, num_predict: maxTokens || 2048 }
+        }, {
+          responseType: 'stream'
+        });
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          const details = String(error.response?.data?.error || error.message || '404');
+          throw new Error(`Ollama 404 (${agentLabel}, modele="${modelName}"): ${details}`);
+        }
+        throw error;
+      }
+
+      return new Promise((resolve, reject) => {
+        let fullText = '';
+        let hasStarted = false;
+        let settled = false;
+        let doneEmitted = false;
+        let buffer = '';
+
+        const loadWarning = setTimeout(() => {
+          if (!hasStarted) {
+            sendStep(`${agentLabel} ⏳ (Chargement long...)`, 'active', '');
+          }
+        }, 45000);
+
+        const execWarning = setTimeout(() => {
+          sendStep(`${agentLabel} ⏳ (Generation longue...)`, 'active', '');
+        }, 120000);
+
+        const cleanupTimers = () => {
+          clearTimeout(loadWarning);
+          clearTimeout(execWarning);
+        };
+
+        const safeResolve = (value) => {
+          if (settled) return;
+          settled = true;
+          cleanupTimers();
+          if (!doneEmitted) {
+            doneEmitted = true;
+            emitStreamingDone(agentLabel);
+          }
+          resolve(value);
+        };
+
+        const safeReject = (error) => {
+          if (settled) return;
+          settled = true;
+          cleanupTimers();
+          if (!doneEmitted) {
+            doneEmitted = true;
+            emitStreamingDone(agentLabel);
+          }
+          reject(error);
+        };
+
+        const processLine = (line) => {
+          const trimmed = String(line || '').trim();
+          if (!trimmed) return;
+
+          let json;
+          try {
+            json = JSON.parse(trimmed);
+          } catch {
+            return;
+          }
+
+          const token = json?.message?.content || '';
+          if (token) {
+            fullText += token;
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('ollama-multi-token', {
+                agent: agentLabel,
+                token,
+                done: false
+              });
+            }
+          }
+
+          if (json?.done) {
+            safeResolve(fullText);
+          }
+        };
+
+        response.data.on('data', (chunk) => {
+          hasStarted = true;
+          buffer += chunk.toString('utf8');
+          let newlineIndex = buffer.indexOf('\n');
+          while (newlineIndex >= 0) {
+            const line = buffer.slice(0, newlineIndex);
+            buffer = buffer.slice(newlineIndex + 1);
+            processLine(line);
+            newlineIndex = buffer.indexOf('\n');
+          }
+        });
+
+        response.data.on('end', () => {
+          if (buffer.trim()) processLine(buffer);
+          safeResolve(fullText);
+        });
+        response.data.on('error', (err) => {
+          safeReject(err);
+        });
+      });
+    };
+
+    const ollamaCallWithRetry = async (messages, maxTokens, agentLabel, modelName) => {
+      let lastError;
+      for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+        try {
+          if (attempt > 0) {
+            sendStep(agentLabel, 'active', `Retry ${attempt}/${retryCount}`);
+          }
+          const attemptMessages = attempt === 0
+            ? messages
+            : [
+              ...messages,
+              {
+                role: 'system',
+                content: "La tentative precedente a echoue. Reprends calmement, respecte strictement le format attendu et termine."
+              }
+            ];
+          // eslint-disable-next-line no-await-in-loop
+          return await ollamaCall(attemptMessages, maxTokens, agentLabel, modelName);
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError || new Error('Echec appel Ollama');
+    };
+
+    const executeToolCall = async (call) => {
+      const toolName = String(call?.name || '').trim();
+      const attrs = call?.attrs && typeof call.attrs === 'object' ? call.attrs : {};
+      try {
+        if (toolName === 'read_file') {
+          const relFile = String(attrs.file || '').trim();
+          if (!relFile) throw new Error('Attribut file requis');
+          const resolvedInfo = safeResolvePath(workspaceRoot, relFile);
+          const content = await readAgentFileWithLimits(workspaceRoot, relFile);
+          return `<tool_result name="read_file" file="${resolvedInfo.relative}" status="ok">\n${content}\n</tool_result>`;
+        }
+        if (toolName === 'read_lines') {
+          const relFile = String(attrs.file || '').trim();
+          if (!relFile) throw new Error('Attribut file requis');
+          const { resolvedPath, relativePath } = await validateAgentFileAccess(workspaceRoot, relFile);
+          const raw = await fs.readFile(resolvedPath);
+          if (isLikelyBinary(raw)) {
+            throw new Error(`Fichier binaire non supporte: ${relativePath}`);
+          }
+          const content = raw.toString('utf8');
+          const excerpt = readAgentLinesWithLimits(content, attrs.start, attrs.end, AGENT_MAX_LINES_PER_CALL);
+          return `<tool_result name="read_lines" file="${relativePath}" start="${excerpt.start}" end="${excerpt.end}" total="${excerpt.total}" status="ok">\n${excerpt.content}\n</tool_result>`;
+        }
+        if (toolName === 'list_workflows') {
+          const index = await getVisualWorkflowIndex(options.projectPath, 40);
+          if (index.length === 0) {
+            return `<tool_result name="list_workflows" status="ok">\nAucun workflow visuel trouve.\n</tool_result>`;
+          }
+          const lines = index.map((wf) =>
+            `- id=${wf.id} | name=${wf.name} | nodes=${wf.nodes} | edges=${wf.edges}${wf.description ? ` | desc=${wf.description}` : ''}`
+          );
+          return `<tool_result name="list_workflows" status="ok">\n${lines.join('\n')}\n</tool_result>`;
+        }
+        if (toolName === 'read_workflow') {
+          const workflowId = String(attrs.id || attrs.name || attrs.filename || '').trim();
+          if (!workflowId) throw new Error('Attribut id requis');
+          const content = await readVisualWorkflowById(options.projectPath, workflowId);
+          return `<tool_result name="read_workflow" id="${workflowId}" status="ok">\n${content}\n</tool_result>`;
+        }
+        return formatToolError(toolName || 'unknown_tool', `Outil non supporte: ${toolName}`);
+      } catch (error) {
+        return formatToolError(toolName || 'unknown_tool', error?.message || String(error));
+      }
+    };
+
+    const executeToolCalls = async (calls) => {
+      const selectedCalls = Array.isArray(calls) ? calls.slice(0, AGENT_MAX_TOOL_CALLS) : [];
+      const outputs = [];
+      for (const call of selectedCalls) {
+        // eslint-disable-next-line no-await-in-loop
+        outputs.push(await executeToolCall(call));
+      }
+      return outputs.join('\n\n');
+    };
+
+    const runAgentWithTools = async ({ agentLabel, modelName, systemPrompt, userMessage, maxTokens }) => {
+      let messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ];
+      let lastResponse = '';
+
+      for (let round = 0; round < AGENT_TOOL_MAX_ROUNDS; round += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const responseText = await ollamaCallWithRetry(messages, maxTokens, agentLabel, modelName);
+        lastResponse = responseText;
+        const toolCalls = parseAgentToolCalls(responseText);
+        if (toolCalls.length === 0) return responseText;
+
+        sendStep(agentLabel, 'active', `${toolCalls.length} outil(s), tour ${round + 1}/${AGENT_TOOL_MAX_ROUNDS}`);
+        // eslint-disable-next-line no-await-in-loop
+        const toolResults = await executeToolCalls(toolCalls);
+        messages = [
+          ...messages,
+          { role: 'assistant', content: responseText },
+          {
+            role: 'user',
+            content: `[RESULTATS_OUTILS]\n${toolResults}\n\nSi les infos suffisent, donne la reponse finale sans nouvel appel outil.`
+          }
+        ];
+      }
+
+      return `${lastResponse}\n\n[NOTE SYSTEME] Limite d'appels outils atteinte (${AGENT_TOOL_MAX_ROUNDS} tours).`;
+    };
+
     // ────────── Agent 1 : Architecte (RAPIDE — 4096 tokens) ──────────
     sendStep('🏗️ Architecte', 'active', '');
     const archSystem = `Tu es un architecte logiciel senior. Sois CONCIS (max 300 mots).
-${projectContext}${codeCtx}${skillNamesText}
+${projectContext}${codeCtx}${visualWorkflowContext}${n8nCatalogContext}${skillNamesText}
+${toolContractText}
 
-RÉPONDS avec:
-1. Plan technique en bullet points (structure fichiers, technologies, architecture)
-2. Section "## Skills attribués" avec:
+REPONDS avec:
+1. Plan technique en bullet points (structure fichiers, architecture, sequence)
+2. Section "## Skills attribues" avec:
    - Codeur: [max 5 noms de skills]
    - Relecteur: [max 3 noms de skills]
 
 PAS de code. PAS d'explications longues. Juste le plan.`;
 
-    const archPlan = await ollamaCall([
-      { role: 'system', content: archSystem },
-      { role: 'user', content: userPrompt }
-    ], 2048, '🏗️ Architecte');
+    const archPlan = await runAgentWithTools({
+      agentLabel: '🏗️ Architecte',
+      modelName: resolvedModelArchitect,
+      systemPrompt: archSystem,
+      userMessage: userPrompt,
+      maxTokens: 2048
+    });
     sendStep('🏗️ Architecte', 'done', archPlan);
 
     // ── Read only selected skills from disk ──────────────────────
@@ -4495,26 +6595,40 @@ PAS de code. PAS d'explications longues. Juste le plan.`;
 
     // ────────── Agent 2 : Codeur (ACTION — 8192 tokens) ──────────
     sendStep('💻 Codeur', 'active', '');
-    const coderSystem = `Tu es un développeur full-stack expert. Tu CRÉES les fichiers, tu ne décris pas.
-${projectContext}${codeCtx}
+    const coderSystem = `Tu es un developpeur full-stack expert. Tu produis des modifications applicables.
+${projectContext}${codeCtx}${visualWorkflowContext}${n8nCatalogContext}
 ${coderSkills}
+${toolContractText}
 
-RÈGLES STRICTES:
-- Pour chaque fichier à créer/modifier: **FICHIER: chemin/nom.ext** \`\`\`langage\n// code complet\n\`\`\`
-- Si un workflow visuel est demandé, produis: **WORKFLOW: NomDuWorkflow** \`\`\`json
+REGLES STRICTES:
+- Pour modifier un fichier existant, utilise UNIQUEMENT:
+FILE: chemin/nom.ext
+<<<< SEARCH
+code exact existant
+====
+nouveau code
+>>>> REPLACE
+
+- Si SEARCH apparait plusieurs fois dans le fichier, precise davantage le bloc SEARCH.
+- Pour creer un nouveau fichier, utilise:
+**FICHIER: chemin/nom.ext** \`\`\`langage\n// contenu complet\n\`\`\`
+- Si un workflow visuel est demande, produis: **WORKFLOW: NomDuWorkflow** \`\`\`json
 {
   "name": "Nom",
   "nodes": [{"id":"node_1","type":"trigger|ai|action|logic|output","label":"Nom","icon":"▶️|🤖|💻|🔀|🔔","position":{"x":100,"y":150},"config":{}}],
   "edges": [{"source":"node_1","target":"node_2"}]
 }
 \`\`\`
-- Produis du code COMPLET et FONCTIONNEL, pas des extraits.
+- Pas d'explication, uniquement les artefacts.
 ${TERMINAL_CAPABILITY_PROMPT}`;
 
-    const coderOutput = await ollamaCall([
-      { role: 'system', content: coderSystem },
-      { role: 'user', content: `${userPrompt}\n\nPLAN:\n${archPlan}` }
-    ], 4096, '💻 Codeur');
+    const coderOutput = await runAgentWithTools({
+      agentLabel: '💻 Codeur',
+      modelName: resolvedModelCoder,
+      systemPrompt: coderSystem,
+      userMessage: `${userPrompt}\n\nPLAN:\n${archPlan}`,
+      maxTokens: 4096
+    });
     sendStep('💻 Codeur', 'done', coderOutput);
 
     // ── Helper to run a shell command and get its output ──────────────────
@@ -4545,54 +6659,53 @@ ${TERMINAL_CAPABILITY_PROMPT}`;
       return results;
     };
 
-    // ────────── Testeur + Correction Loop ──────────
+    // ────────── Relecteur + Correction Loop ──────────
     const MAX_CORRECTIONS = 3;
-    let currentCode = coderOutput;
+    let evolvingProposal = coderOutput;
     let testLog = '';
     const correctionHistory = [];
 
     for (let iteration = 0; iteration <= MAX_CORRECTIONS; iteration++) {
-      sendStep('🧪 Testeur', 'active', `Itération ${iteration + 1}`);
+      sendStep('🔍 Relecteur', 'active', `Iteration ${iteration + 1}`);
 
-      const testerSystem = `Tu es un ingénieur QA senior. Tu crées des tests, testes les routes API, crées des données de test (JSON fixtures) et détectes les bugs réels.
+      const testerSystem = `Tu es un ingenieur QA senior, specialise en verification de patchs.
+${projectContext}${visualWorkflowContext}${n8nCatalogContext}
+${reviewSkills}
+${toolContractText}
 
-RÈGLES STRICTES:
-- Pour exécuter une commande (curl, node, npm test...): <run_command>commande</run_command>
-- Pour créer un fichier de test: **FICHIER: tests/nom.ext** \`\`\`langage\\ncontenu\`\`\`
-- Liste les erreurs avec: **ERREUR:** description précise de l'erreur
+REGLES STRICTES:
+- Pour executer une commande (curl, node, npm test...): <run_command>commande</run_command>
+- Liste les erreurs avec: **ERREUR:** description precise de l'erreur
 - Si tout passe: **STATUT: OK**
-${testLog ? `\nRÉSULTATS DES COMMANDES PRÉCÉDENTES:\n${testLog}` : ''}`;
+${testLog ? `\nRESULTATS DES COMMANDES PRECEDENTES:\n${testLog}` : ''}`;
 
-      const testerOutput = await ollamaCall([
-        { role: 'system', content: testerSystem },
-        { role: 'user', content: `Teste ce code:\n\n${currentCode.substring(0, 3000)}\n\nDemande originale: ${userPrompt}` }
-      ], 2048, '🧪 Testeur');
+      const testerOutput = await runAgentWithTools({
+        agentLabel: '🔍 Relecteur',
+        modelName: resolvedModelTester,
+        systemPrompt: testerSystem,
+        userMessage: `Teste ce patch:\n\n${evolvingProposal.substring(0, 5000)}\n\nDemande originale: ${userPrompt}`,
+        maxTokens: 2048
+      });
 
-      sendStep('🧪 Testeur', 'done', testerOutput);
+      sendStep('🔍 Relecteur', 'done', testerOutput);
 
-      // Run shell commands the Testeur requested
+      // Run shell commands requested by reviewer
       const commands = parseTestCommands(testerOutput);
       let commandResults = '';
       for (const cmd of commands.slice(0, 5)) {
         const cmdLabel = `⚡ ${cmd.substring(0, 50)}`;
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('ai-multi-ollama-step', { label: cmdLabel, status: 'active', text: '' });
-        }
+        sendStep(cmdLabel, 'active', '');
 
         // Soft timeout warning for long commands (30s)
         const cmdWarningId = setTimeout(() => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('ai-multi-ollama-step', { label: `${cmdLabel} ⏳ (Long...)`, status: 'active', text: '' });
-          }
+          sendStep(`${cmdLabel} ⏳ (Long...)`, 'active', '');
         }, 30000);
 
         const result = await runShellCommand(cmd);
         clearTimeout(cmdWarningId);
 
         commandResults += `\n$ ${cmd}\n→ exit: ${result.code}\n${result.stdout}${result.stderr ? '\nSTDERR: ' + result.stderr : ''}\n`;
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('ai-multi-ollama-step', { label: cmdLabel, status: 'done', text: commandResults });
-        }
+        sendStep(cmdLabel, 'done', commandResults);
       }
       if (commandResults) testLog += commandResults;
 
@@ -4611,20 +6724,26 @@ ${testLog ? `\nRÉSULTATS DES COMMANDES PRÉCÉDENTES:\n${testLog}` : ''}`;
       // ── Architecte correction round ──
       sendStep('🏗️ Architecte', 'active', `Correction ${iteration + 1}`);
       const errorSummary = testerOutput.match(/\*\*ERREUR:[\s\S]*?(?=\*\*|\n\n|$)/gi)?.join('\n') || testerOutput.substring(0, 800);
-      const correctionPlan = await ollamaCall([
-        { role: 'system', content: `${archSystem}\n\nCorrige uniquement les erreurs signalées. Sois minimal.` },
-        { role: 'user', content: `ERREURS:\n${errorSummary}\n\nCODE:\n${currentCode.substring(0, 2000)}` }
-      ], 1024, '🏗️ Architecte (correction)');
+      const correctionPlan = await runAgentWithTools({
+        agentLabel: '🏗️ Architecte',
+        modelName: resolvedModelArchitect,
+        systemPrompt: `${archSystem}\n\nCorrige uniquement les erreurs signalees. Sois minimal.`,
+        userMessage: `ERREURS:\n${errorSummary}\n\nPATCH:\n${evolvingProposal.substring(0, 3500)}`,
+        maxTokens: 1024
+      });
       sendStep('🏗️ Architecte', 'done', correctionPlan);
 
       // ── Codeur correction round ──
       sendStep('💻 Codeur', 'active', `Correction ${iteration + 1}`);
-      const correctedCode = await ollamaCall([
-        { role: 'system', content: `${coderSystem}\n\nApplique UNIQUEMENT les corrections. Ne régénère pas tout.` },
-        { role: 'user', content: `PLAN DE CORRECTION:\n${correctionPlan}\n\nERREURS:\n${errorSummary}` }
-      ], 2048, '💻 Codeur (correction)');
+      const correctedCode = await runAgentWithTools({
+        agentLabel: '💻 Codeur',
+        modelName: resolvedModelCoder,
+        systemPrompt: `${coderSystem}\n\nApplique UNIQUEMENT les corrections necessaires.`,
+        userMessage: `PLAN DE CORRECTION:\n${correctionPlan}\n\nERREURS:\n${errorSummary}`,
+        maxTokens: 2048
+      });
       sendStep('💻 Codeur', 'done', correctedCode);
-      currentCode += '\n\n---CORRECTION---\n\n' + correctedCode;
+      evolvingProposal += '\n\n---CORRECTION---\n\n' + correctedCode;
     }
 
     // ────────── Synthèse finale ──────────
@@ -4634,15 +6753,27 @@ ${testLog ? `\nRÉSULTATS DES COMMANDES PRÉCÉDENTES:\n${testLog}` : ''}`;
 
     const finalText = [
       `## 🏗️ Plan (Architecte)\n${archPlan}`,
-      `## 💻 Code (Codeur)\n${currentCode}`,
-      `## 🧪 Rapport de tests\n${testSummary}`
+      `## 💻 Patch (Codeur)\n${evolvingProposal}`,
+      `## 🔍 Rapport de relecture\n${testSummary}`
     ].join('\n\n---\n\n');
 
-    return { success: true, text: finalText, multiAgent: true };
+    return {
+      success: true,
+      text: finalText,
+      multiAgent: true,
+      models: {
+        architect: resolvedModelArchitect,
+        coder: resolvedModelCoder,
+        tester: resolvedModelTester
+      },
+      requestedModels: {
+        architect: modelArchitect,
+        coder: modelCoder,
+        tester: modelTester
+      }
+    };
   } catch (error) {
     console.error('[Ollama Multi] Erreur:', error.message);
     return { success: false, error: `Ollama Multi: ${error.message}` };
   }
 });
-
-

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import './WorkflowManager.css';
 
 const WorkflowManager = ({
@@ -26,6 +26,9 @@ const WorkflowManager = ({
   const [isAgentSkillsLoading, setIsAgentSkillsLoading] = useState(false);
   const [isOpenclawLoading, setIsOpenclawLoading] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
+  const [packScope, setPackScope] = useState('workspace');
+  const [packImportOverwrite, setPackImportOverwrite] = useState(false);
+  const [isPackTransferRunning, setIsPackTransferRunning] = useState(false);
 
   const filteredWorkflows = workflows.filter(w => w.scope === activeTab);
 
@@ -71,6 +74,73 @@ const WorkflowManager = ({
       const msg = `Import subagents: ${e.message}`;
       setPacksStatus(msg);
       showMessage && showMessage(msg, 4000);
+    }
+  };
+
+  const exportPack = async () => {
+    if (!isElectronApiAvailable || !window.electronAPI?.exportLibraryPack) {
+      showMessage && showMessage('Erreur: API Electron indisponible', 3000);
+      return;
+    }
+
+    if (packScope === 'workspace' && !currentProjectPath) {
+      showMessage && showMessage("Ouvrez d'abord un projet pour exporter le scope workspace.", 3500);
+      return;
+    }
+
+    setIsPackTransferRunning(true);
+    try {
+      const res = await window.electronAPI.exportLibraryPack(currentProjectPath, { scope: packScope });
+      if (res?.success) {
+        const msg = `Pack exporte: ${res.entries} fichier(s)`;
+        setPacksStatus(msg);
+        showMessage && showMessage(msg, 3500);
+      } else if (!res?.canceled) {
+        const msg = res?.error ? String(res.error) : 'Export pack: erreur';
+        setPacksStatus(msg);
+        showMessage && showMessage(msg, 4000);
+      }
+    } catch (e) {
+      const msg = `Export pack: ${e.message}`;
+      setPacksStatus(msg);
+      showMessage && showMessage(msg, 4000);
+    } finally {
+      setIsPackTransferRunning(false);
+    }
+  };
+
+  const importPack = async () => {
+    if (!isElectronApiAvailable || !window.electronAPI?.importLibraryPack) {
+      showMessage && showMessage('Erreur: API Electron indisponible', 3000);
+      return;
+    }
+
+    setIsPackTransferRunning(true);
+    try {
+      if (!currentProjectPath) {
+        showMessage && showMessage('Aucun projet ouvert: seules les sections globales seront importees.', 3500);
+      }
+
+      const res = await window.electronAPI.importLibraryPack(currentProjectPath || '', {
+        overwrite: !!packImportOverwrite
+      });
+      if (res?.success) {
+        const msg = `Pack importe: ${res.imported} fichier(s), ${res.skipped} ignore(s)`;
+        setPacksStatus(msg);
+        showMessage && showMessage(msg, 4000);
+        onLibraryUpdated && onLibraryUpdated();
+        loadInstalledSkills();
+      } else if (!res?.canceled) {
+        const msg = res?.error ? String(res.error) : 'Import pack: erreur';
+        setPacksStatus(msg);
+        showMessage && showMessage(msg, 4500);
+      }
+    } catch (e) {
+      const msg = `Import pack: ${e.message}`;
+      setPacksStatus(msg);
+      showMessage && showMessage(msg, 4500);
+    } finally {
+      setIsPackTransferRunning(false);
     }
   };
 
@@ -152,7 +222,7 @@ const WorkflowManager = ({
   const [installedSkills, setInstalledSkills] = useState({ global: [], workspace: [] });
   const [isInstalledSkillsLoading, setIsInstalledSkillsLoading] = useState(false);
 
-  const loadInstalledSkills = async () => {
+  const loadInstalledSkills = useCallback(async () => {
     if (!isElectronApiAvailable || !window.electronAPI?.listSkills) return;
     setIsInstalledSkillsLoading(true);
     try {
@@ -167,7 +237,7 @@ const WorkflowManager = ({
     } finally {
       setIsInstalledSkillsLoading(false);
     }
-  };
+  }, [currentProjectPath, isElectronApiAvailable]);
 
   React.useEffect(() => {
     loadInstalledSkills();
@@ -380,6 +450,53 @@ ${formData.body}`;
                   Importer des subagents et installer des skills depuis des catalogues open-source.
                 </div>
                 {packsStatus && <div className="packs-status">{packsStatus}</div>}
+              </div>
+
+              <div className="pack-card">
+                <div className="pack-card-head">
+                  <div>
+                    <div className="pack-card-title">Pack local (export/import)</div>
+                    <div className="pack-card-desc">Sauvegarde ou restaure workflows, agents et skills sous forme d&apos;un fichier JSON.</div>
+                  </div>
+                  <div className="pack-transfer-actions">
+                    <button
+                      className="btn btn-ghost"
+                      onClick={exportPack}
+                      disabled={!isElectronApiAvailable || isPackTransferRunning}
+                    >
+                      {isPackTransferRunning ? '...' : 'Exporter'}
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={importPack}
+                      disabled={!isElectronApiAvailable || isPackTransferRunning}
+                    >
+                      {isPackTransferRunning ? '...' : 'Importer'}
+                    </button>
+                  </div>
+                </div>
+                <div className="packs-controls pack-transfer-controls">
+                  <label className="pack-inline-label">
+                    Scope export
+                    <select
+                      className="packs-input pack-select"
+                      value={packScope}
+                      onChange={(e) => setPackScope(e.target.value)}
+                    >
+                      <option value="workspace">workspace</option>
+                      <option value="global">global</option>
+                      <option value="both">both</option>
+                    </select>
+                  </label>
+                  <label className="pack-inline-check" style={{ marginLeft: '10px' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!packImportOverwrite}
+                      onChange={(e) => setPackImportOverwrite(e.target.checked)}
+                    />
+                    <span>Import: ecraser les fichiers existants</span>
+                  </label>
+                </div>
               </div>
 
               <div className="pack-card">

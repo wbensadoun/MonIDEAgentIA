@@ -13,7 +13,8 @@ const CodeEditor = ({
   isDiffMode = false, // Nouvelle prop pour forcer le mode Diff
   onSelectFile,
   onCloseFile,
-  revealRequest
+  revealRequest,
+  forceReadOnly = false
 }) => {
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
@@ -176,7 +177,7 @@ const CodeEditor = ({
     }
 
     ghostProviderRef.current = monaco.languages.registerInlineCompletionsProvider('*', {
-      provideInlineCompletions: async (model, position, context, token) => {
+      provideInlineCompletions: async (model, position, _context, _token) => {
         // Debounce pour ne pas inonder l'API
         if (ghostTimeoutRef.current) clearTimeout(ghostTimeoutRef.current);
         if (ghostAbortControllerRef.current) ghostAbortControllerRef.current.abort();
@@ -224,6 +225,44 @@ const CodeEditor = ({
       freeInlineCompletions: () => { }
     });
 
+  }, []);
+
+  const handleEditorWillUnmount = useCallback((editor, monaco) => {
+    try {
+      // Stop ghost text provider on unmount if it exists
+      if (ghostProviderRef.current) {
+        ghostProviderRef.current.dispose();
+        ghostProviderRef.current = null;
+      }
+      if (ghostAbortControllerRef.current) {
+        ghostAbortControllerRef.current.abort();
+        ghostAbortControllerRef.current = null;
+      }
+      if (ghostTimeoutRef.current) {
+        clearTimeout(ghostTimeoutRef.current);
+        ghostTimeoutRef.current = null;
+      }
+
+      // Explicitly dispose of models to avoid the "TextModel got disposed before DiffEditorWidget model got reset" error
+      if (editor && typeof editor.getModel === 'function') {
+        const model = editor.getModel();
+
+        // DiffEditor returns an object { original, modified } for getModel()
+        if (model && model.original && typeof model.original.dispose === 'function') {
+          model.original.dispose();
+        }
+        if (model && model.modified && typeof model.modified.dispose === 'function') {
+          model.modified.dispose();
+        }
+
+        // Standard Editor returns the model directly
+        if (model && typeof model.dispose === 'function' && !model.original) {
+          model.dispose();
+        }
+      }
+    } catch (e) {
+      console.error("Error during Monaco Editor unmount:", e);
+    }
   }, []);
 
   useEffect(() => {
@@ -323,7 +362,7 @@ const CodeEditor = ({
               language={language}
               original={previousCode}
               modified={code}
-              onMount={handleMount}
+              onMount={(editor, monaco) => handleMount(editor.getModifiedEditor(), monaco)}
               theme="vibe-ide"
               options={{
                 fontFamily: 'var(--font-code)',
@@ -361,7 +400,7 @@ const CodeEditor = ({
                 padding: { top: 10, bottom: 10 },
                 guides: { bracketPairs: true, indentation: true },
                 glyphMargin: true,
-                readOnly: !activeFile
+                readOnly: !activeFile || forceReadOnly
               }}
             />
           )}

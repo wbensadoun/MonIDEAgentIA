@@ -34,6 +34,7 @@ try {
 
     // API pour rechercher dans le projet (recherche globale)
     searchInProject: (projectPath, query, options) => ipcRenderer.invoke('search-in-project', projectPath, query, options),
+    searchSymbols: (projectPath, query, options) => ipcRenderer.invoke('search-symbols', projectPath, query, options),
 
     // API pour charger les enfants d'un dossier spécifique
     getFolderChildren: (projectPath, folderPath) => ipcRenderer.invoke('get-folder-children', projectPath, folderPath),
@@ -42,10 +43,14 @@ try {
     readFile: (projectPath, filename) => ipcRenderer.invoke('read-file', projectPath, filename),
 
     // API pour écrire/créer un fichier
-    writeFile: (projectPath, filename, content) => ipcRenderer.invoke('write-file', projectPath, filename, content),
+    writeFile: (projectPath, filename, content, options) => ipcRenderer.invoke('write-file', projectPath, filename, content, options),
+    runQualityGates: (projectPath, options) => ipcRenderer.invoke('run-quality-gates', projectPath, options),
+    createAISnapshot: (projectPath, files, label) => ipcRenderer.invoke('create-ai-snapshot', projectPath, files, label),
+    listAISnapshots: (projectPath) => ipcRenderer.invoke('list-ai-snapshots', projectPath),
+    restoreAISnapshot: (projectPath, snapshotId) => ipcRenderer.invoke('restore-ai-snapshot', projectPath, snapshotId),
 
     // API pour supprimer un fichier
-    deleteFile: (projectPath, filename) => ipcRenderer.invoke('delete-file', projectPath, filename),
+    deleteFile: (projectPath, filename, options) => ipcRenderer.invoke('delete-file', projectPath, filename, options),
 
     // API pour créer un nouveau fichier
     createNewFile: (projectPath, filename, initialContent) => ipcRenderer.invoke('createNewFile', projectPath, filename, initialContent),
@@ -134,6 +139,8 @@ try {
     // VoltAgent catalogs & packs
     getVoltAgentCatalog: (catalogId) => ipcRenderer.invoke('get-voltagent-catalog', catalogId),
     syncVoltAgentSubagents: (options) => ipcRenderer.invoke('sync-voltagent-subagents', options),
+    exportLibraryPack: (projectPath, options) => ipcRenderer.invoke('export-library-pack', projectPath, options),
+    importLibraryPack: (projectPath, options) => ipcRenderer.invoke('import-library-pack', projectPath, options),
 
     // Git Integration
     gitStatus: (projectPath) => ipcRenderer.invoke('git-status', projectPath),
@@ -146,6 +153,12 @@ try {
     gitInit: (projectPath) => ipcRenderer.invoke('git-init', projectPath),
     gitBranch: (projectPath) => ipcRenderer.invoke('git-branch', projectPath),
     gitRemotes: (projectPath) => ipcRenderer.invoke('git-remotes', projectPath),
+    gitListBranches: (projectPath) => ipcRenderer.invoke('git-list-branches', projectPath),
+    gitCheckoutBranch: (projectPath, branchName) => ipcRenderer.invoke('git-checkout-branch', projectPath, branchName),
+    gitCreateBranch: (projectPath, branchName) => ipcRenderer.invoke('git-create-branch', projectPath, branchName),
+    gitStashSave: (projectPath, message) => ipcRenderer.invoke('git-stash-save', projectPath, message),
+    gitStashList: (projectPath) => ipcRenderer.invoke('git-stash-list', projectPath),
+    gitStashPop: (projectPath, stashRef) => ipcRenderer.invoke('git-stash-pop', projectPath, stashRef),
 
     // Ollama Local AI
     listOllamaModels: () => ipcRenderer.invoke('list-ollama-models'),

@@ -5,6 +5,7 @@ const TOP_TABS = [
   { id: 'output', label: 'Output' },
   { id: 'debug', label: 'Debug Console' },
   { id: 'terminal', label: 'Terminal' },
+  { id: 'ai', label: 'AI Terminal' },
   { id: 'ports', label: 'Ports' },
 ];
 
@@ -29,11 +30,20 @@ const DEFAULT_PROCESSES = [
   },
 ];
 
-const TerminalPanel = ({ currentProjectPath, isElectronApiAvailable, showMessage }) => {
+const TerminalPanel = ({
+  currentProjectPath,
+  isElectronApiAvailable,
+  showMessage,
+  permissionMode = 'edit_terminal',
+  preferredDevPort = '3004',
+  onDevPortResolved
+}) => {
   const [logs, setLogs] = useState({});
   const [running, setRunning] = useState({});
+  const [portsByProcess, setPortsByProcess] = useState({});
   const [activeProcessId, setActiveProcessId] = useState('dev');
   const [activeView, setActiveView] = useState('terminal');
+  const canUseTerminal = permissionMode === 'edit_terminal';
 
   const appendLog = useCallback((id, type, text) => {
     setLogs(prev => {
@@ -57,14 +67,48 @@ const TerminalPanel = ({ currentProjectPath, isElectronApiAvailable, showMessage
     const handleExit = (data) => {
       if (!data || !data.id) return;
       setRunning(prev => ({ ...prev, [data.id]: false }));
+      setPortsByProcess((prev) => {
+        if (!Object.prototype.hasOwnProperty.call(prev, data.id)) return prev;
+        const next = { ...prev };
+        delete next[data.id];
+        return next;
+      });
+      if (data.id === 'dev' && typeof onDevPortResolved === 'function') {
+        onDevPortResolved(null);
+      }
       appendLog(data.id, 'stdout', `\n[process exited with code ${data.code}]\n`);
+    };
+
+    const handleAiTerminalAction = (data) => {
+      if (!data) return;
+      const { command, iteration } = data;
+      appendLog('ai', 'stdout', `\n[🤖 IA Iteration ${iteration}] Exécution de la commande :\n> ${command}\n\n`);
+      // Scroll to bottom manually if needed or let React handle it
+    };
+
+    const handleAiTerminalResult = (data) => {
+      if (!data) return;
+      const { output, iteration } = data;
+      appendLog('ai', 'stdout', `[🤖 IA Résultat de la commande Iteration ${iteration}]:\n${output}\n`);
     };
 
     window.electronAPI.onProcessOutput(handleOutput);
     window.electronAPI.onProcessExit(handleExit);
-  }, [isElectronApiAvailable, appendLog]);
+
+    if (window.electronAPI.onAITerminalAction) {
+      window.electronAPI.onAITerminalAction(handleAiTerminalAction);
+    }
+    if (window.electronAPI.onAITerminalResult) {
+      window.electronAPI.onAITerminalResult(handleAiTerminalResult);
+    }
+  }, [isElectronApiAvailable, appendLog, onDevPortResolved]);
 
   const start = async (proc) => {
+    if (!canUseTerminal) {
+      showMessage('Mode permissions: terminal desactive.', 3000);
+      return;
+    }
+
     if (!isElectronApiAvailable || !window.electronAPI) {
       showMessage('Electron non disponible', 3000);
       return;
@@ -73,6 +117,12 @@ const TerminalPanel = ({ currentProjectPath, isElectronApiAvailable, showMessage
       showMessage('Ouvre un dossier de projet avant de lancer une commande.', 4000);
       return;
     }
+
+    const isDevProcess = proc.id === 'dev';
+    const parsedPreferredPort = Number.parseInt(String(preferredDevPort || ''), 10);
+    const preferredPort = Number.isInteger(parsedPreferredPort) && parsedPreferredPort > 0
+      ? parsedPreferredPort
+      : 3004;
 
     setActiveProcessId(proc.id);
     setRunning(prev => ({ ...prev, [proc.id]: true }));
@@ -85,10 +135,26 @@ const TerminalPanel = ({ currentProjectPath, isElectronApiAvailable, showMessage
         args: proc.args,
         cwd: currentProjectPath,
       };
+      if (isDevProcess) {
+        payload.autoSelectPort = true;
+        payload.preferredPort = preferredPort;
+        payload.portEnvVars = ['PORT', 'VITE_PORT', 'NUXT_PORT', 'WEB_PORT'];
+      }
       const res = await window.electronAPI.startProcess(payload);
       if (!res || !res.success) {
         setRunning(prev => ({ ...prev, [proc.id]: false }));
         showMessage(res && res.error ? res.error : 'Erreur lancement processus', 4000);
+        return;
+      }
+      if (isDevProcess) {
+        const runtimePort = Number.parseInt(String(res.allocatedPort || ''), 10);
+        if (Number.isInteger(runtimePort) && runtimePort > 0) {
+          setPortsByProcess((prev) => ({ ...prev, [proc.id]: runtimePort }));
+          appendLog(proc.id, 'stdout', `[dev server port: ${runtimePort}]\n`);
+          if (typeof onDevPortResolved === 'function') {
+            onDevPortResolved(String(runtimePort));
+          }
+        }
       }
     } catch (error) {
       setRunning(prev => ({ ...prev, [proc.id]: false }));
@@ -97,10 +163,20 @@ const TerminalPanel = ({ currentProjectPath, isElectronApiAvailable, showMessage
   };
 
   const stop = async (id) => {
+    if (!canUseTerminal) return;
     if (!isElectronApiAvailable || !window.electronAPI) return;
     try {
       await window.electronAPI.stopProcess(id);
       setRunning(prev => ({ ...prev, [id]: false }));
+      setPortsByProcess((prev) => {
+        if (!Object.prototype.hasOwnProperty.call(prev, id)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      if (id === 'dev' && typeof onDevPortResolved === 'function') {
+        onDevPortResolved(null);
+      }
       appendLog(id, 'stdout', '\n[process stopped]\n');
     } catch (error) {
       showMessage(error.message || 'Erreur arret processus', 4000);
@@ -112,9 +188,12 @@ const TerminalPanel = ({ currentProjectPath, isElectronApiAvailable, showMessage
 
   const buildProblemLines = buildLog
     ? buildLog
-        .split('\n')
-        .filter((line) => /ERROR|Failed to compile|Type error/i.test(line))
+      .split('\n')
+      .filter((line) => /ERROR|Failed to compile|Type error/i.test(line))
     : [];
+  const activeDevPort = portsByProcess.dev
+    ? String(portsByProcess.dev)
+    : String(preferredDevPort || '3004');
 
   let content = null;
 
@@ -136,6 +215,7 @@ const TerminalPanel = ({ currentProjectPath, isElectronApiAvailable, showMessage
                 <button
                   onClick={() => (isRunning ? stop(proc.id) : start(proc))}
                   className={`terminal-toggle ${isRunning ? 'is-running' : ''}`}
+                  disabled={!canUseTerminal}
                 >
                   {isRunning ? 'Stop' : 'Start'}
                 </button>
@@ -143,6 +223,11 @@ const TerminalPanel = ({ currentProjectPath, isElectronApiAvailable, showMessage
             );
           })}
         </div>
+        {!canUseTerminal && (
+          <div className="terminal-log" style={{ marginBottom: '8px' }}>
+            Terminal bloque par le mode permissions actuel.
+          </div>
+        )}
         <div className="terminal-log custom-scrollbar">
           {activeLog || 'Aucun log pour le moment. Lance une commande pour voir la sortie ici.'}
         </div>
@@ -181,10 +266,17 @@ const TerminalPanel = ({ currentProjectPath, isElectronApiAvailable, showMessage
         {'Debug Console non implementee pour le moment. Utilise les logs du Terminal pour diagnostiquer les problemes.'}
       </div>
     );
+  } else if (activeView === 'ai') {
+    const aiLog = logs.ai || '';
+    content = (
+      <div className="terminal-log custom-scrollbar" style={{ color: '#00FA9A' }}>
+        {aiLog || "L'IA n'a pas encore exécuté de commande dans le terminal.\n(Note: La création de fichiers se fait silencieusement et directement via le système de fichiers pour plus de rapidité, pas avec des commandes du terminal !)"}
+      </div>
+    );
   } else if (activeView === 'ports') {
     content = (
       <div className="terminal-log custom-scrollbar">
-        {'Ports non geres ici pour l instant. Le serveur de dev utilise le port configure dans les parametres.'}
+        {`Dev server: ${activeDevPort}${running.dev ? ' (running)' : ' (stopped)'}`}
       </div>
     );
   }

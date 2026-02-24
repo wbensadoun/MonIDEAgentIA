@@ -40,6 +40,15 @@ const NODE_CATALOG = [
     { category: 'Sorties', type: 'output', label: 'Enregistrer Résultat', icon: '💾', desc: 'Sauvegarder les données' },
 ];
 
+const VALID_NODE_TYPES = new Set(['trigger', 'ai', 'action', 'logic', 'output']);
+const DEFAULT_NODE_ICONS = {
+    trigger: 'TR',
+    ai: 'AI',
+    action: 'AC',
+    logic: 'LG',
+    output: 'OUT'
+};
+
 /* ═══════════════════════════════════════════
    Nœud personnalisé
    ═══════════════════════════════════════════ */
@@ -159,11 +168,21 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
     const [catalogItems, setCatalogItems] = useState([]);
     const [catalogLoading, setCatalogLoading] = useState(false);
     const [catalogSearch, setCatalogSearch] = useState('');
+    const [aiWritePulse, setAiWritePulse] = useState(false);
+    const [highlightedWorkflowFilename, setHighlightedWorkflowFilename] = useState('');
     const [aiPrompt, setAiPrompt] = useState('');
     const [aiGenerating, setAiGenerating] = useState(false);
+    const draftSaveTimerRef = useRef(null);
+    const draftLoadedRef = useRef(false);
+    const aiWritePulseTimerRef = useRef(null);
+    const aiWriteHighlightTimerRef = useRef(null);
 
     const nodeTypes = useMemo(() => ({ custom: CustomNode }), []);
     const api = isElectronApiAvailable ? window.electronAPI : null;
+    const draftStorageKey = useMemo(() => {
+        if (!currentProjectPath) return '';
+        return `vibeIDE_workflowDraft:${currentProjectPath}`;
+    }, [currentProjectPath]);
 
     // ── Execution engine ──
     const {
@@ -202,6 +221,53 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
     }, [api, currentProjectPath]);
 
     useEffect(() => { refreshSavedList(); }, [refreshSavedList]);
+
+    useEffect(() => {
+        const handleWorkflowWrite = async (event) => {
+            const detail = event?.detail && typeof event.detail === 'object' ? event.detail : {};
+            if (detail.projectPath && currentProjectPath && detail.projectPath !== currentProjectPath) return;
+
+            if (aiWritePulseTimerRef.current) {
+                clearTimeout(aiWritePulseTimerRef.current);
+                aiWritePulseTimerRef.current = null;
+            }
+            if (aiWriteHighlightTimerRef.current) {
+                clearTimeout(aiWriteHighlightTimerRef.current);
+                aiWriteHighlightTimerRef.current = null;
+            }
+
+            setAiWritePulse(false);
+            setTimeout(() => setAiWritePulse(true), 0);
+            aiWritePulseTimerRef.current = setTimeout(() => {
+                setAiWritePulse(false);
+                aiWritePulseTimerRef.current = null;
+            }, 1300);
+
+            const filename = String(detail.filename || '').trim().toLowerCase();
+            if (filename) {
+                setHighlightedWorkflowFilename(filename);
+                aiWriteHighlightTimerRef.current = setTimeout(() => {
+                    setHighlightedWorkflowFilename('');
+                    aiWriteHighlightTimerRef.current = null;
+                }, 2200);
+            }
+
+            await refreshSavedList();
+        };
+
+        window.addEventListener('ai-visual-workflow-written', handleWorkflowWrite);
+        return () => {
+            window.removeEventListener('ai-visual-workflow-written', handleWorkflowWrite);
+            if (aiWritePulseTimerRef.current) {
+                clearTimeout(aiWritePulseTimerRef.current);
+                aiWritePulseTimerRef.current = null;
+            }
+            if (aiWriteHighlightTimerRef.current) {
+                clearTimeout(aiWriteHighlightTimerRef.current);
+                aiWriteHighlightTimerRef.current = null;
+            }
+        };
+    }, [currentProjectPath, refreshSavedList]);
 
     // ── Connexion des edges ──
     const onConnect = useCallback(
@@ -259,6 +325,7 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
     // ── Sérialiser le workflow pour sauvegarde/export ──
     const serializeWorkflow = useCallback(() => {
         return {
+            schemaVersion: 2,
             name: workflowName,
             nodes: nodes.map(n => ({
                 id: n.id,
@@ -280,35 +347,186 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
     }, [nodes, edges, workflowName]);
 
     // ── Charger un workflow dans le canvas ──
-    const loadWorkflowIntoCanvas = useCallback((wf) => {
-        if (wf.name) setWorkflowName(wf.name);
-        if (Array.isArray(wf.nodes)) {
-            const importedNodes = wf.nodes.map(n => ({
-                id: n.id,
-                type: 'custom',
-                position: n.position || { x: 100, y: 100 },
-                data: {
-                    label: n.label,
-                    icon: n.icon,
-                    nodeType: n.type,
-                    onChange: handleNodeDataChange,
-                    ...n.config,
-                },
-            }));
-            setNodes(importedNodes);
-            nodeIdCounter.current = Math.max(...wf.nodes.map(n => parseInt(n.id.replace('node_', '')) || 0), 0) + 1;
+    const parseWorkflowPayload = useCallback((rawPayload) => {
+        if (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)) {
+            return rawPayload;
         }
-        if (Array.isArray(wf.edges)) {
-            const importedEdges = wf.edges.map((e, i) => ({
-                id: `e_${i}`,
-                source: e.source,
-                target: e.target,
+        if (typeof rawPayload !== 'string') {
+            throw new Error('Format workflow invalide');
+        }
+        const cleanContent = rawPayload.replace(/```(?:json)?|```/gi, '').trim();
+        if (!cleanContent) {
+            throw new Error('Workflow vide');
+        }
+        return JSON.parse(cleanContent);
+    }, []);
+
+    const normalizeWorkflowForCanvas = useCallback((workflow) => {
+        const source = workflow && typeof workflow === 'object' ? workflow : {};
+        const sourceNodes = Array.isArray(source.nodes) ? source.nodes : [];
+        const sourceEdges = Array.isArray(source.edges) ? source.edges : [];
+
+        const takenIds = new Set();
+        const aliasByOriginalId = new Map();
+
+        let nextGeneratedId = sourceNodes.reduce((max, node) => {
+            const rawId = node && node.id !== undefined && node.id !== null ? String(node.id) : '';
+            const match = rawId.match(/^node_(\d+)$/);
+            if (!match) return max;
+            const value = Number.parseInt(match[1], 10);
+            if (!Number.isFinite(value)) return max;
+            return Math.max(max, value + 1);
+        }, 1);
+
+        const allocateNodeId = (candidate) => {
+            const trimmed = typeof candidate === 'string' ? candidate.trim() : '';
+            if (trimmed && !takenIds.has(trimmed)) {
+                takenIds.add(trimmed);
+                return trimmed;
+            }
+            let generated = `node_${nextGeneratedId++}`;
+            while (takenIds.has(generated)) {
+                generated = `node_${nextGeneratedId++}`;
+            }
+            takenIds.add(generated);
+            return generated;
+        };
+
+        const toFiniteNumber = (value, fallback) => {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : fallback;
+        };
+
+        const normalizedNodes = [];
+        sourceNodes.forEach((node, index) => {
+            if (!node || typeof node !== 'object') return;
+
+            const originalId = node.id !== undefined && node.id !== null ? String(node.id) : '';
+            const nodeId = allocateNodeId(originalId);
+            if (originalId && !aliasByOriginalId.has(originalId)) {
+                aliasByOriginalId.set(originalId, nodeId);
+            }
+
+            const fallbackPosition = {
+                x: 120 + (index % 4) * 240,
+                y: 120 + Math.floor(index / 4) * 170
+            };
+            const rawPosition = node.position && typeof node.position === 'object' ? node.position : {};
+            const nodeType = VALID_NODE_TYPES.has(node.type) ? node.type : 'action';
+            const nodeConfig = node.config && typeof node.config === 'object' ? node.config : {};
+            const label = typeof node.label === 'string' && node.label.trim()
+                ? node.label
+                : `Node ${index + 1}`;
+            const icon = typeof node.icon === 'string' && node.icon.trim()
+                ? node.icon
+                : (DEFAULT_NODE_ICONS[nodeType] || 'AC');
+
+            normalizedNodes.push({
+                id: nodeId,
+                type: 'custom',
+                position: {
+                    x: toFiniteNumber(rawPosition.x, fallbackPosition.x),
+                    y: toFiniteNumber(rawPosition.y, fallbackPosition.y)
+                },
+                data: {
+                    label,
+                    icon,
+                    nodeType,
+                    onChange: handleNodeDataChange,
+                    ...nodeConfig,
+                },
+            });
+        });
+
+        const validNodeIds = new Set(normalizedNodes.map((node) => node.id));
+        const seenEdgePairs = new Set();
+        const normalizedEdges = [];
+
+        sourceEdges.forEach((edge, index) => {
+            if (!edge || typeof edge !== 'object') return;
+
+            const rawSource = edge.source !== undefined && edge.source !== null ? String(edge.source) : '';
+            const rawTarget = edge.target !== undefined && edge.target !== null ? String(edge.target) : '';
+            const sourceId = aliasByOriginalId.get(rawSource) || rawSource;
+            const targetId = aliasByOriginalId.get(rawTarget) || rawTarget;
+
+            if (!validNodeIds.has(sourceId) || !validNodeIds.has(targetId)) return;
+
+            const pairKey = `${sourceId}->${targetId}`;
+            if (seenEdgePairs.has(pairKey)) return;
+            seenEdgePairs.add(pairKey);
+
+            normalizedEdges.push({
+                id: `e_${sourceId}_${targetId}_${index}`,
+                source: sourceId,
+                target: targetId,
                 animated: true,
                 style: { stroke: 'rgba(0,245,212,0.5)' },
-            }));
-            setEdges(importedEdges);
+            });
+        });
+
+        return {
+            name: typeof source.name === 'string' ? source.name.trim() : '',
+            nodes: normalizedNodes,
+            edges: normalizedEdges,
+            nextNodeCounter: Math.max(1, nextGeneratedId)
+        };
+    }, [handleNodeDataChange]);
+
+    const loadWorkflowIntoCanvas = useCallback((wf) => {
+        const normalized = normalizeWorkflowForCanvas(wf);
+        if (normalized.name) setWorkflowName(normalized.name);
+        setNodes(normalized.nodes);
+        setEdges(normalized.edges);
+        nodeIdCounter.current = normalized.nextNodeCounter;
+    }, [setNodes, setEdges, normalizeWorkflowForCanvas]);
+
+    // ── Restore draft on project change ──
+    useEffect(() => {
+        draftLoadedRef.current = false;
+        if (!draftStorageKey) {
+            draftLoadedRef.current = true;
+            return;
         }
-    }, [setNodes, setEdges, handleNodeDataChange]);
+        try {
+            const raw = localStorage.getItem(draftStorageKey);
+            if (!raw) {
+                draftLoadedRef.current = true;
+                return;
+            }
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.nodes) && Array.isArray(parsed.edges)) {
+                loadWorkflowIntoCanvas(parsed);
+                if (showMessage) showMessage('Brouillon workflow restaure.', 1800);
+            }
+        } catch {
+            // ignore broken draft
+        } finally {
+            draftLoadedRef.current = true;
+        }
+    }, [draftStorageKey, loadWorkflowIntoCanvas, showMessage]);
+
+    // ── Auto-save draft ──
+    useEffect(() => {
+        if (!draftStorageKey || !draftLoadedRef.current) return;
+        if (draftSaveTimerRef.current) {
+            clearTimeout(draftSaveTimerRef.current);
+        }
+        draftSaveTimerRef.current = setTimeout(() => {
+            try {
+                const payload = serializeWorkflow();
+                localStorage.setItem(draftStorageKey, JSON.stringify(payload));
+            } catch {
+                // ignore localStorage failure
+            }
+        }, 400);
+
+        return () => {
+            if (draftSaveTimerRef.current) {
+                clearTimeout(draftSaveTimerRef.current);
+            }
+        };
+    }, [draftStorageKey, serializeWorkflow]);
 
     // ── 💾 Sauvegarder le workflow ──
     const saveWorkflow = useCallback(async () => {
@@ -331,10 +549,9 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
         if (!api || !currentProjectPath) return;
         try {
             const res = await api.readFile(currentProjectPath, `.vibe-workflows/${filename}`);
-            if (res && res.success && res.content) {
+            if (res && res.success) {
                 try {
-                    const cleanContent = res.content.replace(/```(?:json)?|```/gi, '').trim();
-                    const wf = JSON.parse(cleanContent);
+                    const wf = parseWorkflowPayload(res.content);
                     loadWorkflowIntoCanvas(wf);
                     setActivePanel(null);
                     if (showMessage) showMessage(`Workflow "${wf.name}" chargé !`, 2000);
@@ -349,7 +566,7 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
             console.error('Erreur IO lecture workflow:', e);
             if (showMessage) showMessage('Erreur de lecture du fichier', 3000);
         }
-    }, [api, currentProjectPath, loadWorkflowIntoCanvas, showMessage]);
+    }, [api, currentProjectPath, loadWorkflowIntoCanvas, parseWorkflowPayload, showMessage]);
 
     // ── 🗑 Supprimer un workflow sauvegardé ──
     const deleteSavedWorkflow = useCallback(async (filename) => {
@@ -383,7 +600,7 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
             const reader = new FileReader();
             reader.onload = (ev) => {
                 try {
-                    const wf = JSON.parse(ev.target.result);
+                    const wf = parseWorkflowPayload(ev?.target?.result);
                     loadWorkflowIntoCanvas(wf);
                     if (showMessage) showMessage('Workflow importé !', 2000);
                 } catch (err) {
@@ -393,14 +610,14 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
             reader.readAsText(file);
         };
         input.click();
-    }, [loadWorkflowIntoCanvas, showMessage]);
+    }, [loadWorkflowIntoCanvas, parseWorkflowPayload, showMessage]);
 
     // ── 📦 Charger le catalogue n8n ──
     const fetchCatalog = useCallback(async () => {
         if (!api) return;
         setCatalogLoading(true);
         try {
-            const result = await api.fetchN8nCatalog(1, 100);
+            const result = await api.fetchN8nCatalog(1, 5000);
             if (result.success) {
                 setCatalogItems(result.items || []);
             } else {
@@ -506,9 +723,9 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
 
     // ── Filtrer le catalogue n8n ──
     const filteredCatalog = useMemo(() => {
-        if (!catalogSearch) return catalogItems.slice(0, 50);
+        if (!catalogSearch) return catalogItems;
         const q = catalogSearch.toLowerCase();
-        return catalogItems.filter(it => it.name.toLowerCase().includes(q)).slice(0, 50);
+        return catalogItems.filter(it => it.name.toLowerCase().includes(q));
     }, [catalogItems, catalogSearch]);
 
     // ── Toggle panel ──
@@ -586,7 +803,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                 jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
             }
 
-            const wf = JSON.parse(jsonStr);
+            const wf = parseWorkflowPayload(jsonStr);
             loadWorkflowIntoCanvas(wf);
             setActivePanel(null);
             setAiPrompt('');
@@ -596,10 +813,10 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
             if (showMessage) showMessage('Erreur de g\u00e9n\u00e9ration IA: ' + err.message, 3000);
         }
         setAiGenerating(false);
-    }, [aiPrompt, aiGenerating, api, showMessage, loadWorkflowIntoCanvas]);
+    }, [aiPrompt, aiGenerating, api, showMessage, loadWorkflowIntoCanvas, parseWorkflowPayload]);
 
     return (
-        <div className="vw-editor">
+        <div className={`vw-editor${aiWritePulse ? ' vw-editor-ai-write' : ''}`}>
             {/* ── Toolbar ── */}
             <div className="vw-toolbar">
                 <div className="vw-toolbar-left">
@@ -711,9 +928,9 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                         {Object.entries(catalogByCategory).map(([category, items]) => (
                             <div key={category}>
                                 <div className="vw-add-category">{category}</div>
-                                {items.map((item, idx) => (
+                                {items.map((item) => (
                                     <button
-                                        key={idx}
+                                        key={`${category}-${item.type}-${item.label}`}
                                         className="vw-add-item"
                                         onClick={() => addNode(item)}
                                     >
@@ -740,7 +957,10 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                             <div className="vw-catalog-empty">Aucun workflow sauvegardé.<br />Utilisez 💾 Sauver pour enregistrer.</div>
                         ) : (
                             savedWorkflows.map((wf, idx) => (
-                                <div key={idx} className="vw-saved-item">
+                                <div
+                                    key={wf.filename || `${wf.name || 'workflow'}-${idx}`}
+                                    className={`vw-saved-item${String(wf.filename || '').toLowerCase() === highlightedWorkflowFilename ? ' is-ai-updated' : ''}`}
+                                >
                                     <button
                                         className="vw-add-item"
                                         onClick={() => loadSavedWorkflow(wf.filename)}
@@ -791,7 +1011,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                                 <div className="vw-catalog-count">{filteredCatalog.length} workflows</div>
                                 {filteredCatalog.map((item, idx) => (
                                     <button
-                                        key={idx}
+                                        key={item.downloadUrl || `${item.name || 'workflow'}-${idx}`}
                                         className="vw-add-item"
                                         onClick={() => importN8nWorkflow(item)}
                                     >
@@ -856,7 +1076,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                     </div>
                     <div className="vw-log-body">
                         {executionLog.map((entry, idx) => (
-                            <div key={idx} className={`vw-log-entry vw-log-${entry.type}`}>
+                            <div key={`${entry.timestamp || 't'}-${entry.type || 'info'}-${idx}`} className={`vw-log-entry vw-log-${entry.type}`}>
                                 <span className="vw-log-time">{entry.timestamp}</span>
                                 <span className="vw-log-msg">{entry.message}</span>
                             </div>
