@@ -17,6 +17,7 @@ const LivePreview = ({
   const [isReloading, setIsReloading] = useState(false);
   const iframeRef = useRef(null);
   const reloadTimeoutRef = useRef(null);
+  const previousStatusRef = useRef(status);
 
   const isRunning = status === 'running';
   const isStopped = status === 'stopped';
@@ -50,7 +51,11 @@ const LivePreview = ({
 
   // Auto-reload quand le status passe à running
   useEffect(() => {
-    if (isRunning && (isStopped || iframeState.error)) {
+    const previousStatus = previousStatusRef.current;
+    const justStarted = previousStatus !== 'running' && status === 'running';
+    previousStatusRef.current = status;
+
+    if (justStarted || (isRunning && iframeState.error)) {
       // Le serveur vient de démarrer, reload automatique
       reloadTimeoutRef.current = setTimeout(() => {
         handleManualRefresh();
@@ -62,7 +67,7 @@ const LivePreview = ({
         clearTimeout(reloadTimeoutRef.current);
       }
     };
-  }, [isRunning, isStopped, iframeState.error, handleManualRefresh]);
+  }, [status, isRunning, iframeState.error, handleManualRefresh]);
 
   // Gestion du chargement de l'iframe
   const handleIframeLoad = useCallback(() => {

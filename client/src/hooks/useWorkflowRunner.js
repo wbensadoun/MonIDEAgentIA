@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
+import { buildWorkflowAIInvocation, evaluateWorkflowCondition } from '../utils/workflowRuntime';
 
 /**
  * useWorkflowRunner – moteur d'exécution de flux visuels
@@ -81,6 +82,17 @@ const useWorkflowRunner = ({ isElectronApiAvailable, currentProjectPath, showMes
                 return new Promise((resolve) => {
                     const processId = `wf_${node.id}_${Date.now()}`;
                     let output = '';
+                    let settled = false;
+                    let timeoutId = null;
+
+                    const finish = (message, offOutput, offExit) => {
+                        if (settled) return;
+                        settled = true;
+                        if (timeoutId) clearTimeout(timeoutId);
+                        if (typeof offOutput === 'function') offOutput();
+                        if (typeof offExit === 'function') offExit();
+                        resolve(message);
+                    };
 
                     const outputHandler = (ev) => {
                         if (ev.id === processId) {
@@ -89,39 +101,28 @@ const useWorkflowRunner = ({ isElectronApiAvailable, currentProjectPath, showMes
                         }
                     };
 
-                    const exitHandler = (ev) => {
-                        if (ev.id === processId) {
-                            api.onProcessOutput(null); // cleanup will be handled by component unmount
-                            if (ev.code === 0) {
-                                resolve(output.trim() || `Commande terminée (code ${ev.code})`);
-                            } else {
-                                resolve(`Erreur (code ${ev.code}): ${output.trim()}`);
-                            }
+                    const offOutput = api.onProcessOutput(outputHandler);
+                    const offExit = api.onProcessExit((ev) => {
+                        if (ev.id !== processId) return;
+                        if (ev.code === 0) {
+                            finish(output.trim() || `Commande terminee (code ${ev.code})`, offOutput, offExit);
+                        } else {
+                            finish(`Erreur (code ${ev.code}): ${output.trim()}`, offOutput, offExit);
                         }
-                    };
-
-                    // Écouter la sortie
-                    api.onProcessOutput(outputHandler);
-                    api.onProcessExit(exitHandler);
-
-                    // Décomposer la commande
-                    const parts = command.split(' ');
-                    const cmd = parts[0];
-                    const args = parts.slice(1);
+                    });
 
                     api.startProcess({
                         id: processId,
-                        command: cmd,
-                        args: args,
+                        command,
+                        args: [],
                         cwd: currentProjectPath,
                     }).catch(err => {
-                        resolve(`Erreur: ${err.message}`);
+                        finish(`Erreur: ${err.message}`, offOutput, offExit);
                     });
 
-                    // Timeout de sécurité (30s)
-                    setTimeout(() => {
+                    timeoutId = setTimeout(() => {
                         api.stopProcess(processId).catch(() => { });
-                        resolve(output.trim() || 'Timeout (30s)');
+                        finish(output.trim() || 'Timeout (30s)', offOutput, offExit);
                     }, 30000);
                 });
             }
@@ -133,13 +134,18 @@ const useWorkflowRunner = ({ isElectronApiAvailable, currentProjectPath, showMes
                 if (!api) return `[Simulation IA] Réponse au prompt: "${prompt.substring(0, 50)}..."`;
 
                 try {
-                    const history = [{ role: 'user', content: prompt }];
-                    const result = await api.getGeminiCompletion(
-                        history,
-                        '', // no current code
-                        [], // no project files
-                        { model: data.model || 'gemini' }
-                    );
+                    const request = buildWorkflowAIInvocation({
+                        provider: data.model,
+                        prompt,
+                        projectPath: currentProjectPath
+                    });
+
+                    const method = api?.[request.methodName];
+                    if (typeof method !== 'function') {
+                        return `Provider IA indisponible: ${request.provider}`;
+                    }
+
+                    const result = await method(...request.args);
                     return result?.response || result?.text || 'Réponse IA reçue';
                 } catch (err) {
                     return `Erreur IA: ${err.message}`;
@@ -150,11 +156,12 @@ const useWorkflowRunner = ({ isElectronApiAvailable, currentProjectPath, showMes
                 const condition = interpolate(data.condition, prevResult, allResults);
                 if (!condition) return 'true';
 
-                // Évaluation sûre de la condition
                 try {
-                    const result = prevResult;
-                    // eslint-disable-next-line no-eval
-                    const evaluated = new Function('result', 'prev', `return ${condition}`)(result, prevResult);
+                    const evaluated = evaluateWorkflowCondition(condition, {
+                        result: prevResult,
+                        prev: prevResult,
+                        results: allResults
+                    });
                     return String(evaluated);
                 } catch (e) {
                     return `Erreur condition: ${e.message}`;

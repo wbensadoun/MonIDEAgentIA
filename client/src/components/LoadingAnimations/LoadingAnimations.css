@@ -15,7 +15,7 @@
   gap: 0.75rem;
   padding: 0.5rem;
   border-radius: 0.5rem;
-  transition: all 0.3s ease;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
 }
 
 .step-completed {
@@ -202,7 +202,7 @@
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .error-btn.retry {
@@ -263,7 +263,7 @@
   flex: 1;
   background: rgba(107, 114, 128, 0.3);
   border-radius: 0.125rem;
-  transition: all 0.3s ease;
+  transition: background-color 0.3s ease, transform 0.3s ease, opacity 0.3s ease;
 }
 
 .voting-bar.voted {
@@ -479,96 +479,7 @@
   background: #60a5fa;
 }
 
-/* Code Typewriter */
-.code-typewriter {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(0, 245, 212, 0.15);
-  border-radius: 10px;
-  padding: 10px 14px;
-  margin: 6px 12px;
-  font-family: 'Fira Code', 'Cascadia Code', monospace;
-  font-size: 11px;
-  overflow: hidden;
-  position: relative;
-}
-
-.code-typewriter-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.code-typewriter-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.code-typewriter-dot:nth-child(1) {
-  background: #ff5f57;
-}
-
-.code-typewriter-dot:nth-child(2) {
-  background: #febc2e;
-}
-
-.code-typewriter-dot:nth-child(3) {
-  background: #28c840;
-}
-
-.code-typewriter-title {
-  font-size: 10px;
-  color: #7f91aa;
-  margin-left: 4px;
-}
-
-.code-line {
-  color: #a8e6cf;
-  line-height: 1.6;
-  white-space: pre;
-  display: flex;
-  align-items: center;
-}
-
-.code-line-number {
-  color: #4a5568;
-  margin-right: 10px;
-  min-width: 18px;
-  text-align: right;
-  user-select: none;
-}
-
-.code-line-content {
-  color: #c8e6c9;
-}
-
-.code-line-current .code-line-content::after {
-  content: '█';
-  color: #00f5d4;
-  animation: cursor-blink 1s step-end infinite;
-  margin-left: 1px;
-}
-
-.code-line-keyword {
-  color: #c792ea;
-}
-
-.code-line-string {
-  color: #c3e88d;
-}
-
-.code-line-comment {
-  color: #546e7a;
-  font-style: italic;
-}
-
-.code-line-func {
-  color: #82aaff;
-}
-
+/* Code typewriter styles are defined once below to avoid collisions */
 /* Keyframe animations */
 @keyframes dot-bounce {
 
@@ -608,18 +519,6 @@
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes cursor-blink {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0;
   }
 }
 

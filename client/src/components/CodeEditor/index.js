@@ -1,6 +1,13 @@
 import React, { useMemo, useRef, useEffect, useCallback, useState } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import './CodeEditor.css';
+import {
+  extractEditorSymbols,
+  filterEditorSymbols,
+  findActiveEditorSymbol,
+  getEditorSymbolKindIcon,
+  getEditorSymbolKindLabel
+} from '../../utils/editorSymbols';
 
 const CodeEditor = ({
   openFiles = [],
@@ -11,6 +18,10 @@ const CodeEditor = ({
   onUndo,
   onAcceptDiff, // Nouvelle prop pour accepter les changements
   isDiffMode = false, // Nouvelle prop pour forcer le mode Diff
+  diffSource = null,
+  diffOriginalLabel = '',
+  diffModifiedLabel = '',
+  onCloseDiff,
   onSelectFile,
   onCloseFile,
   revealRequest,
@@ -21,11 +32,19 @@ const CodeEditor = ({
   const ghostProviderRef = useRef(null);
   const ghostTimeoutRef = useRef(null);
   const ghostAbortControllerRef = useRef(null);
+  const cursorListenerRef = useRef(null);
 
   // States pour Inline AI (Ctrl+K)
   const [inlinePrompt, setInlinePrompt] = useState({ show: false, text: '', top: 0, left: 0, range: null, selectionText: '' });
   const [isInlineThinking, setIsInlineThinking] = useState(false);
   const inlineInputRef = useRef(null);
+  const symbolInputRef = useRef(null);
+  const [showOutline, setShowOutline] = useState(true);
+  const [showSymbolPicker, setShowSymbolPicker] = useState(false);
+  const [symbolQuery, setSymbolQuery] = useState('');
+  const [symbolIndex, setSymbolIndex] = useState(0);
+  const [cursorLine, setCursorLine] = useState(1);
+  const [diffRenderSideBySide, setDiffRenderSideBySide] = useState(true);
 
   // Auto-focus de l'input inline quand il s'affiche
   useEffect(() => {
@@ -33,6 +52,12 @@ const CodeEditor = ({
       inlineInputRef.current.focus();
     }
   }, [inlinePrompt.show]);
+
+  useEffect(() => {
+    if (showSymbolPicker && symbolInputRef.current) {
+      symbolInputRef.current.focus();
+    }
+  }, [showSymbolPicker]);
 
   const handleInlineSubmit = async (e) => {
     if (e.key === 'Escape') {
@@ -96,6 +121,53 @@ const CodeEditor = ({
     return 'plaintext';
   }, [activeFile]);
 
+  const editorSymbols = useMemo(() => extractEditorSymbols(activeFile, code), [activeFile, code]);
+  const filteredEditorSymbols = useMemo(() => filterEditorSymbols(editorSymbols, symbolQuery), [editorSymbols, symbolQuery]);
+  const activeEditorSymbol = useMemo(() => findActiveEditorSymbol(editorSymbols, cursorLine), [editorSymbols, cursorLine]);
+  const lineCount = useMemo(() => String(code || '').split('\n').length, [code]);
+  const diffHeaderLabel = useMemo(() => {
+    if (!isDiffMode) return '';
+    if (diffSource === 'git') {
+      const base = String(diffOriginalLabel || 'before').trim();
+      const target = String(diffModifiedLabel || 'after').trim();
+      return `${base} -> ${target}`;
+    }
+    return 'Diff IA';
+  }, [diffModifiedLabel, diffOriginalLabel, diffSource, isDiffMode]);
+
+  useEffect(() => {
+    if (symbolIndex >= filteredEditorSymbols.length) {
+      setSymbolIndex(0);
+    }
+  }, [filteredEditorSymbols, symbolIndex]);
+
+  useEffect(() => {
+    setSymbolQuery('');
+    setSymbolIndex(0);
+    setShowSymbolPicker(false);
+  }, [activeFile]);
+
+  useEffect(() => {
+    if (isDiffMode) {
+      setShowSymbolPicker(false);
+    }
+  }, [isDiffMode]);
+
+  const revealEditorPosition = useCallback((line, column = 1) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const safeLine = Math.max(1, Number(line) || 1);
+    const safeColumn = Math.max(1, Number(column) || 1);
+    try {
+      editor.revealPositionInCenter({ lineNumber: safeLine, column: safeColumn });
+      editor.setPosition({ lineNumber: safeLine, column: safeColumn });
+      editor.focus();
+      setCursorLine(safeLine);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const handleMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
@@ -140,6 +212,10 @@ const CodeEditor = ({
 
     try {
       editor.focus();
+      const initialPosition = editor.getPosition();
+      if (initialPosition?.lineNumber) {
+        setCursorLine(initialPosition.lineNumber);
+      }
     } catch {
       // ignore
     }
@@ -169,6 +245,12 @@ const CodeEditor = ({
         range: selection,
         selectionText: text
       });
+    });
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyO, () => {
+      setShowSymbolPicker(true);
+      setSymbolQuery('');
+      setSymbolIndex(0);
     });
 
     // --- Enregistrement du Ghost Text (Autocomplétion IA) ---
@@ -225,9 +307,19 @@ const CodeEditor = ({
       freeInlineCompletions: () => { }
     });
 
+    if (cursorListenerRef.current) {
+      cursorListenerRef.current.dispose();
+      cursorListenerRef.current = null;
+    }
+
+    cursorListenerRef.current = editor.onDidChangeCursorPosition((event) => {
+      const nextLine = Number(event?.position?.lineNumber || 1);
+      setCursorLine(nextLine);
+    });
+
   }, []);
 
-  const handleEditorWillUnmount = useCallback((editor, monaco) => {
+  const handleEditorWillUnmount = useCallback((editor, _monaco) => {
     try {
       // Stop ghost text provider on unmount if it exists
       if (ghostProviderRef.current) {
@@ -241,6 +333,10 @@ const CodeEditor = ({
       if (ghostTimeoutRef.current) {
         clearTimeout(ghostTimeoutRef.current);
         ghostTimeoutRef.current = null;
+      }
+      if (cursorListenerRef.current) {
+        cursorListenerRef.current.dispose();
+        cursorListenerRef.current = null;
       }
 
       // Explicitly dispose of models to avoid the "TextModel got disposed before DiffEditorWidget model got reset" error
@@ -266,23 +362,40 @@ const CodeEditor = ({
   }, []);
 
   useEffect(() => {
+    return () => {
+      handleEditorWillUnmount(editorRef.current, monacoRef.current);
+    };
+  }, [handleEditorWillUnmount]);
+
+  useEffect(() => {
     if (!revealRequest) return;
     if (!activeFile) return;
     if (String(revealRequest.file || '') !== String(activeFile)) return;
+    revealEditorPosition(revealRequest.line, revealRequest.column);
+  }, [revealRequest, activeFile, revealEditorPosition]);
 
-    const editor = editorRef.current;
-    if (!editor) return;
-
-    const line = Math.max(1, Number(revealRequest.line) || 1);
-    const column = Math.max(1, Number(revealRequest.column) || 1);
-    try {
-      editor.revealPositionInCenter({ lineNumber: line, column });
-      editor.setPosition({ lineNumber: line, column });
-      editor.focus();
-    } catch {
-      // ignore
+  const handleSymbolKeyDown = (event) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (!filteredEditorSymbols.length) return;
+      setSymbolIndex((prev) => Math.min(prev + 1, filteredEditorSymbols.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!filteredEditorSymbols.length) return;
+      setSymbolIndex((prev) => Math.max(prev - 1, 0));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const symbol = filteredEditorSymbols[symbolIndex] || filteredEditorSymbols[0];
+      if (!symbol) return;
+      revealEditorPosition(symbol.line, symbol.column);
+      setShowSymbolPicker(false);
+      setSymbolQuery('');
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setShowSymbolPicker(false);
+      setSymbolQuery('');
     }
-  }, [revealRequest, activeFile]);
+  };
 
   return (
     <div className="code-editor-root">
@@ -323,10 +436,68 @@ const CodeEditor = ({
         <div className="code-editor-header">
           <span className="code-editor-label">Éditeur</span>
           <span className="code-editor-file">{activeLabel}</span>
+          <div className="code-editor-meta">
+            <span className="code-editor-chip">{language}</span>
+            <span className="code-editor-chip">{lineCount} lignes</span>
+            {diffHeaderLabel && (
+              <span className={`code-editor-chip ${diffSource === 'git' ? 'is-contrast' : 'is-accent'}`}>
+                {diffHeaderLabel}
+              </span>
+            )}
+            {activeEditorSymbol && (
+              <span className="code-editor-chip is-accent">
+                {getEditorSymbolKindIcon(activeEditorSymbol.kind)} {activeEditorSymbol.symbol}
+              </span>
+            )}
+          </div>
 
           {/* Actions Diff / IA */}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-            {isDiffMode && previousCode && (
+          <div className="code-editor-actions">
+            {!isDiffMode && activeFile && editorSymbols.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowOutline((prev) => !prev)}
+                  className={`code-editor-ghost-btn ${showOutline ? 'is-active' : ''}`}
+                  title="Afficher l'outline"
+                >
+                  Outline
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSymbolPicker(true);
+                    setSymbolQuery('');
+                    setSymbolIndex(0);
+                  }}
+                  className="code-editor-ghost-btn"
+                  title="Symboles du fichier (Ctrl+Shift+O)"
+                >
+                  Ctrl+Shift+O
+                </button>
+              </>
+            )}
+            {isDiffMode && (
+              <button
+                type="button"
+                onClick={() => setDiffRenderSideBySide((prev) => !prev)}
+                className={`code-editor-ghost-btn ${diffRenderSideBySide ? 'is-active' : ''}`}
+                title="Basculer l'affichage du diff"
+              >
+                {diffRenderSideBySide ? 'Diff cote a cote' : 'Diff inline'}
+              </button>
+            )}
+            {diffSource === 'git' && (
+              <button
+                type="button"
+                onClick={onCloseDiff}
+                className="code-editor-ghost-btn"
+                title="Fermer le diff Git"
+              >
+                Fermer le diff
+              </button>
+            )}
+            {diffSource !== 'git' && isDiffMode && previousCode && (
               <>
                 <button
                   onClick={onAcceptDiff}
@@ -354,6 +525,34 @@ const CodeEditor = ({
       </div>
 
       <div className="code-editor-body">
+        {!isDiffMode && showOutline && activeFile && editorSymbols.length > 0 && (
+          <aside className="editor-outline">
+            <div className="editor-outline-header">
+              <span className="editor-outline-title">Outline</span>
+              <span className="editor-outline-count">{editorSymbols.length}</span>
+            </div>
+            <div className="editor-outline-list custom-scrollbar">
+              {editorSymbols.map((symbol) => {
+                const isActiveSymbol = activeEditorSymbol?.id === symbol.id;
+                return (
+                  <button
+                    key={symbol.id}
+                    type="button"
+                    className={`editor-outline-item ${isActiveSymbol ? 'is-active' : ''}`}
+                    onClick={() => revealEditorPosition(symbol.line, symbol.column)}
+                    title={`${symbol.symbol} (${getEditorSymbolKindLabel(symbol.kind)})`}
+                  >
+                    <span className="editor-outline-icon">{getEditorSymbolKindIcon(symbol.kind)}</span>
+                    <span className="editor-outline-copy">
+                      <span className="editor-outline-name">{symbol.symbol}</span>
+                      <span className="editor-outline-meta">{getEditorSymbolKindLabel(symbol.kind)} · L{symbol.line}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+        )}
         <div className="monaco-wrap">
           {isDiffMode && previousCode ? (
             <DiffEditor
@@ -368,7 +567,7 @@ const CodeEditor = ({
                 fontFamily: 'var(--font-code)',
                 fontSize: 14,
                 minimap: { enabled: false },
-                renderSideBySide: true,
+                renderSideBySide: diffRenderSideBySide,
                 ignoreTrimWhitespace: false,
                 readOnly: true // On force la lecture seule dans le DiffViewer pour l'instant
               }}
@@ -406,6 +605,48 @@ const CodeEditor = ({
           )}
         </div>
       </div>
+
+      {showSymbolPicker && (
+        <div className="editor-symbol-overlay" onClick={() => setShowSymbolPicker(false)}>
+          <div className="editor-symbol-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="editor-symbol-header">
+              <span className="editor-symbol-title">Symboles du fichier</span>
+              <span className="editor-symbol-shortcut">Ctrl+Shift+O</span>
+            </div>
+            <input
+              ref={symbolInputRef}
+              className="editor-symbol-input"
+              value={symbolQuery}
+              onChange={(event) => setSymbolQuery(event.target.value)}
+              onKeyDown={handleSymbolKeyDown}
+              placeholder="Rechercher un symbole..."
+            />
+            <div className="editor-symbol-list custom-scrollbar">
+              {filteredEditorSymbols.length === 0 && (
+                <div className="editor-symbol-empty">Aucun symbole</div>
+              )}
+              {filteredEditorSymbols.map((symbol, index) => (
+                <button
+                  key={symbol.id}
+                  type="button"
+                  className={`editor-symbol-item ${index === symbolIndex ? 'is-active' : ''}`}
+                  onClick={() => {
+                    revealEditorPosition(symbol.line, symbol.column);
+                    setShowSymbolPicker(false);
+                    setSymbolQuery('');
+                  }}
+                >
+                  <span className="editor-symbol-kind">{getEditorSymbolKindIcon(symbol.kind)}</span>
+                  <span className="editor-symbol-copy">
+                    <span className="editor-symbol-name">{symbol.symbol}</span>
+                    <span className="editor-symbol-meta">{getEditorSymbolKindLabel(symbol.kind)} · Ligne {symbol.line}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {inlinePrompt.show && (
         <div

@@ -7,9 +7,58 @@ const fsSync = require('fs');
 const readline = require('readline');
 const { spawn } = require('child_process');
 const net = require('net');
-const isDev = require('electron-is-dev');
 const axios = require('axios');
 const logger = require('./logger');
+const { registerGitHandlers } = require('./electron/ipc/gitHandlers');
+const { registerWorkflowHandlers } = require('./electron/ipc/workflowHandlers');
+const { sanitizeVisualWorkflowPayload } = require('./electron/workflows/visualWorkflowSchema');
+
+const isDev =
+  process.env.NODE_ENV === 'development' ||
+  process.env.ELECTRON_IS_DEV === '1' ||
+  process.defaultApp === true;
+
+const installStdioBrokenPipeGuards = () => {
+  const guard = (err) => {
+    if (!err) return;
+    if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') {
+      return;
+    }
+    try {
+      const message = `[Main] stdio stream error: ${err.message || String(err)}\n`;
+      fsSync.writeSync(2, message);
+    } catch {
+      // Ignore: stderr might not be available.
+    }
+  };
+  try {
+    if (process.stdout && typeof process.stdout.on === 'function') {
+      process.stdout.on('error', guard);
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    if (process.stderr && typeof process.stderr.on === 'function') {
+      process.stderr.on('error', guard);
+    }
+  } catch {
+    // ignore
+  }
+};
+
+const safeConsoleLog = (...args) => {
+  try {
+    console.log(...args);
+  } catch (error) {
+    if (error && (error.code === 'EPIPE' || error.code === 'ERR_STREAM_DESTROYED')) {
+      return;
+    }
+    throw error;
+  }
+};
+
+installStdioBrokenPipeGuards();
 
 let mainWindow;
 const processes = {};
@@ -93,10 +142,6 @@ const AGENT_BLOCKED_EXTENSIONS = new Set([
   '.exe', '.dll', '.so', '.dylib', '.bin', '.iso', '.jar',
   '.woff', '.woff2', '.ttf', '.otf', '.eot'
 ]);
-const VISUAL_WORKFLOW_SCHEMA_VERSION = 2;
-const VISUAL_WORKFLOW_MAX_NODES = 250;
-const VISUAL_WORKFLOW_MAX_EDGES = 800;
-const VISUAL_WORKFLOW_ALLOWED_NODE_TYPES = new Set(['trigger', 'ai', 'action', 'logic', 'output']);
 const AGENT_MAX_FILE_BYTES = 2 * 1024 * 1024;
 const AGENT_MAX_LINES_PER_CALL = 1000;
 const AGENT_MAX_TOOL_CALLS = 20;
@@ -403,6 +448,10 @@ const N8N_CATALOG_REPO_OWNER = 'Danitilahun';
 const N8N_CATALOG_REPO_NAME = 'n8n-workflow-templates';
 const N8N_CATALOG_WORKFLOWS_DIR = 'workflows/';
 const N8N_CATALOG_BRANCH_CANDIDATES = ['main', 'master'];
+const N8N_CATALOG_ALLOWED_RAW_HOST = 'raw.githubusercontent.com';
+const N8N_CATALOG_IMMUTABLE_REF_REGEX = /^[a-f0-9]{40}$/i;
+const N8N_CATALOG_MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024;
+const N8N_IMPORT_MAX_NODES = 500;
 let n8nCatalogPromptCache = {
   fetchedAt: 0,
   items: [],
@@ -411,7 +460,80 @@ let n8nCatalogPromptCache = {
   truncated: false
 };
 
-const toN8nCatalogItem = (entryPath, size = 0, branch = 'main') => {
+const sanitizeN8nImportFilename = (rawName, fallbackName = 'imported_n8n_workflow') => {
+  const candidate = String(rawName || '').trim() || fallbackName;
+  const baseName = path.basename(candidate);
+  const withoutExt = baseName.replace(/\.json$/i, '');
+  const cleaned = withoutExt
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[_\.-]+|[_\.-]+$/g, '')
+    .slice(0, 120);
+  const safe = cleaned || fallbackName;
+  return `${safe}.json`;
+};
+
+const isTrustedN8nDownloadUrl = (rawUrl) => {
+  try {
+    const parsed = new URL(String(rawUrl || '').trim());
+    if (parsed.protocol !== 'https:') return false;
+    if (parsed.hostname.toLowerCase() !== N8N_CATALOG_ALLOWED_RAW_HOST) return false;
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    if (parts.length < 5) return false;
+    if (parts[0].toLowerCase() !== N8N_CATALOG_REPO_OWNER.toLowerCase()) return false;
+    if (parts[1].toLowerCase() !== N8N_CATALOG_REPO_NAME.toLowerCase()) return false;
+    const immutableRef = parts[2];
+    if (!N8N_CATALOG_IMMUTABLE_REF_REGEX.test(immutableRef)) return false;
+    const relPath = parts.slice(3).join('/');
+    if (!relPath.toLowerCase().startsWith(N8N_CATALOG_WORKFLOWS_DIR)) return false;
+    if (!relPath.toLowerCase().endsWith('.json')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const parseN8nWorkflowPayload = (rawData) => {
+  if (typeof rawData === 'string') {
+    try {
+      return JSON.parse(rawData);
+    } catch {
+      throw new Error('Le fichier telecharge n est pas un JSON valide.');
+    }
+  }
+  return rawData;
+};
+
+const isValidN8nWorkflowPayload = (payload) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+  if (!Array.isArray(payload.nodes)) return false;
+  if (payload.nodes.length === 0 || payload.nodes.length > N8N_IMPORT_MAX_NODES) return false;
+  if (payload.connections !== undefined && (payload.connections === null || typeof payload.connections !== 'object' || Array.isArray(payload.connections))) {
+    return false;
+  }
+  return payload.nodes.every((node) => node && typeof node === 'object' && typeof node.type === 'string');
+};
+
+const fetchTrustedN8nWorkflow = async (downloadUrl, timeoutMs = 15000) => {
+  if (!isTrustedN8nDownloadUrl(downloadUrl)) {
+    throw new Error('URL non autorisee. Utilisez une URL provenant du catalogue n8n configure.');
+  }
+
+  const response = await axios.get(downloadUrl, {
+    timeout: timeoutMs,
+    responseType: 'text',
+    maxContentLength: N8N_CATALOG_MAX_DOWNLOAD_BYTES,
+    maxBodyLength: N8N_CATALOG_MAX_DOWNLOAD_BYTES,
+    transformResponse: [(data) => data]
+  });
+  const payload = parseN8nWorkflowPayload(response.data);
+  if (!isValidN8nWorkflowPayload(payload)) {
+    throw new Error('Le fichier telecharge ne semble pas etre un workflow n8n valide.');
+  }
+  return payload;
+};
+
+const toN8nCatalogItem = (entryPath, size = 0, ref = 'main') => {
   const normalizedPath = String(entryPath || '').replace(/\\/g, '/');
   const filename = path.posix.basename(normalizedPath);
   const rawName = filename.replace(/\.json$/i, '');
@@ -420,10 +542,26 @@ const toN8nCatalogItem = (entryPath, size = 0, branch = 'main') => {
     name,
     filename,
     repoPath: normalizedPath,
-    downloadUrl: `https://raw.githubusercontent.com/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/${branch}/${normalizedPath}`,
+    downloadUrl: `https://raw.githubusercontent.com/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/${ref}/${normalizedPath}`,
     size: Number(size) || 0
   };
 };
+
+async function fetchN8nBranchCommitSha(branch, timeoutMs = 12000) {
+  const url = `https://api.github.com/repos/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/commits/${branch}`;
+  const response = await axios.get(url, {
+    headers: {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'MonIDEAgentIA'
+    },
+    timeout: timeoutMs
+  });
+  const sha = String(response.data?.sha || '').trim();
+  if (!N8N_CATALOG_IMMUTABLE_REF_REGEX.test(sha)) {
+    throw new Error(`SHA commit invalide pour la branche ${branch}`);
+  }
+  return sha;
+}
 
 const sortN8nCatalogItems = (items) => {
   return Array.isArray(items)
@@ -436,7 +574,9 @@ async function fetchN8nCatalogFromGitTree(timeoutMs = 12000) {
   let lastError = null;
   for (const branch of N8N_CATALOG_BRANCH_CANDIDATES) {
     try {
-      const url = `https://api.github.com/repos/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/git/trees/${branch}?recursive=1`;
+      // Pin catalog entries to an immutable commit SHA to reduce supply-chain drift.
+      const commitSha = await fetchN8nBranchCommitSha(branch, timeoutMs);
+      const url = `https://api.github.com/repos/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/git/trees/${commitSha}?recursive=1`;
       const response = await axios.get(url, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
@@ -454,12 +594,12 @@ async function fetchN8nCatalogFromGitTree(timeoutMs = 12000) {
           typeof entry.path === 'string' &&
           entry.path.toLowerCase().startsWith(N8N_CATALOG_WORKFLOWS_DIR) &&
           entry.path.toLowerCase().endsWith('.json'))
-        .map((entry) => toN8nCatalogItem(entry.path, entry.size, branch));
+        .map((entry) => toN8nCatalogItem(entry.path, entry.size, commitSha));
 
       if (items.length > 0) {
         return {
           items: sortN8nCatalogItems(items),
-          source: `git-tree:${branch}`,
+          source: `git-tree:${branch}@${commitSha.slice(0, 12)}`,
           truncated
         };
       }
@@ -471,32 +611,41 @@ async function fetchN8nCatalogFromGitTree(timeoutMs = 12000) {
 }
 
 async function fetchN8nCatalogFromContents(timeoutMs = 12000) {
-  const url = `https://api.github.com/repos/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/contents/workflows`;
-  const response = await axios.get(url, {
-    headers: {
-      'Accept': 'application/vnd.github.v3+json',
-      'User-Agent': 'MonIDEAgentIA'
-    },
-    timeout: timeoutMs
-  });
+  let lastError = null;
+  for (const branch of N8N_CATALOG_BRANCH_CANDIDATES) {
+    try {
+      const commitSha = await fetchN8nBranchCommitSha(branch, timeoutMs);
+      const url = `https://api.github.com/repos/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/contents/workflows?ref=${commitSha}`;
+      const response = await axios.get(url, {
+        headers: {
+          Accept: 'application/vnd.github.v3+json',
+          'User-Agent': 'MonIDEAgentIA'
+        },
+        timeout: timeoutMs
+      });
 
-  const items = Array.isArray(response.data)
-    ? response.data
-      .filter((entry) => entry && typeof entry.name === 'string' && String(entry.name).toLowerCase().endsWith('.json'))
-      .map((entry) => ({
-        name: String(entry.name).replace(/\.json$/i, '').replace(/[_-]+/g, ' ').trim(),
-        filename: String(entry.name),
-        repoPath: String(entry.path || ''),
-        downloadUrl: String(entry.download_url || ''),
-        size: Number(entry.size) || 0
-      }))
-    : [];
+      const items = Array.isArray(response.data)
+        ? response.data
+          .filter((entry) =>
+            entry &&
+            typeof entry.name === 'string' &&
+            String(entry.name).toLowerCase().endsWith('.json') &&
+            typeof entry.path === 'string')
+          .map((entry) => toN8nCatalogItem(entry.path, entry.size, commitSha))
+        : [];
 
-  return {
-    items: sortN8nCatalogItems(items),
-    source: 'contents',
-    truncated: false
-  };
+      if (items.length > 0) {
+        return {
+          items: sortN8nCatalogItems(items),
+          source: `contents:${branch}@${commitSha.slice(0, 12)}`,
+          truncated: false
+        };
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Impossible de lire le catalogue n8n (contents)');
 }
 
 async function getN8nCatalogEntries(timeoutMs = 12000) {
@@ -999,10 +1148,10 @@ const getSettingsPath = () => path.join(app.getPath('userData'), 'settings.json'
 const DEFAULT_APP_SETTINGS = Object.freeze({
   defaultProvider: 'gemini',
   thinkingMode: false,
-  ollamaModel: 'qwen2.5-coder:7b',
-  ollamaModelArchitect: 'qwen2.5-coder:7b',
-  ollamaModelCoder: 'qwen3-coder:30b',
-  ollamaModelTester: 'qwen2.5-coder:7b',
+  ollamaModel: 'qwen3:8b',
+  ollamaModelArchitect: 'qwen3:8b',
+  ollamaModelCoder: 'qwen3:8b',
+  ollamaModelTester: 'qwen3:8b',
   devPort: '3004',
   allowDangerousActions: false,
   aiContextPreset: 'safe',
@@ -2413,7 +2562,7 @@ ipcMain.handle('moveFile', async (event, projectPath, sourceFilename, destFilena
 
 // Lire tous les fichiers du projet pour fournir le contexte complet à l'IA
 ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) => {
-  console.log('[Main] getAllProjectFiles appelé avec projectPath:', projectPath);
+  safeConsoleLog('[Main] getAllProjectFiles appelé avec projectPath:', projectPath);
   try {
     if (!projectPath) {
       const error = "Chemin du projet non fourni";
@@ -2699,10 +2848,11 @@ ipcMain.handle('saveConversation', async (event, projectPath, conversationHistor
     const conversationTitle = generateConversationTitle(conversationHistory);
     const timestamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
     const fileName = `${timestamp}_${conversationTitle}.txt`;
-    const filePath = path.join(projectPath, 'conversations', fileName);
+    const conversationsDir = path.join(projectPath, 'conversations');
+    const filePath = path.join(conversationsDir, fileName);
+    assertSafePath(conversationsDir, filePath);
 
     // Créer le dossier conversations s'il n'existe pas
-    const conversationsDir = path.join(projectPath, 'conversations');
     try {
       await fs.mkdir(conversationsDir, { recursive: true });
     } catch (err) {
@@ -2798,7 +2948,9 @@ ipcMain.handle('loadConversation', async (event, projectPath, fileName) => {
       return { success: false, error: 'Chemin de projet ou fichier de conversation manquant.' };
     }
 
-    const filePath = path.join(projectPath, 'conversations', fileName);
+    const conversationsDir = path.join(projectPath, 'conversations');
+    const filePath = path.join(conversationsDir, fileName);
+    assertSafePath(conversationsDir, filePath);
     const content = await fs.readFile(filePath, 'utf-8');
 
     const history = [];
@@ -2879,8 +3031,9 @@ function generateConversationTitle(conversationHistory) {
  * Commands are run with a 30s timeout in the project directory.
  * Output is capped at 4000 chars to stay within token limits.
  */
-const ALLOWED_COMMANDS = /^(npm|node|npx|git|ls|dir|cd|mkdir|echo|cat|type|python|py|go|cargo|rustc|gradlew|mvn)(?:\s|$)/i;
+const ALLOWED_COMMANDS = /^(npm|node|npx|git|ls|dir|cd|mkdir|echo|cat|type|python|py|go|cargo|rustc|gradlew|mvn|n8n-search|n8n-import)(?:\s|$)/i;
 const DANGEROUS_COMMAND_PATTERNS = /(rm\s+-rf|del\s+\/[a-z]+|rmdir\s+\/[a-z]+|format\s+|shutdown|reboot|halt|mkfs|diskpart|git\s+reset\s+--hard|git\s+clean\s+-fd|:\(\)\{:\|:&\};:)/i;
+const SHELL_CONTROL_OPERATOR_PATTERNS = /(&&|\|\||[|;&`<>]|\r|\n|\$\()/;
 const MAX_CMD_OUTPUT = 4000;
 
 const requestTerminalApproval = async (commandText) => {
@@ -2932,6 +3085,13 @@ const executeCommandForAI = (cmd, projectPath) => {
       });
     }
 
+    if (SHELL_CONTROL_OPERATOR_PATTERNS.test(trimmedCmd)) {
+      return resolve({
+        success: false,
+        output: `[AI TERMINAL] Commande bloquee: operateurs shell interdits (&&, |, ;, redirections, etc.). Commande refusee: ${trimmedCmd}`
+      });
+    }
+
     if (settings.aiTerminalApprovalMode !== false) {
       const approved = await requestTerminalApproval(trimmedCmd);
       if (!approved) {
@@ -2968,21 +3128,21 @@ const executeCommandForAI = (cmd, projectPath) => {
     }
 
     if (trimmedCmd.startsWith('n8n-import')) {
-      const args = trimmedCmd.replace('n8n-import', '').trim().split(' ');
-      const url = args[0];
-      let saveName = args.slice(1).join(' ') || 'imported_n8n_workflow';
-      if (!saveName.endsWith('.json')) saveName += '.json';
+      const importArgs = trimmedCmd.replace(/^n8n-import/i, '').trim();
+      const firstSpaceIndex = importArgs.indexOf(' ');
+      const url = firstSpaceIndex === -1 ? importArgs : importArgs.slice(0, firstSpaceIndex);
+      const requestedName = firstSpaceIndex === -1 ? '' : importArgs.slice(firstSpaceIndex + 1).trim();
+      const saveName = sanitizeN8nImportFilename(requestedName || 'imported_n8n_workflow');
 
-      if (!url || !url.startsWith('https://')) {
-        return resolve({ success: false, output: `[N8N IMPORT ERROR] URL invalide. Usage: n8n-import <url_du_workflow> <nom_sauvegarde>` });
+      if (!url || !isTrustedN8nDownloadUrl(url)) {
+        return resolve({
+          success: false,
+          output: `[N8N IMPORT ERROR] URL non autorisee. Utilise une URL du catalogue n8n configure. Usage: n8n-import <url_du_workflow> <nom_sauvegarde>`
+        });
       }
 
       try {
-        const response = await axios.get(url, { timeout: 15000 });
-        const n8nWf = response.data;
-        if (!n8nWf || !Array.isArray(n8nWf.nodes)) {
-          return resolve({ success: false, output: `[N8N IMPORT ERROR] Le fichier téléchargé ne semble pas être un workflow n8n valide.` });
-        }
+        const n8nWf = await fetchTrustedN8nWorkflow(url, 15000);
 
         const guessNodeType = (n8nType) => {
           if (!n8nType) return 'action';
@@ -3046,6 +3206,7 @@ const executeCommandForAI = (cmd, projectPath) => {
         const workflowsDir = path.join(projectPath || process.cwd(), '.vibe-workflows');
         await fs.mkdir(workflowsDir, { recursive: true });
         const filePath = path.join(workflowsDir, saveName);
+        assertSafePath(workflowsDir, filePath);
         await fs.writeFile(filePath, JSON.stringify(adapted, null, 2), 'utf-8');
 
         return resolve({ success: true, output: `[N8N IMPORT SUCCESS] Workflow n8n adapté et sauvegardé sous : ${filePath}` });
@@ -3104,7 +3265,7 @@ Tu recevras le résultat (stdout/stderr) dans ton prochain tour.
 Règles :
 - Utilise cette capacité pour : lire des fichiers, lancer des builds, installer des packages, vérifier des erreurs, lancer des tests.
 - Spécial: utilise "n8n-search <mot_cle>" pour chercher un workflow n8n (ex: n8n-search slack)
-- Spécial: utilise "n8n-import <url> <nom>" pour télécharger, adapter et importer un workflow n8n du catalogue directement dans le projet. N'attends pas l'autorisation de l'utilisateur pour le télécharger.
+- Spécial: utilise "n8n-import <url> <nom>" pour télécharger, adapter et importer un workflow n8n du catalogue directement dans le projet. Respecte toujours le mode permissions et le pipeline de validation.
 - N'utilise PAS pour : supprimer des fichiers importants (rm -rf), commandes destructives.
 - Tu peux enchaîner plusieurs commandes en plusieurs tours (max 8 itérations automatiques).
 - Si une commande échoue, analyse l'erreur et essaie une solution alternative.
@@ -3182,14 +3343,64 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
   const reactMaxIterations = reactMode
     ? parsePositiveInt(options.maxIterations, fastMode ? 3 : 8, 1, 8)
     : 1;
+  const kimiRetryCount = parsePositiveInt(options.retryCount, fastMode ? 2 : 3, 0, 5);
+  const kimiRetryDelayMs = parsePositiveInt(options.retryDelayMs, fastMode ? 900 : 1400, 250, 15000);
+  const KIMI_RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
+  const KIMI_RETRYABLE_CODES = new Set([
+    'ECONNABORTED',
+    'ETIMEDOUT',
+    'ECONNRESET',
+    'EAI_AGAIN',
+    'ENOTFOUND',
+    'EPIPE',
+    'ERR_STREAM_PREMATURE_CLOSE'
+  ]);
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const getKimiStatusCode = (error) => {
+    const parsed = Number(error?.response?.status);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+  const isRetryableKimiError = (error) => {
+    const statusCode = getKimiStatusCode(error);
+    if (statusCode && KIMI_RETRYABLE_STATUS.has(statusCode)) return true;
+    const errorCode = String(error?.code || '').toUpperCase();
+    if (errorCode && KIMI_RETRYABLE_CODES.has(errorCode)) return true;
+    return false;
+  };
+  const formatKimiErrorMessage = (error, statusCode) => {
+    if (statusCode === 429) {
+      return "Limite de requetes atteinte (quota API Together/Kimi ou trop de requetes). Reessayez dans quelques instants.";
+    }
+    if (statusCode === 502 || statusCode === 503 || statusCode === 504) {
+      return `Service Kimi/Together temporairement indisponible (HTTP ${statusCode}). Reessayez dans quelques instants.`;
+    }
+    if (statusCode === 401 || statusCode === 403) {
+      return 'Acces refuse a l API Kimi/Together. Verifiez votre cle API.';
+    }
+    if (String(error?.code || '').toUpperCase() === 'ECONNABORTED') {
+      return 'Timeout de la requete Kimi/Together. Reessayez avec un timeout plus long.';
+    }
+    const remoteMessage =
+      error?.response?.data?.error?.message ||
+      error?.response?.data?.message;
+    if (remoteMessage) return String(remoteMessage);
+    return error?.message || 'Erreur inconnue lors de l appel Kimi/Together.';
+  };
+  const emitAIGenerationToken = (payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('ai-generation-token', {
+        provider: 'kimi',
+        ...payload
+      });
+    }
+  };
 
-  console.log('[Main] Appel Kimi: vérification de la clé API Kimi/Together...');
+  safeConsoleLog('[Main] Appel Kimi: verification de la cle API Kimi/Together...');
 
   if (!apiKey) {
     const errorMsg = "La clé API Together/Kimi n'est pas configurée. Définissez KIMI_API_KEY (ou TOGETHER_API_KEY) ou renseignez-la dans les Paramètres.";
     console.error('[Main][Kimi] Erreur:', errorMsg);
-    dialog.showErrorBox('Erreur API Kimi', errorMsg);
-    return { success: false, error: errorMsg };
+    return { success: false, error: errorMsg, retryable: false, statusCode: 401, provider: 'kimi' };
   }
 
   if (!history || !Array.isArray(history) || history.length === 0) {
@@ -3332,7 +3543,14 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       if (streamResponse) {
         requestBody.stream = true;
       }
-      logger.info(`[Kimi Agent API] Payload envoyé : ${JSON.stringify(requestBody, null, 2)}`);
+      const requestMetadata = {
+        model,
+        maxTokens: requestBody.max_tokens,
+        temperature: requestBody.temperature,
+        stream: !!requestBody.stream,
+        messageCount: Array.isArray(msgs) ? msgs.length : 0
+      };
+      logger.info(`[Kimi Agent API] Request metadata: ${JSON.stringify(requestMetadata)}`);
       logger.info(`[Kimi Agent API] Timeout HTTP: ${kimiTimeoutMs > 0 ? `${kimiTimeoutMs}ms` : 'disabled'}`);
       const requestConfig = {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -3356,10 +3574,26 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
           let fullText = '';
           let buffer = '';
           let rawStreamData = '';
+          let settled = false;
 
           const appendToken = (token) => {
             if (typeof token !== 'string' || token.length === 0) return;
             fullText += token;
+            emitAIGenerationToken({ token, done: false });
+          };
+
+          const safeResolve = (value) => {
+            if (settled) return;
+            settled = true;
+            emitAIGenerationToken({ token: '', done: true });
+            resolve(value);
+          };
+
+          const safeReject = (error) => {
+            if (settled) return;
+            settled = true;
+            emitAIGenerationToken({ token: '', done: true, error: error?.message || String(error) });
+            reject(error);
           };
 
           const processLine = (rawLine) => {
@@ -3416,14 +3650,14 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
             if (buffer.trim()) processLine(buffer);
             if (!fullText) {
               const preview = rawStreamData.length > 500 ? rawStreamData.slice(0, 500) + '...' : rawStreamData;
-              reject(new Error(`Réponse de l'API Kimi mal formatée (stream vide). Raw: ${preview}`));
+              safeReject(new Error(`Réponse de l'API Kimi mal formatée (stream vide). Raw: ${preview}`));
               return;
             }
-            resolve(fullText);
+            safeResolve(fullText);
           });
 
           stream.on('error', (streamError) => {
-            reject(streamError);
+            safeReject(streamError);
           });
         });
       }
@@ -3433,6 +3667,29 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       return resp.data.choices[0].message.content;
     };
 
+    const kimiCallWithRetry = async (msgs) => {
+      let lastError = null;
+      for (let attempt = 0; attempt <= kimiRetryCount; attempt += 1) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          return await kimiCallWithMessages(msgs);
+        } catch (error) {
+          lastError = error;
+          const statusCode = getKimiStatusCode(error);
+          const retryable = isRetryableKimiError(error);
+          if (!retryable || attempt >= kimiRetryCount) {
+            break;
+          }
+          const jitterMs = Math.floor(Math.random() * 250);
+          const backoffMs = Math.min(20000, kimiRetryDelayMs * (2 ** attempt) + jitterMs);
+          logger.warn(`[Kimi Agent API] Tentative ${attempt + 1}/${kimiRetryCount + 1} echouee (status=${statusCode || 'n/a'}, code=${error?.code || 'n/a'}), retry dans ${backoffMs}ms`);
+          // eslint-disable-next-line no-await-in-loop
+          await sleep(backoffMs);
+        }
+      }
+      throw lastError || new Error('Echec appel API Kimi');
+    };
+
     logger.info(`[Kimi Agent API] Création du prompt et appel du modèle ${model}...`);
 
     try {
@@ -3440,7 +3697,7 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       let messages = buildMessages(effectiveHistory, prompt);
       let fullTranscript = '';
       if (!reactMode) {
-        const aiText = await kimiCallWithMessages(messages);
+        const aiText = await kimiCallWithRetry(messages);
         return { success: true, text: aiText, terminalActions: 0, mode: 'single' };
       }
 
@@ -3448,7 +3705,7 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
 
       for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
         logger.info(`[Kimi Agent API] Itération ReAct ${iter + 1}/${MAX_ITERATIONS}...`);
-        const aiText = await kimiCallWithMessages(messages);
+        const aiText = await kimiCallWithRetry(messages);
         logger.info(`[Kimi Agent API] Réponse de l'IA (Itération ${iter + 1}):\n${aiText}`);
 
         fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
@@ -3482,21 +3739,32 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       return { success: true, text: fullTranscript, terminalActions: MAX_ITERATIONS };
 
     } catch (error) {
-      if (error.response && error.response.status === 429) {
-        const errorMsg = "Limite de requêtes atteinte (Quota API Together/Kimi épuisé ou trop de requêtes). Veuillez patienter quelques instants avant de réessayer.";
-        logger.error('[Kimi Agent API] Erreur 429 Rate Limit:', error.response.data);
-        dialog.showErrorBox('Erreur API Kimi (Trop de requêtes)', errorMsg);
-        return { success: false, error: 'Rate limit (429)' };
+      const statusCode = getKimiStatusCode(error);
+      const retryable = isRetryableKimiError(error);
+      const errorMsg = formatKimiErrorMessage(error, statusCode);
+      const payload = {
+        statusCode: statusCode || null,
+        code: error?.code || null,
+        retryable,
+        message: error?.message || String(error)
+      };
+      logger.error(`[Kimi Agent API] Erreur Together: ${JSON.stringify(payload)}`);
+      if (error?.response?.data) {
+        logger.error(`[Kimi Agent API] Corps erreur Together: ${JSON.stringify(error.response.data).slice(0, 2000)}`);
       }
-      logger.error("[Kimi Agent API] Erreur lors de l'appel à l'API Together:", error.response ? error.response.data : error.message);
-      dialog.showErrorBox('Erreur API Kimi', `Erreur lors de l'appel à l'API Kimi: ${error.message}.`);
-      return { success: false, error: error.message };
+      return {
+        success: false,
+        error: errorMsg,
+        retryable,
+        statusCode: statusCode || undefined,
+        errorCode: error?.code || undefined,
+        provider: 'kimi'
+      };
     }
   } catch (error) {
     const errorMsg = `Erreur inattendue Kimi: ${error.message || 'Erreur inconnue'}`;
     console.error('[Main][Kimi]', errorMsg, error);
-    dialog.showErrorBox('Erreur Kimi', errorMsg);
-    return { success: false, error: errorMsg };
+    return { success: false, error: errorMsg, retryable: false, provider: 'kimi' };
   }
 });
 
@@ -3686,7 +3954,8 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
   }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  console.log(`[Main] Appel à l'URL Gemini: ${url}`);
+  const redactedUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=***`;
+  console.log(`[Main] Appel à l'URL Gemini: ${redactedUrl}`);
 
   try {
     // Filtrer l'historique pour ne garder que les rôles valides pour l'API Gemini
@@ -3886,7 +4155,7 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
     try {
       const geminiCallWithContents = async (contents) => {
         const resp = await axios.post(url, { contents });
-        if (!resp.data?.candidates?.[0]?.content?.parts?.[0]?.text === undefined) {
+        if (resp.data?.candidates?.[0]?.content?.parts?.[0]?.text === undefined) {
           throw new Error("Réponse de l'API Gemini mal formatée");
         }
         return resp.data.candidates[0].content.parts[0].text;
@@ -3990,6 +4259,27 @@ const parseWorkflowFile = (content) => {
 
   return { description, body };
 };
+
+registerWorkflowHandlers({
+  ipcMain,
+  app,
+  fs,
+  path,
+  ensureEditPermission,
+  assertSafePath,
+  toPositiveInt,
+  getN8nCatalogEntries,
+  fetchTrustedN8nWorkflow
+});
+
+registerGitHandlers({
+  ipcMain,
+  fs,
+  path,
+  runGit,
+  ensureEditPermission,
+  assertSafePath
+});
 
 // ==================== CLAUDE API INTEGRATION ====================
 const Anthropic = require('@anthropic-ai/sdk');
@@ -4209,382 +4499,7 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
 
 
 
-// List all workflows (global + workspace)
-ipcMain.handle('list-workflows', async (event, projectPath) => {
-  try {
-    const workflows = [];
-
-    // List global workflows
-    const globalDir = getGlobalWorkflowsDir();
-    try {
-      await fs.mkdir(globalDir, { recursive: true });
-      const globalFiles = await fs.readdir(globalDir);
-      for (const file of globalFiles) {
-        if (file.endsWith('.md')) {
-          const name = file.replace('.md', '');
-          const content = await fs.readFile(path.join(globalDir, file), 'utf-8');
-          const { description } = parseWorkflowFile(content);
-          workflows.push({
-            name,
-            scope: 'global',
-            description,
-            path: path.join(globalDir, file)
-          });
-        }
-      }
-    } catch (e) {
-      // Global dir doesn't exist yet, that's ok
-    }
-
-    // List workspace workflows if projectPath provided
-    if (projectPath) {
-      const workspaceDir = getWorkspaceWorkflowsDir(projectPath);
-      try {
-        const workspaceFiles = await fs.readdir(workspaceDir);
-        for (const file of workspaceFiles) {
-          if (file.endsWith('.md')) {
-            const name = file.replace('.md', '');
-            const content = await fs.readFile(path.join(workspaceDir, file), 'utf-8');
-            const { description } = parseWorkflowFile(content);
-            workflows.push({
-              name,
-              scope: 'workspace',
-              description,
-              path: path.join(workspaceDir, file)
-            });
-          }
-        }
-      } catch (e) {
-        // Workspace dir doesn't exist yet, that's ok
-      }
-    }
-
-    return { success: true, workflows };
-  } catch (error) {
-    console.error('[Workflows] Error listing workflows:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Get a specific workflow
-ipcMain.handle('get-workflow', async (event, name, scope, projectPath) => {
-  try {
-    let filePath;
-    if (scope === 'global') {
-      filePath = path.join(getGlobalWorkflowsDir(), `${name}.md`);
-    } else if (scope === 'workspace' && projectPath) {
-      filePath = path.join(getWorkspaceWorkflowsDir(projectPath), `${name}.md`);
-    } else {
-      return { success: false, error: 'Invalid scope or missing project path' };
-    }
-
-    const content = await fs.readFile(filePath, 'utf-8');
-    const { description, body } = parseWorkflowFile(content);
-
-    return {
-      success: true,
-      workflow: { name, scope, description, body, content, path: filePath }
-    };
-  } catch (error) {
-    console.error('[Workflows] Error getting workflow:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Save a workflow
-ipcMain.handle('save-workflow', async (event, name, content, scope, projectPath) => {
-  try {
-    await ensureEditPermission();
-
-    let dir;
-    if (scope === 'global') {
-      dir = getGlobalWorkflowsDir();
-    } else if (scope === 'workspace' && projectPath) {
-      dir = getWorkspaceWorkflowsDir(projectPath);
-    } else {
-      return { success: false, error: 'Invalid scope or missing project path' };
-    }
-
-    // Sanitize filename
-    const safeName = name.replace(/[<>:"/\\|?*]/g, '_').trim();
-    if (!safeName) {
-      return { success: false, error: 'Invalid workflow name' };
-    }
-
-    await fs.mkdir(dir, { recursive: true });
-    const filePath = path.join(dir, `${safeName}.md`);
-    await fs.writeFile(filePath, content, 'utf-8');
-
-    console.log(`[Workflows] Saved workflow: ${filePath}`);
-    return { success: true, path: filePath, name: safeName };
-  } catch (error) {
-    console.error('[Workflows] Error saving workflow:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Delete a workflow
-ipcMain.handle('delete-workflow', async (event, name, scope, projectPath) => {
-  try {
-    await ensureEditPermission();
-
-    let filePath;
-    if (scope === 'global') {
-      filePath = path.join(getGlobalWorkflowsDir(), `${name}.md`);
-    } else if (scope === 'workspace' && projectPath) {
-      filePath = path.join(getWorkspaceWorkflowsDir(projectPath), `${name}.md`);
-    } else {
-      return { success: false, error: 'Invalid scope or missing project path' };
-    }
-
-    await fs.unlink(filePath);
-    console.log(`[Workflows] Deleted workflow: ${filePath}`);
-    return { success: true };
-  } catch (error) {
-    console.error('[Workflows] Error deleting workflow:', error);
-    return { success: false, error: error.message };
-  }
-});
-
 // ==================== VISUAL WORKFLOW SYSTEM ====================
-
-const getVisualWorkflowsDir = (projectPath) => {
-  return path.join(projectPath, '.vibe-workflows');
-};
-
-const toFiniteNumberOr = (value, fallback) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const sanitizeVisualWorkflowPayload = (rawWorkflow, options = {}) => {
-  const strict = options.strict !== false;
-  if (!rawWorkflow || typeof rawWorkflow !== 'object' || Array.isArray(rawWorkflow)) {
-    throw new Error('Workflow visuel invalide: objet attendu');
-  }
-
-  const sourceVersion = Number.parseInt(String(rawWorkflow.schemaVersion ?? ''), 10);
-  const schemaVersion = Number.isFinite(sourceVersion) ? sourceVersion : 1;
-  let migrated = schemaVersion !== VISUAL_WORKFLOW_SCHEMA_VERSION;
-
-  const workflowName = String(rawWorkflow.name || '').trim();
-  if (!workflowName) {
-    throw new Error('Workflow visuel invalide: champ "name" requis');
-  }
-
-  const nodesInput = Array.isArray(rawWorkflow.nodes) ? rawWorkflow.nodes : [];
-  const edgesInput = Array.isArray(rawWorkflow.edges) ? rawWorkflow.edges : [];
-
-  if (nodesInput.length > VISUAL_WORKFLOW_MAX_NODES) {
-    throw new Error(`Workflow trop volumineux: max ${VISUAL_WORKFLOW_MAX_NODES} noeuds`);
-  }
-  if (edgesInput.length > VISUAL_WORKFLOW_MAX_EDGES) {
-    throw new Error(`Workflow trop volumineux: max ${VISUAL_WORKFLOW_MAX_EDGES} liens`);
-  }
-
-  const usedNodeIds = new Set();
-  const nodes = [];
-  nodesInput.forEach((node, index) => {
-    if (!node || typeof node !== 'object' || Array.isArray(node)) {
-      if (strict) {
-        throw new Error(`Noeud invalide a l'index ${index}`);
-      }
-      migrated = true;
-      return;
-    }
-
-    let id = String(node.id ?? '').trim();
-    if (!id) {
-      id = `node_${index + 1}`;
-      migrated = true;
-    }
-    if (usedNodeIds.has(id)) {
-      throw new Error(`ID de noeud duplique: ${id}`);
-    }
-    usedNodeIds.add(id);
-
-    const rawType = String(node.type || 'action').trim();
-    const type = VISUAL_WORKFLOW_ALLOWED_NODE_TYPES.has(rawType) ? rawType : 'action';
-    if (type !== rawType) migrated = true;
-
-    const label = String(node.label || `Node ${index + 1}`).trim() || `Node ${index + 1}`;
-    const icon = String(node.icon || '').trim() || '⚡';
-
-    const rawPosition = node.position && typeof node.position === 'object' ? node.position : {};
-    const position = {
-      x: toFiniteNumberOr(rawPosition.x, 120 + (index % 4) * 240),
-      y: toFiniteNumberOr(rawPosition.y, 120 + Math.floor(index / 4) * 170)
-    };
-
-    const config = node.config && typeof node.config === 'object' && !Array.isArray(node.config)
-      ? node.config
-      : {};
-    if (config !== node.config) migrated = true;
-
-    nodes.push({
-      id,
-      type,
-      label,
-      icon,
-      position,
-      config
-    });
-  });
-
-  const edges = [];
-  const edgePairs = new Set();
-  edgesInput.forEach((edge, index) => {
-    if (!edge || typeof edge !== 'object' || Array.isArray(edge)) {
-      if (strict) {
-        throw new Error(`Lien invalide a l'index ${index}`);
-      }
-      migrated = true;
-      return;
-    }
-
-    const source = String(edge.source ?? '').trim();
-    const target = String(edge.target ?? '').trim();
-    if (!source || !target) {
-      if (strict) {
-        throw new Error(`Lien incomplet a l'index ${index}`);
-      }
-      migrated = true;
-      return;
-    }
-    if (!usedNodeIds.has(source) || !usedNodeIds.has(target)) {
-      if (strict) {
-        throw new Error(`Lien invalide (${source} -> ${target})`);
-      }
-      migrated = true;
-      return;
-    }
-
-    const pairKey = `${source}->${target}`;
-    if (edgePairs.has(pairKey)) {
-      migrated = true;
-      return;
-    }
-    edgePairs.add(pairKey);
-    edges.push({ source, target });
-  });
-
-  const normalized = {
-    schemaVersion: VISUAL_WORKFLOW_SCHEMA_VERSION,
-    name: workflowName,
-    nodes,
-    edges
-  };
-
-  if (typeof rawWorkflow.description === 'string' && rawWorkflow.description.trim()) {
-    normalized.description = rawWorkflow.description.trim().slice(0, 300);
-  }
-  if (typeof rawWorkflow.updatedAt === 'string' && rawWorkflow.updatedAt.trim()) {
-    normalized.updatedAt = rawWorkflow.updatedAt.trim();
-  }
-
-  return {
-    workflow: normalized,
-    migrated,
-    sourceVersion: schemaVersion
-  };
-};
-
-// List all visual workflows in the project
-ipcMain.handle('list-visual-workflows', async (event, projectPath) => {
-  try {
-    if (!projectPath) return { success: false, error: 'No project path' };
-    const dir = getVisualWorkflowsDir(projectPath);
-    try {
-      await fs.mkdir(dir, { recursive: true });
-    } catch (e) { /* ok */ }
-
-    const files = await fs.readdir(dir);
-    const workflows = [];
-    for (const file of files) {
-      if (file.endsWith('.json')) {
-        try {
-          const content = await fs.readFile(path.join(dir, file), 'utf-8');
-          const wfRaw = JSON.parse(content);
-          const { workflow: wf, sourceVersion, migrated } = sanitizeVisualWorkflowPayload(wfRaw, { strict: false });
-          workflows.push({
-            filename: file,
-            name: wf.name || file.replace('.json', ''),
-            nodeCount: (wf.nodes || []).length,
-            edgeCount: (wf.edges || []).length,
-            schemaVersion: sourceVersion,
-            migrated,
-            updatedAt: wf.updatedAt || null,
-          });
-        } catch (e) {
-          // skip invalid JSON
-        }
-      }
-    }
-    return { success: true, workflows };
-  } catch (error) {
-    console.error('[VisualWorkflows] Error listing:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Save a visual workflow
-ipcMain.handle('save-visual-workflow', async (event, projectPath, workflowJson) => {
-  try {
-    await ensureEditPermission();
-
-    if (!projectPath) return { success: false, error: 'No project path' };
-    const dir = getVisualWorkflowsDir(projectPath);
-    await fs.mkdir(dir, { recursive: true });
-
-    const wfRaw = typeof workflowJson === 'string' ? JSON.parse(workflowJson) : workflowJson;
-    const sanitized = sanitizeVisualWorkflowPayload(wfRaw, { strict: true });
-    const wf = sanitized.workflow;
-    wf.updatedAt = new Date().toISOString();
-
-    const safeName = (wf.name || 'workflow').replace(/[<>:"/\\|?*]/g, '_').trim();
-    const filePath = path.join(dir, `${safeName}.json`);
-    let existedBefore = false;
-    try {
-      await fs.access(filePath);
-      existedBefore = true;
-    } catch {
-      existedBefore = false;
-    }
-    await fs.writeFile(filePath, JSON.stringify(wf, null, 2), 'utf-8');
-
-    console.log(`[VisualWorkflows] Saved: ${filePath}`);
-    return {
-      success: true,
-      path: filePath,
-      name: safeName,
-      filename: `${safeName}.json`,
-      action: existedBefore ? 'updated' : 'created',
-      schemaVersion: VISUAL_WORKFLOW_SCHEMA_VERSION,
-      migrated: sanitized.migrated,
-      sourceVersion: sanitized.sourceVersion
-    };
-  } catch (error) {
-    console.error('[VisualWorkflows] Error saving:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// Delete a visual workflow
-ipcMain.handle('delete-visual-workflow', async (event, projectPath, filename) => {
-  try {
-    await ensureEditPermission();
-
-    if (!projectPath || !filename) return { success: false, error: 'Missing params' };
-    const filePath = path.join(getVisualWorkflowsDir(projectPath), filename);
-    assertSafePath(getVisualWorkflowsDir(projectPath), filePath);
-    await fs.unlink(filePath);
-    console.log(`[VisualWorkflows] Deleted: ${filePath}`);
-    return { success: true };
-  } catch (error) {
-    console.error('[VisualWorkflows] Error deleting:', error);
-    return { success: false, error: error.message };
-  }
-});
 
 // ==================== SNAPSHOTS (AI ROLLBACK) ====================
 
@@ -4705,44 +4620,6 @@ ipcMain.handle('restore-ai-snapshot', async (event, projectPath, snapshotId) => 
 
     return { success: true, restored, snapshotId };
   } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-// Fetch n8n community workflow catalog from GitHub
-ipcMain.handle('fetch-n8n-catalog', async (event, page = 1, perPage = 50) => {
-  try {
-    const safePage = toPositiveInt(page, 1, 1, 100000);
-    const safePerPage = toPositiveInt(perPage, 50, 1, 5000);
-    const catalog = await getN8nCatalogEntries(15000);
-    const allItems = Array.isArray(catalog.items) ? catalog.items : [];
-    const startIndex = (safePage - 1) * safePerPage;
-    const pagedItems = allItems.slice(startIndex, startIndex + safePerPage);
-    const total = Number(catalog.total) || allItems.length;
-    const totalPages = Math.max(1, Math.ceil(total / safePerPage));
-    return {
-      success: true,
-      items: pagedItems,
-      total,
-      page: safePage,
-      perPage: safePerPage,
-      totalPages,
-      source: catalog.source || 'unknown',
-      truncated: !!catalog.truncated
-    };
-  } catch (error) {
-    console.error('[n8nCatalog] Error fetching:', error.message);
-    return { success: false, error: error.message };
-  }
-});
-
-// Download a single n8n workflow from GitHub
-ipcMain.handle('download-n8n-workflow', async (event, downloadUrl) => {
-  try {
-    const response = await axios.get(downloadUrl, { timeout: 15000 });
-    return { success: true, data: response.data };
-  } catch (error) {
-    console.error('[n8nCatalog] Error downloading:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -5820,211 +5697,16 @@ ipcMain.handle('sync-voltagent-subagents', async (event, options = {}) => {
  * Reuses the existing runGit helper (defined earlier in the file).
  */
 
-ipcMain.handle('git-status', async (event, projectPath) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const { stdout } = await runGit(['status', '--porcelain', '-u'], projectPath);
-    const lines = stdout.split('\n').filter(Boolean).map(line => ({
-      status: line.substring(0, 2).trim(),
-      file: line.substring(3).trim()
-    }));
-    return { success: true, files: lines };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-diff', async (event, projectPath, filePath) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const args = filePath ? ['diff', 'HEAD', '--', filePath] : ['diff', 'HEAD'];
-    const { stdout } = await runGit(args, projectPath);
-    return { success: true, diff: stdout };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-add', async (event, projectPath, files = []) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    await ensureEditPermission();
-    const args = files && files.length > 0 ? ['add', ...files] : ['add', '-A'];
-    await runGit(args, projectPath);
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-commit', async (event, projectPath, message) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    await ensureEditPermission();
-    if (!message || !message.trim()) return { success: false, error: 'Message de commit manquant' };
-    const { stdout } = await runGit(['commit', '-m', message.trim()], projectPath);
-    return { success: true, output: stdout };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-push', async (event, projectPath, remote, branch) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    await ensureEditPermission();
-    const args = ['push'];
-    if (remote) args.push(remote);
-    if (branch) args.push(branch);
-    const { stdout } = await runGit(args, projectPath);
-    return { success: true, output: stdout };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-pull', async (event, projectPath) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    await ensureEditPermission();
-    const { stdout } = await runGit(['pull'], projectPath);
-    return { success: true, output: stdout };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-log', async (event, projectPath, limit = 20) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const { stdout } = await runGit(['log', `--max-count=${limit}`, '--pretty=format:%H|%an|%ae|%ar|%s'], projectPath);
-    const commits = stdout.split('\n').filter(Boolean).map(line => {
-      const parts = line.split('|');
-      return { hash: parts[0], author: parts[1], email: parts[2], date: parts[3], message: parts.slice(4).join('|') };
-    });
-    return { success: true, commits };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-init', async (event, projectPath) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    await ensureEditPermission();
-    const { stdout } = await runGit(['init'], projectPath);
-    return { success: true, output: stdout };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-branch', async (event, projectPath) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const { stdout } = await runGit(['branch', '--show-current'], projectPath);
-    return { success: true, branch: stdout.trim() };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-remotes', async (event, projectPath) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const { stdout } = await runGit(['remote', '-v'], projectPath);
-    return { success: true, remotes: stdout.trim() };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-list-branches', async (event, projectPath) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const { stdout } = await runGit(['branch', '--all', '--no-color'], projectPath);
-    const branches = stdout
-      .split('\n')
-      .map((line) => String(line || '').trim())
-      .filter(Boolean)
-      .map((line) => ({
-        name: line.replace(/^\*\s*/, '').replace(/^remotes\//, ''),
-        current: line.startsWith('*')
-      }));
-    return { success: true, branches };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-checkout-branch', async (event, projectPath, branchName) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    await ensureEditPermission();
-    const target = String(branchName || '').trim();
-    if (!target) return { success: false, error: 'Nom de branche manquant' };
-    const { stdout } = await runGit(['checkout', target], projectPath);
-    return { success: true, output: stdout };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-create-branch', async (event, projectPath, branchName) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    await ensureEditPermission();
-    const target = String(branchName || '').trim();
-    if (!target) return { success: false, error: 'Nom de branche manquant' };
-    const { stdout } = await runGit(['checkout', '-b', target], projectPath);
-    return { success: true, output: stdout };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-stash-save', async (event, projectPath, message) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    await ensureEditPermission();
-    const stashMessage = String(message || '').trim() || `stash-${new Date().toISOString()}`;
-    const { stdout } = await runGit(['stash', 'push', '-u', '-m', stashMessage], projectPath);
-    return { success: true, output: stdout };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-stash-list', async (event, projectPath) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const { stdout } = await runGit(['stash', 'list', '--pretty=format:%gd|%cr|%s'], projectPath);
-    const stashes = stdout.split('\n').filter(Boolean).map((line) => {
-      const [ref, when, ...rest] = line.split('|');
-      return { ref: ref || '', when: when || '', message: rest.join('|') || '' };
-    });
-    return { success: true, stashes };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('git-stash-pop', async (event, projectPath, stashRef) => {
-  try {
-    if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    await ensureEditPermission();
-    const ref = String(stashRef || '').trim();
-    const args = ref ? ['stash', 'pop', ref] : ['stash', 'pop'];
-    const { stdout } = await runGit(args, projectPath);
-    return { success: true, output: stdout };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
 // ==================== OLLAMA LOCAL AI ====================
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const DEFAULT_OLLAMA_MODEL = 'qwen3:8b';
+const FALLBACK_OLLAMA_MODEL_CANDIDATES = [
+  DEFAULT_OLLAMA_MODEL,
+  'qwen3:14b',
+  'qwen3:32b'
+];
+const activeOllamaPulls = new Set();
 const normalizeOllamaModelName = (value) => String(value || '').trim();
 
 const extractOllamaModelNames = (tagsResponseData) => {
@@ -6032,6 +5714,27 @@ const extractOllamaModelNames = (tagsResponseData) => {
   return modelsRaw
     .map((model) => normalizeOllamaModelName(model?.name || model))
     .filter(Boolean);
+};
+
+const extractConfiguredOllamaModels = (rawModels) =>
+  Array.from(new Set(
+    (Array.isArray(rawModels) ? rawModels : [])
+      .map((model) => normalizeOllamaModelName(model))
+      .filter(Boolean)
+  ));
+
+const buildOllamaUpdateStatuses = (configuredModels, installedModels, errorMessage = '') => {
+  const installedSet = new Set(
+    Array.isArray(installedModels)
+      ? installedModels.map((model) => normalizeOllamaModelName(model)).filter(Boolean)
+      : []
+  );
+
+  return extractConfiguredOllamaModels(configuredModels).map((model) => ({
+    model,
+    status: errorMessage ? 'error' : (installedSet.has(model) ? 'installed' : 'missing'),
+    ...(errorMessage ? { error: errorMessage } : {})
+  }));
 };
 
 const fetchOllamaTags = async (baseUrl, timeout = null) => {
@@ -6080,8 +5783,148 @@ ipcMain.handle('list-ollama-models', async () => {
   }
 });
 
+ipcMain.handle('check-ollama-updates', async (_event, modelNames = []) => {
+  try {
+    let configuredModels = extractConfiguredOllamaModels(modelNames);
+    if (configuredModels.length === 0) {
+      const settings = await readSettingsSafe();
+      configuredModels = extractConfiguredOllamaModels([
+        settings.ollamaModel,
+        settings.ollamaModelArchitect,
+        settings.ollamaModelCoder,
+        settings.ollamaModelTester
+      ]);
+    }
+
+    if (configuredModels.length === 0) {
+      return { success: true, models: [] };
+    }
+
+    try {
+      const response = await fetchOllamaTags(OLLAMA_BASE_URL, 5000);
+      const installedModels = extractOllamaModelNames(response?.data);
+      return {
+        success: true,
+        models: buildOllamaUpdateStatuses(configuredModels, installedModels)
+      };
+    } catch (error) {
+      const message = `Ollama non disponible: ${error.message}`;
+      return {
+        success: true,
+        models: buildOllamaUpdateStatuses(configuredModels, [], message)
+      };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('pull-ollama-model', async (_event, modelName) => {
+  const model = normalizeOllamaModelName(modelName);
+  if (!model) {
+    return { success: false, error: 'Nom de modele Ollama invalide.' };
+  }
+
+  if (activeOllamaPulls.has(model)) {
+    return { success: false, error: `Un telechargement est deja en cours pour "${model}".` };
+  }
+
+  activeOllamaPulls.add(model);
+  const sendProgress = (payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('ollama-pull-progress', { model, ...payload });
+    }
+  };
+
+  sendProgress({ status: 'starting', completed: 0, total: 0 });
+
+  try {
+    const response = await axios.post(`${OLLAMA_BASE_URL}/api/pull`, {
+      model,
+      stream: true
+    }, {
+      responseType: 'stream',
+      timeout: 0
+    });
+
+    await new Promise((resolve, reject) => {
+      let buffer = '';
+      let settled = false;
+
+      const safeResolve = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+
+      const safeReject = (error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
+
+      const processLine = (line) => {
+        const trimmed = String(line || '').trim();
+        if (!trimmed) return;
+
+        let payload;
+        try {
+          payload = JSON.parse(trimmed);
+        } catch {
+          return;
+        }
+
+        if (typeof payload.error === 'string' && payload.error.trim()) {
+          sendProgress({ status: 'error', error: payload.error.trim() });
+          safeReject(new Error(payload.error.trim()));
+          return;
+        }
+
+        const completed = Number(payload.completed);
+        const total = Number(payload.total);
+        sendProgress({
+          status: String(payload.status || 'pulling'),
+          completed: Number.isFinite(completed) ? completed : null,
+          total: Number.isFinite(total) ? total : null
+        });
+      };
+
+      response.data.on('data', (chunk) => {
+        buffer += chunk.toString('utf8');
+        let newlineIndex = buffer.indexOf('\n');
+        while (newlineIndex >= 0) {
+          const line = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 1);
+          processLine(line);
+          newlineIndex = buffer.indexOf('\n');
+        }
+      });
+
+      response.data.on('end', () => {
+        if (buffer.trim()) processLine(buffer);
+        safeResolve();
+      });
+
+      response.data.on('error', (error) => {
+        safeReject(error);
+      });
+    });
+
+    sendProgress({ status: 'success', completed: 1, total: 1 });
+    return { success: true, model };
+  } catch (error) {
+    const message = axios.isAxiosError(error) && error.response?.data?.error
+      ? String(error.response.data.error)
+      : String(error.message || error);
+    sendProgress({ status: 'error', error: message });
+    return { success: false, error: `Ollama pull (${model}): ${message}` };
+  } finally {
+    activeOllamaPulls.delete(model);
+  }
+});
+
 ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
-  const model = options.model || process.env.OLLAMA_MODEL || 'qwen2.5-coder:7b';
+  const requestedModel = normalizeOllamaModelName(options.model || process.env.OLLAMA_MODEL);
   const projectPath = options.projectPath || null;
 
   if (!history || !Array.isArray(history) || history.length === 0) {
@@ -6089,6 +5932,39 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
   }
 
   try {
+    let model = requestedModel;
+    let installedModelNames = [];
+    try {
+      const tagsResponse = await fetchOllamaTags(OLLAMA_BASE_URL, 5000);
+      installedModelNames = extractOllamaModelNames(tagsResponse?.data);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return {
+          success: false,
+          error: `Ollama: endpoint introuvable (${OLLAMA_BASE_URL}/api/tags -> 404). Verifiez OLLAMA_URL.`
+        };
+      }
+      return {
+        success: false,
+        error: `Ollama: impossible de joindre Ollama (${OLLAMA_BASE_URL}). ${error.message}`
+      };
+    }
+
+    if (!Array.isArray(installedModelNames) || installedModelNames.length === 0) {
+      return {
+        success: false,
+        error: `Ollama: aucun modele installe. Lancez par exemple: ollama pull ${DEFAULT_OLLAMA_MODEL}`
+      };
+    }
+
+    model = pickInstalledOllamaModel(requestedModel, installedModelNames, FALLBACK_OLLAMA_MODEL_CANDIDATES);
+    if (!model) {
+      return {
+        success: false,
+        error: 'Ollama: aucun modele installe compatible avec la configuration courante.'
+      };
+    }
+
     const validHistory = history.filter(msg => msg && typeof msg === 'object' && msg.text !== undefined);
     if (validHistory.length === 0) return { success: false, error: "Historique vide pour Ollama." };
 
@@ -6193,7 +6069,7 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
 ipcMain.handle('get-ollama-multi-completion', async (event, history, currentCode, allProjectFiles, options = {}) => {
   try {
     const OLLAMA_BASE_URL_MULTI = process.env.OLLAMA_URL || 'http://localhost:11434';
-    const fallbackModel = String(options.model || process.env.OLLAMA_MODEL || 'qwen3-coder:30b').trim() || 'qwen3-coder:30b';
+    const fallbackModel = String(options.model || process.env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL).trim() || DEFAULT_OLLAMA_MODEL;
     const modelArchitect = String(options.modelArchitect || fallbackModel).trim() || fallbackModel;
     const modelCoder = String(options.modelCoder || fallbackModel).trim() || fallbackModel;
     const modelTester = String(options.modelTester || fallbackModel).trim() || fallbackModel;
@@ -6267,7 +6143,7 @@ REGLES OUTILS:
     if (!Array.isArray(installedModelNames) || installedModelNames.length === 0) {
       return {
         success: false,
-        error: 'Ollama Multi: aucun modele installe. Lancez par exemple: ollama pull qwen2.5-coder:7b'
+        error: `Ollama Multi: aucun modele installe. Lancez par exemple: ollama pull ${DEFAULT_OLLAMA_MODEL}`
       };
     }
 
@@ -6286,17 +6162,17 @@ REGLES OUTILS:
     const resolvedModelArchitect = resolveRoleModel(
       modelArchitect,
       'Architecte',
-      ['qwen2.5-coder:7b', 'qwen3-coder:30b']
+      FALLBACK_OLLAMA_MODEL_CANDIDATES
     );
     const resolvedModelCoder = resolveRoleModel(
       modelCoder,
       'Codeur',
-      ['qwen3-coder:30b', 'qwen2.5-coder:7b']
+      FALLBACK_OLLAMA_MODEL_CANDIDATES
     );
     const resolvedModelTester = resolveRoleModel(
       modelTester,
       'Relecteur',
-      ['qwen2.5-coder:7b', 'qwen3-coder:30b']
+      FALLBACK_OLLAMA_MODEL_CANDIDATES
     );
 
     const emitStreamingDone = (agentLabel) => {
@@ -6593,6 +6469,32 @@ PAS de code. PAS d'explications longues. Juste le plan.`;
     const coderSkills = await parseAssignedSkills(archPlan, 'Codeur');
     const reviewSkills = await parseAssignedSkills(archPlan, 'Relecteur');
 
+    const extractArtifactKeys = (text) => {
+      const keys = new Set();
+      const safeText = String(text || '');
+      const fileRegex = /\*\*FICHIER:\s*(.+?)\*\*/gi;
+      const diffRegex = /(?:^|\n)FILE:\s*(.+?)\s*(?:\n|$)/gi;
+      const workflowRegex = /\*\*WORKFLOW:\s*(.+?)\*\*/gi;
+      let match;
+
+      while ((match = fileRegex.exec(safeText)) !== null) {
+        const filePath = String(match[1] || '').trim();
+        if (filePath) keys.add(`file:${filePath}`);
+      }
+
+      while ((match = diffRegex.exec(safeText)) !== null) {
+        const filePath = String(match[1] || '').trim();
+        if (filePath) keys.add(`file:${filePath}`);
+      }
+
+      while ((match = workflowRegex.exec(safeText)) !== null) {
+        const workflowName = String(match[1] || '').trim();
+        if (workflowName) keys.add(`workflow:${workflowName}`);
+      }
+
+      return Array.from(keys);
+    };
+
     // ────────── Agent 2 : Codeur (ACTION — 8192 tokens) ──────────
     sendStep('💻 Codeur', 'active', '');
     const coderSystem = `Tu es un developpeur full-stack expert. Tu produis des modifications applicables.
@@ -6619,33 +6521,58 @@ nouveau code
   "edges": [{"source":"node_1","target":"node_2"}]
 }
 \`\`\`
+- Couvre TOUS les fichiers necessaires a la demande, pas seulement un extrait.
+- Si la reponse tient en une seule passe, termine par **STATUT: COMPLETE**
+- S'il reste des fichiers a produire, termine par **STATUT: INCOMPLETE**
 - Pas d'explication, uniquement les artefacts.
 ${TERMINAL_CAPABILITY_PROMPT}`;
 
-    const coderOutput = await runAgentWithTools({
-      agentLabel: '💻 Codeur',
-      modelName: resolvedModelCoder,
-      systemPrompt: coderSystem,
-      userMessage: `${userPrompt}\n\nPLAN:\n${archPlan}`,
-      maxTokens: 4096
-    });
-    sendStep('💻 Codeur', 'done', coderOutput);
+    const MAX_CODER_PASSES = 3;
+    let coderOutput = '';
+    const emittedArtifacts = new Set();
+    for (let coderPass = 0; coderPass < MAX_CODER_PASSES; coderPass++) {
+      const isFirstCoderPass = coderPass === 0;
+      const passLabel = isFirstCoderPass ? '' : `Passe ${coderPass + 1}/${MAX_CODER_PASSES}`;
+      sendStep('💻 Codeur', 'active', passLabel);
+
+      const passPrompt = isFirstCoderPass
+        ? `${userPrompt}\n\nPLAN:\n${archPlan}`
+        : `Continue exactement la generation precedente sans repliquer les artefacts deja emis.
+
+Artefacts deja emis:
+${Array.from(emittedArtifacts).join('\n') || '- aucun'}
+
+Rappel:
+- ajoute seulement les fichiers ou workflows manquants
+- si tout est fini, termine par **STATUT: COMPLETE**
+- sinon termine par **STATUT: INCOMPLETE**`;
+
+      // eslint-disable-next-line no-await-in-loop
+      const coderPassOutput = await runAgentWithTools({
+        agentLabel: '💻 Codeur',
+        modelName: resolvedModelCoder,
+        systemPrompt: coderSystem,
+        userMessage: passPrompt,
+        maxTokens: 8192
+      });
+
+      coderOutput = coderOutput ? `${coderOutput}\n\n${coderPassOutput}` : coderPassOutput;
+      extractArtifactKeys(coderPassOutput).forEach((artifactKey) => emittedArtifacts.add(artifactKey));
+      sendStep('💻 Codeur', 'done', coderPassOutput);
+
+      if (/\*\*STATUT:\s*COMPLETE/i.test(coderPassOutput)) {
+        break;
+      }
+    }
 
     // ── Helper to run a shell command and get its output ──────────────────
-    const runShellCommand = (cmd, cwd) => new Promise((resolve) => {
-      const proc = spawn(process.platform === 'win32' ? 'cmd' : 'sh',
-        process.platform === 'win32' ? ['/c', cmd] : ['-c', cmd],
-        { cwd: cwd || options.projectPath || process.cwd(), shell: false });
-      let stdout = '';
-      let stderr = '';
-      proc.stdout?.on('data', d => { stdout += d.toString(); });
-      proc.stderr?.on('data', d => { stderr += d.toString(); });
-      proc.on('close', (code) => {
-        resolve({ code, stdout: stdout.substring(0, 2000), stderr: stderr.substring(0, 2000) });
-      });
-      proc.on('error', (e) => resolve({ code: -1, stdout: '', stderr: e.message }));
-      // No timeout: let long-running commands (npm install, tests) finish
-    });
+    const runShellCommandWithSafety = async (cmd, cwd) => {
+      const result = await executeCommandForAI(cmd, cwd || options.projectPath);
+      return {
+        ok: !!result?.success,
+        output: String(result?.output || '')
+      };
+    };
 
     // ── Parse <run_command>...</run_command> blocks ──
     const parseTestCommands = (text) => {
@@ -6701,10 +6628,10 @@ ${testLog ? `\nRESULTATS DES COMMANDES PRECEDENTES:\n${testLog}` : ''}`;
           sendStep(`${cmdLabel} ⏳ (Long...)`, 'active', '');
         }, 30000);
 
-        const result = await runShellCommand(cmd);
+        const result = await runShellCommandWithSafety(cmd);
         clearTimeout(cmdWarningId);
 
-        commandResults += `\n$ ${cmd}\n→ exit: ${result.code}\n${result.stdout}${result.stderr ? '\nSTDERR: ' + result.stderr : ''}\n`;
+        commandResults += `\n$ ${cmd}\n-> ${result.ok ? 'ok' : 'blocked/failed'}\n${result.output}\n`;
         sendStep(cmdLabel, 'done', commandResults);
       }
       if (commandResults) testLog += commandResults;
@@ -6740,7 +6667,7 @@ ${testLog ? `\nRESULTATS DES COMMANDES PRECEDENTES:\n${testLog}` : ''}`;
         modelName: resolvedModelCoder,
         systemPrompt: `${coderSystem}\n\nApplique UNIQUEMENT les corrections necessaires.`,
         userMessage: `PLAN DE CORRECTION:\n${correctionPlan}\n\nERREURS:\n${errorSummary}`,
-        maxTokens: 2048
+        maxTokens: 4096
       });
       sendStep('💻 Codeur', 'done', correctedCode);
       evolvingProposal += '\n\n---CORRECTION---\n\n' + correctedCode;

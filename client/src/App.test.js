@@ -4,6 +4,6 @@ import App from './App';
 
 test('renders app without crashing', () => {
   render(<App />);
-  const projectElement = screen.getByText(/Projet/i);
-  expect(projectElement).toBeInTheDocument();
+  const brandElement = screen.getByText(/Vibe IDE/i);
+  expect(brandElement).toBeInTheDocument();
 });

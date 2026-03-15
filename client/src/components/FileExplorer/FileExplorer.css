@@ -1,8 +1,9 @@
 .nav-root {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   height: 100%;
+  min-height: 0;
 }
 
 .nav-header {
@@ -10,6 +11,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .nav-brand {
@@ -61,10 +64,38 @@
   justify-content: flex-end;
 }
 
+.nav-subline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.nav-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  color: var(--text-1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nav-meta-chip.is-warning {
+  color: #ffd166;
+  border-color: rgba(255, 209, 102, 0.45);
+  background: rgba(255, 209, 102, 0.14);
+}
+
 .nav-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .nav-section-title {
@@ -88,12 +119,22 @@
 .nav-hint {
   font-size: 0.7rem;
   color: var(--text-2);
+  padding-left: 2px;
 }
 
 .nav-tree {
   flex: 1;
   overflow: auto;
   padding-right: 6px;
+  min-height: 0;
+  position: relative;
+}
+
+.nav-tree.is-root-drop-target {
+  border-radius: 16px;
+  outline: 1px dashed rgba(0, 245, 212, 0.45);
+  outline-offset: -6px;
+  background: rgba(0, 245, 212, 0.04);
 }
 
 .nav-empty {
@@ -121,7 +162,7 @@
   background: rgba(255, 255, 255, 0.03);
   color: var(--text-0);
   text-align: left;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .nav-result:hover {
@@ -144,11 +185,22 @@
   gap: 8px;
   padding: 4px 6px;
   border-radius: 12px;
-  transition: background 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  border: 1px solid transparent;
 }
 
 .file-item-row:hover {
   background: rgba(255, 255, 255, 0.03);
+}
+
+.file-item-row.is-drop-target {
+  border-color: rgba(0, 245, 212, 0.45);
+  background: rgba(0, 245, 212, 0.1);
+  box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.14);
+}
+
+.file-item-row.is-dragging {
+  opacity: 0.48;
 }
 
 .file-item-main {
@@ -156,6 +208,7 @@
   align-items: center;
   gap: 6px;
   flex: 1;
+  min-width: 0;
 }
 
 .file-item-toggle {
@@ -167,7 +220,7 @@
   justify-content: center;
   color: var(--text-2);
   background: transparent;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .file-item-toggle:hover {
@@ -180,13 +233,14 @@
   align-items: center;
   gap: 8px;
   flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   border-radius: 10px;
   font-size: 0.8rem;
   color: var(--text-1);
   border: 1px solid transparent;
   background: transparent;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .file-item-button:hover {
@@ -213,6 +267,51 @@
   text-overflow: ellipsis;
 }
 
+.file-item-rename-input {
+  width: 100%;
+  min-width: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 245, 212, 0.32);
+  background: rgba(8, 18, 28, 0.92);
+  color: var(--text-0);
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  font-family: var(--font-code);
+}
+
+.file-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.file-item-mini {
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-2);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.file-item-row:hover .file-item-mini,
+.file-item-row.is-drop-target .file-item-mini {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.file-item-mini:hover {
+  background: rgba(0, 245, 212, 0.1);
+  border-color: rgba(0, 245, 212, 0.24);
+  color: var(--text-0);
+}
+
 .file-item-delete {
   width: 26px;
   height: 26px;
@@ -223,7 +322,7 @@
   color: var(--text-2);
   opacity: 0;
   pointer-events: none;
-  transition: all 0.2s ease;
+  transition: opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease;
 }
 
 .file-item-row:hover .file-item-delete {
@@ -234,6 +333,40 @@
 .file-item-delete:hover {
   background: rgba(255, 107, 107, 0.2);
   color: #ff6b6b;
+}
+
+.nav-context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 16, 25, 0.96);
+  box-shadow: 0 22px 40px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(18px);
+}
+
+.nav-context-item {
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 10px;
+  color: var(--text-0);
+  background: transparent;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.nav-context-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.nav-context-item.is-danger {
+  color: #ff8b8b;
+}
+
+.nav-context-item.is-danger:hover {
+  background: rgba(255, 107, 107, 0.12);
 }
 
 .file-delete-icon {

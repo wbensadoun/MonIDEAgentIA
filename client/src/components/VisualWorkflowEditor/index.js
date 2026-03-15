@@ -48,6 +48,13 @@ const DEFAULT_NODE_ICONS = {
     logic: 'LG',
     output: 'OUT'
 };
+const AI_WORKFLOW_PHASES = [
+    'Analyse du besoin',
+    'Structuration du JSON',
+    'Placement des noeuds',
+    'Connexion des liens',
+    'Finalisation du canvas'
+];
 
 /* ═══════════════════════════════════════════
    Nœud personnalisé
@@ -55,9 +62,10 @@ const DEFAULT_NODE_ICONS = {
 const CustomNode = ({ id, data, selected }) => {
     const nodeType = data.nodeType || 'action';
     const execStatus = data._execStatus; // 'running' | 'success' | 'error' | undefined
+    const draftState = data._draftState;
 
     return (
-        <div className={`vw-node ${selected ? 'selected' : ''} ${execStatus ? `exec-${execStatus}` : ''}`}>
+        <div className={`vw-node ${selected ? 'selected' : ''} ${execStatus ? `exec-${execStatus}` : ''} ${draftState ? `draft-${draftState}` : ''}`}>
             <Handle type="target" position={Position.Left} />
             <div className="vw-node-header">
                 <div className={`vw-node-icon ${nodeType}`}>
@@ -84,7 +92,7 @@ const CustomNode = ({ id, data, selected }) => {
                 {nodeType === 'ai' && (
                     <>
                         <div className="vw-node-field">
-                            <span className="vw-node-label">Modèle</span>
+                            <span className="vw-node-label">Provider IA</span>
                             <select
                                 className="vw-node-select"
                                 value={data.model || 'gemini'}
@@ -172,10 +180,21 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
     const [highlightedWorkflowFilename, setHighlightedWorkflowFilename] = useState('');
     const [aiPrompt, setAiPrompt] = useState('');
     const [aiGenerating, setAiGenerating] = useState(false);
+    const [aiBuildState, setAiBuildState] = useState({
+        active: false,
+        phaseIndex: 0,
+        statusText: '',
+        progress: 0,
+        nodesAdded: 0,
+        totalNodes: 0,
+        edgesAdded: 0,
+        totalEdges: 0
+    });
     const draftSaveTimerRef = useRef(null);
     const draftLoadedRef = useRef(false);
     const aiWritePulseTimerRef = useRef(null);
     const aiWriteHighlightTimerRef = useRef(null);
+    const aiBuildTimersRef = useRef([]);
 
     const nodeTypes = useMemo(() => ({ custom: CustomNode }), []);
     const api = isElectronApiAvailable ? window.electronAPI : null;
@@ -481,6 +500,145 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
         nodeIdCounter.current = normalized.nextNodeCounter;
     }, [setNodes, setEdges, normalizeWorkflowForCanvas]);
 
+    const clearAiBuildTimers = useCallback(() => {
+        aiBuildTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+        aiBuildTimersRef.current = [];
+    }, []);
+
+    const scheduleAiBuildTimer = useCallback((callback, delay) => {
+        const timerId = window.setTimeout(() => {
+            aiBuildTimersRef.current = aiBuildTimersRef.current.filter((entry) => entry !== timerId);
+            callback();
+        }, delay);
+        aiBuildTimersRef.current.push(timerId);
+        return timerId;
+    }, []);
+
+    const animateWorkflowIntoCanvas = useCallback(async (wf) => {
+        const normalized = normalizeWorkflowForCanvas(wf);
+        const totalNodes = normalized.nodes.length;
+        const totalEdges = normalized.edges.length;
+        const progressFor = (nodesAdded, edgesAdded) => {
+            const totalUnits = Math.max(1, totalNodes + totalEdges);
+            const completedUnits = Math.min(totalUnits, nodesAdded + edgesAdded);
+            return Math.round((completedUnits / totalUnits) * 100);
+        };
+
+        clearAiBuildTimers();
+        setActivePanel(null);
+        if (normalized.name) setWorkflowName(normalized.name);
+        setNodes([]);
+        setEdges([]);
+        nodeIdCounter.current = normalized.nextNodeCounter;
+        setAiBuildState({
+            active: true,
+            phaseIndex: 2,
+            statusText: totalNodes > 0 ? 'Placement progressif des noeuds...' : 'Initialisation du workflow...',
+            progress: totalNodes + totalEdges > 0 ? 4 : 100,
+            nodesAdded: 0,
+            totalNodes,
+            edgesAdded: 0,
+            totalEdges
+        });
+
+        let cursorDelay = 120;
+        const nodeStepDelay = totalNodes > 10 ? 90 : 130;
+        const edgeStepDelay = totalEdges > 12 ? 75 : 110;
+
+        normalized.nodes.forEach((node, index) => {
+            scheduleAiBuildTimer(() => {
+                setNodes((prev) => [
+                    ...prev,
+                    {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            _draftState: 'entering'
+                        }
+                    }
+                ]);
+                setAiBuildState((prev) => ({
+                    ...prev,
+                    phaseIndex: 2,
+                    statusText: `Ajout du noeud ${index + 1}/${totalNodes}: ${node.data?.label || node.id}`,
+                    nodesAdded: index + 1,
+                    progress: progressFor(index + 1, prev.edgesAdded)
+                }));
+                scheduleAiBuildTimer(() => {
+                    setNodes((prev) => prev.map((entry) => (
+                        entry.id === node.id
+                            ? { ...entry, data: { ...entry.data, _draftState: 'settled' } }
+                            : entry
+                    )));
+                }, 380);
+            }, cursorDelay);
+            cursorDelay += nodeStepDelay;
+        });
+
+        if (totalEdges > 0) {
+            scheduleAiBuildTimer(() => {
+                setAiBuildState((prev) => ({
+                    ...prev,
+                    phaseIndex: 3,
+                    statusText: 'Connexion des liens entre noeuds...'
+                }));
+            }, Math.max(80, cursorDelay - 40));
+        }
+
+        normalized.edges.forEach((edge, index) => {
+            scheduleAiBuildTimer(() => {
+                setEdges((prev) => [
+                    ...prev,
+                    {
+                        ...edge,
+                        className: 'vw-edge-entering'
+                    }
+                ]);
+                setAiBuildState((prev) => ({
+                    ...prev,
+                    phaseIndex: 3,
+                    statusText: `Connexion ${index + 1}/${totalEdges}: ${edge.source} -> ${edge.target}`,
+                    edgesAdded: index + 1,
+                    progress: progressFor(prev.nodesAdded, index + 1)
+                }));
+            }, cursorDelay);
+            cursorDelay += edgeStepDelay;
+        });
+
+        if (totalNodes === 0 && totalEdges === 0) {
+            cursorDelay += 120;
+        }
+
+        scheduleAiBuildTimer(() => {
+            setAiBuildState((prev) => ({
+                ...prev,
+                phaseIndex: 4,
+                statusText: 'Finalisation et cadrage du workflow...',
+                progress: 100
+            }));
+            if (reactFlowInstance?.fitView) {
+                setTimeout(() => {
+                    reactFlowInstance.fitView({ padding: 0.18, duration: 700 });
+                }, 20);
+            }
+        }, cursorDelay + 120);
+
+        scheduleAiBuildTimer(() => {
+            setAiBuildState((prev) => ({
+                ...prev,
+                active: false,
+                statusText: ''
+            }));
+        }, cursorDelay + 1300);
+    }, [
+        clearAiBuildTimers,
+        normalizeWorkflowForCanvas,
+        reactFlowInstance,
+        scheduleAiBuildTimer,
+        setEdges,
+        setNodes
+    ]);
+
     // ── Restore draft on project change ──
     useEffect(() => {
         draftLoadedRef.current = false;
@@ -505,6 +663,12 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
             draftLoadedRef.current = true;
         }
     }, [draftStorageKey, loadWorkflowIntoCanvas, showMessage]);
+
+    useEffect(() => {
+        return () => {
+            clearAiBuildTimers();
+        };
+    }, [clearAiBuildTimers]);
 
     // ── Auto-save draft ──
     useEffect(() => {
@@ -743,7 +907,26 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
             if (showMessage) showMessage('API non disponible (mode navigateur)', 2000);
             return;
         }
+        clearAiBuildTimers();
         setAiGenerating(true);
+        setActivePanel(null);
+        setAiBuildState({
+            active: true,
+            phaseIndex: 0,
+            statusText: 'Analyse du prompt et preparation de la structure...',
+            progress: 8,
+            nodesAdded: 0,
+            totalNodes: 0,
+            edgesAdded: 0,
+            totalEdges: 0
+        });
+        scheduleAiBuildTimer(() => {
+            setAiBuildState((prev) => (
+                prev.active && prev.phaseIndex < 1
+                    ? { ...prev, phaseIndex: 1, statusText: 'Generation du JSON de workflow...', progress: 26 }
+                    : prev
+            ));
+        }, 480);
         if (showMessage) showMessage('🤖 Génération du workflow...', 2000);
 
         const systemPrompt = `Tu es un générateur de workflows visuels. L'utilisateur décrit ce qu'il veut, et tu génères un JSON de workflow.
@@ -804,16 +987,27 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
             }
 
             const wf = parseWorkflowPayload(jsonStr);
-            loadWorkflowIntoCanvas(wf);
-            setActivePanel(null);
+            setAiBuildState((prev) => ({
+                ...prev,
+                active: true,
+                phaseIndex: 2,
+                statusText: 'Workflow recu. Injection visuelle en cours...',
+                progress: Math.max(prev.progress, 34)
+            }));
+            await animateWorkflowIntoCanvas(wf);
             setAiPrompt('');
             if (showMessage) showMessage(`Workflow "${wf.name}" g\u00e9n\u00e9r\u00e9 par IA !`, 2000);
         } catch (err) {
             console.error('AI workflow generation error:', err);
+            setAiBuildState((prev) => ({
+                ...prev,
+                active: false,
+                statusText: ''
+            }));
             if (showMessage) showMessage('Erreur de g\u00e9n\u00e9ration IA: ' + err.message, 3000);
         }
         setAiGenerating(false);
-    }, [aiPrompt, aiGenerating, api, showMessage, loadWorkflowIntoCanvas, parseWorkflowPayload]);
+    }, [aiPrompt, aiGenerating, animateWorkflowIntoCanvas, api, clearAiBuildTimers, parseWorkflowPayload, scheduleAiBuildTimer, showMessage]);
 
     return (
         <div className={`vw-editor${aiWritePulse ? ' vw-editor-ai-write' : ''}`}>
@@ -866,6 +1060,22 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
 
             {/* ── Canvas ── */}
             <div className="vw-canvas" ref={reactFlowWrapper}>
+                {(aiGenerating || aiBuildState.active) && (
+                    <div className="vw-ai-overlay">
+                        <div className="vw-ai-overlay-badge">IA</div>
+                        <div className="vw-ai-overlay-title">
+                            {AI_WORKFLOW_PHASES[Math.min(aiBuildState.phaseIndex, AI_WORKFLOW_PHASES.length - 1)] || 'Generation'}
+                        </div>
+                        <div className="vw-ai-overlay-status">{aiBuildState.statusText || 'Generation du workflow...'}</div>
+                        <div className="vw-ai-overlay-progress">
+                            <span style={{ width: `${Math.max(4, Math.min(100, aiBuildState.progress || 0))}%` }} />
+                        </div>
+                        <div className="vw-ai-overlay-stats">
+                            <span>Noeuds {aiBuildState.nodesAdded}/{aiBuildState.totalNodes}</span>
+                            <span>Liens {aiBuildState.edgesAdded}/{aiBuildState.totalEdges}</span>
+                        </div>
+                    </div>
+                )}
                 {nodes.length === 0 && !activePanel ? (
                     <div className="vw-empty">
                         <div className="vw-empty-icon">⚡</div>

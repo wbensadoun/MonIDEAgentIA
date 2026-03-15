@@ -120,6 +120,17 @@ export const useFileOperations = (
       }
 
       if (response.success) {
+        const segments = String(name).split(/[\\/]+/).filter(Boolean);
+        if (segments.length > 1) {
+          setExpandedFolders(prev => {
+            const next = new Set(prev);
+            for (let index = 1; index < segments.length; index += 1) {
+              next.add(segments.slice(0, index).join('/'));
+              next.add(segments.slice(0, index).join('\\'));
+            }
+            return next;
+          });
+        }
         await loadProjectItems();
         if (type === 'file') {
           setActiveFile(name);
@@ -136,20 +147,76 @@ export const useFileOperations = (
     }
   }, [currentProjectPath, isElectronApiAvailable, showMessage, loadProjectItems, setActiveFile, isReadOnly]);
 
+  const renameItem = useCallback(async (itemPath, nextPath, itemType = 'file') => {
+    if (isReadOnly) {
+      showMessage('Mode lecture seule actif: renommage bloque.', 3000);
+      return { success: false, error: 'read_only' };
+    }
+    if (!itemPath || !nextPath) {
+      return { success: false, error: 'Chemin manquant' };
+    }
+    if (!isElectronApiAvailable || !currentProjectPath || !window.electronAPI?.renameFile) {
+      return { success: false, error: 'Electron non disponible' };
+    }
+
+    try {
+      const response = await window.electronAPI.renameFile(currentProjectPath, itemPath, nextPath);
+      if (response?.success) {
+        await loadProjectItems();
+        showMessage(`${itemType === 'directory' ? 'Dossier' : 'Fichier'} renomme.`, 2200);
+        return { success: true };
+      }
+      const errorText = String(response?.error || 'Renommage impossible');
+      showMessage(`Erreur: ${errorText}`, 4500);
+      return { success: false, error: errorText };
+    } catch (error) {
+      showMessage(`Erreur IPC: ${error.message}`, 4500);
+      return { success: false, error: error.message };
+    }
+  }, [currentProjectPath, isElectronApiAvailable, isReadOnly, loadProjectItems, showMessage]);
+
+  const moveItem = useCallback(async (itemPath, nextPath, itemType = 'file') => {
+    if (isReadOnly) {
+      showMessage('Mode lecture seule actif: deplacement bloque.', 3000);
+      return { success: false, error: 'read_only' };
+    }
+    if (!itemPath || !nextPath) {
+      return { success: false, error: 'Chemin manquant' };
+    }
+    if (!isElectronApiAvailable || !currentProjectPath || !window.electronAPI?.moveFile) {
+      return { success: false, error: 'Electron non disponible' };
+    }
+
+    try {
+      const response = await window.electronAPI.moveFile(currentProjectPath, itemPath, nextPath);
+      if (response?.success) {
+        await loadProjectItems();
+        showMessage(`${itemType === 'directory' ? 'Dossier' : 'Fichier'} deplace.`, 2200);
+        return { success: true };
+      }
+      const errorText = String(response?.error || 'Deplacement impossible');
+      showMessage(`Erreur: ${errorText}`, 4500);
+      return { success: false, error: errorText };
+    } catch (error) {
+      showMessage(`Erreur IPC: ${error.message}`, 4500);
+      return { success: false, error: error.message };
+    }
+  }, [currentProjectPath, isElectronApiAvailable, isReadOnly, loadProjectItems, showMessage]);
+
   const deleteItem = useCallback(async (itemName, type) => {
     if (isReadOnly) {
       showMessage('Mode lecture seule actif: suppression bloquee.', 3000);
-      return;
+      return { success: false, error: 'read_only' };
     }
 
     if (!allowDangerousActions) {
       if (!window.confirm(`Supprimer ${type === 'file' ? 'le fichier' : 'le dossier'} "${itemName}" ?`)) {
-        return;
+        return { success: false, error: 'cancelled' };
       }
     }
     if (!isElectronApiAvailable || !currentProjectPath) {
       showMessage("Erreur: Electron non disponible.", 10000);
-      return;
+      return { success: false, error: 'Electron non disponible' };
     }
 
     try {
@@ -163,11 +230,14 @@ export const useFileOperations = (
       if (response.success) {
         await loadProjectItems();
         showMessage(`${type === 'file' ? 'Fichier' : 'Dossier'} "${itemName}" supprimé.`);
+        return { success: true };
       } else {
         showMessage(`Erreur: ${response.error}`, 5000);
+        return { success: false, error: response.error };
       }
     } catch (error) {
       showMessage(`Erreur IPC: ${error.message}`, 5000);
+      return { success: false, error: error.message };
     }
   }, [currentProjectPath, isElectronApiAvailable, showMessage, loadProjectItems, allowDangerousActions, isReadOnly]);
 
@@ -201,6 +271,8 @@ export const useFileOperations = (
     loadProjectItems,
     toggleFolderExpansion,
     createNewItem,
+    renameItem,
+    moveItem,
     deleteItem,
     openFolder
   };

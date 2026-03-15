@@ -2,16 +2,22 @@ import React, { useState, useEffect, useCallback } from 'react';
 import './Settings.css';
 
 const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
+  const suggestedOllamaModels = [
+    'qwen3:8b',
+    'qwen3:14b',
+    'qwen3:32b'
+  ];
+
   const [settings, setSettings] = useState({
     geminiApiKey: '',
     kimiApiKey: '',
     claudeApiKey: '',
     defaultProvider: 'gemini',
     thinkingMode: false,
-    ollamaModel: 'qwen2.5-coder:7b',
-    ollamaModelArchitect: 'qwen2.5-coder:7b',
-    ollamaModelCoder: 'qwen3-coder:30b',
-    ollamaModelTester: 'qwen2.5-coder:7b',
+    ollamaModel: 'qwen3:8b',
+    ollamaModelArchitect: 'qwen3:8b',
+    ollamaModelCoder: 'qwen3:8b',
+    ollamaModelTester: 'qwen3:8b',
     devPort: '3004',
     allowDangerousActions: false,
     aiContextPreset: 'safe',
@@ -61,7 +67,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
         if (!mounted) return;
         if (response?.success && Array.isArray(response.models)) {
           const models = response.models
-            .map((m) => String(m || '').trim())
+            .map((m) => String(m?.name || m || '').trim())
             .filter(Boolean);
           setOllamaModels(models);
         } else {
@@ -158,6 +164,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
   };
 
   const availableOllamaModels = Array.from(new Set([
+    ...suggestedOllamaModels,
     settings.ollamaModel,
     settings.ollamaModelArchitect,
     settings.ollamaModelCoder,
@@ -200,16 +207,19 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
             <div className="settings-hint">
               Utilises pour Ollama simple et Multi-Ollama (Architecte / Codeur / Relecteur).
             </div>
+            <div className="settings-hint">
+              Presets proposes: qwen3:8b, qwen3:14b, qwen3:32b (installer via `ollama pull` si absent localement).
+            </div>
 
             <label className="settings-label">Modele Ollama simple</label>
             <select
-              value={settings.ollamaModel || 'qwen2.5-coder:7b'}
+              value={settings.ollamaModel || 'qwen3:8b'}
               onChange={(e) => handleChange('ollamaModel', e.target.value)}
               className="settings-input"
             >
               {availableOllamaModels.length === 0 && (
-                <option value={settings.ollamaModel || 'qwen2.5-coder:7b'}>
-                  {settings.ollamaModel || 'qwen2.5-coder:7b'}
+                <option value={settings.ollamaModel || 'qwen3:8b'}>
+                  {settings.ollamaModel || 'qwen3:8b'}
                 </option>
               )}
               {availableOllamaModels.map((modelName) => (
@@ -219,7 +229,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
 
             <label className="settings-label">Architecte (Multi-Ollama)</label>
             <select
-              value={settings.ollamaModelArchitect || settings.ollamaModel || 'qwen2.5-coder:7b'}
+              value={settings.ollamaModelArchitect || settings.ollamaModel || 'qwen3:8b'}
               onChange={(e) => handleChange('ollamaModelArchitect', e.target.value)}
               className="settings-input"
             >
@@ -230,7 +240,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
 
             <label className="settings-label">Codeur (Multi-Ollama)</label>
             <select
-              value={settings.ollamaModelCoder || settings.ollamaModel || 'qwen3-coder:30b'}
+              value={settings.ollamaModelCoder || settings.ollamaModel || 'qwen3:8b'}
               onChange={(e) => handleChange('ollamaModelCoder', e.target.value)}
               className="settings-input"
             >
@@ -241,7 +251,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
 
             <label className="settings-label">Relecteur (Multi-Ollama)</label>
             <select
-              value={settings.ollamaModelTester || settings.ollamaModel || 'qwen2.5-coder:7b'}
+              value={settings.ollamaModelTester || settings.ollamaModel || 'qwen3:8b'}
               onChange={(e) => handleChange('ollamaModelTester', e.target.value)}
               className="settings-input"
             >

@@ -1,4 +1,14 @@
 import { useState, useCallback, useEffect } from 'react';
+import {
+  AGENT_MODELS,
+  generateArchitectEngineerPrompt,
+  generateBackendDevPrompt,
+  generateChefDeProjetPrompt,
+  generateFrontendDevPrompt,
+  generateScrumMasterPrompt
+} from './aiPrompts';
+import useAISettingsSync from './useAISettingsSync';
+import useAIPendingChanges from './useAIPendingChanges';
 
 export const useAI = (
   currentProjectPath,
@@ -23,17 +33,12 @@ export const useAI = (
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [aiConversationHistory, setAiConversationHistory] = useState([]);
-  const [previousCode, setPreviousCode] = useState('');
-  const [isDiffMode, setIsDiffMode] = useState(false);
-  const [apiKeys, setApiKeys] = useState({
-    gemini: '',
-    kimi: '',
-    claude: '',
-    ollamaModel: '',
-    ollamaModelArchitect: '',
-    ollamaModelCoder: '',
-    ollamaModelTester: ''
-  });
+  const {
+    apiKeys,
+    projectScanPreset,
+    projectScanIncludeSecrets,
+    projectScanLargeFileStrategy
+  } = useAISettingsSync(isElectronApiAvailable);
   const {
     gemini: geminiApiKey,
     kimi: kimiApiKey,
@@ -43,9 +48,6 @@ export const useAI = (
     ollamaModelCoder,
     ollamaModelTester
   } = apiKeys;
-  const [projectScanPreset, setProjectScanPreset] = useState('safe'); // safe | full | god
-  const [projectScanIncludeSecrets, setProjectScanIncludeSecrets] = useState(false);
-  const [projectScanLargeFileStrategy, setProjectScanLargeFileStrategy] = useState('skip'); // skip | truncate
   const [multiAIState, setMultiAIState] = useState({
     isActive: false,
     currentPhase: null,
@@ -60,11 +62,6 @@ export const useAI = (
   const [abortController, setAbortController] = useState(null);
   const [pendingImages, setPendingImages] = useState([]);
   const [pendingMessage, setPendingMessage] = useState(null); // { text, images }
-  const [pendingFileChanges, setPendingFileChanges] = useState([]);
-  const [activePendingChangeId, setActivePendingChangeId] = useState(null);
-  const [pendingSnapshotId, setPendingSnapshotId] = useState(null);
-  const [appliedPatchHistory, setAppliedPatchHistory] = useState([]);
-  const [qualityGatePassedBatch, setQualityGatePassedBatch] = useState(false);
   const [contextEstimate, setContextEstimate] = useState({
     provider: aiProvider,
     promptChars: 0,
@@ -72,253 +69,34 @@ export const useAI = (
     estimatedTokens: 0,
     estimatedCostUsd: 0
   });
-
-  // Charger les settings (clés API) au montage
-  useEffect(() => {
-    const loadApiKeys = async () => {
-      if (!isElectronApiAvailable) return;
-      try {
-        const response = await window.electronAPI.loadSettings();
-        if (response.success && response.settings) {
-          setApiKeys({
-            gemini: response.settings.geminiApiKey || '',
-            kimi: response.settings.kimiApiKey || '',
-            claude: response.settings.claudeApiKey || '',
-            ollamaModel: response.settings.ollamaModel || '',
-            ollamaModelArchitect: response.settings.ollamaModelArchitect || '',
-            ollamaModelCoder: response.settings.ollamaModelCoder || '',
-            ollamaModelTester: response.settings.ollamaModelTester || ''
-          });
-
-          const preset = response.settings.aiContextPreset;
-          if (preset === 'safe' || preset === 'full' || preset === 'god') {
-            setProjectScanPreset(preset);
-          }
-
-          setProjectScanIncludeSecrets(!!response.settings.aiContextIncludeSecrets);
-
-          const strat = response.settings.aiContextLargeFileStrategy;
-          setProjectScanLargeFileStrategy(strat === 'truncate' ? 'truncate' : 'skip');
-        }
-      } catch (error) {
-        // silencieux
-      }
-    };
-    loadApiKeys();
-  }, [isElectronApiAvailable]);
-
-  useEffect(() => {
-    const onSettingsUpdated = (event) => {
-      const next = event?.detail;
-      if (!next || typeof next !== 'object') return;
-
-      setApiKeys({
-        gemini: next.geminiApiKey || '',
-        kimi: next.kimiApiKey || '',
-        claude: next.claudeApiKey || '',
-        ollamaModel: next.ollamaModel || '',
-        ollamaModelArchitect: next.ollamaModelArchitect || '',
-        ollamaModelCoder: next.ollamaModelCoder || '',
-        ollamaModelTester: next.ollamaModelTester || ''
-      });
-
-      if (next.aiContextPreset === 'safe' || next.aiContextPreset === 'full' || next.aiContextPreset === 'god') {
-        setProjectScanPreset(next.aiContextPreset);
-      }
-
-      setProjectScanIncludeSecrets(!!next.aiContextIncludeSecrets);
-      setProjectScanLargeFileStrategy(next.aiContextLargeFileStrategy === 'truncate' ? 'truncate' : 'skip');
-    };
-
-    window.addEventListener('settings-updated', onSettingsUpdated);
-    return () => window.removeEventListener('settings-updated', onSettingsUpdated);
-  }, []);
-
-  // ===== MODÈLES TOGETHER AI PAR AGENT =====
-  const AGENT_MODELS = {
-    chefDeProjet: 'gemini-2.5-pro',
-    frontendDev: 'moonshotai/Kimi-K2.5',
-    backendDev: 'moonshotai/Kimi-K2.5',
-    architectEngineer: 'moonshotai/Kimi-K2.5',
-    scrumMaster: 'gemini-2.5-pro'
-  };
-
-  // ===== PROMPTS POUR CHAQUE AGENT =====
-
-  const generateChefDeProjetPrompt = (userRequest, projectContext, currentCode) => {
-    return `Tu es le CHEF DE PROJET. Ton unique rôle est d'interpréter au mieux le besoin de l'utilisateur et de rédiger un CAHIER DES CHARGES complet et structuré.
-
-DEMANDE DE L'UTILISATEUR: "${userRequest}"
-
-CONTEXTE DU PROJET: ${projectContext}
-CODE ACTUEL: ${currentCode || 'Aucun'}
-
-INSTRUCTIONS:
-1. Analyse en profondeur la demande de l'utilisateur
-2. Identifie tous les besoins explicites ET implicites
-3. Rédige un cahier des charges structuré
-
-FORMAT DE SORTIE OBLIGATOIRE:
-
-CAHIER_DES_CHARGES:
-
-## 1. Résumé du besoin
-[Reformulation claire de la demande]
-
-## 2. Spécifications Frontend
-- Pages/Composants à créer ou modifier
-- Interactions utilisateur attendues
-- Design/UX requis
-
-## 3. Spécifications Backend
-- Endpoints API nécessaires
-- Modèles de données / Base de données
-- Logique métier côté serveur
-
-## 4. Architecture technique
-- Technologies à utiliser
-- Structure des fichiers
-- Dépendances nécessaires
-
-## 5. Critères d'acceptation
-- [ ] Critère 1
-- [ ] Critère 2
-...
-
-## 6. Fichiers concernés
-- Liste des fichiers à créer/modifier avec leur rôle
-
-CONSIGNES:
-- Sois exhaustif et précis
-- Pense aux cas limites et à la gestion d'erreurs
-- Reste cohérent avec l'architecture existante du projet
-NE GÉNÈRE JAMAIS de syntaxe de type **WORKFLOW: nom** ou **FICHIER: nom** dans ta réponse, car ton rôle est uniquement de rédiger le plan. C'est le rôle des codeurs.`;
-  };
-
-  const generateFrontendDevPrompt = (cahierDesCharges, projectContext, currentCode) => {
-    return `Tu es le DÉVELOPPEUR FRONTEND. Tu ne codes QUE le frontend (HTML, CSS, JavaScript, React, composants UI).
-
-CAHIER DES CHARGES:
-${cahierDesCharges}
-
-CONTEXTE DU PROJET: ${projectContext}
-CODE ACTUEL: ${currentCode || 'Aucun'}
-
-INSTRUCTIONS:
-1. Lis attentivement le cahier des charges, en particulier les "Spécifications Frontend"
-2. Code UNIQUEMENT les fichiers frontend (composants React, pages, styles CSS, hooks)
-3. NE touche PAS au backend (pas de routes API, pas de modèles de données serveur)
-4. Pour chaque fichier, utilise ce format:
-
-   **FICHIER: chemin/du/fichier.ext**
-   \`\`\`langage
-   // code complet du fichier
-   \`\`\`
-
-CONSIGNES:
-- Focus UNIQUEMENT sur l'UI, les composants React/Vue, le state management, les appels API côté client, les hooks, le CSS.
-- NE PAS écrire de code Backend (Node.js, Express, BD).
-- Si un mock est nécessaire, crée-le.
-- FOURNIS le code complet, prêt à être intégré, au format **FICHIER: chemin/nom.ext** \`\`\`lang\ncode\n\`\`\`.
-- NE GÉNÈRE PAS de **WORKFLOW: nom** car tu ne crées que du code.`;
-  };
-
-  const generateBackendDevPrompt = (cahierDesCharges, frontendResponse, projectContext, currentCode) => {
-    return `Tu es le DÉVELOPPEUR BACKEND. Tu ne codes QUE le backend (API, routes, modèles, services, base de données).
-
-CAHIER DES CHARGES:
-${cahierDesCharges}
-
-CONTEXTE DU PROJET: ${projectContext}
-CODE ACTUEL: ${currentCode || 'Aucun'}
-
-INSTRUCTIONS:
-1. Lis attentivement le cahier des charges, en particulier les "Spécifications Backend"
-2. Code UNIQUEMENT les fichiers backend (routes API, contrôleurs, modèles, services, migrations DB)
-3. NE touche PAS au frontend (pas de composants React, pas de CSS)
-4. Pour chaque fichier, utilise ce format:
-
-   **FICHIER: chemin/du/fichier.ext**
-   \`\`\`langage
-   // code complet du fichier
-   \`\`\`
-
-CONSIGNES:
-- Focus UNIQUEMENT sur les serveurs, les routes d'API, la logique métier, l'accès BDD (Mongoose, Prisma), l'auth, etc.
-- Fournis des mocks ou fixtures si besoin.
-- Relie ton code à celui du Frontend Dev si nécessaire.
-- FOURNIS le code complet, prêt à être intégré, au format **FICHIER: chemin/nom.ext** \`\`\`lang\ncode\n\`\`\`.
-- NE GÉNÈRE PAS de **WORKFLOW: nom**.`;
-  };
-
-  const generateArchitectEngineerPrompt = (cahierDesCharges, frontendCode, backendCode, userRequest, projectContext) => {
-    return `Tu es l'ARCHITECTE LOGICIEL / DEVOPS. Ton rôle est de lier le frontend et le backend, d'optimiser, et de créer la configuration de déploiement.
-    
-CAHIER DES CHARGES:
-${cahierDesCharges}
-
-CODE FRONTEND GÉNÉRÉ:
-${frontendCode}
-
-CODE BACKEND GÉNÉRÉ:
-${backendCode}
-
-DEMANDE ORIGINALE: "${userRequest}"
-
-CONTEXTE DU PROJET: ${projectContext}
-
-INSTRUCTIONS:
-1. Analyse l'intégration entre le frontend et le backend
-2. Propose des optimisations et refactorisations si nécessaires
-3. Code les fichiers de configuration (Docker, CI/CD, Nginx, etc.) s'ils sont pertinents
-4. Assure la cohérence globale de l'application
-
-FORMAT OBLIGATOIRE:
-- Fais le lien entre le Frontend et le Backend. Crée les scripts d'intégration, configurations Docker, CI/CD, etc.
-- Optimise, refactorise si nécessaire. 
-- Vérifie la cohérence globale.
-- FOURNIS le code manquant ou les modifications sous forme de **FICHIER: chemin/nom.ext** \`\`\`lang\ncode\n\`\`\`.
-- NE GENERÈ JAMAIS LA SYNTAXE **WORKFLOW:**. L'utilisateur utilise un autre format pour cela.`;
-  };
-
-  const generateScrumMasterPrompt = (cahierDesCharges, frontendCode, backendCode, architectReview, userRequest) => {
-    return `Tu es le SCRUM MASTER. Ton rôle est de synthétiser tout le travail des agents et de produire le LIVRABLE FINAL complet et cohérent.
-
-CAHIER DES CHARGES:
-${cahierDesCharges}
-
-CODE FRONTEND:
-${frontendCode}
-
-CODE BACKEND:
-${backendCode}
-
-REVIEW ARCHITECTE:
-${architectReview}
-
-DEMANDE ORIGINALE: "${userRequest}"
-
-INSTRUCTIONS:
-1. Synthétise tous les outputs des agents précédents
-2. Si l'architecte a proposé des corrections, applique-les dans le code final
-3. Produis le LIVRABLE COMPLET avec tous les fichiers dans leur version finale
-4. Ajoute un résumé de ce qui a été fait
-
-FORMAT DE SORTIE OBLIGATOIRE:
-
-## Résumé des travaux
-[Résumé de ce qui a été implémenté, en 3-5 lignes]
-
-## Fichiers livrés
-
-Pour CHAQUE fichier (frontend + backend), utilise EXACTEMENT ce format stricte !
-**FICHIER: chemin/du/fichier.ext**
-\`\`\`langage
-// code complet final
-\`\`\`
-
-NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre-toi sur le code source.`;
-  };
+  const {
+    previousCode,
+    setPreviousCode,
+    isDiffMode,
+    setIsDiffMode,
+    pendingFileChanges,
+    activePendingChangeId,
+    pendingSnapshotId,
+    processAIFileModifications,
+    applyPendingChangeByIndex,
+    rejectPendingChangeByIndex,
+    applyAllPendingChanges,
+    rejectAllPendingChanges,
+    handleUndo: handlePendingUndo,
+    handleAcceptDiff: handlePendingAcceptDiff,
+    selectPendingChangeByIndex: selectPendingChangeFromQueue,
+    resetPendingChangesState
+  } = useAIPendingChanges({
+    currentProjectPath,
+    activeFile,
+    setCode,
+    setActiveFile,
+    isElectronApiAvailable,
+    showMessage,
+    loadProjectItems,
+    permissionMode,
+    qualityGateConfig
+  });
 
 
   const resetMultiAIState = useCallback(() => {
@@ -405,605 +183,6 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
       estimatedCostUsd: Number(estimatedCostUsd.toFixed(4))
     });
   }, [computeContextChars, estimateRequestCost]);
-
-  const sanitizeProposedFilePath = useCallback((fileName) => {
-    const raw = String(fileName || '').trim();
-    if (!raw) return '';
-
-    // Reject absolute paths early; backend will still enforce workspace safety.
-    if (/^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('/') || raw.startsWith('\\')) {
-      return '';
-    }
-
-    const segments = raw
-      .replace(/\\/g, '/')
-      .split('/')
-      .map((segment) => String(segment || '').trim())
-      .filter(Boolean);
-
-    if (segments.length === 0) return '';
-    if (segments.some((segment) => segment === '.' || segment === '..')) return '';
-
-    const cleaned = segments
-      .map((segment) => segment.split('\0').join('').replace(/[<>:"|?*]/g, '_').trim())
-      .filter(Boolean);
-
-    return cleaned.join('/');
-  }, []);
-
-  const buildFileProposal = useCallback(async (fileName, fileContent) => {
-    if (!isElectronApiAvailable || !currentProjectPath || !window.electronAPI?.readFile) return null;
-
-    const cleanFileName = sanitizeProposedFilePath(fileName);
-    if (!cleanFileName) return null;
-
-    let oldContent = '';
-    let existed = false;
-    let baseMtimeMs = null;
-    try {
-      const readRes = await window.electronAPI.readFile(currentProjectPath, cleanFileName);
-      if (readRes?.success) {
-        existed = true;
-        oldContent = String(readRes.content || '');
-        baseMtimeMs = Number.isFinite(Number(readRes.mtimeMs)) ? Number(readRes.mtimeMs) : null;
-      }
-    } catch {
-      // keep defaults
-    }
-
-    const patchId = `patch-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    return {
-      id: patchId,
-      patchId,
-      filePath: cleanFileName,
-      newContent: String(fileContent || ''),
-      oldContent,
-      existed,
-      baseMtimeMs
-    };
-  }, [currentProjectPath, isElectronApiAvailable, sanitizeProposedFilePath]);
-
-  const focusPendingChange = useCallback((change) => {
-    if (!change || !change.filePath) {
-      setActivePendingChangeId(null);
-      return;
-    }
-    setActiveFile(change.filePath);
-    setActivePendingChangeId(change.id || null);
-    setPreviousCode(change.oldContent || '');
-    setCode(change.newContent || '');
-    setIsDiffMode(true);
-  }, [setActiveFile, setCode]);
-
-  const ensureSnapshotForPending = useCallback(async (changes) => {
-    if (!Array.isArray(changes) || changes.length === 0) return true;
-    if (pendingSnapshotId) return true;
-    if (!window.electronAPI?.createAISnapshot || !currentProjectPath) return true;
-
-    try {
-      const files = changes.map((c) => c.filePath);
-      const res = await window.electronAPI.createAISnapshot(currentProjectPath, files, 'ai-changes');
-      if (res?.success) {
-        setPendingSnapshotId(res.snapshotId || null);
-        return true;
-      }
-      showMessage(`Snapshot non cree: ${res?.error || 'inconnu'}`, 3500);
-      return false;
-    } catch (error) {
-      showMessage(`Snapshot non cree: ${error.message}`, 3500);
-      return false;
-    }
-  }, [currentProjectPath, pendingSnapshotId, showMessage]);
-
-  const runQualityGatesBeforeApply = useCallback(async () => {
-    if (!qualityGateConfig?.onApply) return true;
-    if (qualityGatePassedBatch) return true;
-    if (!window.electronAPI?.runQualityGates || !currentProjectPath) return true;
-
-    try {
-      const res = await window.electronAPI.runQualityGates(currentProjectPath, {
-        lint: qualityGateConfig.lint,
-        test: qualityGateConfig.test,
-        build: qualityGateConfig.build,
-        blockOnFail: qualityGateConfig.blockOnFail
-      });
-
-      if (!res?.success) {
-        showMessage(`Quality gates: ${res?.error || 'erreur inconnue'}`, 5000);
-        return false;
-      }
-
-      if (!res.passed) {
-        const failed = (res.results || []).filter((gate) => !gate.ok).map((gate) => gate.id).join(', ');
-        showMessage(`Quality gates echoues: ${failed || 'details indisponibles'}`, 5000);
-        return false;
-      }
-
-      setQualityGatePassedBatch(true);
-      showMessage('Quality gates valides.', 2500);
-      return true;
-    } catch (error) {
-      showMessage(`Quality gates: ${error.message}`, 5000);
-      return false;
-    }
-  }, [currentProjectPath, qualityGateConfig, qualityGatePassedBatch, showMessage]);
-
-  const pushAppliedPatchHistory = useCallback((entries) => {
-    if (!Array.isArray(entries) || entries.length === 0) return;
-    const normalizedEntries = entries
-      .filter((entry) => entry && entry.filePath && entry.patchId)
-      .map((entry) => ({
-        patchId: String(entry.patchId),
-        filePath: String(entry.filePath),
-        existedBefore: !!entry.existedBefore,
-        previousContent: String(entry.previousContent || ''),
-        appliedContent: String(entry.appliedContent || ''),
-        appliedAt: entry.appliedAt || new Date().toISOString(),
-        appliedMtimeMs: Number.isFinite(Number(entry.appliedMtimeMs)) ? Number(entry.appliedMtimeMs) : null
-      }));
-
-    if (normalizedEntries.length === 0) return;
-
-    setAppliedPatchHistory((prev) => {
-      const merged = [...prev, ...normalizedEntries];
-      const limit = 80;
-      return merged.length > limit ? merged.slice(merged.length - limit) : merged;
-    });
-  }, []);
-
-  const rollbackPatchEntry = useCallback(async (entry) => {
-    if (!entry || !currentProjectPath || !isElectronApiAvailable) {
-      return { success: false, error: 'Contexte rollback indisponible' };
-    }
-
-    if (!entry.existedBefore) {
-      if (!window.electronAPI?.deleteFile) {
-        return { success: false, error: 'API deleteFile indisponible' };
-      }
-
-      try {
-        const deleteOptions = Number.isFinite(Number(entry.appliedMtimeMs))
-          ? { expectedMtimeMs: Number(entry.appliedMtimeMs) }
-          : undefined;
-        const res = await window.electronAPI.deleteFile(currentProjectPath, entry.filePath, deleteOptions);
-        if (res?.success) {
-          return { success: true };
-        }
-        const errorText = String(res?.error || '');
-        if (/ENOENT|introuvable|not exist|n'existe/i.test(errorText)) {
-          return { success: true };
-        }
-        return { success: false, error: res?.error || 'Echec suppression rollback' };
-      } catch (error) {
-        return { success: false, error: error.message };
-      }
-    }
-
-    if (!window.electronAPI?.writeFile) {
-      return { success: false, error: 'API writeFile indisponible' };
-    }
-
-    try {
-      const writeOptions = Number.isFinite(Number(entry.appliedMtimeMs))
-        ? { expectedMtimeMs: Number(entry.appliedMtimeMs) }
-        : undefined;
-      const res = await window.electronAPI.writeFile(
-        currentProjectPath,
-        entry.filePath,
-        entry.previousContent || '',
-        writeOptions
-      );
-      if (res?.success) {
-        return { success: true, mtimeMs: Number.isFinite(Number(res.mtimeMs)) ? Number(res.mtimeMs) : null };
-      }
-      return { success: false, error: res?.error || 'Echec restauration rollback', code: res?.code };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }, [currentProjectPath, isElectronApiAvailable]);
-
-  const applyPendingChangeByIndex = useCallback(async (index) => {
-    if (permissionMode === 'read_only') {
-      showMessage('Mode lecture seule: application IA bloquee.', 3000);
-      return false;
-    }
-    if (!Array.isArray(pendingFileChanges) || pendingFileChanges.length === 0) return false;
-    const change = pendingFileChanges[index];
-    if (!change) return false;
-
-    const gatesOk = await runQualityGatesBeforeApply();
-    if (!gatesOk) return false;
-
-    const snapshotOk = await ensureSnapshotForPending(pendingFileChanges);
-    if (!snapshotOk) return false;
-
-    try {
-      let res;
-      const patchId = String(change.patchId || change.id || `patch-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`);
-      if (change.existed) {
-        const writeOptions = Number.isFinite(Number(change.baseMtimeMs))
-          ? { expectedMtimeMs: Number(change.baseMtimeMs) }
-          : undefined;
-        res = await window.electronAPI.writeFile(currentProjectPath, change.filePath, change.newContent, writeOptions);
-      } else {
-        res = await window.electronAPI.createNewFile(currentProjectPath, change.filePath, change.newContent);
-      }
-
-      if (!res?.success) {
-        if (res?.code === 'FILE_MODIFIED' || res?.code === 'FILE_MISSING') {
-          showMessage(`Conflit detecte (${change.filePath}): rechargez puis regenerez le patch.`, 5500);
-          return false;
-        }
-        showMessage(`Erreur application IA: ${res?.error || change.filePath}`, 5000);
-        return false;
-      }
-
-      pushAppliedPatchHistory([{
-        patchId,
-        filePath: change.filePath,
-        existedBefore: !!change.existed,
-        previousContent: change.oldContent || '',
-        appliedContent: change.newContent || '',
-        appliedAt: new Date().toISOString(),
-        appliedMtimeMs: Number.isFinite(Number(res?.mtimeMs)) ? Number(res.mtimeMs) : null
-      }]);
-
-      const nextChanges = pendingFileChanges.filter((_, i) => i !== index);
-      setPendingFileChanges(nextChanges);
-      await loadProjectItems();
-
-      if (nextChanges.length > 0) {
-        const nextIndex = Math.min(index, nextChanges.length - 1);
-        focusPendingChange(nextChanges[nextIndex]);
-      } else {
-        setActivePendingChangeId(null);
-        setIsDiffMode(false);
-        setPreviousCode('');
-        setPendingSnapshotId(null);
-        setQualityGatePassedBatch(false);
-      }
-
-      showMessage(`Modification IA appliquee (${patchId}): ${change.filePath}`, 2800);
-      return true;
-    } catch (error) {
-      showMessage(`Erreur application IA: ${error.message}`, 5000);
-      return false;
-    }
-  }, [
-    permissionMode,
-    pendingFileChanges,
-    runQualityGatesBeforeApply,
-    ensureSnapshotForPending,
-    currentProjectPath,
-    loadProjectItems,
-    focusPendingChange,
-    pushAppliedPatchHistory,
-    showMessage
-  ]);
-
-  const rejectPendingChangeByIndex = useCallback((index) => {
-    if (!Array.isArray(pendingFileChanges) || pendingFileChanges.length === 0) return false;
-    const change = pendingFileChanges[index];
-    if (!change) return false;
-
-    const nextChanges = pendingFileChanges.filter((_, i) => i !== index);
-    setPendingFileChanges(nextChanges);
-
-    if (nextChanges.length > 0) {
-      const nextIndex = Math.min(index, nextChanges.length - 1);
-      focusPendingChange(nextChanges[nextIndex]);
-    } else {
-      setActivePendingChangeId(null);
-      setIsDiffMode(false);
-      setPreviousCode('');
-      if (activeFile === change.filePath) {
-        setCode(change.oldContent || '');
-      }
-      setPendingSnapshotId(null);
-      setQualityGatePassedBatch(false);
-    }
-
-    showMessage(`Modification IA rejetee: ${change.filePath}`, 2500);
-    return true;
-  }, [activeFile, pendingFileChanges, focusPendingChange, setCode, showMessage]);
-
-  const applyAllPendingChanges = useCallback(async () => {
-    if (permissionMode === 'read_only') {
-      showMessage('Mode lecture seule: application IA bloquee.', 3000);
-      return { success: false, applied: 0, failed: pendingFileChanges.length };
-    }
-    if (!Array.isArray(pendingFileChanges) || pendingFileChanges.length === 0) {
-      return { success: true, applied: 0, failed: 0 };
-    }
-
-    const gatesOk = await runQualityGatesBeforeApply();
-    if (!gatesOk) {
-      return { success: false, applied: 0, failed: pendingFileChanges.length };
-    }
-
-    const snapshotOk = await ensureSnapshotForPending(pendingFileChanges);
-    if (!snapshotOk) {
-      return { success: false, applied: 0, failed: pendingFileChanges.length };
-    }
-
-    let applied = 0;
-    const failedChanges = [];
-    const appliedEntries = [];
-
-    for (const change of pendingFileChanges) {
-      try {
-        let res;
-        const patchId = String(change.patchId || change.id || `patch-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`);
-        if (change.existed) {
-          const writeOptions = Number.isFinite(Number(change.baseMtimeMs))
-            ? { expectedMtimeMs: Number(change.baseMtimeMs) }
-            : undefined;
-          res = await window.electronAPI.writeFile(currentProjectPath, change.filePath, change.newContent, writeOptions);
-        } else {
-          res = await window.electronAPI.createNewFile(currentProjectPath, change.filePath, change.newContent);
-        }
-        if (res?.success) {
-          applied += 1;
-          appliedEntries.push({
-            patchId,
-            filePath: change.filePath,
-            existedBefore: !!change.existed,
-            previousContent: change.oldContent || '',
-            appliedContent: change.newContent || '',
-            appliedAt: new Date().toISOString(),
-            appliedMtimeMs: Number.isFinite(Number(res?.mtimeMs)) ? Number(res.mtimeMs) : null
-          });
-        } else {
-          failedChanges.push(change);
-          if (res?.code === 'FILE_MODIFIED' || res?.code === 'FILE_MISSING') {
-            showMessage(`Conflit detecte (${change.filePath}): patch ignore.`, 4500);
-          }
-        }
-      } catch {
-        failedChanges.push(change);
-      }
-    }
-
-    if (appliedEntries.length > 0) {
-      pushAppliedPatchHistory(appliedEntries);
-    }
-
-    await loadProjectItems();
-    setPendingFileChanges(failedChanges);
-
-    if (failedChanges.length === 0) {
-      setActivePendingChangeId(null);
-      setIsDiffMode(false);
-      setPreviousCode('');
-      setPendingSnapshotId(null);
-      setQualityGatePassedBatch(false);
-      showMessage(`${applied} fichier(s) IA appliques.`, 3000);
-    } else {
-      focusPendingChange(failedChanges[0]);
-      showMessage(`${applied} applique(s), ${failedChanges.length} en erreur.`, 4000);
-    }
-
-    return { success: failedChanges.length === 0, applied, failed: failedChanges.length };
-  }, [
-    permissionMode,
-    pendingFileChanges,
-    runQualityGatesBeforeApply,
-    ensureSnapshotForPending,
-    currentProjectPath,
-    loadProjectItems,
-    focusPendingChange,
-    pushAppliedPatchHistory,
-    showMessage
-  ]);
-
-  const rejectAllPendingChanges = useCallback(() => {
-    if (!Array.isArray(pendingFileChanges) || pendingFileChanges.length === 0) {
-      return { success: true, rejected: 0 };
-    }
-
-    const rejectedCount = pendingFileChanges.length;
-    const activeChange = pendingFileChanges.find((item) => item.id === activePendingChangeId) || pendingFileChanges[0];
-
-    if (activeChange && activeFile === activeChange.filePath) {
-      setCode(activeChange.oldContent || '');
-    }
-
-    setPendingFileChanges([]);
-    setActivePendingChangeId(null);
-    setIsDiffMode(false);
-    setPreviousCode('');
-    setPendingSnapshotId(null);
-    setQualityGatePassedBatch(false);
-
-    showMessage(`${rejectedCount} modification(s) IA rejetee(s).`, 3000);
-    return { success: true, rejected: rejectedCount };
-  }, [activeFile, activePendingChangeId, pendingFileChanges, setCode, showMessage]);
-
-  useEffect(() => {
-    if (!Array.isArray(pendingFileChanges) || pendingFileChanges.length === 0) {
-      setActivePendingChangeId(null);
-      return;
-    }
-    if (!activePendingChangeId) return;
-    const exists = pendingFileChanges.some((change) => change.id === activePendingChangeId);
-    if (!exists) {
-      setActivePendingChangeId(pendingFileChanges[0]?.id || null);
-    }
-  }, [activePendingChangeId, pendingFileChanges]);
-
-  const processAIFileModifications = useCallback(async (aiResponse) => {
-    if (!aiResponse) return;
-    try {
-      const collectedProposals = [];
-
-      const fileBlockRegex1 = /\*\*FICHIER:\s*(.+?)\*\*\s*```[\w]*\s*([\s\S]*?)```/gi;
-      let match;
-      while ((match = fileBlockRegex1.exec(aiResponse)) !== null) {
-        const fileName = match[1].trim();
-        const fileContent = match[2].trim();
-        if (!fileName || !fileContent) continue;
-        const proposal = await buildFileProposal(fileName, fileContent);
-        if (proposal) collectedProposals.push(proposal);
-      }
-
-      // Diff syntax:
-      // FILE: path/to/file.ext
-      // <<<< SEARCH
-      // ...
-      // ====
-      // ...
-      // >>>> REPLACE
-      const diffErrors = [];
-      const diffSectionRegex = /(?:^|\n)FILE:\s*(.+?)\s*\r?\n([\s\S]*?)(?=(?:\r?\nFILE:\s*)|$)/g;
-      let sectionMatch;
-      while ((sectionMatch = diffSectionRegex.exec(aiResponse)) !== null) {
-        const fileName = sanitizeProposedFilePath(sectionMatch[1]);
-        const sectionBody = String(sectionMatch[2] || '');
-        if (!fileName || !sectionBody) continue;
-
-        const diffBlockRegex = /<<<<\s*SEARCH\s*\r?\n([\s\S]*?)\r?\n====\s*\r?\n([\s\S]*?)\r?\n>>>>\s*REPLACE/g;
-        const blocks = [];
-        let diffMatch;
-        while ((diffMatch = diffBlockRegex.exec(sectionBody)) !== null) {
-          blocks.push({
-            search: String(diffMatch[1] ?? ''),
-            replace: String(diffMatch[2] ?? '')
-          });
-        }
-        if (blocks.length === 0) continue;
-
-        if (!currentProjectPath || !window.electronAPI?.readFile) {
-          diffErrors.push(`[${fileName}] Projet non disponible pour appliquer le diff.`);
-          continue;
-        }
-
-        let oldContent = '';
-        let existed = false;
-        let baseMtimeMs = null;
-        try {
-          const readRes = await window.electronAPI.readFile(currentProjectPath, fileName);
-          if (readRes?.success) {
-            oldContent = String(readRes.content || '');
-            existed = true;
-            baseMtimeMs = Number.isFinite(Number(readRes.mtimeMs)) ? Number(readRes.mtimeMs) : null;
-          } else {
-            diffErrors.push(`[${fileName}] Impossible de lire le fichier cible.`);
-            continue;
-          }
-        } catch (error) {
-          diffErrors.push(`[${fileName}] ${error.message}`);
-          continue;
-        }
-
-        let nextContent = oldContent;
-        let blockError = null;
-        for (let i = 0; i < blocks.length; i += 1) {
-          const block = blocks[i];
-          const searchText = block.search;
-          const replaceText = block.replace;
-          const occurrenceCount = searchText.length === 0
-            ? 0
-            : nextContent.split(searchText).length - 1;
-
-          if (searchText.length === 0) {
-            blockError = `[${fileName}] SEARCH vide (bloc ${i + 1}).`;
-            break;
-          }
-          if (occurrenceCount === 0) {
-            blockError = `[${fileName}] SEARCH introuvable (bloc ${i + 1}).`;
-            break;
-          }
-          if (occurrenceCount > 1) {
-            blockError = `[${fileName}] SEARCH ambigu (${occurrenceCount} occurrences, bloc ${i + 1}).`;
-            break;
-          }
-
-          nextContent = nextContent.replace(searchText, replaceText);
-        }
-
-        if (blockError) {
-          diffErrors.push(blockError);
-          continue;
-        }
-
-        const patchId = `patch-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-        collectedProposals.push({
-          id: patchId,
-          patchId,
-          filePath: fileName,
-          newContent: nextContent,
-          oldContent,
-          existed,
-          baseMtimeMs
-        });
-      }
-
-      if (diffErrors.length > 0) {
-        showMessage(`Diff IA partiellement rejeté: ${diffErrors[0]}`, 5000);
-      }
-
-      if (collectedProposals.length > 0) {
-        const dedup = new Map();
-        for (const proposal of collectedProposals) dedup.set(proposal.filePath, proposal);
-        const proposals = Array.from(dedup.values());
-
-        setPendingFileChanges((prev) => {
-          const merged = new Map((prev || []).map((item) => [item.filePath, item]));
-          for (const proposal of proposals) merged.set(proposal.filePath, proposal);
-          return Array.from(merged.values());
-        });
-
-        setPendingSnapshotId(null);
-        setQualityGatePassedBatch(false);
-        focusPendingChange(proposals[0]);
-        showMessage(`${proposals.length} modification(s) IA en attente de validation.`, 4500);
-      }
-
-      const workflowRegex = /\*\*WORKFLOW:\s*(.+?)\*\*\s*```(?:json)?\s*([\s\S]*?)```/gi;
-      let wfMatch;
-      while ((wfMatch = workflowRegex.exec(aiResponse)) !== null) {
-        try {
-          const wfName = wfMatch[1].trim();
-          let jsonStr = wfMatch[2].trim();
-          const firstBrace = jsonStr.indexOf('{');
-          const lastBrace = jsonStr.lastIndexOf('}');
-          if (firstBrace >= 0 && lastBrace > firstBrace) {
-            jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
-          }
-          const wfData = JSON.parse(jsonStr);
-          if (wfData && window.electronAPI?.saveVisualWorkflow && currentProjectPath) {
-            wfData.name = wfData.name || wfName;
-            const saveRes = await window.electronAPI.saveVisualWorkflow(currentProjectPath, JSON.stringify(wfData));
-            if (saveRes?.success) {
-              const finalName = saveRes?.name || wfData.name || wfName;
-              const safeFilename = saveRes?.filename || `${String(finalName || 'workflow').replace(/[<>:"/\\|?*]/g, '_').trim()}.json`;
-              const action = saveRes?.action === 'created' ? 'cree' : 'mis a jour';
-              showMessage(`Workflow visuel "${finalName}" ${action} automatiquement.`, 4000);
-              try {
-                window.dispatchEvent(new CustomEvent('ai-visual-workflow-written', {
-                  detail: {
-                    projectPath: currentProjectPath,
-                    name: finalName,
-                    filename: safeFilename,
-                    action: saveRes?.action || 'updated'
-                  }
-                }));
-              } catch {
-                // ignore UI event errors
-              }
-            } else {
-              showMessage(`Workflow refuse: ${saveRes?.error || 'schema invalide'}`, 4500);
-            }
-          }
-        } catch (wfErr) {
-          console.warn('[IA] Erreur parsing workflow JSON:', wfErr.message);
-        }
-      }
-
-    } catch {
-      // silent
-    }
-  }, [buildFileProposal, currentProjectPath, focusPendingChange, sanitizeProposedFilePath, showMessage]);
 
   const addImageMessage = useCallback((dataUrl) => {
     if (!dataUrl) return;
@@ -1093,6 +272,8 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
     const updatedHistory = [...aiConversationHistory, newMessage];
     setAiConversationHistory(updatedHistory);
     if (overridePrompt === undefined) setPrompt('');
+
+    let offOllamaMultiStepListener = null;
 
     try {
       let trimmedPrompt = effectivePrompt.trim();
@@ -1324,7 +505,7 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
 
         // ===== PHASE 2: FRONTEND DEV (KIMI) =====
         showMessage("Phase 2/5: Le Frontend Dev (Kimi) code l'interface...", 3000);
-        const frontendPromptText = generateFrontendDevPrompt(cahierDesCharges, prompt, projectContextStr, code);
+        const frontendPromptText = generateFrontendDevPrompt(cahierDesCharges, projectContextStr, code);
 
         const frontendResponse = await window.electronAPI.getKimiCompletion(
           [{ role: 'user', text: frontendPromptText }],
@@ -1570,7 +751,7 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
           setMultiAIState({ isActive: true, currentPhase: '🏗️ Architecte...', steps: multiSteps, error: null });
 
           if (window.electronAPI?.onOllamaMultiStep) {
-            window.electronAPI.onOllamaMultiStep((data) => {
+            offOllamaMultiStepListener = window.electronAPI.onOllamaMultiStep((data) => {
               const safeData = data && typeof data === 'object' ? data : {};
               setMultiAIState(prev => ({
                 ...prev,
@@ -1586,10 +767,10 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
           }
 
           const ollamaMultiOptions = {
-            model: ollamaModel || 'qwen3-coder:30b',
-            modelArchitect: ollamaModelArchitect || ollamaModel || 'qwen2.5-coder:7b',
-            modelCoder: ollamaModelCoder || ollamaModel || 'qwen3-coder:30b',
-            modelTester: ollamaModelTester || ollamaModel || 'qwen2.5-coder:7b',
+            model: ollamaModel || 'qwen3:8b',
+            modelArchitect: ollamaModelArchitect || ollamaModel || 'qwen3:8b',
+            modelCoder: ollamaModelCoder || ollamaModel || 'qwen3:8b',
+            modelTester: ollamaModelTester || ollamaModel || 'qwen3:8b',
             projectPath: currentProjectPath,
             agent: activeAgent,
             skill: activeSkill,
@@ -1636,7 +817,7 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
 
         } else if (aiProvider === 'ollama') {
           const ollamaOptions = {
-            model: ollamaModel || 'qwen2.5-coder:7b',
+            model: ollamaModel || 'qwen3:8b',
             projectPath: currentProjectPath,
             agent: activeAgent,
             skill: activeSkill,
@@ -1672,7 +853,9 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
           await processAIFileModifications(fullAiText);
           await autoSaveConversation(updatedHistory.concat([{ role: 'model', text: fullAiText }]));
         } else {
-          showMessage(`Erreur IA: ${response.error}`, 5000);
+          const errorText = response?.error || 'Erreur inconnue';
+          const hint = response?.retryable ? ' (temporaire, reessayez)' : '';
+          showMessage(`Erreur IA: ${errorText}${hint}`, response?.retryable ? 6500 : 5000);
         }
       }
     } catch (error) {
@@ -1684,6 +867,9 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
       }
       setMultiAIState(prev => ({ ...prev, currentPhase: 'error', error: error.message }));
     } finally {
+      if (typeof offOllamaMultiStepListener === 'function') {
+        offOllamaMultiStepListener();
+      }
       setIsLoading(false);
       setAbortController(null);
     }
@@ -1712,17 +898,13 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
     activeAgent,
     activeSkill,
     skills,
-    AGENT_MODELS.architectEngineer,
-    AGENT_MODELS.backendDev,
-    AGENT_MODELS.chefDeProjet,
-    AGENT_MODELS.frontendDev,
-    AGENT_MODELS.scrumMaster,
     processAIFileModifications,
     autoSaveConversation,
     resetMultiAIState,
     pendingImages,
     isLoading,
-    updateContextEstimate
+    updateContextEstimate,
+    setPreviousCode
   ]);
 
   const saveConversation = useCallback(async () => {
@@ -1752,13 +934,7 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
   const startNewConversation = useCallback(() => {
     setAiConversationHistory([]);
     setPrompt('');
-    setPreviousCode('');
-    setPendingFileChanges([]);
-    setActivePendingChangeId(null);
-    setPendingSnapshotId(null);
-    setAppliedPatchHistory([]);
-    setQualityGatePassedBatch(false);
-    setIsDiffMode(false);
+    resetPendingChangesState();
     setContextEstimate({
       provider: aiProvider,
       promptChars: 0,
@@ -1772,7 +948,7 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
       abortController.abort();
       setAbortController(null);
     }
-  }, [aiProvider, resetMultiAIState, abortController]);
+  }, [abortController, aiProvider, resetMultiAIState, resetPendingChangesState]);
 
   const loadConversationByFile = useCallback(async (fileName) => {
     if (!fileName || !currentProjectPath || !isElectronApiAvailable || !window.electronAPI?.loadConversation) {
@@ -1785,13 +961,7 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
       if (res?.success && Array.isArray(res.history)) {
         setAiConversationHistory(res.history);
         setPrompt('');
-        setPreviousCode('');
-        setPendingFileChanges([]);
-        setActivePendingChangeId(null);
-        setPendingSnapshotId(null);
-        setAppliedPatchHistory([]);
-        setQualityGatePassedBatch(false);
-        setIsDiffMode(false);
+        resetPendingChangesState();
         setActiveConversationFile(fileName);
         resetMultiAIState();
         showMessage(`Conversation chargée: ${fileName}`, 3000);
@@ -1803,110 +973,33 @@ NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre
     } finally {
       setIsConversationLoading(false);
     }
-  }, [currentProjectPath, isElectronApiAvailable, resetMultiAIState, showMessage]);
+  }, [currentProjectPath, isElectronApiAvailable, resetMultiAIState, resetPendingChangesState, showMessage]);
 
   const handleUndo = useCallback(async () => {
-    if (Array.isArray(pendingFileChanges) && pendingFileChanges.length > 0) {
-      const idxFromActiveId = pendingFileChanges.findIndex((change) => change.id === activePendingChangeId);
-      const idxFromActiveFile = idxFromActiveId >= 0
-        ? idxFromActiveId
-        : pendingFileChanges.findIndex((change) => change.filePath === activeFile);
-      const nextIndex = idxFromActiveFile >= 0 ? idxFromActiveFile : 0;
-      rejectPendingChangeByIndex(nextIndex);
-      setAiConversationHistory(prev => [...prev, { role: 'system', text: "Modification IA rejetee." }]);
-      return;
-    }
+    const result = await handlePendingUndo();
 
-    if (Array.isArray(appliedPatchHistory) && appliedPatchHistory.length > 0) {
-      const lastPatch = appliedPatchHistory[appliedPatchHistory.length - 1];
-      const rollbackRes = await rollbackPatchEntry(lastPatch);
-      if (rollbackRes?.success) {
-        setAppliedPatchHistory((prev) => prev.slice(0, -1));
-        await loadProjectItems();
-
-        if (activeFile === lastPatch.filePath) {
-          if (lastPatch.existedBefore) {
-            setCode(lastPatch.previousContent || '');
-          } else {
-            setCode('');
-          }
-        }
-        setPreviousCode('');
-        setIsDiffMode(false);
-        setAiConversationHistory(prev => [...prev, {
-          role: 'system',
-          text: `Rollback applique: ${lastPatch.patchId} (${lastPatch.filePath})`
-        }]);
-        showMessage(`Rollback patch ${lastPatch.patchId} applique.`, 3200);
-      } else {
-        showMessage(`Rollback impossible: ${rollbackRes?.error || 'conflit detecte'}`, 5000);
-      }
-      return;
+    if (result === 'pending-rejected') {
+      setAiConversationHistory(prev => [...prev, { role: 'system', text: 'Modification IA rejetee.' }]);
+    } else if (result === 'rollback-applied') {
+      setAiConversationHistory(prev => [...prev, { role: 'system', text: 'Rollback patch applique.' }]);
+    } else if (result === 'single-undo') {
+      setAiConversationHistory(prev => [...prev, { role: 'system', text: 'Modification IA annulee.' }]);
     }
-
-    if (previousCode !== '' && activeFile && currentProjectPath) {
-      try {
-        const response = await window.electronAPI.writeFile(currentProjectPath, activeFile, previousCode);
-        if (response.success) {
-          setCode(previousCode);
-          setPreviousCode('');
-          setIsDiffMode(false);
-          setAiConversationHistory(prev => [...prev, { role: 'system', text: "Modification IA annulee." }]);
-          showMessage("Modification annulee.");
-        }
-      } catch (error) {
-        showMessage(`Erreur: ${error.message}`, 5000);
-      }
-    }
-  }, [
-    activeFile,
-    activePendingChangeId,
-    appliedPatchHistory,
-    currentProjectPath,
-    loadProjectItems,
-    pendingFileChanges,
-    previousCode,
-    rejectPendingChangeByIndex,
-    rollbackPatchEntry,
-    setCode,
-    showMessage,
-    setIsDiffMode
-  ]);
+  }, [handlePendingUndo]);
 
   const handleAcceptDiff = useCallback(async () => {
-    if (Array.isArray(pendingFileChanges) && pendingFileChanges.length > 0) {
-      const idxFromActiveId = pendingFileChanges.findIndex((change) => change.id === activePendingChangeId);
-      const idxFromActiveFile = idxFromActiveId >= 0
-        ? idxFromActiveId
-        : pendingFileChanges.findIndex((change) => change.filePath === activeFile);
-      const nextIndex = idxFromActiveFile >= 0 ? idxFromActiveFile : 0;
-      const applied = await applyPendingChangeByIndex(nextIndex);
-      if (applied) {
-        setAiConversationHistory(prev => [...prev, { role: 'system', text: "Modification IA acceptee." }]);
-      }
-      return;
-    }
+    const result = await handlePendingAcceptDiff();
 
-    setIsDiffMode(false);
-    setPreviousCode('');
-    setAiConversationHistory(prev => [...prev, { role: 'system', text: "Modifications IA acceptees." }]);
-    showMessage("Modifications acceptees.");
-  }, [
-    activeFile,
-    activePendingChangeId,
-    applyPendingChangeByIndex,
-    pendingFileChanges,
-    showMessage,
-    setIsDiffMode
-  ]);
+    if (result === 'pending-applied') {
+      setAiConversationHistory(prev => [...prev, { role: 'system', text: 'Modification IA acceptee.' }]);
+    } else if (result === 'accepted') {
+      setAiConversationHistory(prev => [...prev, { role: 'system', text: 'Modifications IA acceptees.' }]);
+    }
+  }, [handlePendingAcceptDiff]);
 
   const selectPendingChangeByIndex = useCallback((index) => {
-    if (!Array.isArray(pendingFileChanges) || pendingFileChanges.length === 0) return false;
-    const change = pendingFileChanges[index];
-    if (!change) return false;
-    focusPendingChange(change);
-    return true;
-  }, [focusPendingChange, pendingFileChanges]);
+    return selectPendingChangeFromQueue(index);
+  }, [selectPendingChangeFromQueue]);
 
   return {
     prompt,

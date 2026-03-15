@@ -92,15 +92,23 @@ const TerminalPanel = ({
       appendLog('ai', 'stdout', `[🤖 IA Résultat de la commande Iteration ${iteration}]:\n${output}\n`);
     };
 
-    window.electronAPI.onProcessOutput(handleOutput);
-    window.electronAPI.onProcessExit(handleExit);
+    const offOutput = window.electronAPI.onProcessOutput(handleOutput);
+    const offExit = window.electronAPI.onProcessExit(handleExit);
 
+    let offAiAction = null;
+    let offAiResult = null;
     if (window.electronAPI.onAITerminalAction) {
-      window.electronAPI.onAITerminalAction(handleAiTerminalAction);
+      offAiAction = window.electronAPI.onAITerminalAction(handleAiTerminalAction);
     }
     if (window.electronAPI.onAITerminalResult) {
-      window.electronAPI.onAITerminalResult(handleAiTerminalResult);
+      offAiResult = window.electronAPI.onAITerminalResult(handleAiTerminalResult);
     }
+    return () => {
+      if (typeof offOutput === 'function') offOutput();
+      if (typeof offExit === 'function') offExit();
+      if (typeof offAiAction === 'function') offAiAction();
+      if (typeof offAiResult === 'function') offAiResult();
+    };
   }, [isElectronApiAvailable, appendLog, onDevPortResolved]);
 
   const start = async (proc) => {

@@ -1,11 +1,29 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import './GitPanel.css';
+import {
+  getGitDisplayPath,
+  getGitSectionActionLabel,
+  getGitSectionMeta,
+  groupGitStatusEntries
+} from '../../utils/gitChanges';
+
+const buildComparisonKey = (entry, sectionId) => `${sectionId}:${entry?.file || ''}:${entry?.previousFile || ''}`;
+
+const getSectionBadge = (sectionId, entry) => {
+  if (sectionId === 'conflicted') return '!';
+  if (sectionId === 'untracked') return 'U';
+  if (sectionId === 'staged') return String(entry?.indexStatus || entry?.status || 'M').trim() || 'M';
+  return String(entry?.workingTreeStatus || entry?.status || 'M').trim() || 'M';
+};
 
 const GitPanel = ({
   currentProjectPath,
   isElectronApiAvailable,
   showMessage,
-  permissionMode = 'edit_terminal'
+  permissionMode = 'edit_terminal',
+  onOpenFile,
+  onOpenGitDiff,
+  activeComparisonKey = ''
 }) => {
   const [files, setFiles] = useState([]);
   const [commits, setCommits] = useState([]);
@@ -18,10 +36,8 @@ const GitPanel = ({
   const [stashMessage, setStashMessage] = useState('');
   const [commitMessage, setCommitMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('changes'); // changes | log | diff
+  const [activeTab, setActiveTab] = useState('changes');
   const [isInitialized, setIsInitialized] = useState(true);
-  const [diff, setDiff] = useState('');
-  const [selectedFile, setSelectedFile] = useState(null);
 
   const canEditGit = permissionMode !== 'read_only';
   const api = isElectronApiAvailable && window.electronAPI;
@@ -63,7 +79,7 @@ const GitPanel = ({
         }
       }
     } catch {
-      // Keep existing UI state if optional metadata calls fail
+      // keep previous optional metadata
     }
   }, [api, currentProjectPath]);
 
@@ -111,6 +127,40 @@ const GitPanel = ({
     if (activeTab === 'log') loadLog();
   }, [activeTab, loadLog]);
 
+  const groupedFiles = useMemo(() => groupGitStatusEntries(files), [files]);
+  const totalChangedFiles = files.length;
+
+  const changeSections = useMemo(() => ([
+    {
+      id: 'conflicted',
+      title: 'Conflits',
+      count: groupedFiles.conflicted.length,
+      items: groupedFiles.conflicted,
+      tone: 'danger'
+    },
+    {
+      id: 'working',
+      title: 'Modifications',
+      count: groupedFiles.working.length,
+      items: groupedFiles.working,
+      tone: 'warning'
+    },
+    {
+      id: 'staged',
+      title: 'Staged',
+      count: groupedFiles.staged.length,
+      items: groupedFiles.staged,
+      tone: 'success'
+    },
+    {
+      id: 'untracked',
+      title: 'Nouveaux fichiers',
+      count: groupedFiles.untracked.length,
+      items: groupedFiles.untracked,
+      tone: 'muted'
+    }
+  ]), [groupedFiles]);
+
   const handleInit = async () => {
     if (!api) return;
     if (!canEditGit) {
@@ -146,13 +196,23 @@ const GitPanel = ({
     }
   };
 
-  const handleStageFile = async (file) => {
-    if (!api || !file?.file) return;
+  const handleToggleStage = async (entry, sectionId) => {
+    if (!api || !entry?.file) return;
     if (!canEditGit) return;
 
-    const res = await api.gitAdd(currentProjectPath, [file.file]);
-    if (res?.success) refresh();
-    else showMessage(`Erreur: ${res?.error || 'inconnue'}`, 4000);
+    const action = sectionId === 'staged' ? api.gitUnstage : api.gitAdd;
+    if (typeof action !== 'function') {
+      showMessage('Action Git indisponible.', 3000);
+      return;
+    }
+
+    const res = await action(currentProjectPath, [entry.file]);
+    if (res?.success) {
+      showMessage(sectionId === 'staged' ? `Fichier retire de l'index: ${entry.file}` : `Fichier stage: ${entry.file}`, 2000);
+      refresh();
+    } else {
+      showMessage(`Erreur: ${res?.error || 'inconnue'}`, 4000);
+    }
   };
 
   const handleCommit = async () => {
@@ -174,6 +234,7 @@ const GitPanel = ({
       showMessage('Commit cree.', 2000);
       setCommitMessage('');
       refresh();
+      loadLog();
     } else {
       showMessage(`Erreur commit: ${res?.error || 'inconnue'}`, 4000);
     }
@@ -211,17 +272,6 @@ const GitPanel = ({
     } else {
       showMessage(`Erreur pull: ${res?.error || 'inconnue'}`, 5000);
     }
-  };
-
-  const handleViewDiff = async (file) => {
-    if (!api || !file?.file) return;
-
-    setSelectedFile(file.file);
-    setActiveTab('diff');
-
-    const res = await api.gitDiff(currentProjectPath, file.file);
-    if (res?.success) setDiff(res.diff || '(pas de diff)');
-    else setDiff(`Erreur: ${res?.error || 'inconnue'}`);
   };
 
   const handleCheckoutBranch = async (targetBranch = selectedBranch) => {
@@ -332,23 +382,17 @@ const GitPanel = ({
     }
   };
 
-  const getStatusColor = (status) => {
-    if (!status) return '#888';
-    if (status.includes('M')) return '#f5a623';
-    if (status.includes('A')) return '#00c49a';
-    if (status.includes('D')) return '#ff6b6b';
-    if (status.includes('?')) return '#888';
-    return '#ccc';
-  };
+  const handleOpenEntry = useCallback((entry, sectionId) => {
+    if (typeof onOpenFile === 'function') {
+      onOpenFile(entry, sectionId);
+    }
+  }, [onOpenFile]);
 
-  const getStatusLabel = (status) => {
-    if (!status) return '?';
-    if (status.includes('M')) return 'M';
-    if (status.includes('A')) return 'A';
-    if (status.includes('D')) return 'D';
-    if (status.includes('?')) return 'U';
-    return String(status).trim().charAt(0);
-  };
+  const handleOpenDiff = useCallback((entry, sectionId) => {
+    if (typeof onOpenGitDiff === 'function') {
+      onOpenGitDiff(entry, sectionId);
+    }
+  }, [onOpenGitDiff]);
 
   if (!currentProjectPath) {
     return (
@@ -376,7 +420,7 @@ const GitPanel = ({
           <span>branch</span>
           <span>{branch || 'main'}</span>
         </div>
-        <div style={{ display: 'flex', gap: '6px' }}>
+        <div className="git-header-actions">
           <button className="git-btn" onClick={handlePull} disabled={isLoading || !canEditGit} title="Pull">Pull</button>
           <button className="git-btn git-btn-primary" onClick={handlePush} disabled={isLoading || !canEditGit} title="Push">Push</button>
         </div>
@@ -468,38 +512,103 @@ const GitPanel = ({
 
       <div className="git-tabs">
         <button className={`git-tab${activeTab === 'changes' ? ' is-active' : ''}`} onClick={() => setActiveTab('changes')}>
-          Modifications {files.length > 0 && <span className="git-badge">{files.length}</span>}
+          Modifications {totalChangedFiles > 0 && <span className="git-badge">{totalChangedFiles}</span>}
         </button>
         <button className={`git-tab${activeTab === 'log' ? ' is-active' : ''}`} onClick={() => setActiveTab('log')}>
           Historique
         </button>
-        {selectedFile && (
-          <button className={`git-tab${activeTab === 'diff' ? ' is-active' : ''}`} onClick={() => setActiveTab('diff')}>
-            Diff
-          </button>
-        )}
       </div>
 
       {activeTab === 'changes' && (
         <div className="git-body">
-          {files.length === 0 ? (
-            <div className="git-empty-small">Aucune modification</div>
-          ) : (
-            <div className="git-file-list">
-              {files.map((f, i) => (
-                <div key={i} className="git-file-item">
-                  <span className="git-file-status" style={{ color: getStatusColor(f.status) }} title={f.status}>
-                    {getStatusLabel(f.status)}
-                  </span>
-                  <span className="git-file-name" title={f.file}>{f.file}</span>
-                  <div className="git-file-actions">
-                    <button className="git-icon-btn" onClick={() => handleViewDiff(f)} title="Voir diff">Diff</button>
-                    <button className="git-icon-btn" onClick={() => handleStageFile(f)} title="Stager" disabled={!canEditGit}>+</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="git-summary-row">
+            {changeSections.filter((section) => section.count > 0).map((section) => (
+              <span key={section.id} className={`git-summary-pill is-${section.tone}`}>
+                {section.title} {section.count}
+              </span>
+            ))}
+            {totalChangedFiles === 0 && (
+              <span className="git-summary-pill is-muted">Working tree clean</span>
+            )}
+          </div>
+
+          <div className="git-file-list">
+            {totalChangedFiles === 0 ? (
+              <div className="git-empty-small">Aucune modification</div>
+            ) : (
+              changeSections.map((section) => (
+                section.count > 0 ? (
+                  <section key={section.id} className="git-section">
+                    <div className="git-section-header">
+                      <span className="git-section-title">{section.title}</span>
+                      <span className={`git-section-count is-${section.tone}`}>{section.count}</span>
+                    </div>
+                    {section.items.map((entry) => {
+                      const comparisonKey = buildComparisonKey(entry, section.id);
+                      return (
+                        <div
+                          key={comparisonKey}
+                          className={`git-file-item ${activeComparisonKey === comparisonKey ? 'is-selected' : ''}`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => handleOpenDiff(entry, section.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              handleOpenDiff(entry, section.id);
+                            }
+                          }}
+                        >
+                          <span className={`git-file-status is-${section.tone}`} title={String(entry.rawStatus || entry.status || '')}>
+                            {getSectionBadge(section.id, entry)}
+                          </span>
+                          <span className="git-file-copy">
+                            <span className="git-file-name" title={getGitDisplayPath(entry)}>{getGitDisplayPath(entry)}</span>
+                            <span className="git-file-meta">{getGitSectionMeta(entry, section.id)}</span>
+                          </span>
+                          <div className="git-file-actions">
+                            <button
+                              className="git-icon-btn"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleOpenEntry(entry, section.id);
+                              }}
+                              title="Ouvrir le fichier"
+                            >
+                              Open
+                            </button>
+                            <button
+                              className="git-icon-btn"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleOpenDiff(entry, section.id);
+                              }}
+                              title="Ouvrir le diff"
+                            >
+                              Diff
+                            </button>
+                            {canEditGit && !entry.conflicted && (
+                              <button
+                                className="git-icon-btn"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleToggleStage(entry, section.id);
+                                }}
+                                title={getGitSectionActionLabel(section.id)}
+                              >
+                                {section.id === 'staged' ? '-' : '+'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </section>
+                ) : null
+              ))
+            )}
+          </div>
+
           <div className="git-commit-area">
             <textarea
               className="git-commit-input"
@@ -509,13 +618,12 @@ const GitPanel = ({
               rows={3}
               onKeyDown={(e) => { if (e.ctrlKey && e.key === 'Enter') handleCommit(); }}
             />
-            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+            <div className="git-commit-actions">
               <button className="git-btn" onClick={handleStageAll} disabled={isLoading || !canEditGit}>Stage All</button>
               <button
                 className="git-btn git-btn-primary"
                 onClick={handleCommit}
                 disabled={isLoading || !commitMessage.trim() || !canEditGit}
-                style={{ flex: 1 }}
               >
                 {isLoading ? '...' : 'Commit'}
               </button>
@@ -525,29 +633,20 @@ const GitPanel = ({
       )}
 
       {activeTab === 'log' && (
-        <div className="git-body" style={{ overflowY: 'auto' }}>
+        <div className="git-body git-body-scroll">
           {commits.length === 0 ? (
             <div className="git-empty-small">Aucun commit</div>
           ) : (
             <div className="git-log-list">
-              {commits.map((c, i) => (
-                <div key={i} className="git-log-item">
-                  <div className="git-log-hash">{c.hash ? c.hash.substring(0, 7) : ''}</div>
-                  <div className="git-log-message" title={c.message}>{c.message}</div>
-                  <div className="git-log-meta">{c.date} | {c.author}</div>
+              {commits.map((commit, index) => (
+                <div key={`${commit.hash || 'commit'}-${index}`} className="git-log-item">
+                  <div className="git-log-hash">{commit.hash ? commit.hash.substring(0, 7) : ''}</div>
+                  <div className="git-log-message" title={commit.message}>{commit.message}</div>
+                  <div className="git-log-meta">{commit.date} | {commit.author}</div>
                 </div>
               ))}
             </div>
           )}
-        </div>
-      )}
-
-      {activeTab === 'diff' && (
-        <div className="git-body" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid #333', fontSize: '12px', color: '#aaa' }}>
-            {selectedFile}
-          </div>
-          <pre className="git-diff-view">{diff}</pre>
         </div>
       )}
     </div>

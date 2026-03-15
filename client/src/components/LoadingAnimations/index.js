@@ -74,11 +74,37 @@ export const AIWorkingIndicator = ({ provider = 'gemini', statusText = 'L\'IA rÃ
   const startRef = useRef(Date.now());
 
   useEffect(() => {
-    const timerInterval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
-    }, 1000);
-    return () => {
+    let timerInterval = null;
+    const updateElapsed = () => {
+      setElapsed((prev) => {
+        const next = Math.floor((Date.now() - startRef.current) / 1000);
+        return next === prev ? prev : next;
+      });
+    };
+    const startTimer = () => {
+      if (timerInterval) return;
+      timerInterval = setInterval(updateElapsed, 1000);
+    };
+    const stopTimer = () => {
+      if (!timerInterval) return;
       clearInterval(timerInterval);
+      timerInterval = null;
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopTimer();
+      } else {
+        updateElapsed();
+        startTimer();
+      }
+    };
+
+    startTimer();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      stopTimer();
     };
   }, []);
 

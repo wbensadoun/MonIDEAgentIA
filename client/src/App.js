@@ -1,19 +1,26 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import './App.css';
 import ErrorBoundary from './components/ErrorBoundary';
-import FileExplorer from './components/FileExplorer';
-import CodeEditor from './components/CodeEditor';
-import AIChat from './components/AIChat';
-import LivePreview from './components/LivePreview';
 import Settings from './components/Settings';
-import TerminalPanel from './components/TerminalPanel';
 import useElectronAPI from './hooks/useElectronAPI';
 import useFileOperations from './hooks/useFileOperations';
 import useAI from './hooks/useAI';
 import useWorkflows from './hooks/useWorkflows';
 import WorkflowManager from './components/WorkflowManager';
-import GitPanel from './components/GitPanel';
-import VisualWorkflowEditor from './components/VisualWorkflowEditor';
+import AppTopbar from './components/AppShell/AppTopbar';
+import WorkspaceLayout from './components/AppShell/WorkspaceLayout';
+import StatusBar from './components/AppShell/StatusBar';
+import OnboardingModal from './components/AppShell/OnboardingModal';
+import { isNavigatorDescendant, isSameNavigatorPath, joinNavigatorPath, replaceNavigatorPathPrefix } from './utils/navigatorPaths';
+
+const DEFAULT_OLLAMA_MODEL = 'qwen3:8b';
+const SUGGESTED_OLLAMA_MODELS = ['qwen3:8b', 'qwen3:14b', 'qwen3:32b'];
+
+const normalizeOllamaModelLabel = (value, fallback = DEFAULT_OLLAMA_MODEL) => {
+  const normalized = String(value || '').trim();
+  if (normalized) return normalized;
+  return String(fallback || DEFAULT_OLLAMA_MODEL).trim() || DEFAULT_OLLAMA_MODEL;
+};
 
 const AppContent = () => {
   const [currentProjectPath, setCurrentProjectPath] = useState(() => {
@@ -56,6 +63,13 @@ const AppContent = () => {
   const [permissionMode, setPermissionMode] = useState('edit_terminal');
   const [contextMode, setContextMode] = useState('auto');
   const [contextMaxFiles, setContextMaxFiles] = useState(120);
+  const [ollamaModel, setOllamaModel] = useState(DEFAULT_OLLAMA_MODEL);
+  const [ollamaModelArchitect, setOllamaModelArchitect] = useState(DEFAULT_OLLAMA_MODEL);
+  const [ollamaModelCoder, setOllamaModelCoder] = useState(DEFAULT_OLLAMA_MODEL);
+  const [ollamaModelTester, setOllamaModelTester] = useState(DEFAULT_OLLAMA_MODEL);
+  const [ollamaModels, setOllamaModels] = useState([]);
+  const [aiDraftPreview, setAiDraftPreview] = useState(null);
+  const [gitDiffPreview, setGitDiffPreview] = useState(null);
   const [qualityGateConfig, setQualityGateConfig] = useState({
     onApply: false,
     lint: true,
@@ -93,6 +107,11 @@ const AppContent = () => {
   const [searchIndex, setSearchIndex] = useState(0);
   const [searchResults, setSearchResults] = useState([]);
   const [isSearchLoading, setIsSearchLoading] = useState(false);
+  const [symbolOpen, setSymbolOpen] = useState(false);
+  const [symbolQuery, setSymbolQuery] = useState('');
+  const [symbolIndex, setSymbolIndex] = useState(0);
+  const [symbolResults, setSymbolResults] = useState([]);
+  const [isSymbolLoading, setIsSymbolLoading] = useState(false);
   const [libraryNonce, setLibraryNonce] = useState(0);
   const [availableAgents, setAvailableAgents] = useState([]);
   const [availableSkills, setAvailableSkills] = useState([]);
@@ -103,6 +122,7 @@ const AppContent = () => {
   const commandInputRef = useRef(null);
   const filePaletteInputRef = useRef(null);
   const searchInputRef = useRef(null);
+  const symbolInputRef = useRef(null);
   const fileListCacheRef = useRef({ projectPath: '', files: [] });
   const saveTimerRef = useRef(null);
   const pendingSaveRef = useRef({ projectPath: '', filePath: '', content: '' });
@@ -239,6 +259,8 @@ const AppContent = () => {
     loadProjectItems,
     toggleFolderExpansion,
     createNewItem,
+    renameItem,
+    moveItem,
     deleteItem,
     openFolder
   } = useFileOperations(currentProjectPath, isElectronApiAvailable, showMessage, setActiveFile, permissionMode);
@@ -313,6 +335,70 @@ const AppContent = () => {
     ? currentProjectPath.split(/[\\/]/).pop()
     : 'Aucun projet';
   const isReadOnlyMode = permissionMode === 'read_only';
+  const resolvedOllamaModel = normalizeOllamaModelLabel(ollamaModel);
+  const resolvedOllamaArchitect = normalizeOllamaModelLabel(ollamaModelArchitect, resolvedOllamaModel);
+  const resolvedOllamaCoder = normalizeOllamaModelLabel(ollamaModelCoder, resolvedOllamaModel);
+  const resolvedOllamaTester = normalizeOllamaModelLabel(ollamaModelTester, resolvedOllamaModel);
+
+  const ollamaTopbarLabel = useMemo(() => {
+    if (aiProvider === 'ollama') {
+      return `🦙 ${resolvedOllamaModel}`;
+    }
+
+    if (aiProvider === 'ollama-multi') {
+      if (
+        resolvedOllamaArchitect === resolvedOllamaCoder &&
+        resolvedOllamaArchitect === resolvedOllamaTester
+      ) {
+        return `🦙 Multi ${resolvedOllamaArchitect}`;
+      }
+
+      return `🦙 A:${resolvedOllamaArchitect} C:${resolvedOllamaCoder} T:${resolvedOllamaTester}`;
+    }
+
+    return '';
+  }, [
+    aiProvider,
+    resolvedOllamaArchitect,
+    resolvedOllamaCoder,
+    resolvedOllamaModel,
+    resolvedOllamaTester
+  ]);
+
+  const ollamaStatusLabel = useMemo(() => {
+    if (aiProvider === 'ollama') {
+      return resolvedOllamaModel;
+    }
+
+    if (aiProvider === 'ollama-multi') {
+      return `arch=${resolvedOllamaArchitect} | coder=${resolvedOllamaCoder} | test=${resolvedOllamaTester}`;
+    }
+
+    return '';
+  }, [
+    aiProvider,
+    resolvedOllamaArchitect,
+    resolvedOllamaCoder,
+    resolvedOllamaModel,
+    resolvedOllamaTester
+  ]);
+
+  const availableOllamaModels = useMemo(() => (
+    Array.from(new Set([
+      ...SUGGESTED_OLLAMA_MODELS,
+      ollamaModel,
+      ollamaModelArchitect,
+      ollamaModelCoder,
+      ollamaModelTester,
+      ...ollamaModels
+    ].map((model) => normalizeOllamaModelLabel(model)).filter(Boolean)))
+  ), [
+    ollamaModel,
+    ollamaModelArchitect,
+    ollamaModelCoder,
+    ollamaModelTester,
+    ollamaModels
+  ]);
 
   useEffect(() => {
     if (!activeFile) return;
@@ -450,6 +536,10 @@ const AppContent = () => {
 
   useEffect(() => {
     const loadFileContent = async () => {
+      if (gitDiffPreview?.filePath && gitDiffPreview.filePath === activeFile) {
+        return;
+      }
+
       if (activeFile && currentProjectPath && isElectronApiAvailable) {
         try {
           const response = await window.electronAPI.readFile(currentProjectPath, activeFile);
@@ -468,7 +558,7 @@ const AppContent = () => {
       }
     };
     loadFileContent();
-  }, [activeFile, currentProjectPath, isElectronApiAvailable, showMessage]);
+  }, [activeFile, currentProjectPath, gitDiffPreview, isElectronApiAvailable, showMessage]);
 
   const handleCodeChange = useCallback((newCode) => {
     if (isReadOnlyMode) {
@@ -481,6 +571,45 @@ const AppContent = () => {
     scheduleSave(currentProjectPath, activeFile, newCode);
   }, [isReadOnlyMode, showMessage, code, isElectronApiAvailable, activeFile, currentProjectPath, scheduleSave]);
 
+  const handleStreamingDraftChange = useCallback((draft) => {
+    if (draft) {
+      setGitDiffPreview(null);
+    }
+
+    setAiDraftPreview((prev) => {
+      if (!draft) {
+        return prev ? null : prev;
+      }
+
+      if (
+        prev &&
+        prev.filePath === draft.filePath &&
+        prev.code === draft.code &&
+        prev.language === draft.language &&
+        prev.agent === draft.agent
+      ) {
+        return prev;
+      }
+
+      return {
+        filePath: String(draft.filePath || '').trim(),
+        code: String(draft.code || ''),
+        language: String(draft.language || '').trim(),
+        agent: String(draft.agent || '').trim()
+      };
+    });
+
+    if (draft && centerView !== 'code') {
+      setCenterView('code');
+    }
+  }, [centerView]);
+
+  useEffect(() => {
+    if (isDiffMode && gitDiffPreview) {
+      setGitDiffPreview(null);
+    }
+  }, [gitDiffPreview, isDiffMode]);
+
   const handleOpenFolder = useCallback(async () => {
     const path = await openFolder();
     if (path) {
@@ -488,6 +617,7 @@ const AppContent = () => {
       setOpenFiles([]);
       setActiveFile('');
       setRevealRequest(null);
+      setGitDiffPreview(null);
       try {
         localStorage.setItem('lastProjectPath', path);
       } catch (error) {
@@ -499,17 +629,23 @@ const AppContent = () => {
   useEffect(() => {
     if (!isElectronApiAvailable) return;
     if (!window.electronAPI || typeof window.electronAPI.onMenuOpenFolder !== 'function') return;
-    window.electronAPI.onMenuOpenFolder(() => {
+    const offMenuOpenFolder = window.electronAPI.onMenuOpenFolder(() => {
       handleOpenFolder();
     });
+    return () => {
+      if (typeof offMenuOpenFolder === 'function') offMenuOpenFolder();
+    };
   }, [isElectronApiAvailable, handleOpenFolder]);
 
   useEffect(() => {
     if (!isElectronApiAvailable) return;
     if (!window.electronAPI || typeof window.electronAPI.onMenuOpenSettings !== 'function') return;
-    window.electronAPI.onMenuOpenSettings(() => {
+    const offMenuOpenSettings = window.electronAPI.onMenuOpenSettings(() => {
       setSettingsOpen(true);
     });
+    return () => {
+      if (typeof offMenuOpenSettings === 'function') offMenuOpenSettings();
+    };
   }, [isElectronApiAvailable]);
 
   useEffect(() => {
@@ -525,6 +661,11 @@ const AppContent = () => {
       if (settings.defaultProvider) {
         setAiProvider(String(settings.defaultProvider));
       }
+
+      setOllamaModel(normalizeOllamaModelLabel(settings.ollamaModel));
+      setOllamaModelArchitect(normalizeOllamaModelLabel(settings.ollamaModelArchitect, settings.ollamaModel));
+      setOllamaModelCoder(normalizeOllamaModelLabel(settings.ollamaModelCoder, settings.ollamaModel));
+      setOllamaModelTester(normalizeOllamaModelLabel(settings.ollamaModelTester, settings.ollamaModel));
 
       if (typeof settings.thinkingMode === 'boolean') {
         setThinkingMode(settings.thinkingMode);
@@ -577,11 +718,88 @@ const AppContent = () => {
   }, [isElectronApiAvailable]);
 
   useEffect(() => {
+    if (!isElectronApiAvailable || !window.electronAPI?.listOllamaModels) return;
+    if (aiProvider !== 'ollama' && aiProvider !== 'ollama-multi') return;
+
+    let mounted = true;
+    const loadOllamaModels = async () => {
+      try {
+        const response = await window.electronAPI.listOllamaModels();
+        if (!mounted) return;
+        if (response?.success && Array.isArray(response.models)) {
+          setOllamaModels(
+            response.models
+              .map((model) => String(model?.name || model || '').trim())
+              .filter(Boolean)
+          );
+        } else {
+          setOllamaModels([]);
+        }
+      } catch {
+        if (mounted) setOllamaModels([]);
+      }
+    };
+
+    loadOllamaModels();
+    return () => {
+      mounted = false;
+    };
+  }, [aiProvider, isElectronApiAvailable]);
+
+  const saveSettingsPatch = useCallback(async (patch, successMessage = '') => {
+    if (!isElectronApiAvailable || !window.electronAPI?.loadSettings || !window.electronAPI?.saveSettings) {
+      return false;
+    }
+
+    try {
+      const current = await window.electronAPI.loadSettings();
+      const nextSettings = {
+        ...(current?.settings || {}),
+        ...patch
+      };
+      const result = await window.electronAPI.saveSettings(nextSettings);
+      if (!result?.success) {
+        throw new Error(result?.error || 'Sauvegarde impossible');
+      }
+      window.dispatchEvent(new CustomEvent('settings-updated', { detail: nextSettings }));
+      if (successMessage) {
+        showMessage(successMessage, 1800);
+      }
+      return true;
+    } catch (error) {
+      showMessage(`Erreur settings: ${error.message}`, 3500);
+      return false;
+    }
+  }, [isElectronApiAvailable, showMessage]);
+
+  const handleOllamaSettingChange = useCallback(async (field, value) => {
+    const normalizedValue = normalizeOllamaModelLabel(value);
+    if (field === 'ollamaModel') {
+      setOllamaModel(normalizedValue);
+    } else if (field === 'ollamaModelArchitect') {
+      setOllamaModelArchitect(normalizedValue);
+    } else if (field === 'ollamaModelCoder') {
+      setOllamaModelCoder(normalizedValue);
+    } else if (field === 'ollamaModelTester') {
+      setOllamaModelTester(normalizedValue);
+    }
+
+    await saveSettingsPatch({ [field]: normalizedValue }, `Modele Ollama: ${normalizedValue}`);
+  }, [saveSettingsPatch]);
+
+  useEffect(() => {
     setRuntimeDevPort('');
   }, [currentProjectPath]);
 
+  const clearGitDiffPreview = useCallback(() => {
+    setGitDiffPreview(null);
+  }, []);
+
   const openFile = useCallback((filePath, opts = {}) => {
     if (!filePath) return;
+    if (!opts?.preserveGitPreview) {
+      clearGitDiffPreview();
+    }
     setOpenFiles(prev => (prev.includes(filePath) ? prev : [...prev, filePath]));
     setActiveFile(filePath);
 
@@ -594,10 +812,153 @@ const AppContent = () => {
         key: Date.now()
       });
     }
+  }, [clearGitDiffPreview]);
+
+  const handleGitPanelOpenFile = useCallback((entry, _sectionId) => {
+    const filePath = String(entry?.file || '').trim();
+    if (!filePath) return;
+
+    if (entry?.deleted) {
+      showMessage('Ce fichier est supprime dans le working tree. Ouvrez le diff Git pour l\'inspecter.', 3000);
+      return;
+    }
+
+    setCenterView('code');
+    openFile(filePath);
+  }, [openFile, showMessage]);
+
+  const handleOpenGitDiff = useCallback(async (entry, sectionId) => {
+    if (!currentProjectPath || !isElectronApiAvailable || typeof window.electronAPI?.gitReadFileState !== 'function') {
+      showMessage('Inspection Git indisponible.', 3000);
+      return;
+    }
+
+    const filePath = String(entry?.file || '').trim();
+    if (!filePath) return;
+
+    try {
+      const response = await window.electronAPI.gitReadFileState(currentProjectPath, filePath);
+      if (!response?.success) {
+        showMessage(`Diff Git: ${response?.error || 'erreur inconnue'}`, 4000);
+        return;
+      }
+
+      let originalCode = '';
+      let modifiedCode = '';
+      let baseLabel = 'HEAD';
+      let targetLabel = 'working tree';
+
+      if (sectionId === 'staged') {
+        originalCode = response.existsInHead ? response.headContent : '';
+        modifiedCode = response.existsInIndex ? response.indexContent : '';
+        baseLabel = response.existsInHead ? 'HEAD' : 'empty';
+        targetLabel = response.existsInIndex ? 'index' : 'deleted';
+      } else {
+        originalCode = response.existsInIndex
+          ? response.indexContent
+          : (response.existsInHead ? response.headContent : '');
+        modifiedCode = response.existsInWorking ? response.workingContent : '';
+        baseLabel = response.existsInIndex ? 'index' : (response.existsInHead ? 'HEAD' : 'empty');
+        targetLabel = response.existsInWorking ? 'working tree' : 'deleted';
+      }
+
+      setGitDiffPreview({
+        filePath: response.filePath,
+        originalCode,
+        modifiedCode,
+        sectionId,
+        baseLabel,
+        targetLabel,
+        comparisonKey: `${sectionId}:${response.filePath}:${String(entry?.previousFile || '')}`,
+        existsInWorking: !!response.existsInWorking
+      });
+      setCenterView('code');
+
+      if (response.existsInWorking) {
+        openFile(response.filePath, { preserveGitPreview: true });
+      }
+    } catch (error) {
+      showMessage(`Diff Git: ${error.message}`, 4000);
+    }
+  }, [currentProjectPath, isElectronApiAvailable, openFile, showMessage]);
+
+  const syncNavigatorReferences = useCallback((previousPath, nextPath) => {
+    if (!previousPath || !nextPath) return;
+
+    setOpenFiles((prev) => {
+      const mapped = prev.map((filePath) => replaceNavigatorPathPrefix(filePath, previousPath, nextPath));
+      return Array.from(new Set(mapped));
+    });
+    setActiveFile((prev) => replaceNavigatorPathPrefix(prev, previousPath, nextPath));
+    setRevealRequest((prev) => {
+      if (!prev?.file) return prev;
+      const nextFile = replaceNavigatorPathPrefix(prev.file, previousPath, nextPath);
+      return nextFile === prev.file ? prev : { ...prev, file: nextFile };
+    });
+    setAiDraftPreview((prev) => {
+      if (!prev?.filePath) return prev;
+      const nextFile = replaceNavigatorPathPrefix(prev.filePath, previousPath, nextPath);
+      return nextFile === prev.filePath ? prev : { ...prev, filePath: nextFile };
+    });
+    setGitDiffPreview((prev) => {
+      if (!prev?.filePath) return prev;
+      const nextFile = replaceNavigatorPathPrefix(prev.filePath, previousPath, nextPath);
+      return nextFile === prev.filePath ? prev : { ...prev, filePath: nextFile };
+    });
+  }, []);
+
+  const removeNavigatorReferences = useCallback((deletedPath) => {
+    if (!deletedPath) return;
+
+    setOpenFiles((prev) => {
+      const next = prev.filter((filePath) => (
+        !isSameNavigatorPath(filePath, deletedPath) &&
+        !isNavigatorDescendant(filePath, deletedPath)
+      ));
+
+      setActiveFile((currentActiveFile) => {
+        if (
+          !currentActiveFile ||
+          (!isSameNavigatorPath(currentActiveFile, deletedPath) &&
+            !isNavigatorDescendant(currentActiveFile, deletedPath))
+        ) {
+          return currentActiveFile;
+        }
+        return next[0] || '';
+      });
+
+      return next;
+    });
+
+    setRevealRequest((prev) => {
+      if (!prev?.file) return prev;
+      if (isSameNavigatorPath(prev.file, deletedPath) || isNavigatorDescendant(prev.file, deletedPath)) {
+        return null;
+      }
+      return prev;
+    });
+
+    setAiDraftPreview((prev) => {
+      if (!prev?.filePath) return prev;
+      if (isSameNavigatorPath(prev.filePath, deletedPath) || isNavigatorDescendant(prev.filePath, deletedPath)) {
+        return null;
+      }
+      return prev;
+    });
+    setGitDiffPreview((prev) => {
+      if (!prev?.filePath) return prev;
+      if (isSameNavigatorPath(prev.filePath, deletedPath) || isNavigatorDescendant(prev.filePath, deletedPath)) {
+        return null;
+      }
+      return prev;
+    });
   }, []);
 
   const closeFileTab = useCallback((filePath) => {
     if (!filePath) return;
+    if (String(gitDiffPreview?.filePath || '') === String(filePath)) {
+      clearGitDiffPreview();
+    }
     setOpenFiles(prev => {
       const idx = prev.indexOf(filePath);
       if (idx === -1) return prev;
@@ -613,7 +974,36 @@ const AppContent = () => {
 
       return next;
     });
-  }, [activeFile]);
+  }, [activeFile, clearGitDiffPreview, gitDiffPreview?.filePath]);
+
+  const handleExplorerCreateItem = useCallback(async (type, itemName, parentPath = '') => {
+    const requestedPath = parentPath ? joinNavigatorPath(parentPath, itemName, parentPath) : itemName;
+    return createNewItem(type, requestedPath);
+  }, [createNewItem]);
+
+  const handleExplorerRenameItem = useCallback(async (itemPath, nextPath, itemType) => {
+    const result = await renameItem(itemPath, nextPath, itemType);
+    if (result?.success) {
+      syncNavigatorReferences(itemPath, nextPath);
+    }
+    return result;
+  }, [renameItem, syncNavigatorReferences]);
+
+  const handleExplorerMoveItem = useCallback(async (itemPath, nextPath, itemType) => {
+    const result = await moveItem(itemPath, nextPath, itemType);
+    if (result?.success) {
+      syncNavigatorReferences(itemPath, nextPath);
+    }
+    return result;
+  }, [moveItem, syncNavigatorReferences]);
+
+  const handleExplorerDeleteItem = useCallback(async (itemPath, itemType) => {
+    const result = await deleteItem(itemPath, itemType);
+    if (result?.success) {
+      removeNavigatorReferences(itemPath);
+    }
+    return result;
+  }, [deleteItem, removeNavigatorReferences]);
 
   const handleDragStart = useCallback((e, type) => {
     e.preventDefault();
@@ -711,6 +1101,17 @@ const AppContent = () => {
       action: () => {
         setSearchOpen(true);
         setFilePaletteOpen(false);
+        setSymbolOpen(false);
+      }
+    },
+    {
+      id: 'symbol-search',
+      label: 'Recherche de symboles',
+      hint: 'Ctrl+T',
+      action: () => {
+        setSymbolOpen(true);
+        setSearchOpen(false);
+        setFilePaletteOpen(false);
       }
     },
     {
@@ -742,6 +1143,11 @@ const AppContent = () => {
       id: 'view-terminal',
       label: 'Vue Terminal',
       action: () => setCenterView('terminal')
+    },
+    {
+      id: 'view-git',
+      label: 'Vue Git',
+      action: () => setCenterView('git')
     },
     {
       id: 'toggle-preview',
@@ -902,6 +1308,18 @@ const AppContent = () => {
   }, [searchResults, searchIndex]);
 
   useEffect(() => {
+    if (!symbolOpen) return;
+    setSymbolIndex(0);
+    setTimeout(() => symbolInputRef.current?.focus(), 0);
+  }, [symbolOpen]);
+
+  useEffect(() => {
+    if (symbolIndex >= symbolResults.length) {
+      setSymbolIndex(0);
+    }
+  }, [symbolResults, symbolIndex]);
+
+  useEffect(() => {
     if (!searchOpen) return;
 
     const q = searchQuery.trim();
@@ -957,6 +1375,54 @@ const AppContent = () => {
   }, [searchQuery, searchOpen, currentProjectPath, isElectronApiAvailable, showMessage]);
 
   useEffect(() => {
+    if (!symbolOpen) return;
+
+    const q = symbolQuery.trim();
+    if (!q) {
+      setSymbolResults([]);
+      setIsSymbolLoading(false);
+      return;
+    }
+
+    if (!currentProjectPath || !isElectronApiAvailable || !window.electronAPI?.searchSymbols) {
+      return;
+    }
+
+    let cancelled = false;
+    setIsSymbolLoading(true);
+
+    const t = setTimeout(async () => {
+      try {
+        const res = await window.electronAPI.searchSymbols(currentProjectPath, q, {
+          maxResults: 250,
+          maxDepth: 40
+        });
+
+        if (cancelled) return;
+
+        if (res?.success && Array.isArray(res.results)) {
+          setSymbolResults(res.results);
+        } else {
+          setSymbolResults([]);
+          const msg = res?.error ? String(res.error) : 'Recherche de symboles impossible';
+          showMessage(`Symboles: ${msg}`, 3500);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setSymbolResults([]);
+        showMessage(`Symboles: ${error.message}`, 3500);
+      } finally {
+        if (!cancelled) setIsSymbolLoading(false);
+      }
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [symbolQuery, symbolOpen, currentProjectPath, isElectronApiAvailable, showMessage]);
+
+  useEffect(() => {
     const handleGlobalKeys = (e) => {
       const key = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && key === 'k') {
@@ -964,23 +1430,34 @@ const AppContent = () => {
         setCommandOpen(true);
         setFilePaletteOpen(false);
         setSearchOpen(false);
+        setSymbolOpen(false);
       }
       if ((e.ctrlKey || e.metaKey) && key === 'p') {
         e.preventDefault();
         setFilePaletteOpen(true);
         setCommandOpen(false);
         setSearchOpen(false);
+        setSymbolOpen(false);
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && key === 'f') {
         e.preventDefault();
         setSearchOpen(true);
         setCommandOpen(false);
         setFilePaletteOpen(false);
+        setSymbolOpen(false);
+      }
+      if ((e.ctrlKey || e.metaKey) && key === 't') {
+        e.preventDefault();
+        setSymbolOpen(true);
+        setCommandOpen(false);
+        setFilePaletteOpen(false);
+        setSearchOpen(false);
       }
       if (key === 'escape') {
         setCommandOpen(false);
         setFilePaletteOpen(false);
         setSearchOpen(false);
+        setSymbolOpen(false);
       }
     };
     window.addEventListener('keydown', handleGlobalKeys);
@@ -1051,6 +1528,18 @@ const AppContent = () => {
     setSearchOpen(false);
   }, [openFile]);
 
+  const runSymbolPick = useCallback((result) => {
+    if (!result || !result.file) return;
+    openFile(result.file, {
+      reveal: {
+        line: result.line,
+        column: result.column
+      }
+    });
+    setCenterView('code');
+    setSymbolOpen(false);
+  }, [openFile]);
+
   const handleSearchKey = (e) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -1067,6 +1556,25 @@ const AppContent = () => {
       runSearchPick(item);
     } else if (e.key === 'Escape') {
       setSearchOpen(false);
+    }
+  };
+
+  const handleSymbolKey = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!symbolResults.length) return;
+      setSymbolIndex((prev) => Math.min(prev + 1, symbolResults.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!symbolResults.length) return;
+      setSymbolIndex((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!symbolResults.length) return;
+      const item = symbolResults[symbolIndex] || symbolResults[0];
+      runSymbolPick(item);
+    } else if (e.key === 'Escape') {
+      setSymbolOpen(false);
     }
   };
 
@@ -1093,6 +1601,111 @@ const AppContent = () => {
   const middleWidth = Math.max(0, 100 - leftWidth - rightWidth);
   const previewPort = String(runtimeDevPort || devPort || '3004');
   const previewUrl = `http://localhost:${previewPort}`;
+  const displayedActiveFile = aiDraftPreview?.filePath || gitDiffPreview?.filePath || activeFile;
+  const displayedCode = aiDraftPreview?.code ?? gitDiffPreview?.modifiedCode ?? code;
+  const displayedPreviousCode = gitDiffPreview?.originalCode ?? previousCode;
+  const isStreamingCodePreview = Boolean(aiDraftPreview?.filePath);
+  const activeDiffSource = gitDiffPreview ? 'git' : (isDiffMode ? 'ai' : null);
+  const isEditorDiffMode = Boolean(gitDiffPreview) || isDiffMode;
+  const editorReadOnly = isReadOnlyMode || isStreamingCodePreview || Boolean(gitDiffPreview);
+  const editorProps = {
+    openFiles,
+    activeFile: displayedActiveFile,
+    code: displayedCode,
+    previousCode: displayedPreviousCode,
+    onCodeChange: handleCodeChange,
+    onUndo: handleUndo,
+    onAcceptDiff: handleAcceptDiff,
+    isDiffMode: isEditorDiffMode,
+    diffSource: activeDiffSource,
+    diffOriginalLabel: gitDiffPreview?.baseLabel,
+    diffModifiedLabel: gitDiffPreview?.targetLabel,
+    onCloseDiff: clearGitDiffPreview,
+    onSelectFile: openFile,
+    onCloseFile: closeFileTab,
+    revealRequest,
+    forceReadOnly: editorReadOnly
+  };
+  const previewPanelProps = {
+    projectId: currentProjectPath || 'default',
+    status: previewStatus,
+    onRefresh: handlePreviewRefresh,
+    previewUrl,
+    className: 'flex-1'
+  };
+  const terminalPanelProps = {
+    currentProjectPath,
+    isElectronApiAvailable,
+    showMessage,
+    permissionMode,
+    preferredDevPort: devPort,
+    onDevPortResolved: setRuntimeDevPort
+  };
+  const gitPanelProps = {
+    currentProjectPath,
+    isElectronApiAvailable,
+    showMessage,
+    permissionMode,
+    onOpenFile: handleGitPanelOpenFile,
+    onOpenGitDiff: handleOpenGitDiff,
+    activeComparisonKey: gitDiffPreview?.comparisonKey || ''
+  };
+  const workflowPanelProps = {
+    currentProjectPath,
+    isElectronApiAvailable,
+    showMessage
+  };
+  const aiChatProps = {
+    prompt,
+    conversationHistory: aiConversationHistory,
+    isLoading,
+    currentProjectPath,
+    isElectronApiAvailable,
+    onPromptChange: setPrompt,
+    onSend: generateAIResponse,
+    onSaveConversation: saveConversation,
+    aiProvider,
+    onProviderChange: setAiProvider,
+    thinkingMode,
+    onThinkingModeChange: setThinkingMode,
+    deepContextEnabled,
+    onDeepContextEnabledChange: setDeepContextEnabled,
+    onPasteImage: addImageMessage,
+    multiAIState,
+    conversations,
+    activeConversationFile,
+    isConversationLoading,
+    onNewConversation: startNewConversation,
+    onSelectConversation: loadConversationByFile,
+    onStopGeneration: stopGeneration,
+    workflows,
+    findWorkflow,
+    getWorkflow,
+    parseSlashCommand,
+    activeFile,
+    agents: availableAgents,
+    skills: availableSkills,
+    activeAgent,
+    activeSkill,
+    onActiveAgentChange: setActiveAgent,
+    onActiveSkillChange: setActiveSkill,
+    globalSkillsCount: availableSkills.filter((skill) => skill.scope === 'global').length,
+    pendingImages,
+    onRemovePendingImage: (idx) => setPendingImages((prev) => prev.filter((_, i) => i !== idx)),
+    pendingMessage,
+    pendingFileChanges,
+    activePendingChangeId,
+    onSelectPendingChange: selectPendingChangeByIndex,
+    onApplyPendingChange: applyPendingChangeByIndex,
+    onRejectPendingChange: rejectPendingChangeByIndex,
+    onApplyAllPendingChanges: applyAllPendingChanges,
+    onRejectAllPendingChanges: rejectAllPendingChanges,
+    pendingSnapshotId,
+    contextEstimate,
+    permissionMode,
+    projectFileList,
+    onStreamingDraftChange: handleStreamingDraftChange
+  };
 
   return (
     <div className="app-shell">
@@ -1103,371 +1716,99 @@ const AppContent = () => {
         </div>
       )}
 
-      <header className="topbar">
-        <div className="topbar-left">
-          <div className="brand">
-            <div className="brand-mark">V</div>
-            <div className="brand-text">
-              <div className="brand-title">Vibe IDE</div>
-              <div className="brand-subtitle">Studio IA</div>
-            </div>
-          </div>
-          <div className="status-chip">
-            <span className={`status-dot ${currentProjectPath ? 'is-on' : 'is-off'}`}></span>
-            <span className="status-chip-text">{projectName}</span>
-          </div>
-          {activeFile && (
-            <div className="status-chip subtle">
-              <span className="status-chip-text">{activeFile}</span>
-            </div>
-          )}
-        </div>
+      <AppTopbar
+        projectName={projectName}
+        currentProjectPath={currentProjectPath}
+        displayedActiveFile={displayedActiveFile}
+        isStreamingCodePreview={isStreamingCodePreview}
+        gitDiffPreview={gitDiffPreview}
+        onOpenCommandPalette={() => setCommandOpen(true)}
+        isExpertMode={isExpertMode}
+        onToggleExpertMode={() => setIsExpertMode((prev) => !prev)}
+        aiProvider={aiProvider}
+        onAiProviderChange={setAiProvider}
+        thinkingMode={thinkingMode}
+        onThinkingModeChange={setThinkingMode}
+        deepContextEnabled={deepContextEnabled}
+        onDeepContextEnabledChange={setDeepContextEnabled}
+        isElectronApiAvailable={isElectronApiAvailable}
+        isLoading={isLoading}
+        resolvedOllamaModel={resolvedOllamaModel}
+        resolvedOllamaArchitect={resolvedOllamaArchitect}
+        resolvedOllamaCoder={resolvedOllamaCoder}
+        resolvedOllamaTester={resolvedOllamaTester}
+        availableOllamaModels={availableOllamaModels}
+        onOllamaSettingChange={handleOllamaSettingChange}
+        ollamaTopbarLabel={ollamaTopbarLabel}
+        ollamaStatusLabel={ollamaStatusLabel}
+        showMessage={showMessage}
+        onOpenFolder={handleOpenFolder}
+        previewStatus={previewStatus}
+        onTogglePreview={handleTogglePreview}
+        onToggleLeftPanel={toggleLeftPanel}
+        isLeftCollapsed={isLeftCollapsed}
+        onToggleRightPanel={toggleRightPanel}
+        isRightCollapsed={isRightCollapsed}
+        onOpenWorkflowManager={() => setWorkflowManagerOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
 
-        <div className="topbar-center" style={{ display: 'flex', gap: '8px', flex: 1, justifyContent: 'center' }}>
-          <button className="command-trigger" onClick={() => setCommandOpen(true)} style={{ maxWidth: '300px' }}>
-            Ctrl+K pour les commandes
-          </button>
+      <WorkspaceLayout
+        layoutRef={layoutRef}
+        leftWidth={leftWidth}
+        rightWidth={rightWidth}
+        middleWidth={middleWidth}
+        isLeftCollapsed={isLeftCollapsed}
+        isRightCollapsed={isRightCollapsed}
+        dragging={dragging}
+        onDragStart={handleDragStart}
+        projectItems={projectItems}
+        currentProjectPath={currentProjectPath}
+        activeFile={activeFile}
+        expandedFolders={expandedFolders}
+        newItemName={newItemName}
+        isElectronApiAvailable={isElectronApiAvailable}
+        onOpenFolder={handleOpenFolder}
+        onCreateItem={handleExplorerCreateItem}
+        onRenameItem={handleExplorerRenameItem}
+        onMoveItem={handleExplorerMoveItem}
+        onDeleteItem={handleExplorerDeleteItem}
+        onToggleFolder={toggleFolderExpansion}
+        onFileClick={openFile}
+        onNewItemNameChange={setNewItemName}
+        isReadOnlyMode={isReadOnlyMode}
+        centerView={centerView}
+        onCenterViewChange={setCenterView}
+        isFocusMode={isFocusMode}
+        onToggleFocusMode={toggleFocusMode}
+        editorProps={editorProps}
+        previewProps={previewPanelProps}
+        terminalProps={terminalPanelProps}
+        gitPanelProps={gitPanelProps}
+        workflowProps={workflowPanelProps}
+        aiChatProps={aiChatProps}
+      />
 
-          {isExpertMode && (
-            <div className="ai-expert-controls" style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <select
-                value={aiProvider}
-                onChange={(e) => setAiProvider(e.target.value)}
-                className="ai-select-mini"
-                disabled={!isElectronApiAvailable || isLoading}
-                title="Modèle IA"
-              >
-                <option value="gemini">Gemini</option>
-                <option value="claude">Claude</option>
-                <option value="kimi">Kimi K2.5</option>
-                <option value="multi">Multi-IA (5 Agents)</option>
-                <option value="ollama">🦙 Ollama</option>
-                <option value="ollama-multi">🦙🦙 Multi-Ollama</option>
-              </select>
-
-
-              <label className="ai-toggle-mini" title="Mode réflexion">
-                <input
-                  type="checkbox"
-                  checked={thinkingMode}
-                  onChange={e => setThinkingMode(e.target.checked)}
-                  disabled={!isElectronApiAvailable || isLoading}
-                />
-                Réflexion
-              </label>
-
-              <label className="ai-toggle-mini" title="Deep Context (scan projet)">
-                <input
-                  type="checkbox"
-                  checked={deepContextEnabled}
-                  onChange={e => setDeepContextEnabled(e.target.checked)}
-                  disabled={!isElectronApiAvailable || isLoading}
-                />
-                Contexte
-              </label>
-            </div>
-          )}
-        </div>
-
-        <div className="topbar-right">
-          <button
-            onClick={() => setIsExpertMode(!isExpertMode)}
-            className={`btn btn-pill ${isExpertMode ? 'btn-live' : 'btn-idle'}`}
-            style={{ marginRight: '8px' }}
-            title={isExpertMode ? 'Désactiver le mode Expert pour simplifier l\'interface' : 'Activer le mode Expert pour plus d\'options IA'}
-          >
-            {isExpertMode ? '🧑‍💻 Expert' : '🌱 Novice'}
-          </button>
-
-          <button
-            onClick={handleOpenFolder}
-            className="btn btn-ghost"
-            disabled={!isElectronApiAvailable}
-          >
-            Ouvrir
-          </button>
-          <button
-            onClick={handleTogglePreview}
-            className={`btn btn-pill ${previewStatus === 'running' ? 'btn-live' : 'btn-idle'}`}
-          >
-            {previewStatus === 'running' ? 'Aperçu Actif' : 'Lancer Aperçu'}
-          </button>
-          <button
-            onClick={toggleLeftPanel}
-            className={`btn btn-ghost ${isLeftCollapsed ? 'is-active' : ''}`}
-          >
-            Nav
-          </button>
-          <button
-            onClick={toggleRightPanel}
-            className={`btn btn-ghost ${isRightCollapsed ? 'is-active' : ''}`}
-          >
-            IA
-          </button>
-          {isExpertMode && (
-            <button onClick={() => setWorkflowManagerOpen(true)} className="btn btn-ghost">
-              Workflows
-            </button>
-          )}
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="btn btn-ghost"
-          >
-            Paramètres
-          </button>
-        </div>
-      </header>
-
-      <div ref={layoutRef} className="workspace">
-        {!isLeftCollapsed && (
-          <aside
-            className="panel nav-panel"
-            style={{ width: `${leftWidth}%` }}
-          >
-            <FileExplorer
-              projectItems={projectItems}
-              currentProjectPath={currentProjectPath}
-              activeFile={activeFile}
-              expandedFolders={expandedFolders}
-              newItemName={newItemName}
-              isElectronApiAvailable={isElectronApiAvailable}
-              onOpenFolder={handleOpenFolder}
-              onCreateItem={createNewItem}
-              onDeleteItem={deleteItem}
-              onToggleFolder={toggleFolderExpansion}
-              onFileClick={openFile}
-              onNewItemNameChange={setNewItemName}
-              isReadOnly={isReadOnlyMode}
-            />
-          </aside>
-        )}
-
-        {!isLeftCollapsed && (
-          <div
-            className={`panel-resizer ${dragging === 'left' ? 'panel-resizer-active' : ''}`}
-            onMouseDown={(e) => handleDragStart(e, 'left')}
-          ></div>
-        )}
-
-        <main
-          className="panel center-panel"
-          style={{ width: `${middleWidth}%` }}
-        >
-          <div className="center-tabs">
-            <div className="tab-group">
-              <button
-                onClick={() => setCenterView('code')}
-                className={`tab ${centerView === 'code' ? 'is-active' : ''}`}
-              >
-                Code
-              </button>
-              <button
-                onClick={() => setCenterView('preview')}
-                className={`tab ${centerView === 'preview' ? 'is-active' : ''}`}
-              >
-                Aperçu
-              </button>
-              <button
-                onClick={() => setCenterView('terminal')}
-                className={`tab ${centerView === 'terminal' ? 'is-active' : ''}`}
-              >
-                Terminal
-              </button>
-              <button
-                onClick={() => setCenterView('git')}
-                className={`tab ${centerView === 'git' ? 'is-active' : ''}`}
-                style={{ color: centerView === 'git' ? '#00c49a' : undefined }}
-              >
-                ⎇ Git
-              </button>
-              <button
-                onClick={() => setCenterView('workflows')}
-                className={`tab ${centerView === 'workflows' ? 'is-active' : ''}`}
-                style={{ color: centerView === 'workflows' ? '#a78bfa' : undefined }}
-              >
-                ⚡ Flux
-              </button>
-            </div>
-            <div className="tab-actions">
-              <button
-                onClick={toggleFocusMode}
-                className={`btn btn-ghost ${isFocusMode ? 'is-active' : ''}`}
-              >
-                Focus
-              </button>
-            </div>
-          </div>
-
-          <div className="center-body">
-            {centerView === 'code' && (
-              <CodeEditor
-                openFiles={openFiles}
-                activeFile={activeFile}
-                code={code}
-                previousCode={previousCode}
-                onCodeChange={handleCodeChange}
-                onUndo={handleUndo}
-                onAcceptDiff={handleAcceptDiff}
-                isDiffMode={isDiffMode}
-                onSelectFile={openFile}
-                onCloseFile={closeFileTab}
-                revealRequest={revealRequest}
-                forceReadOnly={isReadOnlyMode}
-              />
-            )}
-            {centerView === 'preview' && (
-              <LivePreview
-                projectId={currentProjectPath || 'default'}
-                status={previewStatus}
-                onRefresh={handlePreviewRefresh}
-                previewUrl={previewUrl}
-                className="flex-1"
-              />
-            )}
-            {centerView === 'terminal' && (
-              <TerminalPanel
-                currentProjectPath={currentProjectPath}
-                isElectronApiAvailable={isElectronApiAvailable}
-                showMessage={showMessage}
-                permissionMode={permissionMode}
-                preferredDevPort={devPort}
-                onDevPortResolved={setRuntimeDevPort}
-              />
-            )}
-            {centerView === 'git' && (
-              <GitPanel
-                currentProjectPath={currentProjectPath}
-                isElectronApiAvailable={isElectronApiAvailable}
-                showMessage={showMessage}
-                permissionMode={permissionMode}
-              />
-            )}
-            <div
-              style={{
-                display: centerView === 'workflows' ? 'flex' : 'none',
-                flex: 1,
-                minHeight: 0
-              }}
-            >
-              <VisualWorkflowEditor
-                currentProjectPath={currentProjectPath}
-                isElectronApiAvailable={isElectronApiAvailable}
-                showMessage={showMessage}
-              />
-            </div>
-          </div>
-        </main>
-
-        {!isRightCollapsed && (
-          <div
-            className={`panel-resizer ${dragging === 'right' ? 'panel-resizer-active' : ''}`}
-            onMouseDown={(e) => handleDragStart(e, 'right')}
-          ></div>
-        )}
-
-        {!isRightCollapsed && (
-          <aside
-            className="panel ai-panel"
-            style={{ width: `${rightWidth}%` }}
-          >
-            <AIChat
-              prompt={prompt}
-              conversationHistory={aiConversationHistory}
-              isLoading={isLoading}
-              currentProjectPath={currentProjectPath}
-              isElectronApiAvailable={isElectronApiAvailable}
-              onPromptChange={setPrompt}
-              onSend={generateAIResponse}
-              onSaveConversation={saveConversation}
-              aiProvider={aiProvider}
-              onProviderChange={setAiProvider}
-              thinkingMode={thinkingMode}
-              onThinkingModeChange={setThinkingMode}
-              deepContextEnabled={deepContextEnabled}
-              onDeepContextEnabledChange={setDeepContextEnabled}
-              onPasteImage={addImageMessage}
-              multiAIState={multiAIState}
-              conversations={conversations}
-              activeConversationFile={activeConversationFile}
-              isConversationLoading={isConversationLoading}
-              onNewConversation={startNewConversation}
-              onSelectConversation={loadConversationByFile}
-              onStopGeneration={stopGeneration}
-              workflows={workflows}
-              findWorkflow={findWorkflow}
-              getWorkflow={getWorkflow}
-              parseSlashCommand={parseSlashCommand}
-              activeFile={activeFile}
-              agents={availableAgents}
-              skills={availableSkills}
-              activeAgent={activeAgent}
-              activeSkill={activeSkill}
-              onActiveAgentChange={setActiveAgent}
-              onActiveSkillChange={setActiveSkill}
-              globalSkillsCount={availableSkills.filter(s => s.scope === 'global').length}
-              pendingImages={pendingImages}
-              onRemovePendingImage={(idx) => setPendingImages(prev => prev.filter((_, i) => i !== idx))}
-              pendingMessage={pendingMessage}
-              pendingFileChanges={pendingFileChanges}
-              activePendingChangeId={activePendingChangeId}
-              onSelectPendingChange={selectPendingChangeByIndex}
-              onApplyPendingChange={applyPendingChangeByIndex}
-              onRejectPendingChange={rejectPendingChangeByIndex}
-              onApplyAllPendingChanges={applyAllPendingChanges}
-              onRejectAllPendingChanges={rejectAllPendingChanges}
-              pendingSnapshotId={pendingSnapshotId}
-              contextEstimate={contextEstimate}
-              permissionMode={permissionMode}
-              projectFileList={projectFileList}
-            />
-          </aside>
-        )}
-      </div>
-
-      <footer className="statusbar">
-        <div className="status-group">
-          <span className="status-label">Vue</span>
-          <span className="status-value">{centerView}</span>
-        </div>
-        <div className="status-group">
-          <span className="status-label">Preview</span>
-          <span className={`status-value ${previewStatus === 'running' ? 'status-live' : ''}`}>
-            {previewStatus}
-          </span>
-        </div>
-        <div className="status-group">
-          <span className="status-label">IA</span>
-          <span className="status-value">{aiProvider}{thinkingMode ? ' +Think' : ''}{deepContextEnabled ? ' +Ctx' : ''} {contextMode !== 'auto' ? `(${contextMode})` : ''}</span>
-        </div>
-        <div className="status-group">
-          <span className="status-label">Mode</span>
-          <span className="status-value">{permissionMode}</span>
-        </div>
-        <div className="status-group">
-          <span className="status-label">Projet</span>
-          <span className="status-value">{projectName}</span>
-        </div>
-      </footer>
+      <StatusBar
+        centerView={centerView}
+        previewStatus={previewStatus}
+        isStreamingCodePreview={isStreamingCodePreview}
+        aiDraftPreview={aiDraftPreview}
+        gitDiffPreview={gitDiffPreview}
+        aiProvider={aiProvider}
+        thinkingMode={thinkingMode}
+        deepContextEnabled={deepContextEnabled}
+        contextMode={contextMode}
+        ollamaStatusLabel={ollamaStatusLabel}
+        permissionMode={permissionMode}
+        projectName={projectName}
+      />
 
       {showOnboarding && (
-        <div className="command-overlay" onClick={completeOnboarding}>
-          <div className="command-modal is-wide" onClick={(e) => e.stopPropagation()}>
-            <div className="command-input-row" style={{ justifyContent: 'space-between' }}>
-              <strong>Bienvenue dans Vibe IDE</strong>
-              <span className="command-hint">Onboarding</span>
-            </div>
-            <div className="command-list custom-scrollbar is-tall" style={{ padding: '14px' }}>
-              <p style={{ marginTop: 0 }}>Checklist recommandee avant de commencer:</p>
-              <p>1. Configurer vos cles API (Gemini/Kimi/Claude).</p>
-              <p>2. Choisir un mode permissions adapte (lecture seule / edition / edition+terminal).</p>
-              <p>3. Activer les quality gates si vous voulez valider lint/test/build avant application IA.</p>
-              <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
-                <button className="btn btn-primary" onClick={() => setSettingsOpen(true)}>Ouvrir settings</button>
-                <button className="btn btn-ghost" onClick={completeOnboarding}>Terminer</button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <OnboardingModal
+          onOpenSettings={() => setSettingsOpen(true)}
+          onComplete={completeOnboarding}
+        />
       )}
 
       {settingsOpen && (
@@ -1614,6 +1955,46 @@ const AppContent = () => {
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {symbolOpen && (
+        <div className="command-overlay" onClick={() => setSymbolOpen(false)}>
+          <div className="command-modal is-wide" onClick={(e) => e.stopPropagation()}>
+            <div className="command-input-row">
+              <input
+                ref={symbolInputRef}
+                value={symbolQuery}
+                onChange={(e) => setSymbolQuery(e.target.value)}
+                onKeyDown={handleSymbolKey}
+                placeholder="Rechercher un symbole..."
+                className="command-input"
+              />
+              <span className="command-hint">Ctrl+T</span>
+            </div>
+
+            <div className="command-list custom-scrollbar is-tall">
+              {isSymbolLoading && (
+                <div className="command-empty">Indexation des symboles...</div>
+              )}
+              {!isSymbolLoading && symbolQuery.trim() && symbolResults.length === 0 && (
+                <div className="command-empty">Aucun symbole</div>
+              )}
+              {!isSymbolLoading && symbolResults.length > 0 && symbolResults.map((result, index) => (
+                <button
+                  key={`${result.file}:${result.line}:${result.column}:${result.symbol}`}
+                  className={`command-item search-item ${index === symbolIndex ? 'is-active' : ''}`}
+                  onClick={() => runSymbolPick(result)}
+                >
+                  <div className="search-left">
+                    <div className="search-meta">{result.kind} · {result.file}:{result.line}</div>
+                    <div className="search-snippet">{result.symbol} — {result.text}</div>
+                  </div>
+                  <span className="command-shortcut">Entrée</span>
+                </button>
+              ))}
             </div>
           </div>
         </div>

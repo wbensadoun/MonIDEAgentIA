@@ -8,6 +8,37 @@ try {
 
   console.log('[Preload] 3. Modules Electron chargés avec succès');
 
+  const channelListenerRegistry = new Map();
+  const registerChannelListener = (channel, callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, data) => callback(data);
+    let listeners = channelListenerRegistry.get(channel);
+    if (!listeners) {
+      listeners = new Set();
+      channelListenerRegistry.set(channel, listeners);
+    }
+    listeners.add(listener);
+    ipcRenderer.on(channel, listener);
+    return () => {
+      ipcRenderer.removeListener(channel, listener);
+      const current = channelListenerRegistry.get(channel);
+      if (!current) return;
+      current.delete(listener);
+      if (current.size === 0) {
+        channelListenerRegistry.delete(channel);
+      }
+    };
+  };
+
+  const removeRegisteredChannelListeners = (channel) => {
+    const listeners = channelListenerRegistry.get(channel);
+    if (!listeners || listeners.size === 0) return;
+    for (const listener of listeners) {
+      ipcRenderer.removeListener(channel, listener);
+    }
+    channelListenerRegistry.delete(channel);
+  };
+
   // Création de l'objet API à exposer
   const electronAPI = {
     // Nouvelle API pour ouvrir un dialogue de sélection de dossier
@@ -15,15 +46,17 @@ try {
 
     // Événements menu (émis par le processus main)
     onMenuOpenFolder: (callback) => {
-      if (typeof callback !== 'function') return;
-      ipcRenderer.removeAllListeners('menu-open-folder');
-      ipcRenderer.on('menu-open-folder', () => callback());
+      if (typeof callback !== 'function') return () => {};
+      const listener = () => callback();
+      ipcRenderer.on('menu-open-folder', listener);
+      return () => ipcRenderer.removeListener('menu-open-folder', listener);
     },
 
     onMenuOpenSettings: (callback) => {
-      if (typeof callback !== 'function') return;
-      ipcRenderer.removeAllListeners('menu-open-settings');
-      ipcRenderer.on('menu-open-settings', () => callback());
+      if (typeof callback !== 'function') return () => {};
+      const listener = () => callback();
+      ipcRenderer.on('menu-open-settings', listener);
+      return () => ipcRenderer.removeListener('menu-open-settings', listener);
     },
 
     // API pour lister tous les fichiers et dossiers dans un chemin donné
@@ -97,12 +130,10 @@ try {
     startProcess: (payload) => ipcRenderer.invoke('start-process', payload),
     stopProcess: (id) => ipcRenderer.invoke('stop-process', id),
     onProcessOutput: (callback) => {
-      if (typeof callback !== 'function') return;
-      ipcRenderer.on('process-output', (_event, data) => callback(data));
+      return registerChannelListener('process-output', callback);
     },
     onProcessExit: (callback) => {
-      if (typeof callback !== 'function') return;
-      ipcRenderer.on('process-exit', (_event, data) => callback(data));
+      return registerChannelListener('process-exit', callback);
     },
 
     // Nouvelles API pour la gestion avancée des fichiers
@@ -146,10 +177,12 @@ try {
     gitStatus: (projectPath) => ipcRenderer.invoke('git-status', projectPath),
     gitDiff: (projectPath, filePath) => ipcRenderer.invoke('git-diff', projectPath, filePath),
     gitAdd: (projectPath, files) => ipcRenderer.invoke('git-add', projectPath, files),
+    gitUnstage: (projectPath, files) => ipcRenderer.invoke('git-unstage', projectPath, files),
     gitCommit: (projectPath, message) => ipcRenderer.invoke('git-commit', projectPath, message),
     gitPush: (projectPath, remote, branch) => ipcRenderer.invoke('git-push', projectPath, remote, branch),
     gitPull: (projectPath) => ipcRenderer.invoke('git-pull', projectPath),
     gitLog: (projectPath, limit) => ipcRenderer.invoke('git-log', projectPath, limit),
+    gitReadFileState: (projectPath, filePath) => ipcRenderer.invoke('git-read-file-state', projectPath, filePath),
     gitInit: (projectPath) => ipcRenderer.invoke('git-init', projectPath),
     gitBranch: (projectPath) => ipcRenderer.invoke('git-branch', projectPath),
     gitRemotes: (projectPath) => ipcRenderer.invoke('git-remotes', projectPath),
@@ -162,6 +195,11 @@ try {
 
     // Ollama Local AI
     listOllamaModels: () => ipcRenderer.invoke('list-ollama-models'),
+    checkOllamaUpdates: (modelNames) => ipcRenderer.invoke('check-ollama-updates', modelNames),
+    pullOllamaModel: (modelName) => ipcRenderer.invoke('pull-ollama-model', modelName),
+    onOllamaPullProgress: (callback) => {
+      return registerChannelListener('ollama-pull-progress', callback);
+    },
     getOllamaCompletion: (history, currentCode, allProjectFiles, options) =>
       ipcRenderer.invoke('get-ollama-completion', history, currentCode, allProjectFiles, options),
 
@@ -175,34 +213,29 @@ try {
     getOllamaMultiCompletion: (history, currentCode, allProjectFiles, options) =>
       ipcRenderer.invoke('get-ollama-multi-completion', history, currentCode, allProjectFiles, options),
     onOllamaMultiStep: (callback) => {
-      if (typeof callback !== 'function') return;
-      ipcRenderer.removeAllListeners('ai-multi-ollama-step');
-      ipcRenderer.on('ai-multi-ollama-step', (_event, data) => callback(data));
+      return registerChannelListener('ai-multi-ollama-step', callback);
     },
 
     // Streaming tokens for Multi-Ollama agents
     onOllamaMultiToken: (callback) => {
-      if (typeof callback !== 'function') return;
-      ipcRenderer.removeAllListeners('ollama-multi-token');
-      ipcRenderer.on('ollama-multi-token', (_event, data) => callback(data));
+      return registerChannelListener('ollama-multi-token', callback);
     },
 
     // Unsubscribe all ollama streaming listeners (call on unmount)
     removeOllamaMultiListeners: () => {
-      ipcRenderer.removeAllListeners('ai-multi-ollama-step');
-      ipcRenderer.removeAllListeners('ollama-multi-token');
+      removeRegisteredChannelListeners('ai-multi-ollama-step');
+      removeRegisteredChannelListeners('ollama-multi-token');
     },
 
     // AI Terminal events (emitted by main process during agent ReAct loop)
     onAITerminalAction: (callback) => {
-      if (typeof callback !== 'function') return;
-      ipcRenderer.removeAllListeners('ai-terminal-action');
-      ipcRenderer.on('ai-terminal-action', (_event, data) => callback(data));
+      return registerChannelListener('ai-terminal-action', callback);
     },
     onAITerminalResult: (callback) => {
-      if (typeof callback !== 'function') return;
-      ipcRenderer.removeAllListeners('ai-terminal-result');
-      ipcRenderer.on('ai-terminal-result', (_event, data) => callback(data));
+      return registerChannelListener('ai-terminal-result', callback);
+    },
+    onAIGenerationToken: (callback) => {
+      return registerChannelListener('ai-generation-token', callback);
     },
   };
 

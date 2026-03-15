@@ -1,6 +1,53 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import './AIChat.css';
 import { LoadingSteps, AIWorkingIndicator } from '../LoadingAnimations';
+
+const WORKFLOW_STREAM_REGEX = /\*\*WORKFLOW:/i;
+const DIFF_STREAM_REGEX = /<<<<\s*SEARCH/i;
+const FILE_STREAM_REGEX = /(?:^|\n)FILE:\s*.+/i;
+const FILE_BLOCK_STREAM_REGEX = /\*\*FICHIER:\s*(.+?)\*\*\s*```([\w-]*)?\s*([\s\S]*?)(?:```|$)/gi;
+const WORKFLOW_BLOCK_STREAM_REGEX = /\*\*WORKFLOW:\s*(.+?)\*\*\s*```(?:json)?\s*([\s\S]*?)(?:```|$)/gi;
+const WORKFLOW_STREAM_STEPS = [
+  { key: 'analysis', label: 'Analyse du besoin', detail: 'Lecture du prompt et extraction des actions' },
+  { key: 'nodes', label: 'Creation des noeuds', detail: 'Placement trigger, actions et sorties' },
+  { key: 'links', label: 'Cablage des liens', detail: 'Connexion des transitions entre etapes' },
+  { key: 'checks', label: 'Verification', detail: 'Controle de coherence du flux' },
+  { key: 'final', label: 'Finalisation', detail: 'Workflow pret pour import visuel' }
+];
+
+const extractLastStreamingMatch = (regex, text) => {
+  if (!text) return null;
+  const safeText = String(text);
+  const nextRegex = new RegExp(regex.source, regex.flags);
+  let lastMatch = null;
+  let match;
+  while ((match = nextRegex.exec(safeText)) !== null) {
+    lastMatch = match;
+    if (match.index === nextRegex.lastIndex) {
+      nextRegex.lastIndex += 1;
+    }
+  }
+  return lastMatch;
+};
+
+const extractStreamingFileDraft = (text) => {
+  const match = extractLastStreamingMatch(FILE_BLOCK_STREAM_REGEX, text);
+  if (!match) return null;
+  return {
+    filePath: String(match[1] || '').trim(),
+    language: String(match[2] || '').trim(),
+    code: String(match[3] || '').replace(/^\s*\n/, '')
+  };
+};
+
+const extractStreamingWorkflowDraft = (text) => {
+  const match = extractLastStreamingMatch(WORKFLOW_BLOCK_STREAM_REGEX, text);
+  if (!match) return null;
+  return {
+    name: String(match[1] || '').trim(),
+    json: String(match[2] || '').replace(/^\s*\n/, '')
+  };
+};
 
 const AIChat = ({
   prompt,
@@ -40,7 +87,8 @@ const AIChat = ({
   onRejectAllPendingChanges,
   pendingSnapshotId = null,
   contextEstimate = null,
-  permissionMode = 'edit_terminal'
+  permissionMode = 'edit_terminal',
+  onStreamingDraftChange
 }) => {
   const conversationHistoryRef = useRef(null);
   const promptInputRef = useRef(null);
@@ -59,45 +107,101 @@ const AIChat = ({
   const [terminalActions, setTerminalActions] = useState([]); // AI terminal ReAct cards
   const [streamingText, setStreamingText] = useState('');       // live streaming output
   const [streamingAgent, setStreamingAgent] = useState('');     // which agent is streaming
-  const [streamingMode, setStreamingMode] = useState('text');   // text | workflow | diff
+  const [streamingMode, setStreamingMode] = useState('text');   // text | workflow | code | diff
+  const [workflowAnimStep, setWorkflowAnimStep] = useState(0);
   const streamingRef = useRef(null);
+  const streamingBufferRef = useRef('');
+  const streamingFlushRafRef = useRef(null);
+  const streamingScrollRafRef = useRef(null);
+
+  const flushStreamingBuffer = useCallback(() => {
+    streamingFlushRafRef.current = null;
+    const chunk = streamingBufferRef.current;
+    if (!chunk) return;
+    streamingBufferRef.current = '';
+    setStreamingText((prev) => prev + chunk);
+  }, []);
 
   // Register AI terminal IPC events
   useEffect(() => {
     if (!isElectronApiAvailable || !window.electronAPI?.onAITerminalAction) return;
-    window.electronAPI.onAITerminalAction((data) => {
+    const offAction = window.electronAPI.onAITerminalAction((data) => {
       setTerminalActions(prev => [...prev, { type: 'running', command: data.command, iteration: data.iteration, output: null }]);
     });
-    window.electronAPI.onAITerminalResult((data) => {
+    const offResult = window.electronAPI.onAITerminalResult((data) => {
       setTerminalActions(prev => prev.map((a, i) =>
         i === prev.length - 1 && a.command === data.command
           ? { ...a, type: 'done', output: data.output }
           : a
       ));
     });
+    return () => {
+      if (typeof offAction === 'function') offAction();
+      if (typeof offResult === 'function') offResult();
+    };
   }, [isElectronApiAvailable]);
 
   // Register Ollama multi-agent streaming tokens
   useEffect(() => {
     if (!isElectronApiAvailable || !window.electronAPI?.onOllamaMultiToken) return;
-    window.electronAPI.onOllamaMultiToken((data) => {
+    const offToken = window.electronAPI.onOllamaMultiToken((data) => {
+      if (!data) return;
+      if (data.agent) setStreamingAgent(data.agent);
+
       if (data.done) {
-        // agent finished, keep text visible briefly
+        if (streamingFlushRafRef.current !== null) {
+          window.cancelAnimationFrame(streamingFlushRafRef.current);
+          flushStreamingBuffer();
+        }
         return;
       }
-      setStreamingAgent(data.agent || '');
-      setStreamingText(prev => prev + data.token);
-      // auto-scroll streaming box
-      if (streamingRef.current) {
-        streamingRef.current.scrollTop = streamingRef.current.scrollHeight;
+
+      if (typeof data.token === 'string' && data.token.length > 0) {
+        streamingBufferRef.current += data.token;
+        if (streamingFlushRafRef.current === null) {
+          streamingFlushRafRef.current = window.requestAnimationFrame(flushStreamingBuffer);
+        }
       }
     });
+
     return () => {
-      if (window.electronAPI?.removeOllamaMultiListeners) {
-        window.electronAPI.removeOllamaMultiListeners();
+      if (typeof offToken === 'function') offToken();
+      if (streamingFlushRafRef.current !== null) {
+        window.cancelAnimationFrame(streamingFlushRafRef.current);
+        streamingFlushRafRef.current = null;
       }
+      streamingBufferRef.current = '';
     };
-  }, [isElectronApiAvailable]);
+  }, [isElectronApiAvailable, flushStreamingBuffer]);
+
+  useEffect(() => {
+    if (!isElectronApiAvailable || !window.electronAPI?.onAIGenerationToken) return;
+    const offToken = window.electronAPI.onAIGenerationToken((data) => {
+      if (!data) return;
+      if (data.provider === 'kimi') {
+        setStreamingAgent('Kimi');
+      }
+
+      if (data.done) {
+        if (streamingFlushRafRef.current !== null) {
+          window.cancelAnimationFrame(streamingFlushRafRef.current);
+          flushStreamingBuffer();
+        }
+        return;
+      }
+
+      if (typeof data.token === 'string' && data.token.length > 0) {
+        streamingBufferRef.current += data.token;
+        if (streamingFlushRafRef.current === null) {
+          streamingFlushRafRef.current = window.requestAnimationFrame(flushStreamingBuffer);
+        }
+      }
+    });
+
+    return () => {
+      if (typeof offToken === 'function') offToken();
+    };
+  }, [flushStreamingBuffer, isElectronApiAvailable]);
 
   // Clear terminal actions and streaming when loading starts
   useEffect(() => {
@@ -106,6 +210,12 @@ const AIChat = ({
       setStreamingText('');
       setStreamingAgent('');
       setStreamingMode('text');
+      setWorkflowAnimStep(0);
+      streamingBufferRef.current = '';
+      if (streamingFlushRafRef.current !== null) {
+        window.cancelAnimationFrame(streamingFlushRafRef.current);
+        streamingFlushRafRef.current = null;
+      }
     }
   }, [isLoading]);
 
@@ -114,16 +224,60 @@ const AIChat = ({
       setStreamingMode('text');
       return;
     }
-    if (/\*\*WORKFLOW:/i.test(streamingText)) {
+    if (streamingMode === 'workflow' || streamingMode === 'diff') {
+      return;
+    }
+    const sample = streamingText.slice(-8000);
+    if (WORKFLOW_STREAM_REGEX.test(sample)) {
       setStreamingMode('workflow');
       return;
     }
-    if (/<<<<\s*SEARCH/i.test(streamingText) || /(?:^|\n)FILE:\s*.+/i.test(streamingText)) {
+    if (DIFF_STREAM_REGEX.test(sample)) {
       setStreamingMode('diff');
       return;
     }
+    if (FILE_STREAM_REGEX.test(sample) || extractStreamingFileDraft(sample)) {
+      setStreamingMode('code');
+      return;
+    }
     setStreamingMode('text');
-  }, [streamingText]);
+  }, [streamingText, streamingMode]);
+
+  useEffect(() => {
+    if (!streamingText || !streamingRef.current) return;
+    if (streamingScrollRafRef.current !== null) {
+      window.cancelAnimationFrame(streamingScrollRafRef.current);
+    }
+    streamingScrollRafRef.current = window.requestAnimationFrame(() => {
+      if (streamingRef.current) {
+        streamingRef.current.scrollTop = streamingRef.current.scrollHeight;
+      }
+      streamingScrollRafRef.current = null;
+    });
+  }, [streamingText, streamingMode]);
+
+  useEffect(() => {
+    if (streamingMode !== 'workflow' || !isLoading) {
+      setWorkflowAnimStep(0);
+      return;
+    }
+    setWorkflowAnimStep(0);
+    const stepInterval = window.setInterval(() => {
+      setWorkflowAnimStep((prev) => Math.min(prev + 1, WORKFLOW_STREAM_STEPS.length - 1));
+    }, 950);
+    return () => window.clearInterval(stepInterval);
+  }, [streamingMode, isLoading]);
+
+  useEffect(() => {
+    return () => {
+      if (streamingFlushRafRef.current !== null) {
+        window.cancelAnimationFrame(streamingFlushRafRef.current);
+      }
+      if (streamingScrollRafRef.current !== null) {
+        window.cancelAnimationFrame(streamingScrollRafRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (conversationHistoryRef.current) {
@@ -261,6 +415,109 @@ const AIChat = ({
   const canApplyPending = permissionMode !== 'read_only';
   const safeMultiSteps = Array.isArray(multiAIState?.steps) ? multiAIState.steps : [];
   const safeCurrentStepIndex = safeMultiSteps.findIndex((s) => s?.status === 'active');
+  const currentWorkflowAnimStep = WORKFLOW_STREAM_STEPS[workflowAnimStep] || WORKFLOW_STREAM_STEPS[0];
+  const streamingFileDraft = useMemo(() => extractStreamingFileDraft(streamingText), [streamingText]);
+  const streamingWorkflowDraft = useMemo(() => extractStreamingWorkflowDraft(streamingText), [streamingText]);
+  const streamingCodeLineCount = useMemo(() => {
+    const code = streamingFileDraft?.code || '';
+    if (!code) return 0;
+    return code.split('\n').length;
+  }, [streamingFileDraft]);
+
+  useEffect(() => {
+    if (typeof onStreamingDraftChange !== 'function') return;
+    if (!isLoading || streamingMode !== 'code' || !streamingFileDraft?.filePath) {
+      onStreamingDraftChange(null);
+      return;
+    }
+
+    onStreamingDraftChange({
+      filePath: streamingFileDraft.filePath,
+      language: streamingFileDraft.language || '',
+      code: streamingFileDraft.code || streamingText,
+      agent: streamingAgent || ''
+    });
+  }, [isLoading, onStreamingDraftChange, streamingAgent, streamingFileDraft, streamingMode, streamingText]);
+
+  const renderStreamingBox = () => {
+    if (!streamingText) return null;
+
+    return (
+      <div
+        ref={streamingRef}
+        className={`ai-stream-box ai-stream-${streamingMode}`}
+        role="status"
+        aria-live="polite"
+        aria-atomic="false"
+      >
+        {streamingMode === 'workflow' && (
+          <div className="ai-stream-anim ai-stream-workflow">
+            <div className="ai-stream-anim-title">Construction du workflow visuel...</div>
+            <div className="ai-workflow-builder">
+              <div className="wf-builder-canvas" aria-hidden="true">
+                <div className={`wf-builder-node wf-builder-node-trigger ${workflowAnimStep >= 1 ? 'is-visible' : ''} ${workflowAnimStep === 1 ? 'is-active' : ''}`}>Trigger</div>
+                <div className={`wf-builder-node wf-builder-node-ai ${workflowAnimStep >= 1 ? 'is-visible' : ''} ${workflowAnimStep === 2 ? 'is-active' : ''}`}>AI</div>
+                <div className={`wf-builder-node wf-builder-node-output ${workflowAnimStep >= 1 ? 'is-visible' : ''} ${workflowAnimStep >= 3 ? 'is-active' : ''}`}>Output</div>
+                <span className={`wf-builder-link wf-builder-link-ab ${workflowAnimStep >= 2 ? 'is-visible' : ''}`} />
+                <span className={`wf-builder-link wf-builder-link-bc ${workflowAnimStep >= 3 ? 'is-visible' : ''}`} />
+                <span className={`wf-builder-cursor step-${workflowAnimStep}`} />
+              </div>
+              <div className="wf-step-timeline">
+                {WORKFLOW_STREAM_STEPS.map((step, index) => (
+                  <div
+                    key={step.key}
+                    className={`wf-step-item ${index < workflowAnimStep ? 'is-done' : ''} ${index === workflowAnimStep ? 'is-current' : ''}`}
+                  >
+                    <span className="wf-step-bullet" />
+                    <div className="wf-step-copy">
+                      <span className="wf-step-label">{step.label}</span>
+                      <span className="wf-step-detail">{step.detail}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {streamingWorkflowDraft?.json && (
+              <pre className="ai-stream-json-preview">{streamingWorkflowDraft.json}</pre>
+            )}
+            <div className="ai-stream-anim-subtitle">
+              Etape active: {currentWorkflowAnimStep.label} - {currentWorkflowAnimStep.detail}
+            </div>
+          </div>
+        )}
+        {streamingMode === 'diff' && (
+          <div className="ai-stream-anim ai-stream-diff">
+            <div className="ai-stream-anim-title">Edition structuree en cours...</div>
+            <div className="ai-diff-file">
+              <span className="diff-line diff-line-1" />
+              <span className="diff-line diff-line-2" />
+              <span className="diff-line diff-line-3" />
+            </div>
+            <pre className="ai-stream-raw-preview">{streamingText}</pre>
+            <div className="ai-stream-anim-subtitle">Syntaxe detectee: {'<<<< SEARCH ... >>>> REPLACE'}</div>
+          </div>
+        )}
+        {streamingMode === 'code' && (
+          <div className="ai-stream-anim ai-stream-code">
+            <div className="ai-stream-anim-title">Redaction du code en cours...</div>
+            <div className="ai-stream-code-meta">
+              <span className="ai-stream-code-file">{streamingFileDraft?.filePath || 'Fichier en cours de redaction'}</span>
+              <span className="ai-stream-code-lang">{(streamingFileDraft?.language || 'text').toLowerCase()}</span>
+            </div>
+            <pre className="ai-stream-code-preview">{streamingFileDraft?.code || streamingText}</pre>
+            <div className="ai-stream-anim-subtitle">
+              {streamingCodeLineCount > 0
+                ? `${streamingCodeLineCount} ligne(s) recues en direct`
+                : 'Le contenu du fichier apparait ici au fur et a mesure.'}
+            </div>
+          </div>
+        )}
+        {streamingMode === 'text' && (
+          <pre className="ai-stream-text">{streamingText}</pre>
+        )}
+      </div>
+    );
+  };
 
   const handleApplyPending = async (index) => {
     if (typeof onApplyPendingChange !== 'function') return;
@@ -618,7 +875,7 @@ const AIChat = ({
       )}
 
       {multiAIState?.isActive && (
-        <div className="ai-loading">
+        <div className="ai-loading" role="status" aria-live="polite" aria-busy={isLoading}>
           <AIWorkingIndicator
             provider={aiProvider}
             statusText={multiAIState.currentPhase ? `${streamingAgent || multiAIState.currentPhase} en cours...` : "Multi-IA en cours..."}
@@ -627,40 +884,7 @@ const AIChat = ({
             steps={safeMultiSteps}
             currentStep={safeCurrentStepIndex}
           />
-          {streamingText && (
-            <div
-              ref={streamingRef}
-              className={`ai-stream-box ai-stream-${streamingMode}`}
-            >
-              {streamingMode === 'workflow' && (
-                <div className="ai-stream-anim ai-stream-workflow">
-                  <div className="ai-stream-anim-title">Creation du workflow visuel...</div>
-                  <div className="ai-workflow-pulse">
-                    <span className="wf-node wf-node-a" />
-                    <span className="wf-link wf-link-ab" />
-                    <span className="wf-node wf-node-b" />
-                    <span className="wf-link wf-link-bc" />
-                    <span className="wf-node wf-node-c" />
-                  </div>
-                  <div className="ai-stream-anim-subtitle">Tag detecte: **WORKFLOW:**</div>
-                </div>
-              )}
-              {streamingMode === 'diff' && (
-                <div className="ai-stream-anim ai-stream-diff">
-                  <div className="ai-stream-anim-title">Edition de fichier en cours...</div>
-                  <div className="ai-diff-file">
-                    <span className="diff-line diff-line-1" />
-                    <span className="diff-line diff-line-2" />
-                    <span className="diff-line diff-line-3" />
-                  </div>
-                  <div className="ai-stream-anim-subtitle">Syntaxe detectee: {'<<<< SEARCH ... >>>> REPLACE'}</div>
-                </div>
-              )}
-              {streamingMode === 'text' && (
-                <pre className="ai-stream-text">{streamingText}</pre>
-              )}
-            </div>
-          )}
+          {renderStreamingBox()}
           {multiAIState.error && (
             <div className="multi-ai-phase-hint">
               <span className="phase-error">Erreur : {multiAIState.error}</span>
@@ -670,8 +894,16 @@ const AIChat = ({
       )}
 
       {isLoading && !multiAIState?.isActive && (
-        <div className="ai-loading">
-          <AIWorkingIndicator provider={aiProvider} statusText="Traitement en cours..." />
+        <div className="ai-loading" role="status" aria-live="polite" aria-busy="true">
+          <AIWorkingIndicator
+            provider={aiProvider}
+            statusText={
+              streamingMode === 'code'
+                ? `Redaction ${streamingAgent ? `par ${streamingAgent}` : 'du code'} en cours...`
+                : (streamingText ? `${streamingAgent || 'IA'} en train de repondre...` : 'Traitement en cours...')
+            }
+          />
+          {renderStreamingBox()}
         </div>
       )}
 

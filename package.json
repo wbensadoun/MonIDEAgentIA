@@ -5,9 +5,11 @@
   "scripts": {
     "start": "concurrently \"npm:start-react\" \"npm:electron-dev\"",
     "start-react": "npm start --prefix client",
-    "electron-dev": "ping 127.0.0.1 -n 6 > nul && electron .",
+    "electron-dev": "node scripts/electron-dev-runner.js",
     "dev": "concurrently \"npm run start-react\" \"npm run electron-dev\"",
+    "whatsapp-bridge": "node scripts/whatsapp-ollama-bridge.js",
     "build": "npm run build --prefix client && electron-builder",
+    "build:win-installer": "npm run build --prefix client && electron-builder --win nsis",
     "postinstall": "electron-builder install-app-deps",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -36,6 +38,7 @@
       "main.js",
       "logger.js",
       "preload.js",
+      "electron/**/*",
       "assets/**/*",
       "client/build/**/*"
     ],
@@ -45,8 +48,17 @@
     },
     "win": {
       "icon": "assets/iconeDesktop.png",
-      "target": "portable",
+      "target": "nsis",
       "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Mon IDE Agent IA"
     },
     "mac": {
       "icon": "assets/iconeDesktop.png"

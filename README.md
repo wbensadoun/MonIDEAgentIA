@@ -89,8 +89,63 @@ npm run build
 | `npm run dev` | React + Electron en dveloppement |
 | `npm run start-react` | Serveur React uniquement (port 3004) |
 | `npm run electron-dev` | Electron avec attente du serveur |
+| `npm run whatsapp-bridge` | Webhook WhatsApp -> Ollama (Qwen) |
 | `npm run build` | Build complet pour production |
+| `npm run build:win-installer` | Gnre un vrai installateur Windows (`Setup.exe`) |
 | `npm run postinstall` | Installation des deps Electron |
+
+### Installer Windows (Setup.exe)
+
+Pour une installation "comme une vraie app", utilise :
+```bash
+npm run build:win-installer
+```
+
+Le fichier d'installation sera dans `dist/` (type `Setup.exe`).
+
+Important: les dpendances npm sont intgres au build. L'utilisateur final n'a pas besoin d'excuter `npm install`.
+
+## Ollama + WhatsApp (commandes)
+
+1. Installer et verifier Ollama.
+```bash
+ollama list
+ollama pull qwen3:8b
+```
+
+2. Dans l'app, ouvrir `Settings` puis choisir `Provider IA par defaut = Ollama` ou `Multi-Ollama`, et selectionner un modele Qwen.
+
+3. Configurer `.env` (Meta WhatsApp Cloud API):
+```env
+WHATSAPP_VERIFY_TOKEN=ton_token_verification
+WHATSAPP_ACCESS_TOKEN=ton_token_temp_ou_long_lived
+WHATSAPP_PHONE_NUMBER_ID=ton_phone_number_id
+WHATSAPP_OLLAMA_MODEL=qwen3:8b
+WHATSAPP_EXEC_ENABLED=true
+WHATSAPP_EXEC_ALLOWLIST=ollama list,git status,git diff
+```
+
+4. Lancer le bridge:
+```bash
+npm run whatsapp-bridge
+```
+
+5. Exposer le webhook en dev:
+```bash
+ngrok http 3030
+```
+Configurer dans Meta le webhook `https://<ngrok>/webhook` avec le meme `WHATSAPP_VERIFY_TOKEN`.
+
+6. Commandes WhatsApp disponibles:
+```text
+/help
+/model
+/model qwen3:14b
+/ask explique ce bug...
+/exec ollama list
+```
+
+Note securite: ne mets jamais une allowlist trop large pour `/exec`.
 
 ##  Structure du projet
 
