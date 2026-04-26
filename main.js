@@ -12,6 +12,20 @@ const logger = require('./logger');
 const { registerGitHandlers } = require('./electron/ipc/gitHandlers');
 const { registerWorkflowHandlers } = require('./electron/ipc/workflowHandlers');
 const { sanitizeVisualWorkflowPayload } = require('./electron/workflows/visualWorkflowSchema');
+const { registerMcpHandlers } = require('./electron/mcp/mcpHandlers');
+const { LocalVectorDB } = require('./vectorStore');
+
+ipcMain.handle('sync-rag-index', async (event, projectPath, filesMap) => {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("Clé API Gemini requise pour l'indexation RAG.");
+    const db = new LocalVectorDB(projectPath);
+    const count = await db.syncProject(filesMap, apiKey);
+    return { success: true, count };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
 
 const isDev =
   process.env.NODE_ENV === 'development' ||
@@ -799,6 +813,26 @@ const pickFilesForContext = (files, maxFiles) => {
 
   return candidates.slice(0, maxFiles);
 };
+
+async function getRelevantFilesForContext(projectPath, allProjectFilesFiles, maxFiles, userQuery, apiKey) {
+  try {
+    const db = new LocalVectorDB(projectPath);
+    await db.loadIndex();
+    if (Object.keys(db.index).length > 0 && userQuery && apiKey) {
+      console.log(`[RAG] Recherche sémantique pour: "${String(userQuery).substring(0, 50)}..."`);
+      const results = await db.search(userQuery, maxFiles, apiKey);
+      if (results.length > 0) {
+        console.log(`[RAG] ${results.length} blocs sémantiques trouvés.`);
+        // On renvoie directement les chunks pour économiser les tokens
+        return results.map((res, index) => [`[Extrait ${index + 1}] ${res.filePath}`, { content: res.text }]);
+      }
+    }
+  } catch (e) {
+    console.error('[RAG] Erreur lors de la recherche sémantique:', e.message);
+  }
+  console.log('[RAG] Fallback sur pickFilesForContext naïf.');
+  return pickFilesForContext(allProjectFilesFiles, maxFiles);
+}
 
 const createAppMenu = () => {
   const template = [
@@ -2560,9 +2594,8 @@ ipcMain.handle('moveFile', async (event, projectPath, sourceFilename, destFilena
   }
 });
 
-// Lire tous les fichiers du projet pour fournir le contexte complet à l'IA
-ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) => {
-  safeConsoleLog('[Main] getAllProjectFiles appelé avec projectPath:', projectPath);
+async function fetchProjectFilesCore(projectPath, options = {}) {
+  safeConsoleLog('[Main] fetchProjectFilesCore appelé avec projectPath:', projectPath);
   try {
     if (!projectPath) {
       const error = "Chemin du projet non fourni";
@@ -2770,14 +2803,14 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
               truncatedCount += 1;
               recordFile(relativeFilePath, {
                 type: 'file',
-                content,
+                content: safeOptions.omitContent ? undefined : content,
                 size: stats.size,
                 truncated: true
               }, Math.min(maxFileSize, stats.size));
             } else {
               recordFile(relativeFilePath, {
                 type: 'file',
-                content: '[FICHIER TROP VOLUMINEUX - Non lu]',
+                content: safeOptions.omitContent ? undefined : '[FICHIER TROP VOLUMINEUX - Non lu]',
                 size: stats.size
               }, 0);
             }
@@ -2787,13 +2820,13 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
           const content = await fs.readFile(fullPath, 'utf-8');
           recordFile(relativeFilePath, {
             type: 'file',
-            content,
+            content: safeOptions.omitContent ? undefined : content,
             size: stats.size
           }, stats.size);
         } catch (readError) {
           recordFile(relativeFilePath, {
             type: 'file',
-            content: '[ERREUR DE LECTURE]',
+            content: safeOptions.omitContent ? undefined : '[ERREUR DE LECTURE]',
             error: readError.message
           }, 0);
         }
@@ -2837,6 +2870,25 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
       error: error.message
     };
   }
+}
+
+async function resolveProjectFilesContent(projectPath, allProjectFiles, options) {
+  let resolvedFiles = allProjectFiles;
+  if (options && options.scanOptions) {
+    if (!resolvedFiles || resolvedFiles.stats?.options?.omitContent || options.scanOptions.omitContent) {
+      console.log('[Main] Résolution du contenu des fichiers du projet (omitContent détecté)...');
+      resolvedFiles = await fetchProjectFilesCore(projectPath || options.projectPath, { ...options.scanOptions, omitContent: false });
+      if (options.explicitContextFilesMap) {
+        resolvedFiles.files = { ...(resolvedFiles.files || {}), ...options.explicitContextFilesMap };
+      }
+    }
+  }
+  return resolvedFiles;
+}
+
+// Lire tous les fichiers du projet pour fournir le contexte complet à l'IA
+ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) => {
+  return await fetchProjectFilesCore(projectPath, options);
 });
 
 // Fonction createNewFile déjà définie plus haut - duplication supprimée
@@ -3254,22 +3306,55 @@ const executeCommandForAI = (cmd, projectPath) => {
   });
 };
 
-const TERMINAL_CAPABILITY_PROMPT = `
-CAPACITÉ TERMINAL — AGENT AUTONOME :
-Tu peux exécuter des commandes shell directement dans le projet de l'utilisateur.
-Pour exécuter une commande, utilise EXACTEMENT ce format XML (une seule commande par balise) :
+const AGENTIC_CAPABILITY_PROMPT = `
+CAPACITÉ AGENTIQUE ÉTENDUE & SHADOW WORKSPACE :
+Tu as accès à des outils puissants pour explorer et modifier le projet de l'utilisateur de manière autonome.
+Tu disposes d'un "Shadow Workspace" (.vibe-workspace/shadow) où tu peux expérimenter sans risque avant de valider.
 
-<run_command>npm install lodash</run_command>
+UTILISE EXACTEMENT CES BALISES XML POUR APPELER LES OUTILS (un seul outil par bloc) :
 
-Tu recevras le résultat (stdout/stderr) dans ton prochain tour.
+1. Exécuter une commande shell (s'exécute dans le Shadow Workspace par défaut) :
+<run_command>npm run test</run_command>
+
+2. Lire un fichier complet :
+<read_file>chemin/vers/fichier.js</read_file>
+
+3. Écrire ou écraser un fichier :
+<write_file path="chemin/vers/fichier.js">
+// code complet ici
+</write_file>
+
+4. Remplacer du code spécifique dans un fichier existant :
+<search_replace path="chemin/vers/fichier.js">
+<search>vieux code exact</search>
+<replace>nouveau code</replace>
+</search_replace>
+
+5. Modifier des lignes spécifiques (Chirurgical) :
+<edit_lines path="chemin/vers/fichier.js" start="10" end="15">
+nouveau code pour ces lignes
+</edit_lines>
+
+6. Insérer des lignes à une position précise (Chirurgical) :
+<insert_lines path="chemin/vers/fichier.js" line="20">
+code à insérer après la ligne 20
+</insert_lines>
+
+7. Supprimer des lignes (Chirurgical) :
+<delete_lines path="chemin/vers/fichier.js" start="5" end="8" />
+
+8. Initialiser / Synchroniser le Shadow Workspace (À FAIRE AVANT TOUTE MODIFICATION DE CODE) :
+<sync_shadow_workspace></sync_shadow_workspace>
+
+6. Promouvoir tes changements (Fusionner le Shadow Workspace vers le vrai projet) :
+<promote_shadow></promote_shadow>
+
 Règles :
-- Utilise cette capacité pour : lire des fichiers, lancer des builds, installer des packages, vérifier des erreurs, lancer des tests.
-- Spécial: utilise "n8n-search <mot_cle>" pour chercher un workflow n8n (ex: n8n-search slack)
-- Spécial: utilise "n8n-import <url> <nom>" pour télécharger, adapter et importer un workflow n8n du catalogue directement dans le projet. Respecte toujours le mode permissions et le pipeline de validation.
-- N'utilise PAS pour : supprimer des fichiers importants (rm -rf), commandes destructives.
-- Tu peux enchaîner plusieurs commandes en plusieurs tours (max 8 itérations automatiques).
-- Si une commande échoue, analyse l'erreur et essaie une solution alternative.
-- Quand tu n'as plus besoin d'exécuter de commandes, réponds normalement sans balise <run_command>.
+- Tu recevras le résultat de l'outil dans ton prochain tour.
+- Tu peux enchaîner plusieurs outils en plusieurs tours (max 8 itérations automatiques).
+- Si une commande échoue, analyse l'erreur et corrige-la.
+- Pour rechercher dans le projet, utilise <run_command>grep -rn "terme"</run_command>.
+- Quand tu n'as plus besoin d'exécuter d'outils et que ton travail est terminé, réponds normalement (SANS BALISE D'OUTIL) pour conclure.
 
 CRÉATION DE FICHIERS — AGENT AUTONOME :
 Pour créer ou modifier un fichier, utilise EXACTEMENT ce format (appliqué automatiquement) :
@@ -3312,16 +3397,147 @@ Types de nœuds disponibles : trigger (▶️) | ai (🤖) | action (💻) | log
 
 
 /**
- * Parses a single <run_command> tag from an AI response text.
- * Returns the command string or null if not found.
+ * Parses agentic tools from AI response text.
+ * Returns the first matched tool object or null.
  */
-const parseRunCommand = (text) => {
-  const match = String(text || '').match(/<run_command>([\s\S]*?)<\/run_command>/i);
-  return match ? match[1].trim() : null;
+const parseAgenticTools = (text) => {
+  const syncMatch = String(text || '').match(/<sync_shadow_workspace>[\s\S]*?<\/sync_shadow_workspace>/i);
+  if (syncMatch) return { type: 'sync_shadow_workspace' };
+
+  const promoteMatch = String(text || '').match(/<promote_shadow>[\s\S]*?<\/promote_shadow>/i);
+  if (promoteMatch) return { type: 'promote_shadow' };
+
+  const runMatch = String(text || '').match(/<run_command>([\s\S]*?)<\/run_command>/i);
+  if (runMatch) return { type: 'run_command', cmd: runMatch[1].trim() };
+  
+  const readMatch = String(text || '').match(/<read_file>([\s\S]*?)<\/read_file>/i);
+  if (readMatch) return { type: 'read_file', path: readMatch[1].trim() };
+
+  const writeMatch = String(text || '').match(/<write_file\s+path=["']([^"']+)["']>([\s\S]*?)<\/write_file>/i);
+  if (writeMatch) return { type: 'write_file', path: writeMatch[1].trim(), content: writeMatch[2] };
+
+  const srMatch = String(text || '').match(/<search_replace\s+path=["']([^"']+)["']>[\s\S]*?<search>([\s\S]*?)<\/search>[\s\S]*?<replace>([\s\S]*?)<\/replace>[\s\S]*?<\/search_replace>/i);
+  if (srMatch) return { type: 'search_replace', path: srMatch[1].trim(), search: srMatch[2], replace: srMatch[3] };
+
+  const editMatch = String(text || '').match(/<edit_lines\s+path=["']([^"']+)["']\s+start=["'](\d+)["']\s+end=["'](\d+)["']>([\s\S]*?)<\/edit_lines>/i);
+  if (editMatch) return { type: 'edit_lines', path: editMatch[1].trim(), start: parseInt(editMatch[2], 10), end: parseInt(editMatch[3], 10), content: editMatch[4] };
+
+  const insertMatch = String(text || '').match(/<insert_lines\s+path=["']([^"']+)["']\s+line=["'](\d+)["']>([\s\S]*?)<\/insert_lines>/i);
+  if (insertMatch) return { type: 'insert_lines', path: insertMatch[1].trim(), line: parseInt(insertMatch[2], 10), content: insertMatch[3] };
+
+  const deleteMatch = String(text || '').match(/<delete_lines\s+path=["']([^"']+)["']\s+start=["'](\d+)["']\s+end=["'](\d+)["']\s*\/?>/i);
+  if (deleteMatch) return { type: 'delete_lines', path: deleteMatch[1].trim(), start: parseInt(deleteMatch[2], 10), end: parseInt(deleteMatch[3], 10) };
+
+  return null;
+};
+
+const executeAgenticTool = async (tool, projectPath) => {
+  const shadowPath = path.join(projectPath, '.vibe-workspace', 'shadow');
+  
+  try {
+    if (tool.type === 'sync_shadow_workspace') {
+      const { exec } = require('child_process');
+      const util = require('util');
+      const execAsync = util.promisify(exec);
+      
+      await fs.mkdir(shadowPath, { recursive: true });
+      // Utilisation de rsync pour copier rapidement le projet en ignorant les dossiers lourds
+      const cmd = `rsync -av --exclude 'node_modules' --exclude '.git' --exclude '.vibe-workspace' "${projectPath}/" "${shadowPath}/"`;
+      await execAsync(cmd);
+      return { output: `[SUCCÈS] Shadow Workspace synchronisé dans ${shadowPath}` };
+    }
+    
+    if (tool.type === 'promote_shadow') {
+      const { exec } = require('child_process');
+      const util = require('util');
+      const execAsync = util.promisify(exec);
+      
+      // Copier du shadow vers le projet principal
+      const cmd = `rsync -av --exclude 'node_modules' --exclude '.git' --exclude '.vibe-workspace' "${shadowPath}/" "${projectPath}/"`;
+      await execAsync(cmd);
+      return { output: `[SUCCÈS] Changements fusionnés avec succès dans le projet principal.` };
+    }
+
+    if (tool.type === 'read_file') {
+      // Lire depuis le shadow en priorité, sinon le projet
+      const targetPath = fs.existsSync(path.join(shadowPath, tool.path)) 
+        ? path.join(shadowPath, tool.path) 
+        : path.join(projectPath, tool.path);
+      const content = await fs.readFile(targetPath, 'utf8');
+      return { output: `[CONTENU DE ${tool.path}]\n${content}` };
+    }
+
+    if (tool.type === 'write_file') {
+      await fs.mkdir(shadowPath, { recursive: true }); // S'assurer que le shadow existe
+      const targetPath = path.join(shadowPath, tool.path);
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      await fs.writeFile(targetPath, tool.content, 'utf8');
+      return { output: `[SUCCÈS] Fichier ${tool.path} écrit dans le Shadow Workspace.` };
+    }
+
+    if (tool.type === 'search_replace') {
+      const targetPath = path.join(shadowPath, tool.path);
+      if (!fs.existsSync(targetPath)) {
+        return { output: `[ERREUR] Fichier ${tool.path} introuvable dans le Shadow Workspace. Faites un sync_shadow_workspace d'abord.` };
+      }
+      let content = await fs.readFile(targetPath, 'utf8');
+      if (content.includes(tool.search)) {
+        content = content.replace(tool.search, tool.replace);
+        await fs.writeFile(targetPath, content, 'utf8');
+        return { output: `[SUCCÈS] Remplacement effectué dans ${tool.path}` };
+      } else {
+        return { output: `[ERREUR] Le texte recherché n'a pas été trouvé dans ${tool.path}. Assurez-vous que le bloc <search> correspond EXACTEMENT au contenu du fichier (indentation, retours à la ligne).` };
+      }
+    }
+
+    if (tool.type === 'edit_lines') {
+      const targetPath = path.join(shadowPath, tool.path);
+      if (!fs.existsSync(targetPath)) return { output: `[ERREUR] Fichier ${tool.path} introuvable.` };
+      const content = await fs.readFile(targetPath, 'utf8');
+      const lines = content.split('\n');
+      if (tool.start < 1 || tool.end > lines.length || tool.start > tool.end) return { output: `[ERREUR] Lignes invalides (1 à ${lines.length}).` };
+      lines.splice(tool.start - 1, tool.end - tool.start + 1, tool.content.replace(/\r?\n$/, ''));
+      await fs.writeFile(targetPath, lines.join('\n'), 'utf8');
+      return { output: `[SUCCÈS] Lignes ${tool.start} à ${tool.end} modifiées dans ${tool.path}` };
+    }
+
+    if (tool.type === 'insert_lines') {
+      const targetPath = path.join(shadowPath, tool.path);
+      if (!fs.existsSync(targetPath)) return { output: `[ERREUR] Fichier ${tool.path} introuvable.` };
+      const content = await fs.readFile(targetPath, 'utf8');
+      const lines = content.split('\n');
+      if (tool.line < 0 || tool.line > lines.length) return { output: `[ERREUR] Ligne invalide (0 à ${lines.length}).` };
+      lines.splice(tool.line, 0, tool.content.replace(/\r?\n$/, ''));
+      await fs.writeFile(targetPath, lines.join('\n'), 'utf8');
+      return { output: `[SUCCÈS] Lignes insérées après la ligne ${tool.line} dans ${tool.path}` };
+    }
+
+    if (tool.type === 'delete_lines') {
+      const targetPath = path.join(shadowPath, tool.path);
+      if (!fs.existsSync(targetPath)) return { output: `[ERREUR] Fichier ${tool.path} introuvable.` };
+      const content = await fs.readFile(targetPath, 'utf8');
+      const lines = content.split('\n');
+      if (tool.start < 1 || tool.end > lines.length || tool.start > tool.end) return { output: `[ERREUR] Lignes invalides (1 à ${lines.length}).` };
+      lines.splice(tool.start - 1, tool.end - tool.start + 1);
+      await fs.writeFile(targetPath, lines.join('\n'), 'utf8');
+      return { output: `[SUCCÈS] Lignes ${tool.start} à ${tool.end} supprimées dans ${tool.path}` };
+    }
+
+    if (tool.type === 'run_command') {
+      // Exécuter dans le shadow si possible
+      const cwd = fs.existsSync(shadowPath) ? shadowPath : projectPath;
+      return await executeCommandForAI(tool.cmd, cwd);
+    }
+  } catch (error) {
+    return { output: `[ERREUR OUTIL ${tool.type}] ${error.message}` };
+  }
+  
+  return { output: '[ERREUR] Outil non reconnu.' };
 };
 
 // --- IPC Handler pour l'API Kimi K2.5 via Together ---
 ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
+  allProjectFiles = await resolveProjectFilesContent(options.projectPath, allProjectFiles, options);
   const apiKey = options.apiKey || process.env.KIMI_API_KEY || process.env.TOGETHER_API_KEY;
   const modelFromEnv = process.env.KIMI_MODEL;
   const model = options.model || modelFromEnv || 'moonshotai/Kimi-K2.5';
@@ -3433,7 +3649,8 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       const fileEntries = Object.entries(allProjectFiles.files);
 
       const maxFiles = contextFilesLimit;
-      const filesToShow = pickFilesForContext(allProjectFiles.files, maxFiles);
+      const userQuery = lastMessage?.text || '';
+      const filesToShow = await getRelevantFilesForContext(options.projectPath, allProjectFiles.files, maxFiles, userQuery, apiKey);
 
       for (const [filePath, fileData] of filesToShow) {
         projectContext += `\n=== FICHIER: ${filePath} ===\n`;
@@ -3472,36 +3689,30 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       ? `\nMODE THINKING ACTIVÉ : détaillez explicitement votre raisonnement étape par étape avant de proposer le code final.\n`
       : '';
 
-    const terminalCapabilityPrompt = reactMode ? TERMINAL_CAPABILITY_PROMPT : '';
-    const prompt = `
-      Vous êtes un assistant de développement expert et autonome.
-      ${agentContext}
-      ${skillContext}
-      ${projectContext}
-      ${visualWorkflowContext}
-      ${n8nCatalogContext}
+    const terminalCapabilityPrompt = reactMode ? AGENTIC_CAPABILITY_PROMPT : '';
+    const prompt = `Role: Expert Dev.
+${agentContext}
+${skillContext}
+${projectContext}
+${visualWorkflowContext}
+${n8nCatalogContext}
+File:
+${currentCode || 'None'}
 
-      FICHIER ACTUELLEMENT OUVERT :
-      --- CODE ACTUEL ---
-      ${currentCode || 'Aucun code fourni'}
-      ---
+User:
+${String(lastMessage.text)}
 
-      DERNIÈRE DEMANDE DE L'UTILISATEUR :
-      ${String(lastMessage.text)}
+${thinkingInstructionsKimi}
+${terminalCapabilityPrompt}
 
-      ${thinkingInstructionsKimi}
-
-      ${terminalCapabilityPrompt}
-
-      INSTRUCTIONS :
-      - Analysez le contexte du projet et la demande.
-      - Proposez des modifications de code complètes.
-      - Pour chaque fichier modifié, renvoyez le contenu complet au format :
-        **FICHIER: nom_du_fichier.ext**
-        \`\`\`langage
-        // code complet
-        \`\`\`
-    `;
+Rules:
+- Output full modified code.
+- Format strictly:
+**FICHIER: name.ext**
+\`\`\`lang
+// full code
+\`\`\`
+- Use <run_command> if needed.`;
 
     const buildMessages = (baseHistory, userPrompt) => {
       const base = baseHistory.slice(0, -1).map(msg => {
@@ -3710,28 +3921,30 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
 
         fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
 
-        const cmd = parseRunCommand(aiText);
-        if (!cmd) {
+        const tool = parseAgenticTools(aiText);
+        if (!tool) {
           // No command → done
           return { success: true, text: fullTranscript, terminalActions: iter };
         }
 
         // Emit terminal action event to renderer
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
+          const displayCmd = tool.type === 'run_command' ? tool.cmd : `<${tool.type}>`;
+          mainWindow.webContents.send('ai-terminal-action', { command: displayCmd, iteration: iter + 1 });
         }
 
-        const { output } = await executeCommandForAI(cmd, projectPath);
+        const { output } = await executeAgenticTool(tool, projectPath);
 
         // Feed result back as new user message
         messages = [
           ...messages,
           { role: 'assistant', content: aiText },
-          { role: 'user', content: `[RÉSULTAT TERMINAL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans balise <run_command>.` }
+          { role: 'user', content: `[RÉSULTAT OUTIL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, SANS utiliser de balises d'outil.` }
         ];
 
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1 });
+          const displayCmd = tool.type === 'run_command' ? tool.cmd : `<${tool.type}>`;
+          mainWindow.webContents.send('ai-terminal-result', { command: displayCmd, output, iteration: iter + 1 });
         }
       }
 
@@ -3919,6 +4132,7 @@ RÈGLES ABSOLUES:
 
 // --- IPC Handler pour l'API Gemini ---
 ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
+  allProjectFiles = await resolveProjectFilesContent(options.projectPath, allProjectFiles, options);
   const apiKey = options.apiKey || process.env.GEMINI_API_KEY; // Clé prioritaire depuis les Settings côté renderer
   const modelFromEnv = process.env.GEMINI_MODEL;
   const modelFromOptions = options.model;
@@ -4018,7 +4232,8 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
 
       // Limiter le nombre de fichiers pour éviter de dépasser les limites de l'API
       const maxFiles = 20;
-      const filesToShow = pickFilesForContext(allProjectFiles.files, maxFiles);
+      const userQuery = lastMessage?.parts?.[0]?.text || '';
+      const filesToShow = await getRelevantFilesForContext(options.projectPath, allProjectFiles.files, maxFiles, userQuery, apiKey);
 
       for (const [filePath, fileData] of filesToShow) {
         projectContext += `\n=== FICHIER: ${filePath} ===\n`;
@@ -4064,64 +4279,29 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       : '';
 
     // Le prompt est construit ici dans le processus principal
-    const prompt = `
-      Vous êtes un assistant de développement expert et autonome, comme Cascade AI.
-      ${agentContext}
-      ${skillContext}
-      ${projectContext}
-      ${visualWorkflowContext}
-      ${n8nCatalogContext}
-      
-      FICHIER ACTUELLEMENT OUVERT :
-      --- CODE ACTUEL ---
-      ${currentCode || 'Aucun code fourni'}
-      ---
-      
-      DEMANDE DE L'UTILISATEUR :
-      ${lastMessage.parts[0].text}
+    const prompt = `Role: Expert Dev.
+${agentContext}
+${skillContext}
+${projectContext}
+${visualWorkflowContext}
+${n8nCatalogContext}
+File:
+${currentCode || 'None'}
+User:
+${lastMessage.parts[0].text}
 
-      ${thinkingInstructionsGemini}
+${thinkingInstructionsGemini}
+${AGENTIC_CAPABILITY_PROMPT}
 
-      ${TERMINAL_CAPABILITY_PROMPT}
-
-      INSTRUCTIONS POUR AGIR COMME UN AGENT AUTONOME :
-      
-      1. **ANALYSE COMPLÈTE** :
-         - Analysez le contexte complet du projet
-         - Identifiez les patterns, l'architecture, et les dépendances
-         - Comprenez l'intention derrière la demande
-      
-      2. **MODIFICATIONS PRÉCISES** :
-         - Pour chaque fichier à modifier, utilisez ce format :
-         
-         **FICHIER: nom_du_fichier.ext**
-         \`\`\`langage
-         // Code complet du fichier avec vos modifications
-         // Incluez TOUT le contenu, pas seulement les changements
-         \`\`\`
-         
-      3. **ACTIONS AUTONOMES** :
-         - Corrigez automatiquement les erreurs détectées
-         - Ajoutez les imports/dépendances nécessaires
-         - Optimisez le code selon les meilleures pratiques
-         - Créez de nouveaux fichiers si nécessaire
-      
-      4. **COMMUNICATION CLAIRE** :
-         - Expliquez brièvement ce que vous faites
-         - Mentionnez les améliorations apportées
-         - Signalez les points d'attention
-      
-      5. **FORMATS SUPPORTÉS** :
-         - JavaScript/TypeScript: \`\`\`javascript ou \`\`\`typescript
-         - HTML: \`\`\`html
-         - CSS: \`\`\`css
-         - Python: \`\`\`python
-         - JSON: \`\`\`json
-         - Markdown: \`\`\`markdown
-      
-      AGISSEZ COMME UN DÉVELOPPEUR EXPERT QUI COMPREND LE CONTEXTE ET FAIT DES MODIFICATIONS INTELLIGENTES.
-    `;
-
+Rules:
+1. Analyze context.
+2. Format strictly:
+**FICHIER: name.ext**
+\`\`\`lang
+// full code
+\`\`\`
+3. Auto-fix errors & optimize.
+4. Output brief text.`;
     // Les contenus à envoyer à l'API incluent l'historique formaté (sauf la dernière requête qui est dans le prompt)
     const inlineImageParts = (Array.isArray(images) ? images : [])
       .map(img => {
@@ -4174,26 +4354,28 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
 
         fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
 
-        const cmd = parseRunCommand(aiText);
-        if (!cmd) {
+        const tool = parseAgenticTools(aiText);
+        if (!tool) {
           return { success: true, text: fullTranscript, terminalActions: iter };
         }
 
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
+          const displayCmd = tool.type === 'run_command' ? tool.cmd : `<${tool.type}>`;
+          mainWindow.webContents.send('ai-terminal-action', { command: displayCmd, iteration: iter + 1 });
         }
 
-        const { output } = await executeCommandForAI(cmd, projectPath);
+        const { output } = await executeAgenticTool(tool, projectPath);
 
         // Append model response and new tool result
         contents = [
           ...contents,
           { role: 'model', parts: [{ text: aiText }] },
-          { role: 'user', parts: [{ text: `[RÉSULTAT TERMINAL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans balise <run_command>.` }] }
+          { role: 'user', parts: [{ text: `[RÉSULTAT OUTIL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans utiliser de balises d'outil.` }] }
         ];
 
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1 });
+          const displayCmd = tool.type === 'run_command' ? tool.cmd : `<${tool.type}>`;
+          mainWindow.webContents.send('ai-terminal-result', { command: displayCmd, output, iteration: iter + 1 });
         }
       }
 
@@ -4281,10 +4463,20 @@ registerGitHandlers({
   assertSafePath
 });
 
+// ==================== MCP CLIENT INTEGRATION ====================
+const mcpManager = registerMcpHandlers({
+  ipcMain,
+  app,
+  fs,
+  path,
+  getMainWindow: () => mainWindow
+});
+
 // ==================== CLAUDE API INTEGRATION ====================
 const Anthropic = require('@anthropic-ai/sdk');
 
 ipcMain.handle('get-claude-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
+  allProjectFiles = await resolveProjectFilesContent(options.projectPath, allProjectFiles, options);
   const apiKey = options.apiKey || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
   const modelFromEnv = process.env.CLAUDE_MODEL;
   const model = options.model || modelFromEnv || 'claude-4.6';
@@ -4322,7 +4514,8 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
       projectContext = '\n--- CONTEXTE COMPLET DU PROJET ---\n';
       const fileEntries = Object.entries(allProjectFiles.files);
       const maxFiles = 20;
-      const filesToShow = pickFilesForContext(allProjectFiles.files, maxFiles);
+      const userQuery = lastMessage?.text || '';
+      const filesToShow = await getRelevantFilesForContext(options.projectPath, allProjectFiles.files, maxFiles, userQuery, apiKey);
 
       for (const [filePath, fileData] of filesToShow) {
         projectContext += `\n=== FICHIER: ${filePath} ===\n`;
@@ -4360,31 +4553,26 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
       ? `\nMODE THINKING ACTIVÉ : Détaillez explicitement votre raisonnement étape par étape dans des balises <thinking> avant de proposer le code final.\n`
       : '';
 
-    const systemPrompt = `
-      Vous êtes un assistant de développement expert et autonome, comme Cascade AI.
-      ${agentContext}
-      ${skillContext}
-      ${projectContext}
-      ${visualWorkflowContext}
-      ${n8nCatalogContext}
-      
-      FICHIER ACTUELLEMENT OUVERT :
-      --- CODE ACTUEL ---
-      ${currentCode || 'Aucun code fourni'}
-      ---
-      
-      ${thinkingInstructions}
-      ${TERMINAL_CAPABILITY_PROMPT}
-      
-      INSTRUCTIONS POUR AGIR COMME UN AGENT AUTONOME :
-      1. **ANALYSE COMPLÈTE** : Analysez le contexte complet du projet
-      2. **MODIFICATIONS PRÉCISES** : Pour chaque fichier à modifier, utilisez ce format strict :
-         **FICHIER: nom_du_fichier.ext**
-         \`\`\`langage
-         // Code complet du fichier avec vos modifications
-         \`\`\`
-      3. **ACTIONS AUTONOMES** : Utilisez <run_command> pour interagir avec le terminal si besoin.
-    `;
+    const systemPrompt = `Role: Expert Dev.
+${agentContext}
+${skillContext}
+${projectContext}
+${visualWorkflowContext}
+${n8nCatalogContext}
+File:
+${currentCode || 'None'}
+
+${thinkingInstructions}
+${AGENTIC_CAPABILITY_PROMPT}
+
+Rules:
+1. Analyze.
+2. Format strictly:
+**FICHIER: name.ext**
+\`\`\`lang
+// full code
+\`\`\`
+3. Use <run_command> if needed.`;
 
     const anthropic = new Anthropic({ apiKey });
 
@@ -4460,25 +4648,27 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
 
       fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
 
-      const cmd = parseRunCommand(aiText);
-      if (!cmd) {
+      const tool = parseAgenticTools(aiText);
+      if (!tool) {
         return { success: true, text: fullTranscript, terminalActions: iter };
       }
 
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
+        const displayCmd = tool.type === 'run_command' ? tool.cmd : `<${tool.type}>`;
+        mainWindow.webContents.send('ai-terminal-action', { command: displayCmd, iteration: iter + 1 });
       }
 
-      const { output } = await executeCommandForAI(cmd, projectPath);
+      const { output } = await executeAgenticTool(tool, projectPath);
 
       currentMessages = [
         ...currentMessages,
         { role: 'assistant', content: [{ type: 'text', text: aiText }] },
-        { role: 'user', content: [{ type: 'text', text: `[RÉSULTAT TERMINAL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans balise <run_command>.` }] }
+        { role: 'user', content: [{ type: 'text', text: `[RÉSULTAT OUTIL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans utiliser de balises d'outil.` }] }
       ];
 
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1 });
+        const displayCmd = tool.type === 'run_command' ? tool.cmd : `<${tool.type}>`;
+        mainWindow.webContents.send('ai-terminal-result', { command: displayCmd, output, iteration: iter + 1 });
       }
     }
 
@@ -5190,7 +5380,7 @@ const parseGitHubTreeUrl = (inputUrl) => {
   return null;
 };
 
-const runGit = (args, cwd) => {
+function runGit(args, cwd) {
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, { cwd, windowsHide: true });
     let stdout = '';
@@ -5924,6 +6114,7 @@ ipcMain.handle('pull-ollama-model', async (_event, modelName) => {
 });
 
 ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
+  allProjectFiles = await resolveProjectFilesContent(options.projectPath, allProjectFiles, options);
   const requestedModel = normalizeOllamaModelName(options.model || process.env.OLLAMA_MODEL);
   const projectPath = options.projectPath || null;
 
@@ -5973,7 +6164,7 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
 
     let projectContext = '';
     if (allProjectFiles?.files) {
-      const filesToShow = pickFilesForContext(allProjectFiles.files, 15);
+      const filesToShow = await getRelevantFilesForContext(options.projectPath, allProjectFiles.files, 15, lastUserText, process.env.GEMINI_API_KEY);
       projectContext = '\n--- CONTEXTE PROJET ---\n';
       for (const [filePath, fileData] of filesToShow) {
         projectContext += `\n=== ${filePath} ===\n${(fileData.content || '').substring(0, 1500)}\n`;
@@ -6001,7 +6192,7 @@ ${visualWorkflowContext}
 ${n8nCatalogContext}
 FICHIER OUVERT: ${currentCode ? currentCode.substring(0, 2000) : 'Aucun'}
 
-${TERMINAL_CAPABILITY_PROMPT}
+${AGENTIC_CAPABILITY_PROMPT}
 
 Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code complet\n\`\`\``;
 
@@ -6040,20 +6231,22 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
       const aiText = await ollamaCall(messages);
       fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
 
-      const cmd = parseRunCommand(aiText);
-      if (!cmd) return { success: true, text: fullTranscript, terminalActions: iter };
+      const tool = parseAgenticTools(aiText);
+      if (!tool) return { success: true, text: fullTranscript, terminalActions: iter };
 
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
+        const displayCmd = tool.type === 'run_command' ? tool.cmd : `<${tool.type}>`;
+        mainWindow.webContents.send('ai-terminal-action', { command: displayCmd, iteration: iter + 1 });
       }
-      const { output } = await executeCommandForAI(cmd, projectPath);
+      const { output } = await executeAgenticTool(tool, projectPath);
       messages = [
         ...messages,
         { role: 'assistant', content: aiText },
-        { role: 'user', content: `[RÉSULTAT TERMINAL]\n\`\`\`\n${output}\n\`\`\`\nContinue ou termine.` }
+        { role: 'user', content: `[RÉSULTAT OUTIL]\n\`\`\`\n${output}\n\`\`\`\nContinue ou termine sans utiliser de balises d'outil.` }
       ];
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1 });
+        const displayCmd = tool.type === 'run_command' ? tool.cmd : `<${tool.type}>`;
+        mainWindow.webContents.send('ai-terminal-result', { command: displayCmd, output, iteration: iter + 1 });
       }
     }
 
@@ -6067,6 +6260,7 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
 // ==================== MULTI-OLLAMA 3 AGENTS ====================
 
 ipcMain.handle('get-ollama-multi-completion', async (event, history, currentCode, allProjectFiles, options = {}) => {
+  allProjectFiles = await resolveProjectFilesContent(options.projectPath, allProjectFiles, options);
   try {
     const OLLAMA_BASE_URL_MULTI = process.env.OLLAMA_URL || 'http://localhost:11434';
     const fallbackModel = String(options.model || process.env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL).trim() || DEFAULT_OLLAMA_MODEL;
@@ -6525,7 +6719,7 @@ nouveau code
 - Si la reponse tient en une seule passe, termine par **STATUT: COMPLETE**
 - S'il reste des fichiers a produire, termine par **STATUT: INCOMPLETE**
 - Pas d'explication, uniquement les artefacts.
-${TERMINAL_CAPABILITY_PROMPT}`;
+${AGENTIC_CAPABILITY_PROMPT}`;
 
     const MAX_CODER_PASSES = 3;
     let coderOutput = '';

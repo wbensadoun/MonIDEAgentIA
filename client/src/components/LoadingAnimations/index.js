@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './LoadingAnimations.css';
+import './AgentProcess.css';
 
 // ─────────────────────────────────────────────────────────
 // LoadingSteps (unchanged)
@@ -60,81 +61,177 @@ export const LoadingPulse = ({ text, variant = 'default' }) => {
   );
 };
 
-const PROVIDER_LABELS = {
-  gemini: '🔷 Gemini',
-  kimi: '🌙 Kimi K2.5',
-  ollama: '🦙 Ollama',
-  'ollama-multi': '🦙 Multi-Ollama',
-  multi: '🤖 Multi-IA',
-  claude: '🟠 Claude',
+// ─────────────────────────────────────────────────────────
+// Provider metadata
+// ─────────────────────────────────────────────────────────
+const PROVIDER_META = {
+  gemini:       { icon: '🔷', label: 'Gemini',        color: '#4285f4' },
+  kimi:         { icon: '🌙', label: 'Kimi K2.5',     color: '#a78bfa' },
+  ollama:       { icon: '🦙', label: 'Ollama',         color: '#f59e0b' },
+  'ollama-multi':{ icon: '🦙', label: 'Ollama Multi',  color: '#f59e0b' },
+  multi:        { icon: '🤖', label: 'Multi-IA',       color: '#00f5d4' },
+  claude:       { icon: '🟠', label: 'Claude',         color: '#fb923c' },
 };
 
-export const AIWorkingIndicator = ({ provider = 'gemini', statusText = 'L\'IA réfléchit...' }) => {
+// Rolling phrases that rotate while the AI thinks
+const THINKING_PHRASES = [
+  'Analyse du contexte projet...',
+  'Lecture des fichiers sources...',
+  'Planification de la réponse...',
+  'Génération du code...',
+  'Vérification de la cohérence...',
+  'Optimisation de la solution...',
+  'Rédaction en cours...',
+  'Traitement des données...',
+];
+
+// ─────────────────────────────────────────────────────────
+// AgentProcessPanel — Antigravity-style working indicator
+// ─────────────────────────────────────────────────────────
+export const AIWorkingIndicator = ({
+  provider = 'gemini',
+  statusText = "L'IA réfléchit...",
+  steps = [],
+  currentStepIndex = 0,
+  streamingAgent = '',
+  tokenCount = 0,
+}) => {
   const [elapsed, setElapsed] = useState(0);
+  const [phraseIdx, setPhraseIdx] = useState(0);
+  const [logs, setLogs] = useState([]);
   const startRef = useRef(Date.now());
+  const logsEndRef = useRef(null);
 
+  // Elapsed timer
   useEffect(() => {
-    let timerInterval = null;
-    const updateElapsed = () => {
-      setElapsed((prev) => {
-        const next = Math.floor((Date.now() - startRef.current) / 1000);
-        return next === prev ? prev : next;
-      });
-    };
-    const startTimer = () => {
-      if (timerInterval) return;
-      timerInterval = setInterval(updateElapsed, 1000);
-    };
-    const stopTimer = () => {
-      if (!timerInterval) return;
-      clearInterval(timerInterval);
-      timerInterval = null;
-    };
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        stopTimer();
-      } else {
-        updateElapsed();
-        startTimer();
-      }
-    };
-
-    startTimer();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      stopTimer();
-    };
+    startRef.current = Date.now();
+    setElapsed(0);
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
   }, []);
 
-  const providerLabel = PROVIDER_LABELS[provider] || `🤖 ${provider}`;
+  // Rolling phrase
+  useEffect(() => {
+    const id = setInterval(() => {
+      setPhraseIdx(i => (i + 1) % THINKING_PHRASES.length);
+    }, 2800);
+    return () => clearInterval(id);
+  }, []);
+
+  // Build a live log entry whenever statusText changes
+  useEffect(() => {
+    if (!statusText) return;
+    const ts = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setLogs(prev => {
+      const last = prev[prev.length - 1];
+      if (last && last.text === statusText) return prev; // deduplicate
+      return [...prev.slice(-14), { ts, text: statusText, id: Date.now() }];
+    });
+  }, [statusText]);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
+
+  const meta = PROVIDER_META[provider] || { icon: '🤖', label: provider, color: '#00f5d4' };
+
+  const formatTime = (s) => {
+    if (s < 60) return `${s}s`;
+    return `${Math.floor(s / 60)}m${s % 60}s`;
+  };
+
+  // Derive active steps
+  const hasSteps = Array.isArray(steps) && steps.length > 0;
 
   return (
-    <div className="ai-working">
-      <div className="ai-working-top">
-        <span className="ai-working-icon">🧠</span>
-        <div className="ai-working-right">
-          <span className="ai-working-phrase">
-            {statusText}
-          </span>
-          <div className="ai-working-meta">
-            <span className="ai-working-provider">{providerLabel}</span>
-            {elapsed > 0 && (
-              <span className="ai-working-timer">{elapsed}s</span>
-            )}
+    <div className="ap-panel">
+      {/* ── Top bar ── */}
+      <div className="ap-topbar">
+        <div className="ap-topbar-left">
+          <div className="ap-brain-wrap">
+            <span className="ap-brain">🧠</span>
+            <span className="ap-brain-ring" />
+          </div>
+          <div className="ap-info">
+            <div className="ap-status-line">
+              <span className="ap-status-dot" />
+              <span className="ap-status-text">
+                {streamingAgent ? `${streamingAgent} travaille...` : THINKING_PHRASES[phraseIdx]}
+              </span>
+            </div>
+            <div className="ap-meta-row">
+              <span className="ap-provider-chip" style={{ '--provider-color': meta.color }}>
+                {meta.icon} {meta.label}
+              </span>
+              <span className="ap-timer">{formatTime(elapsed)}</span>
+              {tokenCount > 0 && (
+                <span className="ap-tokens">~{tokenCount.toLocaleString('fr-FR')} tokens</span>
+              )}
+            </div>
           </div>
         </div>
-        <div className="ai-dots">
-          <div className="ai-dot" />
-          <div className="ai-dot" />
-          <div className="ai-dot" />
+
+        {/* Animated dots */}
+        <div className="ap-dots">
+          <span className="ap-dot" />
+          <span className="ap-dot" />
+          <span className="ap-dot" />
         </div>
+      </div>
+
+      {/* ── Step pipeline (when multi-agent) ── */}
+      {hasSteps && (
+        <div className="ap-pipeline">
+          {steps.map((step, i) => {
+            const isDone = step.status === 'completed' || i < currentStepIndex;
+            const isActive = step.status === 'active' || i === currentStepIndex;
+            return (
+              <React.Fragment key={i}>
+                <div className={`ap-step ${isDone ? 'is-done' : isActive ? 'is-active' : 'is-pending'}`}>
+                  <div className="ap-step-icon">
+                    {isDone ? (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : isActive ? (
+                      <span className="ap-step-spinner" />
+                    ) : (
+                      <span className="ap-step-num">{i + 1}</span>
+                    )}
+                  </div>
+                  <span className="ap-step-label">{step.label}</span>
+                  {step.provider && <span className="ap-step-provider">{step.provider}</span>}
+                </div>
+                {i < steps.length - 1 && (
+                  <div className={`ap-connector ${isDone ? 'is-done' : ''}`} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Live log ── */}
+      <div className="ap-log">
+        {logs.map((entry) => (
+          <div key={entry.id} className="ap-log-line">
+            <span className="ap-log-ts">{entry.ts}</span>
+            <span className="ap-log-text">{entry.text}</span>
+          </div>
+        ))}
+        <div ref={logsEndRef} />
+      </div>
+
+      {/* ── Progress bar ── */}
+      <div className="ap-progress">
+        <div className="ap-progress-fill" />
       </div>
     </div>
   );
 };
-
 
 
 // ─────────────────────────────────────────────────────────

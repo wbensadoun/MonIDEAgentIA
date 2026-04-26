@@ -312,9 +312,19 @@ export const useAI = (
       }
 
       // Ajout du contenu explicite au prompt final envoyé à l'IA
-      const promptToSend = explicitContextFilesContent
+      let promptToSend = explicitContextFilesContent
         ? `${trimmedPrompt}\n\nVoici le contenu des fichiers explicitement mentionnés :\n${explicitContextFilesContent}`
         : trimmedPrompt;
+
+      // Injection du contexte MCP (outils externes connectés)
+      if (window.electronAPI?.mcpGetToolsContext) {
+        try {
+          const mcpCtx = await window.electronAPI.mcpGetToolsContext();
+          if (mcpCtx?.success && mcpCtx.context) {
+            promptToSend += '\n' + mcpCtx.context;
+          }
+        } catch { /* MCP context injection optional */ }
+      }
 
       const normalizedContextMode =
         contextMode === 'mentions' || contextMode === 'none' ? contextMode : 'auto';
@@ -341,6 +351,7 @@ export const useAI = (
         }
         : null;
 
+      let scanOptions = null;
       if (wantsProjectContext) {
         showMessage("Lecture du contexte projet...", 2000);
 
@@ -379,11 +390,12 @@ export const useAI = (
 
         const presetKey = deepContextEnabled || aiProvider === 'multi' || aiProvider === 'ollama-multi' ? projectScanPreset : 'safe';
         const baseOptions = scanPresets[presetKey] || scanPresets.safe;
-        const scanOptions = {
+        scanOptions = {
           ...baseOptions,
           includeSecrets: projectScanIncludeSecrets,
           largeFileStrategy: projectScanLargeFileStrategy,
-          includeVisualWorkflows: true
+          includeVisualWorkflows: true,
+          omitContent: true
         };
         const maxFilesLimit = Number(contextMaxFiles);
         if (Number.isFinite(maxFilesLimit) && maxFilesLimit > 0) {
@@ -436,12 +448,14 @@ export const useAI = (
         maxVisualWorkflowIndexItems: deepContextEnabled ? 40 : 20,
         maxVisualWorkflowDetailedItems: deepContextEnabled ? 6 : 2,
         maxVisualWorkflowContentChars: deepContextEnabled ? 14000 : 7000,
-        maxN8nCatalogItems: deepContextEnabled ? 200 : 80
+        maxN8nCatalogItems: deepContextEnabled ? 200 : 80,
+        scanOptions,
+        explicitContextFilesMap
       };
 
       // Mode Multi-IA: 5 Agents (Hybride Kimi + Gemini)
       if (aiProvider === 'multi') {
-        const projectContextStr = JSON.stringify(allProjectFiles);
+        const projectContextStr = "[Le contexte du projet sera injecté par le backend]";
 
         setMultiAIState({
           isActive: true,

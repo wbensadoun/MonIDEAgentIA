@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './Settings.css';
+import McpSettings from './McpSettings';
 
 const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
   const suggestedOllamaModels = [
@@ -406,6 +407,13 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
               />
               <span>Bloquer l&apos;application si un gate echoue</span>
             </label>
+          </div>
+
+          <div className="settings-section">
+            <McpSettings
+              isElectronApiAvailable={isElectronApiAvailable}
+              showMessage={showMessage}
+            />
           </div>
 
           <div className="settings-section">

@@ -1,6 +1,6 @@
 {
   "name": "monideagentia",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "main": "main.js",
   "scripts": {
     "start": "concurrently \"npm:start-react\" \"npm:electron-dev\"",
@@ -11,7 +11,8 @@
     "build": "npm run build --prefix client && electron-builder",
     "build:win-installer": "npm run build --prefix client && electron-builder --win nsis",
     "postinstall": "electron-builder install-app-deps",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "mcp": "node mcp-server/index.js"
   },
   "keywords": [],
   "author": "",
@@ -19,9 +20,11 @@
   "description": "",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.7.9",
     "dotenv": "^17.2.1",
-    "electron-is-dev": "^2.0.0"
+    "electron-is-dev": "^2.0.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/electron": "^1.4.38",

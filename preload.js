@@ -237,6 +237,23 @@ try {
     onAIGenerationToken: (callback) => {
       return registerChannelListener('ai-generation-token', callback);
     },
+
+    // MCP Integration
+    mcpGetCatalog: () => ipcRenderer.invoke('mcp-get-catalog'),
+    mcpListServers: () => ipcRenderer.invoke('mcp-list-servers'),
+    mcpUpsertServer: (config) => ipcRenderer.invoke('mcp-upsert-server', config),
+    mcpRemoveServer: (serverId) => ipcRenderer.invoke('mcp-remove-server', serverId),
+    mcpConnect: (serverId) => ipcRenderer.invoke('mcp-connect', serverId),
+    mcpDisconnect: (serverId) => ipcRenderer.invoke('mcp-disconnect', serverId),
+    mcpListTools: () => ipcRenderer.invoke('mcp-list-tools'),
+    mcpCallTool: (serverId, toolName, args) => ipcRenderer.invoke('mcp-call-tool', serverId, toolName, args),
+    mcpGetToolsContext: () => ipcRenderer.invoke('mcp-get-tools-context'),
+    mcpQuickAdd: (catalogId, envOverrides) => ipcRenderer.invoke('mcp-quick-add', catalogId, envOverrides),
+    mcpRegistrySearch: (query) => ipcRenderer.invoke('mcp-registry-search', query),
+    mcpRegistryImport: (server, envValues) => ipcRenderer.invoke('mcp-registry-import', server, envValues),
+    onMcpStatusChanged: (callback) => {
+      return registerChannelListener('mcp-status-changed', callback);
+    },
   };
 
   // Afficher les méthodes disponibles

@@ -1,6 +1,9 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import './AIChat.css';
-import { LoadingSteps, AIWorkingIndicator } from '../LoadingAnimations';
+import './MarkdownRenderer.css';
+import { AIWorkingIndicator } from '../LoadingAnimations';
+import MarkdownRenderer from './MarkdownRenderer';
+import StreamingCodeBlock from './StreamingCodeBlock';
 
 const WORKFLOW_STREAM_REGEX = /\*\*WORKFLOW:/i;
 const DIFF_STREAM_REGEX = /<<<<\s*SEARCH/i;
@@ -418,11 +421,7 @@ const AIChat = ({
   const currentWorkflowAnimStep = WORKFLOW_STREAM_STEPS[workflowAnimStep] || WORKFLOW_STREAM_STEPS[0];
   const streamingFileDraft = useMemo(() => extractStreamingFileDraft(streamingText), [streamingText]);
   const streamingWorkflowDraft = useMemo(() => extractStreamingWorkflowDraft(streamingText), [streamingText]);
-  const streamingCodeLineCount = useMemo(() => {
-    const code = streamingFileDraft?.code || '';
-    if (!code) return 0;
-    return code.split('\n').length;
-  }, [streamingFileDraft]);
+  // streamingCodeLineCount now handled inside StreamingCodeBlock
 
   useEffect(() => {
     if (typeof onStreamingDraftChange !== 'function') return;
@@ -498,22 +497,18 @@ const AIChat = ({
           </div>
         )}
         {streamingMode === 'code' && (
-          <div className="ai-stream-anim ai-stream-code">
-            <div className="ai-stream-anim-title">Redaction du code en cours...</div>
-            <div className="ai-stream-code-meta">
-              <span className="ai-stream-code-file">{streamingFileDraft?.filePath || 'Fichier en cours de redaction'}</span>
-              <span className="ai-stream-code-lang">{(streamingFileDraft?.language || 'text').toLowerCase()}</span>
-            </div>
-            <pre className="ai-stream-code-preview">{streamingFileDraft?.code || streamingText}</pre>
-            <div className="ai-stream-anim-subtitle">
-              {streamingCodeLineCount > 0
-                ? `${streamingCodeLineCount} ligne(s) recues en direct`
-                : 'Le contenu du fichier apparait ici au fur et a mesure.'}
-            </div>
-          </div>
+          <StreamingCodeBlock
+            code={streamingFileDraft?.code || streamingText}
+            filePath={streamingFileDraft?.filePath || ''}
+            language={streamingFileDraft?.language || ''}
+            isStreaming={isLoading}
+            agent={streamingAgent || ''}
+          />
         )}
         {streamingMode === 'text' && (
-          <pre className="ai-stream-text">{streamingText}</pre>
+          <div className="ai-stream-text-wrap">
+            <MarkdownRenderer text={streamingText} />
+          </div>
         )}
       </div>
     );
@@ -560,7 +555,9 @@ const AIChat = ({
   const getRoleMeta = (msg) => {
     if (msg.role === 'system') {
       return {
-        label: 'Systeme',
+        label: 'Système',
+        avatar: '⚙️',
+        avatarClass: 'chat-avatar-system',
         badgeClass: 'chat-badge-system',
         bubbleClass: 'chat-bubble-system',
         alignClass: 'chat-row-system'
@@ -570,6 +567,8 @@ const AIChat = ({
     if (msg.role === 'user') {
       return {
         label: 'Vous',
+        avatar: '👤',
+        avatarClass: 'chat-avatar-user',
         badgeClass: 'chat-badge-user',
         bubbleClass: 'chat-bubble-user',
         alignClass: 'chat-row-user'
@@ -580,6 +579,8 @@ const AIChat = ({
     if (msg.isChefDeProjet) {
       return {
         label: '🎯 Chef (Gemini 2.5)',
+        avatar: '🎯',
+        avatarClass: 'chat-avatar-chef',
         badgeClass: 'chat-badge-chef-projet',
         bubbleClass: 'chat-bubble-chef-projet',
         alignClass: 'chat-row-ai'
@@ -589,6 +590,8 @@ const AIChat = ({
     if (msg.isFrontendDev) {
       return {
         label: '🎨 Front (Kimi)',
+        avatar: '🎨',
+        avatarClass: 'chat-avatar-frontend',
         badgeClass: 'chat-badge-frontend-dev',
         bubbleClass: 'chat-bubble-frontend-dev',
         alignClass: 'chat-row-ai'
@@ -598,6 +601,8 @@ const AIChat = ({
     if (msg.isBackendDev) {
       return {
         label: '⚙️ Back (Kimi)',
+        avatar: '⚙️',
+        avatarClass: 'chat-avatar-backend',
         badgeClass: 'chat-badge-backend-dev',
         bubbleClass: 'chat-bubble-backend-dev',
         alignClass: 'chat-row-ai'
@@ -607,6 +612,8 @@ const AIChat = ({
     if (msg.isArchitectEngineer || msg.isArchitect) {
       return {
         label: '🏗️ Archi (Kimi)',
+        avatar: '🏗️',
+        avatarClass: 'chat-avatar-architect',
         badgeClass: 'chat-badge-architect',
         bubbleClass: 'chat-bubble-architect',
         alignClass: 'chat-row-ai'
@@ -616,6 +623,8 @@ const AIChat = ({
     if (msg.isScrumMaster) {
       return {
         label: '📋 Scrum (Gemini 2.5)',
+        avatar: '📋',
+        avatarClass: 'chat-avatar-scrum',
         badgeClass: 'chat-badge-scrum-master',
         bubbleClass: 'chat-bubble-scrum-master',
         alignClass: 'chat-row-ai'
@@ -625,6 +634,8 @@ const AIChat = ({
     if (msg.isReviewer) {
       return {
         label: 'Relecteur',
+        avatar: '🔍',
+        avatarClass: 'chat-avatar-reviewer',
         badgeClass: 'chat-badge-reviewer',
         bubbleClass: 'chat-bubble-reviewer',
         alignClass: 'chat-row-ai'
@@ -634,6 +645,8 @@ const AIChat = ({
     if (msg.isCoder) {
       return {
         label: 'Codeur',
+        avatar: '💻',
+        avatarClass: 'chat-avatar-coder',
         badgeClass: 'chat-badge-coder',
         bubbleClass: 'chat-bubble-coder',
         alignClass: 'chat-row-ai'
@@ -642,6 +655,8 @@ const AIChat = ({
 
     return {
       label: 'IA',
+      avatar: '🤖',
+      avatarClass: 'chat-avatar-ai',
       badgeClass: 'chat-badge-model',
       bubbleClass: 'chat-bubble-model',
       alignClass: 'chat-row-ai'
@@ -700,21 +715,38 @@ const AIChat = ({
     promptInputRef.current?.focus();
   };
 
+  // Auto-resize textarea
+  const handleTextareaInput = useCallback((e) => {
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+  }, []);
+
+  // Format timestamp
+  const formatTime = useCallback((timestamp) => {
+    if (!timestamp) return '';
+    try {
+      const d = new Date(timestamp);
+      return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  }, []);
+
   return (
     <div className="ai-chat-container">
       <div className="ai-header">
         <div className="ai-header-left">
-          <div className="ai-title">Agent IA</div>
-          <div className="ai-subtitle">{headerTitle}</div>
+          <div className="ai-header-brand">
+            <span className="ai-header-icon">🧠</span>
+            <div className="ai-header-text">
+              <div className="ai-title">Agent IA</div>
+              <div className="ai-subtitle">{headerTitle}</div>
+            </div>
+          </div>
           {globalSkillsCount > 0 && (
-            <div title={`${globalSkillsCount} skills globaux injectés automatiquement dans chaque requête IA`} style={{
-              display: 'inline-flex', alignItems: 'center', gap: '4px',
-              background: '#00c49a18', border: '1px solid #00c49a44',
-              borderRadius: '20px', padding: '2px 8px',
-              color: '#00c49a', fontSize: '11px', fontWeight: 600,
-              cursor: 'help', marginTop: '2px'
-            }}>
-              ⚡ {globalSkillsCount} skills actifs
+            <div className="ai-skills-badge" title={`${globalSkillsCount} skills globaux injectés automatiquement dans chaque requête IA`}>
+              ⚡ {globalSkillsCount} skills
             </div>
           )}
         </div>
@@ -730,25 +762,29 @@ const AIChat = ({
             }}
             className="ai-control-btn"
             disabled={!currentProjectPath || !isElectronApiAvailable}
+            title="Nouvelle conversation"
           >
-            Nouveau
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
 
           <button
             type="button"
             onClick={() => setShowConversations(prev => !prev)}
-            className="ai-control-btn"
+            className={`ai-control-btn ${showConversations ? 'is-active' : ''}`}
             disabled={!currentProjectPath || !isElectronApiAvailable}
+            title="Historique des conversations"
           >
-            Historique
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14"/><circle cx="12" cy="12" r="10"/></svg>
           </button>
 
           <button
+            type="button"
             onClick={onSaveConversation}
             className="ai-control-btn"
             disabled={!currentProjectPath || conversationHistory.length === 0 || !isElectronApiAvailable}
+            title="Sauvegarder la conversation"
           >
-            Sauvegarder
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
           </button>
         </div>
       </div>
@@ -878,11 +914,10 @@ const AIChat = ({
         <div className="ai-loading" role="status" aria-live="polite" aria-busy={isLoading}>
           <AIWorkingIndicator
             provider={aiProvider}
-            statusText={multiAIState.currentPhase ? `${streamingAgent || multiAIState.currentPhase} en cours...` : "Multi-IA en cours..."}
-          />
-          <LoadingSteps
+            statusText={multiAIState.currentPhase ? `${streamingAgent || multiAIState.currentPhase} en cours...` : 'Multi-IA en cours...'}
             steps={safeMultiSteps}
-            currentStep={safeCurrentStepIndex}
+            currentStepIndex={safeCurrentStepIndex}
+            streamingAgent={streamingAgent}
           />
           {renderStreamingBox()}
           {multiAIState.error && (
@@ -899,9 +934,10 @@ const AIChat = ({
             provider={aiProvider}
             statusText={
               streamingMode === 'code'
-                ? `Redaction ${streamingAgent ? `par ${streamingAgent}` : 'du code'} en cours...`
-                : (streamingText ? `${streamingAgent || 'IA'} en train de repondre...` : 'Traitement en cours...')
+                ? `Rédaction ${streamingAgent ? `par ${streamingAgent}` : 'du code'} en cours...`
+                : (streamingText ? `${streamingAgent || 'IA'} en train de répondre...` : 'Traitement en cours...')
             }
+            streamingAgent={streamingAgent}
           />
           {renderStreamingBox()}
         </div>
@@ -913,20 +949,51 @@ const AIChat = ({
       >
         {conversationHistory.length === 0 && !isLoading && (
           <div className="ai-empty">
-            <p>Commencez a discuter avec l&apos;IA</p>
-            <p>Contexte complet du projet pris en compte.</p>
+            <div className="ai-empty-icon">💬</div>
+            <h3 className="ai-empty-title">Démarrer une conversation</h3>
+            <p className="ai-empty-desc">Posez une question, demandez du code, ou décrivez ce que vous voulez construire.</p>
+            <div className="ai-empty-features">
+              <div className="ai-empty-feature">
+                <span className="ai-empty-feature-icon">📁</span>
+                <span>Contexte projet complet</span>
+              </div>
+              <div className="ai-empty-feature">
+                <span className="ai-empty-feature-icon">✏️</span>
+                <span>Modification de fichiers</span>
+              </div>
+              <div className="ai-empty-feature">
+                <span className="ai-empty-feature-icon">🔍</span>
+                <span>Tapez <code>@</code> pour mentionner un fichier</span>
+              </div>
+              <div className="ai-empty-feature">
+                <span className="ai-empty-feature-icon">⚡</span>
+                <span>Tapez <code>/</code> pour les workflows</span>
+              </div>
+            </div>
           </div>
         )}
 
         {conversationHistory.map((msg, index) => {
           const meta = getRoleMeta(msg);
+          const timeStr = formatTime(msg.timestamp || msg.createdAt);
           return (
             <div key={index} className={`chat-message ${meta.alignClass}`}>
-              <div className={meta.bubbleClass}>
+              {/* Avatar */}
+              <div className={`chat-avatar ${meta.avatarClass || ''}`}>
+                <span className="chat-avatar-emoji">{meta.avatar}</span>
+              </div>
+              <div className={`chat-bubble ${meta.bubbleClass}`}>
                 <div className="chat-message-header">
                   <span className={`chat-badge ${meta.badgeClass}`}>{meta.label}</span>
+                  {timeStr && <span className="chat-timestamp">{timeStr}</span>}
                 </div>
-                <p className="chat-message-text whitespace-pre-wrap text-xs mt-1">{msg.text}</p>
+                <div className="chat-message-body">
+                  {msg.role === 'user' ? (
+                    <p className="chat-message-text">{msg.text}</p>
+                  ) : (
+                    <MarkdownRenderer text={msg.text} />
+                  )}
+                </div>
 
                 {Array.isArray(msg.images) && msg.images.length > 0 && (
                   <div className="chat-images">
@@ -934,7 +1001,7 @@ const AIChat = ({
                       <div key={i} className="chat-image-wrapper">
                         <img
                           src={img.dataUrl}
-                          alt="Image collee"
+                          alt="Image collée"
                           className="chat-image-thumb"
                         />
                       </div>
@@ -1049,17 +1116,24 @@ const AIChat = ({
           </div>
         )}
 
-        <textarea
-          ref={promptInputRef}
-          id="ai-prompt"
-          className="ai-input"
-          value={prompt}
-          onChange={(e) => handlePromptChange(e.target.value)}
-          onKeyPress={handleKeyPress}
-          onPaste={handlePaste}
-          placeholder="Votre requête... (Tapez @ pour mentionner un fichier, / pour workflows)"
-          rows={3}
-        />
+        <div className="ai-input-container">
+          <textarea
+            ref={promptInputRef}
+            id="ai-prompt"
+            className="ai-input"
+            value={prompt}
+            onChange={(e) => handlePromptChange(e.target.value)}
+            onKeyPress={handleKeyPress}
+            onPaste={handlePaste}
+            onInput={handleTextareaInput}
+            placeholder="Décrivez ce que vous voulez... (@ fichier, / workflow)"
+            rows={2}
+          />
+          <div className="ai-input-hint">
+            <span><kbd>Enter</kbd> envoyer</span>
+            <span><kbd>Shift+Enter</kbd> retour ligne</span>
+          </div>
+        </div>
 
         {showWorkflowSuggestions && filteredWorkflows.length > 0 && (
           <div className="ai-workflow-suggest">
@@ -1128,15 +1202,21 @@ const AIChat = ({
         onClick={isLoading ? handleStop : handleSend}
         className={`ai-send-btn ${isLoading ? 'is-stop' : ''}`}
         disabled={!currentProjectPath || !isElectronApiAvailable}
-        aria-label={isLoading ? 'Arreter la generation de l IA' : "Envoyer a l IA"}
+        aria-label={isLoading ? 'Arrêter la génération' : 'Envoyer le message'}
       >
         {isLoading ? (
           <span className="ai-send-btn-content">
             <span className="ai-stop-icon" aria-hidden="true" />
-            <span>Arreter</span>
+            <span>Arrêter</span>
           </span>
         ) : (
-          'Envoyer a l IA'
+          <span className="ai-send-btn-content">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+            <span>Envoyer</span>
+          </span>
         )}
       </button>
     </div>
