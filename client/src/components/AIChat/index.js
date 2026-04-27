@@ -91,7 +91,19 @@ const AIChat = ({
   pendingSnapshotId = null,
   contextEstimate = null,
   permissionMode = 'edit_terminal',
-  onStreamingDraftChange
+  onStreamingDraftChange,
+  onProviderChange,
+  thinkingMode,
+  onThinkingModeChange,
+  deepContextEnabled,
+  onDeepContextEnabledChange,
+  resolvedOllamaModel,
+  resolvedOllamaArchitect,
+  resolvedOllamaCoder,
+  resolvedOllamaTester,
+  availableOllamaModels = [],
+  onOllamaSettingChange,
+  isExpertMode
 }) => {
   const conversationHistoryRef = useRef(null);
   const promptInputRef = useRef(null);
@@ -1056,6 +1068,110 @@ const AIChat = ({
       </div>
 
       <div className="ai-input-wrap">
+        <div className="ai-model-selectors" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '8px 10px', borderBottom: '1px solid var(--border-0)', background: 'rgba(255, 255, 255, 0.02)' }}>
+          <select
+            value={aiProvider}
+            onChange={(event) => onProviderChange && onProviderChange(event.target.value)}
+            className="ai-select-mini"
+            disabled={!isElectronApiAvailable || isLoading}
+            title="Provider IA"
+          >
+            <option value="gemini">Gemini</option>
+            <option value="claude">Claude</option>
+            <option value="kimi">Kimi K2.5</option>
+            <option value="multi">Multi-IA (5 Agents)</option>
+            <option value="ollama">🦙 Ollama</option>
+            <option value="ollama-multi">🦙🦙 Multi-Ollama</option>
+          </select>
+
+          {isExpertMode && (
+            <>
+              <label className="ai-toggle-mini" title="Mode réflexion">
+                <input
+                  type="checkbox"
+                  checked={thinkingMode}
+                  onChange={(event) => onThinkingModeChange && onThinkingModeChange(event.target.checked)}
+                  disabled={!isElectronApiAvailable || isLoading}
+                />
+                Réflexion
+              </label>
+              <label className="ai-toggle-mini" title="Deep Context (scan projet)">
+                <input
+                  type="checkbox"
+                  checked={deepContextEnabled}
+                  onChange={(event) => onDeepContextEnabledChange && onDeepContextEnabledChange(event.target.checked)}
+                  disabled={!isElectronApiAvailable || isLoading}
+                />
+                Contexte
+              </label>
+            </>
+          )}
+
+          {(aiProvider === 'ollama' || aiProvider === 'ollama-multi') && (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {aiProvider === 'ollama' && (
+                <label className="ai-model-picker" title="Modele Ollama actif">
+                  <span className="ai-model-label" style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-2)' }}>Modèle</span>
+                  <select
+                    value={resolvedOllamaModel}
+                    onChange={(event) => onOllamaSettingChange && onOllamaSettingChange('ollamaModel', event.target.value)}
+                    className="ai-select-mini"
+                    disabled={!isElectronApiAvailable || isLoading}
+                  >
+                    {availableOllamaModels.map((modelName) => (
+                      <option key={`chat-ollama-${modelName}`} value={modelName}>{modelName}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {aiProvider === 'ollama-multi' && (
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <label className="ai-model-picker">
+                    <span className="ai-model-label" style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-2)' }}>Arch</span>
+                    <select
+                      value={resolvedOllamaArchitect}
+                      onChange={(event) => onOllamaSettingChange && onOllamaSettingChange('ollamaModelArchitect', event.target.value)}
+                      className="ai-select-mini"
+                      disabled={!isElectronApiAvailable || isLoading}
+                    >
+                      {availableOllamaModels.map((modelName) => (
+                        <option key={`chat-arch-${modelName}`} value={modelName}>{modelName}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ai-model-picker">
+                    <span className="ai-model-label" style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-2)' }}>Code</span>
+                    <select
+                      value={resolvedOllamaCoder}
+                      onChange={(event) => onOllamaSettingChange && onOllamaSettingChange('ollamaModelCoder', event.target.value)}
+                      className="ai-select-mini"
+                      disabled={!isElectronApiAvailable || isLoading}
+                    >
+                      {availableOllamaModels.map((modelName) => (
+                        <option key={`chat-coder-${modelName}`} value={modelName}>{modelName}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ai-model-picker">
+                    <span className="ai-model-label" style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-2)' }}>Test</span>
+                    <select
+                      value={resolvedOllamaTester}
+                      onChange={(event) => onOllamaSettingChange && onOllamaSettingChange('ollamaModelTester', event.target.value)}
+                      className="ai-select-mini"
+                      disabled={!isElectronApiAvailable || isLoading}
+                    >
+                      {availableOllamaModels.map((modelName) => (
+                        <option key={`chat-tester-${modelName}`} value={modelName}>{modelName}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Pending message indicator */}
         {pendingMessage && (
           <div style={{
@@ -1224,3 +1340,4 @@ const AIChat = ({
 };
 
 export default AIChat;
+// force recompile

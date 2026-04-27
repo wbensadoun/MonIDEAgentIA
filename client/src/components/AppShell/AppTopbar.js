@@ -10,6 +10,7 @@ const getProviderLabel = (provider) => {
   return 'Gemini';
 };
 
+
 const AppTopbar = ({
   projectName,
   currentProjectPath,
@@ -19,22 +20,8 @@ const AppTopbar = ({
   onOpenCommandPalette,
   isExpertMode,
   onToggleExpertMode,
-  aiProvider,
-  onAiProviderChange,
-  thinkingMode,
-  onThinkingModeChange,
-  deepContextEnabled,
-  onDeepContextEnabledChange,
   isElectronApiAvailable,
   isLoading,
-  resolvedOllamaModel,
-  resolvedOllamaArchitect,
-  resolvedOllamaCoder,
-  resolvedOllamaTester,
-  availableOllamaModels,
-  onOllamaSettingChange,
-  ollamaTopbarLabel,
-  ollamaStatusLabel,
   showMessage,
   onOpenFolder,
   previewStatus,
@@ -46,39 +33,92 @@ const AppTopbar = ({
   onOpenWorkflowManager,
   onOpenSettings
 }) => {
-  const [showAdvancedAIControls, setShowAdvancedAIControls] = useState(false);
+  const [activeMenu, setActiveMenu] = useState(null);
 
-  useEffect(() => {
-    if (!isExpertMode && showAdvancedAIControls && aiProvider === 'ollama-multi') {
-      setShowAdvancedAIControls(false);
-    }
-  }, [aiProvider, isExpertMode, showAdvancedAIControls]);
-
-  const assistantSummary = useMemo(() => {
-    const parts = [getProviderLabel(aiProvider)];
-    if (thinkingMode) parts.push('reflexion');
-    if (deepContextEnabled) parts.push('contexte');
-
-    if (aiProvider === 'ollama' || aiProvider === 'ollama-multi') {
-      parts.push(ollamaTopbarLabel.replace(/^🦙\s*/, '').trim());
-    } else if (aiProvider === 'multi') {
-      parts.push('5 agents');
-    }
-
-    return parts.filter(Boolean).join(' · ');
-  }, [aiProvider, deepContextEnabled, ollamaTopbarLabel, thinkingMode]);
+  const toggleMenu = (menu) => {
+    setActiveMenu(activeMenu === menu ? null : menu);
+  };
 
   return (
     <header className="topbar-shell">
       <div className="topbar">
         <div className="topbar-left">
-          <div className="brand">
+          <div className="brand" style={{ marginRight: '16px' }}>
             <div className="brand-mark">V</div>
-            <div className="brand-text">
-              <div className="brand-title">Vibe IDE</div>
-              <div className="brand-subtitle">Studio IA</div>
+          </div>
+          
+          <div className="menubar">
+            <div className="menu-dropdown" onMouseLeave={() => setActiveMenu(null)}>
+              <button 
+                className={`menu-btn ${activeMenu === 'file' ? 'is-active' : ''}`} 
+                onMouseEnter={() => setActiveMenu('file')} 
+                onClick={() => toggleMenu('file')}
+              >
+                Fichier
+              </button>
+              {activeMenu === 'file' && (
+                <div className="menu-content">
+                  <button onClick={() => { onOpenFolder(); setActiveMenu(null); }} disabled={!isElectronApiAvailable}>
+                    <span>Ouvrir un dossier</span>
+                    <span>Ctrl+O</span>
+                  </button>
+                  <button onClick={() => { onOpenCommandPalette(); setActiveMenu(null); }}>
+                    <span>Ouvrir un fichier...</span>
+                    <span>Ctrl+P</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="menu-dropdown" onMouseLeave={() => setActiveMenu(null)}>
+              <button 
+                className={`menu-btn ${activeMenu === 'view' ? 'is-active' : ''}`} 
+                onMouseEnter={() => setActiveMenu('view')} 
+                onClick={() => toggleMenu('view')}
+              >
+                Affichage
+              </button>
+              {activeMenu === 'view' && (
+                <div className="menu-content">
+                  <button onClick={() => { onToggleLeftPanel(); setActiveMenu(null); }}>
+                    <span>{isLeftCollapsed ? 'Afficher' : 'Masquer'} le Navigateur</span>
+                  </button>
+                  <button onClick={() => { onToggleRightPanel(); setActiveMenu(null); }}>
+                    <span>{isRightCollapsed ? 'Afficher' : 'Masquer'} le panneau IA</span>
+                  </button>
+                  <button onClick={() => { onTogglePreview(); setActiveMenu(null); }}>
+                    <span>{previewStatus === 'running' ? 'Arreter' : 'Demarrer'} l&apos;aperçu</span>
+                  </button>
+                  <button onClick={() => { onOpenCommandPalette(); setActiveMenu(null); }}>
+                    <span>Palette de commandes</span>
+                    <span>Ctrl+K</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="menu-dropdown" onMouseLeave={() => setActiveMenu(null)}>
+              <button 
+                className={`menu-btn ${activeMenu === 'tools' ? 'is-active' : ''}`} 
+                onMouseEnter={() => setActiveMenu('tools')} 
+                onClick={() => toggleMenu('tools')}
+              >
+                Outils
+              </button>
+              {activeMenu === 'tools' && (
+                <div className="menu-content">
+                  <button onClick={() => { onOpenWorkflowManager(); setActiveMenu(null); }}>Workflows</button>
+                  <button onClick={() => { onOpenSettings(); setActiveMenu(null); }}>Paramètres</button>
+                  <button onClick={() => { onToggleExpertMode(); setActiveMenu(null); }}>
+                    <span>Mode {isExpertMode ? 'Simple' : 'Expert'}</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
+        </div>
+
+        <div className="topbar-center">
           <div className="status-chip">
             <span className={`status-dot ${currentProjectPath ? 'is-on' : 'is-off'}`} />
             <span className="status-chip-text">{projectName}</span>
@@ -100,194 +140,13 @@ const AppTopbar = ({
           )}
         </div>
 
-        <div className="topbar-center">
-          <button className="command-trigger" onClick={onOpenCommandPalette}>
-            <span className="command-trigger-label">Palette de commandes</span>
-            <span className="command-trigger-shortcut">Ctrl+K</span>
-          </button>
-        </div>
-
         <div className="topbar-right">
-          <div className="topbar-group topbar-ai-group">
-            <button
-              type="button"
-              className={`btn btn-ghost topbar-ai-trigger ${showAdvancedAIControls ? 'is-active' : ''}`}
-              onClick={() => setShowAdvancedAIControls((prev) => !prev)}
-              title="Afficher les options IA"
-            >
-              🤖 Assistant
-            </button>
-            <div className="status-chip subtle topbar-ai-summary" title={assistantSummary}>
-              <span className="status-chip-text">{assistantSummary}</span>
-            </div>
-          </div>
-
-          <button
-            onClick={onToggleExpertMode}
-            className={`btn btn-pill mode-toggle ${isExpertMode ? 'btn-live' : 'btn-idle'}`}
-            title={isExpertMode ? 'Revenir au mode IA simple' : 'Activer les options IA avancees'}
-          >
-            {isExpertMode ? 'IA avancee' : 'IA simple'}
-          </button>
-
           <UpdateChecker
             isElectronApiAvailable={isElectronApiAvailable}
             showMessage={showMessage}
           />
-
-          <div className="topbar-group">
-            <button
-              onClick={onOpenFolder}
-              className="btn btn-ghost"
-              disabled={!isElectronApiAvailable}
-            >
-              📂 Ouvrir
-            </button>
-            <button
-              onClick={onTogglePreview}
-              className={`btn btn-pill ${previewStatus === 'running' ? 'btn-live' : 'btn-idle'}`}
-            >
-              {previewStatus === 'running' ? 'Aperçu actif' : 'Lancer aperçu'}
-            </button>
-          </div>
-
-          <div className="topbar-group">
-            <button
-              onClick={onToggleLeftPanel}
-              className={`btn btn-ghost ${isLeftCollapsed ? 'is-active' : ''}`}
-            >
-              🧭 Nav
-            </button>
-            <button
-              onClick={onToggleRightPanel}
-              className={`btn btn-ghost ${isRightCollapsed ? 'is-active' : ''}`}
-            >
-              💬 IA
-            </button>
-            <button
-              onClick={onOpenWorkflowManager}
-              className="btn btn-ghost"
-            >
-              ⚡ Workflows
-            </button>
-            <button
-              onClick={onOpenSettings}
-              className="btn btn-ghost"
-            >
-              ⚙ Paramètres
-            </button>
-          </div>
         </div>
       </div>
-
-      {showAdvancedAIControls && (
-        <div className="topbar-advanced">
-          <div className="topbar-advanced-group">
-            <span className="topbar-advanced-label">Assistant</span>
-            <select
-              value={aiProvider}
-              onChange={(event) => onAiProviderChange(event.target.value)}
-              className="ai-select-mini"
-              disabled={!isElectronApiAvailable || isLoading}
-              title="Provider IA"
-            >
-              <option value="gemini">Gemini</option>
-              <option value="claude">Claude</option>
-              <option value="kimi">Kimi K2.5</option>
-              <option value="multi">Multi-IA (5 Agents)</option>
-              <option value="ollama">🦙 Ollama</option>
-              <option value="ollama-multi">🦙🦙 Multi-Ollama</option>
-            </select>
-            <label className="ai-toggle-mini" title="Mode réflexion">
-              <input
-                type="checkbox"
-                checked={thinkingMode}
-                onChange={(event) => onThinkingModeChange(event.target.checked)}
-                disabled={!isElectronApiAvailable || isLoading}
-              />
-              Réflexion
-            </label>
-            <label className="ai-toggle-mini" title="Deep Context (scan projet)">
-              <input
-                type="checkbox"
-                checked={deepContextEnabled}
-                onChange={(event) => onDeepContextEnabledChange(event.target.checked)}
-                disabled={!isElectronApiAvailable || isLoading}
-              />
-              Contexte
-            </label>
-          </div>
-
-          {(aiProvider === 'ollama' || aiProvider === 'ollama-multi') && (
-            <div className="topbar-advanced-group">
-              <span className="topbar-advanced-label">Ollama</span>
-              {aiProvider === 'ollama' && (
-                <label className="ai-model-picker" title="Modele Ollama actif">
-                  <span className="ai-model-label">Modele</span>
-                  <select
-                    value={resolvedOllamaModel}
-                    onChange={(event) => onOllamaSettingChange('ollamaModel', event.target.value)}
-                    className="ai-select-mini ai-model-select"
-                    disabled={!isElectronApiAvailable || isLoading}
-                  >
-                    {availableOllamaModels.map((modelName) => (
-                      <option key={`topbar-ollama-${modelName}`} value={modelName}>{modelName}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {aiProvider === 'ollama-multi' && (
-                <div className="ai-model-stack" title={ollamaStatusLabel}>
-                  <label className="ai-model-picker">
-                    <span className="ai-model-label">Arch</span>
-                    <select
-                      value={resolvedOllamaArchitect}
-                      onChange={(event) => onOllamaSettingChange('ollamaModelArchitect', event.target.value)}
-                      className="ai-select-mini ai-model-select"
-                      disabled={!isElectronApiAvailable || isLoading}
-                    >
-                      {availableOllamaModels.map((modelName) => (
-                        <option key={`topbar-arch-${modelName}`} value={modelName}>{modelName}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="ai-model-picker">
-                    <span className="ai-model-label">Code</span>
-                    <select
-                      value={resolvedOllamaCoder}
-                      onChange={(event) => onOllamaSettingChange('ollamaModelCoder', event.target.value)}
-                      className="ai-select-mini ai-model-select"
-                      disabled={!isElectronApiAvailable || isLoading}
-                    >
-                      {availableOllamaModels.map((modelName) => (
-                        <option key={`topbar-coder-${modelName}`} value={modelName}>{modelName}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="ai-model-picker">
-                    <span className="ai-model-label">Test</span>
-                    <select
-                      value={resolvedOllamaTester}
-                      onChange={(event) => onOllamaSettingChange('ollamaModelTester', event.target.value)}
-                      className="ai-select-mini ai-model-select"
-                      disabled={!isElectronApiAvailable || isLoading}
-                    >
-                      {availableOllamaModels.map((modelName) => (
-                        <option key={`topbar-tester-${modelName}`} value={modelName}>{modelName}</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              )}
-
-              <div className="status-chip subtle ai-model-chip" title={ollamaStatusLabel}>
-                <span className="status-chip-text">{ollamaTopbarLabel}</span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </header>
   );
 };

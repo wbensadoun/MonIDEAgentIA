@@ -3346,8 +3346,15 @@ code à insérer après la ligne 20
 8. Initialiser / Synchroniser le Shadow Workspace (À FAIRE AVANT TOUTE MODIFICATION DE CODE) :
 <sync_shadow_workspace></sync_shadow_workspace>
 
-6. Promouvoir tes changements (Fusionner le Shadow Workspace vers le vrai projet) :
+8. Initialiser / Synchroniser le Shadow Workspace (À FAIRE AVANT TOUTE MODIFICATION DE CODE) :
+<sync_shadow_workspace></sync_shadow_workspace>
+
+9. Promouvoir tes changements (Fusionner le Shadow Workspace vers le vrai projet) :
 <promote_shadow></promote_shadow>
+
+10. Piloter le navigateur interne / preview :
+<browser_action action="navigate|click|type|screenshot" url="http://localhost:3000" selector="#btn" text="valeur" />
+Action screenshot prendra une capture et retournera le DOM et l'image. Indispensable pour voir ce que fait l'application.
 
 Règles :
 - Tu recevras le résultat de l'outil dans ton prochain tour.
@@ -3427,6 +3434,9 @@ const parseAgenticTools = (text) => {
 
   const deleteMatch = String(text || '').match(/<delete_lines\s+path=["']([^"']+)["']\s+start=["'](\d+)["']\s+end=["'](\d+)["']\s*\/?>/i);
   if (deleteMatch) return { type: 'delete_lines', path: deleteMatch[1].trim(), start: parseInt(deleteMatch[2], 10), end: parseInt(deleteMatch[3], 10) };
+
+  const browserMatch = String(text || '').match(/<browser_action\s+action=["']([^"']+)["'](?:\s+url=["']([^"']+)["'])?(?:\s+selector=["']([^"']+)["'])?(?:\s+text=["']([^"']+)["'])?\s*\/?>/i);
+  if (browserMatch) return { type: 'browser_action', action: browserMatch[1], url: browserMatch[2], selector: browserMatch[3], text: browserMatch[4] };
 
   return null;
 };
@@ -3527,6 +3537,23 @@ const executeAgenticTool = async (tool, projectPath) => {
       // Exécuter dans le shadow si possible
       const cwd = fs.existsSync(shadowPath) ? shadowPath : projectPath;
       return await executeCommandForAI(tool.cmd, cwd);
+    }
+
+    if (tool.type === 'browser_action') {
+      const browserController = require('./electron/browserController.js');
+      const result = await browserController.executeAction(tool.action, {
+        url: tool.url,
+        selector: tool.selector,
+        text: tool.text
+      });
+      if (result.success) {
+        return { 
+          output: `[BROWSER ${tool.action.toUpperCase()} SUCCÈS]\nURL: ${result.url}\nDOM: ${result.dom.substring(0, 3000)}... (tronqué)`,
+          images: [{ dataUrl: `data:image/png;base64,${result.screenshotBase64}` }]
+        };
+      } else {
+        return { output: `[BROWSER ERREUR] ${result.error}` };
+      }
     }
   } catch (error) {
     return { output: `[ERREUR OUTIL ${tool.type}] ${error.message}` };
@@ -3933,13 +3960,24 @@ Rules:
           mainWindow.webContents.send('ai-terminal-action', { command: displayCmd, iteration: iter + 1 });
         }
 
-        const { output } = await executeAgenticTool(tool, projectPath);
+        const toolResult = await executeAgenticTool(tool, projectPath);
+        const output = toolResult.output;
+        
+        let userContent = `[RÉSULTAT OUTIL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, SANS utiliser de balises d'outil.`;
+        let userMessage;
+        
+        if (toolResult.images && toolResult.images.length > 0) {
+           const imageContents = toolResult.images.map(img => ({ type: 'image_url', image_url: { url: img.dataUrl || img.url || '' } }));
+           userMessage = { role: 'user', content: [{ type: 'text', text: userContent }, ...imageContents] };
+        } else {
+           userMessage = { role: 'user', content: userContent };
+        }
 
         // Feed result back as new user message
         messages = [
           ...messages,
           { role: 'assistant', content: aiText },
-          { role: 'user', content: `[RÉSULTAT OUTIL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, SANS utiliser de balises d'outil.` }
+          userMessage
         ];
 
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -4364,13 +4402,29 @@ Rules:
           mainWindow.webContents.send('ai-terminal-action', { command: displayCmd, iteration: iter + 1 });
         }
 
-        const { output } = await executeAgenticTool(tool, projectPath);
+        const toolResult = await executeAgenticTool(tool, projectPath);
+        const output = toolResult.output;
+
+        let userParts = [{ text: `[RÉSULTAT OUTIL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans utiliser de balises d'outil.` }];
+        
+        if (toolResult.images && toolResult.images.length > 0) {
+          const imageParts = toolResult.images.map(img => {
+            const base64Data = img.dataUrl.split(',')[1] || img.dataUrl;
+            return {
+              inlineData: {
+                data: base64Data,
+                mimeType: 'image/png'
+              }
+            };
+          });
+          userParts = [...userParts, ...imageParts];
+        }
 
         // Append model response and new tool result
         contents = [
           ...contents,
           { role: 'model', parts: [{ text: aiText }] },
-          { role: 'user', parts: [{ text: `[RÉSULTAT OUTIL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans utiliser de balises d'outil.` }] }
+          { role: 'user', parts: userParts }
         ];
 
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -4658,12 +4712,30 @@ Rules:
         mainWindow.webContents.send('ai-terminal-action', { command: displayCmd, iteration: iter + 1 });
       }
 
-      const { output } = await executeAgenticTool(tool, projectPath);
+      const toolResult = await executeAgenticTool(tool, projectPath);
+      const output = toolResult.output;
+
+      let userContent = [{ type: 'text', text: `[RÉSULTAT OUTIL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans utiliser de balises d'outil.` }];
+      
+      if (toolResult.images && toolResult.images.length > 0) {
+        const imageContents = toolResult.images.map(img => {
+          const base64Data = img.dataUrl.split(',')[1] || img.dataUrl;
+          return {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: base64Data
+            }
+          };
+        });
+        userContent = [...userContent, ...imageContents];
+      }
 
       currentMessages = [
         ...currentMessages,
         { role: 'assistant', content: [{ type: 'text', text: aiText }] },
-        { role: 'user', content: [{ type: 'text', text: `[RÉSULTAT OUTIL — itération ${iter + 1}]\n\`\`\`\n${output}\n\`\`\`\nContinue si nécessaire. Si tu as terminé, réponds sans utiliser de balises d'outil.` }] }
+        { role: 'user', content: userContent }
       ];
 
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -6004,6 +6076,25 @@ ipcMain.handle('check-ollama-updates', async (_event, modelNames = []) => {
         models: buildOllamaUpdateStatuses(configuredModels, [], message)
       };
     }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-latest-ollama-qwen-version', async () => {
+  try {
+    const res = await axios.get('https://ollama.com/search?q=qwen', { timeout: 10000 });
+    const text = res.data;
+    const regex = /href="\/library\/qwen(\d+(\.\d+)?)(-[^"]*)?"/g;
+    let match;
+    let maxVersion = 3.6; // Default fallback
+    while ((match = regex.exec(text)) !== null) {
+      if (match[1]) {
+        const v = parseFloat(match[1]);
+        if (v > maxVersion) maxVersion = v;
+      }
+    }
+    return { success: true, version: maxVersion };
   } catch (error) {
     return { success: false, error: error.message };
   }

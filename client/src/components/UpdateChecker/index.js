@@ -1,444 +1,129 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import './UpdateChecker.css';
 
-const DEFAULT_OLLAMA_MODEL = 'qwen3:8b';
-const CHECK_INTERVAL_MS = 5 * 60 * 1000;
-
-const MODEL_FIELDS = [
-  { key: 'ollamaModel', label: 'Simple' },
-  { key: 'ollamaModelArchitect', label: 'Architecte' },
-  { key: 'ollamaModelCoder', label: 'Codeur' },
-  { key: 'ollamaModelTester', label: 'Relecteur' }
-];
-
-const normalizeModelName = (value) => String(value || '').trim();
-
-const buildConfiguredModels = (settings = {}) => {
-  const primaryModel = normalizeModelName(settings.ollamaModel) || DEFAULT_OLLAMA_MODEL;
-  const modelsMap = new Map();
-
-  MODEL_FIELDS.forEach(({ key, label }) => {
-    const model = key === 'ollamaModel'
-      ? primaryModel
-      : (normalizeModelName(settings[key]) || primaryModel);
-
-    if (!model) return;
-
-    const current = modelsMap.get(model) || { model, roles: [] };
-    current.roles.push(label);
-    modelsMap.set(model, current);
-  });
-
-  return Array.from(modelsMap.values());
-};
-
-const getPullStateKind = (status) => {
-  const normalized = normalizeModelName(status).toLowerCase();
-  if (!normalized) return '';
-  if (normalized === 'success') return 'success';
-  if (normalized === 'error') return 'error';
-  return 'downloading';
-};
-
-const getProgressPercent = (completed, total) => {
-  const done = Number(completed);
-  const full = Number(total);
-  if (!Number.isFinite(done) || !Number.isFinite(full) || full <= 0) return null;
-  return Math.max(0, Math.min(100, Math.round((done / full) * 100)));
-};
-
 const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
-  const [isOpen, setIsOpen] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
-  const [configuredModels, setConfiguredModels] = useState([]);
-  const [statusByModel, setStatusByModel] = useState({});
-  const [pullStates, setPullStates] = useState({});
-  const [checkError, setCheckError] = useState('');
-  const containerRef = useRef(null);
-  const configuredModelsRef = useRef([]);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(null);
 
-  const loadConfiguredModels = useCallback(async () => {
-    if (!isElectronApiAvailable || !window.electronAPI?.loadSettings) {
-      configuredModelsRef.current = [];
-      setConfiguredModels([]);
-      return [];
-    }
-
-    try {
-      const response = await window.electronAPI.loadSettings();
-      const nextModels = buildConfiguredModels(response?.success ? response.settings : {});
-      configuredModelsRef.current = nextModels;
-      setConfiguredModels(nextModels);
-      return nextModels;
-    } catch {
-      const fallbackModels = buildConfiguredModels({});
-      configuredModelsRef.current = fallbackModels;
-      setConfiguredModels(fallbackModels);
-      return fallbackModels;
-    }
-  }, [isElectronApiAvailable]);
-
-  const checkUpdates = useCallback(async (modelsInput) => {
-    if (!isElectronApiAvailable || !window.electronAPI?.checkOllamaUpdates) {
-      setStatusByModel({});
-      setCheckError('');
-      return;
-    }
-
-    const models = Array.isArray(modelsInput) ? modelsInput : configuredModelsRef.current;
-    const modelNames = models.map((entry) => normalizeModelName(entry?.model)).filter(Boolean);
-    if (modelNames.length === 0) {
-      setStatusByModel({});
-      setCheckError('');
-      return;
-    }
-
+  const handleCheckUpdates = useCallback(async () => {
+    if (!isElectronApiAvailable || !window.electronAPI?.getLatestOllamaQwenVersion || !window.electronAPI?.loadSettings) return;
+    
     setIsChecking(true);
     try {
-      const response = await window.electronAPI.checkOllamaUpdates(modelNames);
-      if (!response?.success || !Array.isArray(response.models)) {
-        throw new Error(response?.error || 'Verification Ollama impossible.');
+      // Fetch latest online
+      const onlineRes = await window.electronAPI.getLatestOllamaQwenVersion();
+      if (!onlineRes?.success || !onlineRes.version) {
+        if (showMessage) showMessage('Impossible de vérifier la dernière version de Qwen.', 3000);
+        return;
+      }
+      const latestVersion = parseFloat(onlineRes.version);
+
+      // Fetch current local
+      const settingsRes = await window.electronAPI.loadSettings();
+      const currentModels = [
+        settingsRes?.settings?.ollamaModel,
+        settingsRes?.settings?.ollamaModelArchitect,
+        settingsRes?.settings?.ollamaModelCoder,
+        settingsRes?.settings?.ollamaModelTester
+      ].filter(Boolean);
+
+      // Check if any is outdated
+      let hasOutdated = false;
+      let outdatedModel = '';
+      for (const model of currentModels) {
+        const name = model.toLowerCase();
+        if (name.includes('qwen')) {
+          const match = name.match(/qwen(\d+(\.\d+)?)/);
+          if (match && match[1]) {
+            const version = parseFloat(match[1]);
+            if (version < latestVersion) {
+              hasOutdated = true;
+              outdatedModel = model;
+              break;
+            }
+          } else if (name === 'qwen' || name.startsWith('qwen:')) {
+            hasOutdated = true;
+            outdatedModel = model;
+            break;
+          }
+        }
       }
 
-      const nextStatusByModel = {};
-      let nextError = '';
-
-      response.models.forEach((entry) => {
-        const model = normalizeModelName(entry?.model);
-        if (!model) return;
-        nextStatusByModel[model] = {
-          status: normalizeModelName(entry?.status) || 'error',
-          error: normalizeModelName(entry?.error)
-        };
-        if (!nextError && entry?.status === 'error' && entry?.error) {
-          nextError = String(entry.error);
-        }
-      });
-
-      setStatusByModel(nextStatusByModel);
-      setCheckError(nextError);
-    } catch (error) {
-      const message = error?.message || 'Verification Ollama impossible.';
-      const nextStatusByModel = {};
-      modelNames.forEach((model) => {
-        nextStatusByModel[model] = { status: 'error', error: message };
-      });
-      setStatusByModel(nextStatusByModel);
-      setCheckError(message);
+      if (hasOutdated) {
+        setUpdateAvailable({ version: onlineRes.version, oldModel: outdatedModel });
+        if (showMessage) showMessage(`Mise à jour Qwen ${onlineRes.version} disponible !`, 4000);
+      } else {
+        setUpdateAvailable(null);
+        if (showMessage) showMessage('Vos modèles Qwen sont déjà à jour.', 3000);
+      }
+    } catch (err) {
+      console.error(err);
+      if (showMessage) showMessage('Erreur lors de la vérification.', 3000);
     } finally {
       setIsChecking(false);
     }
-  }, [isElectronApiAvailable]);
+  }, [isElectronApiAvailable, showMessage]);
 
-  const refreshModels = useCallback(async () => {
-    const models = await loadConfiguredModels();
-    await checkUpdates(models);
-  }, [checkUpdates, loadConfiguredModels]);
-
-  useEffect(() => {
-    if (!isElectronApiAvailable) return undefined;
-
-    refreshModels();
-    const intervalId = window.setInterval(() => {
-      refreshModels();
-    }, CHECK_INTERVAL_MS);
-
-    const handleSettingsUpdated = () => {
-      refreshModels();
-    };
-
-    window.addEventListener('settings-updated', handleSettingsUpdated);
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('settings-updated', handleSettingsUpdated);
-    };
-  }, [isElectronApiAvailable, refreshModels]);
-
-  useEffect(() => {
-    if (!isElectronApiAvailable || !window.electronAPI?.onOllamaPullProgress) {
-      return undefined;
-    }
-
-    return window.electronAPI.onOllamaPullProgress((payload) => {
-      const model = normalizeModelName(payload?.model);
-      if (!model) return;
-
-      const statusKind = getPullStateKind(payload?.status);
-
-      if (statusKind === 'success') {
-        setPullStates((prev) => {
-          const next = { ...prev };
-          delete next[model];
-          return next;
-        });
-        setStatusByModel((prev) => ({
-          ...prev,
-          [model]: { status: 'installed', error: '' }
-        }));
-        setCheckError('');
-        return;
-      }
-
-      setPullStates((prev) => ({
-        ...prev,
-        [model]: {
-          status: statusKind || 'downloading',
-          label: normalizeModelName(payload?.status) || 'pulling',
-          completed: Number.isFinite(Number(payload?.completed)) ? Number(payload.completed) : null,
-          total: Number.isFinite(Number(payload?.total)) ? Number(payload.total) : null,
-          error: normalizeModelName(payload?.error)
-        }
-      }));
-
-      if (statusKind === 'error') {
-        setStatusByModel((prev) => ({
-          ...prev,
-          [model]: {
-            status: 'error',
-            error: normalizeModelName(payload?.error) || prev?.[model]?.error || 'Telechargement Ollama impossible.'
-          }
-        }));
-      }
-    });
-  }, [isElectronApiAvailable]);
-
-  useEffect(() => {
-    if (!isOpen) return undefined;
-
-    const handlePointerDown = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen]);
-
-  const handleInstall = useCallback(async (model) => {
-    if (!window.electronAPI?.pullOllamaModel) return;
-
-    setPullStates((prev) => ({
-      ...prev,
-      [model]: {
-        status: 'downloading',
-        label: 'starting',
-        completed: 0,
-        total: 0,
-        error: ''
-      }
-    }));
-
-    if (showMessage) {
-      showMessage('Telechargement Ollama lance. Les gros modeles peuvent prendre plusieurs minutes.', 4500);
-    }
+  const handleUpdate = useCallback(async () => {
+    if (!updateAvailable || !window.electronAPI?.pullOllamaModel) return;
+    const targetModel = `qwen${updateAvailable.version}:latest`;
+    
+    setIsUpdating(true);
+    if (showMessage) showMessage(`Téléchargement de Qwen ${updateAvailable.version} lancé. Cela peut prendre quelques minutes...`, 5000);
 
     try {
-      const response = await window.electronAPI.pullOllamaModel(model);
-      if (!response?.success) {
-        throw new Error(response?.error || `Telechargement impossible pour ${model}.`);
+      // Pull model
+      const response = await window.electronAPI.pullOllamaModel(targetModel);
+      if (!response?.success) throw new Error(response?.error);
+
+      // Update settings
+      if (window.electronAPI?.loadSettings && window.electronAPI?.saveSettings) {
+        const res = await window.electronAPI.loadSettings();
+        if (res.success && res.settings) {
+          const newSettings = { ...res.settings };
+          ['ollamaModel', 'ollamaModelArchitect', 'ollamaModelCoder', 'ollamaModelTester'].forEach(key => {
+            if (newSettings[key] === updateAvailable.oldModel) {
+              newSettings[key] = targetModel;
+            }
+          });
+          await window.electronAPI.saveSettings(newSettings);
+          window.dispatchEvent(new CustomEvent('settings-updated', { detail: newSettings }));
+        }
       }
-      await checkUpdates(configuredModelsRef.current);
-      if (showMessage) {
-        showMessage(`Modele Ollama installe: ${model}`, 3000);
-      }
+      
+      setUpdateAvailable(null);
+      if (showMessage) showMessage(`Mise à jour vers Qwen ${updateAvailable.version} réussie !`, 4000);
     } catch (error) {
-      const message = error?.message || `Telechargement impossible pour ${model}.`;
-      setPullStates((prev) => ({
-        ...prev,
-        [model]: {
-          status: 'error',
-          label: 'error',
-          completed: null,
-          total: null,
-          error: message
-        }
-      }));
-      setStatusByModel((prev) => ({
-        ...prev,
-        [model]: { status: 'error', error: message }
-      }));
-      if (showMessage) {
-        showMessage(message, 5000);
-      }
+      console.error(error);
+      if (showMessage) showMessage(`Échec de la mise à jour: ${error.message}`, 5000);
+    } finally {
+      setIsUpdating(false);
     }
-  }, [checkUpdates, showMessage]);
+  }, [updateAvailable, isElectronApiAvailable, showMessage]);
 
-  const effectiveModels = useMemo(() => {
-    const statusOrder = { error: 0, downloading: 1, missing: 2, installed: 3 };
+  if (!isElectronApiAvailable) return null;
 
-    return configuredModels
-      .map((entry) => {
-        const model = entry.model;
-        const baseState = statusByModel[model] || {};
-        const pullState = pullStates[model] || null;
-        const pullKind = pullState ? getPullStateKind(pullState.status) : '';
-
-        let status = baseState.status || 'missing';
-        let error = baseState.error || '';
-
-        if (pullKind === 'downloading') {
-          status = 'downloading';
-        } else if (pullKind === 'error') {
-          status = 'error';
-          error = pullState.error || error;
-        }
-
-        const progressPercent = getProgressPercent(pullState?.completed, pullState?.total);
-        return {
-          ...entry,
-          status,
-          error,
-          progressPercent,
-          pullLabel: pullState?.label || '',
-          pullState
-        };
-      })
-      .sort((a, b) => {
-        const statusDiff = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99);
-        if (statusDiff !== 0) return statusDiff;
-        return a.model.localeCompare(b.model);
-      });
-  }, [configuredModels, pullStates, statusByModel]);
-
-  const missingCount = effectiveModels.filter((entry) => entry.status === 'missing').length;
-  const activePullCount = effectiveModels.filter((entry) => entry.status === 'downloading').length;
-  const hasError = effectiveModels.some((entry) => entry.status === 'error') || !!checkError;
-
-  if (!isElectronApiAvailable || effectiveModels.length === 0) {
-    return null;
-  }
-
-  if (missingCount === 0 && activePullCount === 0 && !hasError) {
-    return null;
-  }
-
-  let badgeLabel = `🔄 ${missingCount} Update${missingCount > 1 ? 's' : ''}`;
-  let badgeClassName = 'update-checker-trigger';
-
-  if (activePullCount > 0) {
-    badgeLabel = `⏳ ${activePullCount} telechargement${activePullCount > 1 ? 's' : ''}`;
-    badgeClassName += ' is-active';
-  } else if (hasError) {
-    badgeLabel = '⚠ Ollama';
-    badgeClassName += ' is-error';
-  } else {
-    badgeClassName += ' is-pulsing';
+  if (updateAvailable) {
+    return (
+      <button 
+        className="btn btn-pill btn-live"
+        onClick={handleUpdate}
+        disabled={isUpdating}
+      >
+        {isUpdating ? 'Mise à jour...' : `Installer Qwen ${updateAvailable.version}`}
+      </button>
+    );
   }
 
   return (
-    <div className="update-checker" ref={containerRef}>
-      <button
-        type="button"
-        className={badgeClassName}
-        onClick={() => {
-          const nextOpen = !isOpen;
-          setIsOpen(nextOpen);
-          if (nextOpen) {
-            refreshModels();
-          }
-        }}
-        title="Verifier et installer les modeles Ollama manquants"
-      >
-        <span>{badgeLabel}</span>
-        {isChecking && <span className="update-checker-spinner" aria-hidden="true"></span>}
-      </button>
-
-      {isOpen && (
-        <div className="update-checker-panel">
-          <div className="update-checker-panel-header">
-            <div>
-              <div className="update-checker-title">Modeles Ollama</div>
-              <div className="update-checker-subtitle">
-                Verification auto toutes les 5 min. Les commandes ollama pull peuvent durer plusieurs minutes.
-              </div>
-            </div>
-            <button type="button" className="update-checker-refresh" onClick={refreshModels}>
-              Rechecker
-            </button>
-          </div>
-
-          {checkError && (
-            <div className="update-checker-error-box">
-              <div className="update-checker-error-title">Ollama indisponible</div>
-              <div className="update-checker-error-text">{checkError}</div>
-            </div>
-          )}
-
-          <div className="update-checker-list">
-            {effectiveModels.map((entry) => {
-              const canInstall = entry.status === 'missing' || entry.pullState?.status === 'error';
-              const isBusy = entry.status === 'downloading';
-
-              return (
-                <div key={entry.model} className={`update-checker-item is-${entry.status}`}>
-                  <div className="update-checker-item-main">
-                    <div className="update-checker-status-icon" aria-hidden="true">
-                      {entry.status === 'installed' && '✅'}
-                      {entry.status === 'missing' && '⚠️'}
-                      {entry.status === 'downloading' && '⏳'}
-                      {entry.status === 'error' && '❌'}
-                    </div>
-
-                    <div className="update-checker-item-copy">
-                      <div className="update-checker-model-name">{entry.model}</div>
-                      <div className="update-checker-model-roles">{entry.roles.join(' · ')}</div>
-                      {entry.status === 'downloading' && (
-                        <div className="update-checker-model-status">
-                          {entry.pullLabel || 'Telechargement en cours'}
-                        </div>
-                      )}
-                      {entry.status === 'error' && entry.error && (
-                        <div className="update-checker-model-error">{entry.error}</div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="update-checker-item-action">
-                    {entry.status === 'installed' && <span className="update-checker-pill is-installed">Installe</span>}
-                    {canInstall && (
-                      <button
-                        type="button"
-                        className="update-checker-install"
-                        onClick={() => handleInstall(entry.model)}
-                        disabled={isBusy}
-                      >
-                        {entry.pullState?.status === 'error' ? 'Reessayer' : 'Installer'}
-                      </button>
-                    )}
-                    {entry.status === 'downloading' && (
-                      <span className="update-checker-pill is-downloading">En cours</span>
-                    )}
-                  </div>
-
-                  {entry.status === 'downloading' && (
-                    <div className="update-checker-progress">
-                      <div
-                        className={`update-checker-progress-bar ${entry.progressPercent === null ? 'is-indeterminate' : ''}`}
-                        style={entry.progressPercent === null ? undefined : { width: `${entry.progressPercent}%` }}
-                      />
-                      <span className="update-checker-progress-text">
-                        {entry.progressPercent === null ? 'Calcul de la progression...' : `${entry.progressPercent}%`}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
+    <button 
+      className="btn btn-ghost"
+      onClick={handleCheckUpdates}
+      disabled={isChecking}
+    >
+      {isChecking ? 'Vérification...' : 'Vérifier MAJ Qwen'}
+    </button>
   );
 };
 

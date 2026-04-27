@@ -4,6 +4,8 @@ import McpSettings from './McpSettings';
 
 const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
   const suggestedOllamaModels = [
+    'qwen3.6:latest',
+    'qwen3.6-27b',
     'qwen3:8b',
     'qwen3:14b',
     'qwen3:32b'
@@ -209,7 +211,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
               Utilises pour Ollama simple et Multi-Ollama (Architecte / Codeur / Relecteur).
             </div>
             <div className="settings-hint">
-              Presets proposes: qwen3:8b, qwen3:14b, qwen3:32b (installer via `ollama pull` si absent localement).
+              Presets proposes: qwen3.6:latest, qwen3:8b, qwen3:14b (installer via `ollama pull` si absent localement).
             </div>
 
             <label className="settings-label">Modele Ollama simple</label>

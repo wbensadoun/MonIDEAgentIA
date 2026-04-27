@@ -195,6 +195,7 @@ try {
 
     // Ollama Local AI
     listOllamaModels: () => ipcRenderer.invoke('list-ollama-models'),
+    getLatestOllamaQwenVersion: () => ipcRenderer.invoke('get-latest-ollama-qwen-version'),
     checkOllamaUpdates: (modelNames) => ipcRenderer.invoke('check-ollama-updates', modelNames),
     pullOllamaModel: (modelName) => ipcRenderer.invoke('pull-ollama-model', modelName),
     onOllamaPullProgress: (callback) => {
