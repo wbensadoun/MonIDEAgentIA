@@ -57,7 +57,7 @@ const filterUserVisibleText = (text) => {
         return false;
       }
       // Filter out opening/closing braces and commas that are part of JSON
-      if (/^[{}\[\],]*$/.test(trimmed)) {
+      if (/^[{}[\],]*$/.test(trimmed)) {
         return false;
       }
       return true;
@@ -587,9 +587,9 @@ const AIChat = ({
           </div>
         )}
         {streamingMode === 'text' && (
-          <div className="ai-stream-text-wrap">
-            <MarkdownRenderer text={filterUserVisibleText(streamingText ? streamingText.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trimStart() : '')} />
-          </div>
+          <pre className="ai-stream-text">
+            {filterUserVisibleText(streamingText ? streamingText.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trimStart() : '')}
+          </pre>
         )}
       </div>
     );
