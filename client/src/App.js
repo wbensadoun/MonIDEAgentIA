@@ -47,6 +47,18 @@ const AppContent = () => {
   }, [theme]);
 
   const [currentProjectPath, setCurrentProjectPath] = useState('');
+  const [workspaces, setWorkspaces] = useState(() => {
+    try {
+      const raw = localStorage.getItem('vibeIDE_workspaces');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+  const [projectRunState, setProjectRunState] = useState({});
+  const [conversationsRefreshKey, setConversationsRefreshKey] = useState(0);
+  const [pendingConversationLoad, setPendingConversationLoad] = useState(null);
   const [activeFile, setActiveFile] = useState('');
   const [code, setCode] = useState('');
   const [openFiles, setOpenFiles] = useState([]);
@@ -150,6 +162,28 @@ const AppContent = () => {
   const sessionLoadedRef = useRef(false);
 
   const { isAvailable: isElectronApiAvailable, message, showMessage } = useElectronAPI();
+
+  // Persist the workspaces list
+  useEffect(() => {
+    try {
+      localStorage.setItem('vibeIDE_workspaces', JSON.stringify(workspaces));
+    } catch {
+      // ignore
+    }
+  }, [workspaces]);
+
+  // Auto-register the active project into the workspaces list
+  useEffect(() => {
+    if (!currentProjectPath) return;
+    const name = currentProjectPath.split(/[\\/]/).pop() || currentProjectPath;
+    setWorkspaces((prev) => {
+      const existing = prev.find((w) => w.path === currentProjectPath);
+      if (existing) {
+        return prev.map((w) => (w.path === currentProjectPath ? { ...w, lastOpenedAt: Date.now() } : w));
+      }
+      return [...prev, { path: currentProjectPath, name, lastOpenedAt: Date.now() }];
+    });
+  }, [currentProjectPath]);
 
   useEffect(() => {
     if (!isElectronApiAvailable || currentProjectPath) return;
@@ -389,6 +423,84 @@ const AppContent = () => {
     findWorkflow,
     parseSlashCommand
   } = useWorkflows(currentProjectPath, isElectronApiAvailable);
+
+  // Derive the active project's run status for the workspace dots.
+  // run = an agent is generating ; wait = changes pending validation ; idle = nothing.
+  useEffect(() => {
+    if (!currentProjectPath) return;
+    let status = 'idle';
+    if (isLoading || multiAIState?.isActive) {
+      status = 'run';
+    } else if (Array.isArray(pendingFileChanges) && pendingFileChanges.length > 0) {
+      status = 'wait';
+    }
+    setProjectRunState((prev) => {
+      if (prev[currentProjectPath] === status) return prev;
+      return { ...prev, [currentProjectPath]: status };
+    });
+  }, [currentProjectPath, isLoading, multiAIState, pendingFileChanges]);
+
+  // When a run finishes (a conversation may have been saved), refresh the panel list.
+  useEffect(() => {
+    if (!isLoading) {
+      setConversationsRefreshKey((k) => k + 1);
+    }
+  }, [isLoading, activeConversationFile]);
+
+  // Load a conversation once we have switched to its owning project.
+  useEffect(() => {
+    if (!pendingConversationLoad) return;
+    if (pendingConversationLoad.path !== currentProjectPath) return;
+    loadConversationByFile(pendingConversationLoad.fileName);
+    setPendingConversationLoad(null);
+  }, [pendingConversationLoad, currentProjectPath, loadConversationByFile]);
+
+  const handleSelectProject = useCallback(async (projectPath) => {
+    if (!projectPath || projectPath === currentProjectPath) return;
+    // Re-authorize silently if needed (no-op if already trusted this session)
+    if (isElectronApiAvailable && window.electronAPI?.authorizeProjectPath) {
+      try {
+        const res = await window.electronAPI.authorizeProjectPath(projectPath);
+        if (!res?.success) {
+          showMessage(`Projet non autorisé: ${res?.error || 'refusé'}`, 4000);
+          return;
+        }
+      } catch (error) {
+        showMessage(`Erreur autorisation: ${error.message}`, 4000);
+        return;
+      }
+    }
+    setCurrentProjectPath(projectPath);
+    setOpenFiles([]);
+    setActiveFile('');
+    setRevealRequest(null);
+    setGitDiffPreview(null);
+    try {
+      localStorage.setItem('lastProjectPath', projectPath);
+    } catch {
+      // ignore
+    }
+  }, [currentProjectPath, isElectronApiAvailable, showMessage]);
+
+  const handleOpenConversation = useCallback(async (projectPath, fileName) => {
+    if (projectPath === currentProjectPath) {
+      loadConversationByFile(fileName);
+      return;
+    }
+    // Switch project first, then the effect above loads the conversation.
+    await handleSelectProject(projectPath);
+    setPendingConversationLoad({ path: projectPath, fileName });
+  }, [currentProjectPath, handleSelectProject, loadConversationByFile]);
+
+  const handleRemoveProject = useCallback((projectPath) => {
+    setWorkspaces((prev) => prev.filter((w) => w.path !== projectPath));
+    setProjectRunState((prev) => {
+      if (!(projectPath in prev)) return prev;
+      const next = { ...prev };
+      delete next[projectPath];
+      return next;
+    });
+  }, []);
 
   const clamp = useCallback((value, min, max) => {
     return Math.min(max, Math.max(min, value));
@@ -1776,6 +1888,19 @@ const AppContent = () => {
     preferredDevPort: devPort,
     onDevPortResolved: setRuntimeDevPort
   };
+  const workspacePanelProps = {
+    workspaces,
+    currentProjectPath,
+    projectRunState,
+    isElectronApiAvailable,
+    activeConversationFile,
+    conversationsRefreshKey,
+    onSelectProject: handleSelectProject,
+    onOpenConversation: handleOpenConversation,
+    onOpenProject: handleOpenFolder,
+    onRemoveProject: handleRemoveProject,
+    onNewConversation: startNewConversation
+  };
   const gitPanelProps = {
     currentProjectPath,
     isElectronApiAvailable,
@@ -1937,6 +2062,7 @@ const AppContent = () => {
         gitPanelProps={gitPanelProps}
         workflowProps={workflowPanelProps}
         aiChatProps={aiChatProps}
+        workspacePanelProps={workspacePanelProps}
         isTerminalOpen={isTerminalOpen}
         onToggleTerminal={() => setIsTerminalOpen(prev => !prev)}
       />

@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import FileExplorer from '../FileExplorer';
+import WorkspacePanel from '../WorkspacePanel';
 import CodeEditor from '../CodeEditor';
 import LivePreview from '../LivePreview';
 import TerminalPanel from '../TerminalPanel';
@@ -92,9 +93,11 @@ const WorkspaceLayout = ({
   gitPanelProps,
   workflowProps,
   aiChatProps,
+  workspacePanelProps,
   isTerminalOpen,
   onToggleTerminal,
 }) => {
+  const [sidebarTab, setSidebarTab] = useState('files');
   const [terminalHeight, setTerminalHeight] = useState(() => {
     try {
       const saved = localStorage.getItem('futurIA_terminalHeight');
@@ -156,26 +159,48 @@ const WorkspaceLayout = ({
       {/* Sidebar gauche — Explorateur */}
       {!isLeftCollapsed && (
         <aside
-          className="ide-sidebar-left custom-scrollbar"
+          className="ide-sidebar-left"
           style={{ width: `${leftWidth}%` }}
         >
-          <FileExplorer
-            projectItems={projectItems}
-            currentProjectPath={currentProjectPath}
-            activeFile={activeFile}
-            expandedFolders={expandedFolders}
-            newItemName={newItemName}
-            isElectronApiAvailable={isElectronApiAvailable}
-            onOpenFolder={onOpenFolder}
-            onCreateItem={onCreateItem}
-            onRenameItem={onRenameItem}
-            onMoveItem={onMoveItem}
-            onDeleteItem={onDeleteItem}
-            onToggleFolder={onToggleFolder}
-            onFileClick={onFileClick}
-            onNewItemNameChange={onNewItemNameChange}
-            isReadOnly={isReadOnlyMode}
-          />
+          <div className="sidebar-tabs">
+            <button
+              type="button"
+              className={`sidebar-tab ${sidebarTab === 'files' ? 'is-active' : ''}`}
+              onClick={() => setSidebarTab('files')}
+            >
+              Fichiers
+            </button>
+            <button
+              type="button"
+              className={`sidebar-tab ${sidebarTab === 'projects' ? 'is-active' : ''}`}
+              onClick={() => setSidebarTab('projects')}
+            >
+              Projets
+            </button>
+          </div>
+          <div className="sidebar-tab-body custom-scrollbar">
+            {sidebarTab === 'files' ? (
+              <FileExplorer
+                projectItems={projectItems}
+                currentProjectPath={currentProjectPath}
+                activeFile={activeFile}
+                expandedFolders={expandedFolders}
+                newItemName={newItemName}
+                isElectronApiAvailable={isElectronApiAvailable}
+                onOpenFolder={onOpenFolder}
+                onCreateItem={onCreateItem}
+                onRenameItem={onRenameItem}
+                onMoveItem={onMoveItem}
+                onDeleteItem={onDeleteItem}
+                onToggleFolder={onToggleFolder}
+                onFileClick={onFileClick}
+                onNewItemNameChange={onNewItemNameChange}
+                isReadOnly={isReadOnlyMode}
+              />
+            ) : (
+              <WorkspacePanel {...workspacePanelProps} />
+            )}
+          </div>
         </aside>
       )}
 
