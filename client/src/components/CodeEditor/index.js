@@ -433,21 +433,16 @@ const CodeEditor = ({
           })}
         </div>
 
-        <div className="code-editor-header">
-          <span className="code-editor-label">Éditeur</span>
-          <span className="code-editor-file">{activeLabel}</span>
-          <div className="code-editor-meta">
-            <span className="code-editor-chip">{language}</span>
-            <span className="code-editor-chip">{lineCount} lignes</span>
-            {diffHeaderLabel && (
-              <span className={`code-editor-chip ${diffSource === 'git' ? 'is-contrast' : 'is-accent'}`}>
-                {diffHeaderLabel}
-              </span>
-            )}
+        <div className="editor-breadcrumb">
+          <span className="editor-breadcrumb-seg">Éditeur</span>
+          <span className="editor-breadcrumb-sep">›</span>
+          <span className="editor-breadcrumb-seg is-active">{activeLabel}</span>
+          <div className="editor-breadcrumb-right">
+            <span>{language}</span>
+            <span>{lineCount} lignes</span>
+            {diffHeaderLabel && <span className="editor-breadcrumb-diff">{diffHeaderLabel}</span>}
             {activeEditorSymbol && (
-              <span className="code-editor-chip is-accent">
-                {getEditorSymbolKindIcon(activeEditorSymbol.kind)} {activeEditorSymbol.symbol}
-              </span>
+              <span>{getEditorSymbolKindIcon(activeEditorSymbol.kind)} {activeEditorSymbol.symbol}</span>
             )}
           </div>
 
