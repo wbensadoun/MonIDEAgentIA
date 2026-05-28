@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import './AIChat.css';
 import { AIWorkingIndicator } from '../LoadingAnimations';
+import SyntaxHighlightedCode from './SyntaxHighlightedCode';
 
 const WORKFLOW_STREAM_REGEX = /\*\*WORKFLOW:/i;
 const DIFF_STREAM_REGEX = /<<<<\s*SEARCH/i;
@@ -553,7 +554,7 @@ const AIChat = ({
               </div>
             </div>
             {streamingWorkflowDraft?.json && (
-              <pre className="ai-stream-json-preview">{streamingWorkflowDraft.json}</pre>
+              <SyntaxHighlightedCode code={streamingWorkflowDraft.json} language="json" maxHeight="300px" />
             )}
             <div className="ai-stream-anim-subtitle">
               Etape active: {currentWorkflowAnimStep.label} - {currentWorkflowAnimStep.detail}
@@ -579,7 +580,7 @@ const AIChat = ({
               <span className="ai-stream-code-file">{streamingFileDraft?.filePath || 'Fichier en cours de redaction'}</span>
               <span className="ai-stream-code-lang">{(streamingFileDraft?.language || 'text').toLowerCase()}</span>
             </div>
-            <pre className="ai-stream-code-preview">{streamingFileDraft?.code || streamingText}</pre>
+            <SyntaxHighlightedCode code={streamingFileDraft?.code || streamingText} language={streamingFileDraft?.language || 'javascript'} maxHeight="400px" />
             <div className="ai-stream-anim-subtitle">
               {streamingCodeLineCount > 0
                 ? `${streamingCodeLineCount} ligne(s) recues en direct`

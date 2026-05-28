@@ -1,0 +1,131 @@
+/* ================================================
+   SyntaxHighlightedCode — Coloration avec Prism.js
+   ================================================ */
+
+.syntax-highlighted-container {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #0c0c0e;
+  overflow: hidden;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.syntax-gutter {
+  background: #0f0f11;
+  color: #5a5a5e;
+  padding: 12px 8px;
+  text-align: right;
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.syntax-line-number {
+  display: block;
+  padding: 0 4px;
+  height: 1.6em;
+}
+
+.syntax-code-wrapper {
+  flex: 1;
+  margin: 0;
+  padding: 12px 16px;
+  background: #0c0c0e;
+  color: #e1e1e6;
+  overflow: visible;
+  white-space: pre;
+  word-break: normal;
+  word-wrap: normal;
+}
+
+.syntax-code-wrapper.with-gutter {
+  margin: 0;
+}
+
+.syntax-code-wrapper code {
+  background: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  font-family: inherit;
+  line-height: inherit;
+}
+
+/* Prism.js color scheme (VS Code Dark inspired) */
+.syntax-code-wrapper .token {
+  color: #e1e1e6;
+}
+
+.syntax-code-wrapper .token.comment {
+  color: #6a9955;
+}
+
+.syntax-code-wrapper .token.string {
+  color: #ce9178;
+}
+
+.syntax-code-wrapper .token.keyword {
+  color: #569cd6;
+}
+
+.syntax-code-wrapper .token.function {
+  color: #dcdcaa;
+}
+
+.syntax-code-wrapper .token.class-name {
+  color: #4ec9b0;
+}
+
+.syntax-code-wrapper .token.number {
+  color: #b5cea8;
+}
+
+.syntax-code-wrapper .token.operator {
+  color: #d4d4d4;
+}
+
+.syntax-code-wrapper .token.punctuation {
+  color: #d4d4d4;
+}
+
+.syntax-code-wrapper .token.boolean {
+  color: #569cd6;
+}
+
+.syntax-code-wrapper .token.tag {
+  color: #569cd6;
+}
+
+.syntax-code-wrapper .token.attr-name {
+  color: #9cdcfe;
+}
+
+.syntax-code-wrapper .token.attr-value {
+  color: #ce9178;
+}
+
+/* Dark theme adjustments */
+.syntax-highlighted-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.syntax-highlighted-container::-webkit-scrollbar-track {
+  background: #0c0c0e;
+}
+
+.syntax-highlighted-container::-webkit-scrollbar-thumb {
+  background: #3a3a3c;
+  border-radius: 4px;
+}
+
+.syntax-highlighted-container::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5e;
+}
