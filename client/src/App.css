@@ -184,6 +184,15 @@ select {
 /* ============================
    TOPBAR (40px)
    ============================ */
+
+/* Le <header> doit avoir position:relative pour que z-index fonctionne
+   et flex-shrink:0 pour ne pas être écrasé quand topbar-advanced s'ouvre. */
+.app-shell > header {
+  position: relative;
+  z-index: 200;
+  flex-shrink: 0;
+}
+
 .topbar-shell {
   height: 40px;
   min-height: 40px;
@@ -191,7 +200,6 @@ select {
   align-items: center;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
-  z-index: 100;
   flex-shrink: 0;
   padding: 0 8px;
   gap: 4px;
@@ -422,6 +430,9 @@ select {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  position: relative;
+  z-index: 200;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .topbar-advanced-label {
