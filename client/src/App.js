@@ -671,9 +671,8 @@ const AppContent = () => {
         setThinkingMode(settings.thinkingMode);
       }
 
-      if (settings.permissionMode) {
-        setPermissionMode(String(settings.permissionMode));
-      }
+      // Always use edit_terminal mode - terminal is enabled by default
+      setPermissionMode('edit_terminal');
 
       if (settings.contextMode) {
         setContextMode(String(settings.contextMode));
