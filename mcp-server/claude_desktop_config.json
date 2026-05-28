@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mon-ide-agent-ia": {
+      "command": "node",
+      "args": [
+        "/home/wissal/Bureau/projects/MonIDEAgentIA/mcp-server/index.js"
+      ],
+      "env": {}
+    }
+  }
+}

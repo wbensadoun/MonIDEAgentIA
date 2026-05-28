@@ -1840,7 +1840,14 @@ const AppContent = () => {
     contextEstimate,
     permissionMode,
     projectFileList,
-    onStreamingDraftChange: handleStreamingDraftChange
+    onStreamingDraftChange: handleStreamingDraftChange,
+    resolvedOllamaModel,
+    resolvedOllamaArchitect,
+    resolvedOllamaCoder,
+    resolvedOllamaTester,
+    availableOllamaModels,
+    onOllamaSettingChange: handleOllamaSettingChange,
+    isExpertMode
   };
 
   return (
