@@ -57,7 +57,7 @@ const filterUserVisibleText = (text) => {
         return false;
       }
       // Filter out opening/closing braces and commas that are part of JSON
-      if (/^[{}\[\],]*$/.test(trimmed)) {
+      if (/^[{}[\],]*$/.test(trimmed)) {
         return false;
       }
       return true;
@@ -587,9 +587,9 @@ const AIChat = ({
           </div>
         )}
         {streamingMode === 'text' && (
-          <div className="ai-stream-text-wrap">
-            <MarkdownRenderer text={filterUserVisibleText(streamingText ? streamingText.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trimStart() : '')} />
-          </div>
+          <pre className="ai-stream-text">
+            {filterUserVisibleText(streamingText ? streamingText.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trimStart() : '')}
+          </pre>
         )}
       </div>
     );
@@ -1019,9 +1019,12 @@ const AIChat = ({
               {safeMultiSteps.map((step, index) => {
                 const normalizedStatus = normalizeMultiStatus(step?.status);
                 return (
-                  <div key={step?.key || step?.label || index} className="ai-agent-card">
+                  <div key={step?.key || step?.label || index} className={`ai-agent-card${normalizedStatus === 'active' ? ' is-active' : normalizedStatus === 'completed' ? ' is-done' : ''}`}>
                     <div className="ai-agent-card-header">
-                      <span className="ai-agent-card-name">{step?.label || `Role ${index + 1}`}</span>
+                      <span className="ai-agent-card-name">
+                        <span className="ai-agent-card-icon">{step?.icon || (normalizedStatus === 'completed' ? '✓' : normalizedStatus === 'active' ? '⚡' : '○')}</span>
+                        {step?.label || `Role ${index + 1}`}
+                      </span>
                       <span className="ai-agent-card-status" style={{
                         background: normalizedStatus === 'completed' ? 'rgba(16,185,129,0.15)' : normalizedStatus === 'active' ? 'var(--accent-soft)' : normalizedStatus === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)',
                         color: normalizedStatus === 'completed' ? 'var(--success)' : normalizedStatus === 'active' ? 'var(--accent)' : normalizedStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)',

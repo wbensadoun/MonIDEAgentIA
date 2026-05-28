@@ -110,6 +110,23 @@
   margin: 0 4px;
 }
 
+.editor-breadcrumb-seg {
+  color: var(--text-muted);
+}
+
+.editor-breadcrumb-seg.is-active {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.editor-breadcrumb-diff {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(0, 245, 212, 0.1);
+  color: var(--accent);
+  font-size: 10px;
+}
+
 .editor-breadcrumb-right {
   margin-left: auto;
   display: flex;
