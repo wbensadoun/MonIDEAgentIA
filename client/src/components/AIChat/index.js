@@ -40,6 +40,32 @@ const extractStreamingFileDraft = (text) => {
   };
 };
 
+const filterUserVisibleText = (text) => {
+  if (!text) return '';
+  // Remove internal workflow construction details
+  // Remove lines starting with "Construction du workflow", "Trigger", "AI", "Output", "Analyse du besoin", etc.
+  return text
+    .split('\n')
+    .filter(line => {
+      const trimmed = line.trim();
+      // Filter out technical workflow steps and internal details
+      if (/^(Construction du workflow|Trigger|AI|Output|Analyse du besoin|Creation des noeuds|Cablage des liens|Verification|Finalisation|Etape active:)/i.test(trimmed)) {
+        return false;
+      }
+      // Filter out JSON blocks for workflows
+      if (trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"')) {
+        return false;
+      }
+      // Filter out opening/closing braces and commas that are part of JSON
+      if (/^[{}\[\],]*$/.test(trimmed)) {
+        return false;
+      }
+      return true;
+    })
+    .join('\n')
+    .trim();
+};
+
 const extractStreamingWorkflowDraft = (text) => {
   const match = extractLastStreamingMatch(WORKFLOW_BLOCK_STREAM_REGEX, text);
   if (!match) return null;
@@ -541,7 +567,7 @@ const AIChat = ({
               <span className="diff-line diff-line-2" />
               <span className="diff-line diff-line-3" />
             </div>
-            <pre className="ai-stream-raw-preview">{streamingText}</pre>
+            <pre className="ai-stream-raw-preview">{filterUserVisibleText(streamingText)}</pre>
             <div className="ai-stream-anim-subtitle">Syntaxe detectee: {'<<<< SEARCH ... >>>> REPLACE'}</div>
           </div>
         )}
@@ -561,9 +587,9 @@ const AIChat = ({
           </div>
         )}
         {streamingMode === 'text' && (
-          <pre className="ai-stream-text">
-            {streamingText ? streamingText.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trimStart() : ''}
-          </pre>
+          <div className="ai-stream-text-wrap">
+            <MarkdownRenderer text={filterUserVisibleText(streamingText ? streamingText.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trimStart() : '')} />
+          </div>
         )}
       </div>
     );
