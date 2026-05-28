@@ -1,12 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const waitOn = require('wait-on');
+const http = require('http');
 const electronBinary = require('electron');
 
 const rootDir = path.resolve(__dirname, '..');
 const watchFiles = ['main.js', 'preload.js', 'logger.js'].map((file) => path.join(rootDir, file));
-const rendererUrl = process.env.ELECTRON_DEV_SERVER_URL || 'http://localhost:3004';
+const rendererUrl = process.env.ELECTRON_DEV_SERVER_URL || 'http://127.0.0.1:3004';
 
 let electronProcess = null;
 let restartRequested = false;
@@ -93,16 +93,42 @@ const shutdown = (exitCode = 0) => {
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
+const pollRenderer = (url, timeout = 120000) => {
+  const startTime = Date.now();
+  const parsed = new URL(url);
+
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      const req = http.get(
+        { hostname: parsed.hostname, port: parsed.port, path: parsed.pathname, method: 'HEAD' },
+        (res) => {
+          if (res.statusCode >= 200 && res.statusCode < 500) {
+            resolve();
+          } else {
+            reschedule();
+          }
+        }
+      );
+      req.on('error', () => reschedule());
+      req.setTimeout(2000, () => { req.destroy(); reschedule(); });
+    };
+
+    const reschedule = () => {
+      if (Date.now() - startTime > timeout) {
+        reject(new Error(`Timed out waiting for: ${url}`));
+        return;
+      }
+      setTimeout(attempt, 500);
+    };
+
+    attempt();
+  });
+};
+
 const main = async () => {
   log(`Attente du renderer sur ${rendererUrl}...`);
-  await waitOn({
-    resources: [rendererUrl],
-    delay: 250,
-    interval: 250,
-    timeout: 120000,
-    tcpTimeout: 1000,
-    validateStatus: (status) => status >= 200 && status < 500
-  });
+  await pollRenderer(rendererUrl, 120000);
+  log('Renderer detecte, demarrage d\'Electron...');
 
   watchElectronFiles();
   startElectron();

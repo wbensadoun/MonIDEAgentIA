@@ -1,7 +1,8 @@
 // main.js
 require('dotenv').config();
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, session } = require('electron');
 const path = require('path');
+const os = require('os');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const readline = require('readline');
@@ -132,6 +133,77 @@ function assertSafePath(root, sub) {
     throw new Error(`Accès refusé: chemin hors projet "${sub}"`);
   }
 }
+
+const trustedProjectPaths = new Set();
+
+const normalizeProjectPathForTrust = (projectPath) => {
+  const raw = String(projectPath || '').trim();
+  if (!raw || raw.includes('\0')) return '';
+  return path.resolve(raw);
+};
+
+const trustProjectPath = (projectPath) => {
+  const normalized = normalizeProjectPathForTrust(projectPath);
+  if (normalized) trustedProjectPaths.add(normalized);
+  return normalized;
+};
+
+const isTrustedProjectPath = (projectPath) => {
+  const normalized = normalizeProjectPathForTrust(projectPath);
+  return !!normalized && trustedProjectPaths.has(normalized);
+};
+
+const ensureTrustedProjectPath = async (projectPath) => {
+  const normalized = normalizeProjectPathForTrust(projectPath);
+  if (!normalized) {
+    throw new Error('Chemin projet manquant ou invalide');
+  }
+  if (!trustedProjectPaths.has(normalized)) {
+    throw new Error('Projet non autorise. Ouvrez ce dossier depuis le dialogue natif.');
+  }
+  return normalized;
+};
+
+const resolveOptionalTrustedProjectPath = async (projectPath) => {
+  const normalized = normalizeProjectPathForTrust(projectPath);
+  if (!normalized) return null;
+  return ensureTrustedProjectPath(normalized);
+};
+
+const requestProjectPathApproval = async (projectPath) => {
+  const normalized = normalizeProjectPathForTrust(projectPath);
+  if (!normalized) {
+    return { success: false, error: 'Chemin projet invalide' };
+  }
+  if (trustedProjectPaths.has(normalized)) {
+    return { success: true, path: normalized, alreadyTrusted: true };
+  }
+  try {
+    const stats = await fs.stat(normalized);
+    if (!stats.isDirectory()) {
+      return { success: false, error: 'Le chemin restaure n est pas un dossier' };
+    }
+  } catch (error) {
+    return { success: false, error: `Projet introuvable: ${error.message}` };
+  }
+
+  const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  const result = await dialog.showMessageBox(targetWindow, {
+    type: 'question',
+    title: 'Autoriser le projet',
+    message: 'Autoriser Mon IDE Agent IA a rouvrir ce dossier ?',
+    detail: normalized,
+    buttons: ['Autoriser', 'Refuser'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true
+  });
+  if (result.response !== 0) {
+    return { success: false, error: 'Autorisation projet refusee' };
+  }
+  trustProjectPath(normalized);
+  return { success: true, path: normalized, alreadyTrusted: false };
+};
 
 const AGENT_BLOCKED_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp', '.tif', '.tiff',
@@ -997,6 +1069,36 @@ ipcMain.handle('validate-api-key', async (event, provider, apiKey) => {
       }
     }
 
+    if (provider === 'claude') {
+      // Ping Anthropic: list models (lightweight)
+      try {
+        const resp = await axios.get('https://api.anthropic.com/v1/models', {
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01'
+          },
+          timeout: 15000
+        });
+        const ok = resp && resp.status === 200;
+        return { success: true, valid: !!ok };
+      } catch (err) {
+        const status = err.response?.status;
+        return { success: true, valid: false, status, error: err.message };
+      }
+    }
+
+    if (provider === 'ollama') {
+      // Ollama is local, no API key needed — just check connectivity
+      try {
+        const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
+        const resp = await axios.get(`${ollamaUrl}/api/tags`, { timeout: 5000 });
+        const models = resp.data?.models || [];
+        return { success: true, valid: true, modelCount: models.length };
+      } catch (err) {
+        return { success: true, valid: false, error: `Ollama non disponible: ${err.message}` };
+      }
+    }
+
     return { success: false, valid: false, error: 'Provider inconnu' };
   } catch (error) {
     return { success: false, valid: false, error: error.message };
@@ -1026,7 +1128,8 @@ ipcMain.handle('start-process', async (event, payload) => {
       env: customEnv,
       autoSelectPort = false,
       preferredPort,
-      portEnvVars
+      portEnvVars,
+      requireApproval = false
     } = payload || {};
     if (!id || !command) {
       return { success: false, error: 'Identifiant ou commande manquant' };
@@ -1043,11 +1146,19 @@ ipcMain.handle('start-process', async (event, payload) => {
       delete processMeta[id];
     }
 
-    const options = {};
-    if (cwd && typeof cwd === 'string') {
-      options.cwd = cwd;
+    const safeCwd = await ensureTrustedProjectPath(cwd);
+    const spawnRequest = buildSafeSpawnRequest(command, args);
+    validateCommandArgsWithinWorkspace(spawnRequest, safeCwd);
+    if (requireApproval) {
+      const approved = await requestTerminalApproval(spawnRequest.normalizedCommandLine);
+      if (!approved) {
+        return { success: false, error: 'Commande refusee par l utilisateur' };
+      }
     }
-    options.shell = true;
+
+    const options = { cwd: safeCwd };
+    options.shell = false;
+    options.windowsHide = true;
     options.env = { ...process.env };
 
     if (customEnv && typeof customEnv === 'object' && !Array.isArray(customEnv)) {
@@ -1075,7 +1186,7 @@ ipcMain.handle('start-process', async (event, payload) => {
       });
     }
 
-    const child = spawn(command, args, options);
+    const child = spawn(spawnRequest.executable, spawnRequest.args, options);
     processes[id] = child;
     if (allocatedPort) {
       processMeta[id] = { allocatedPort };
@@ -1144,14 +1255,86 @@ ipcMain.handle('stop-process', async (event, id) => {
 
 // Settings
 const getSettingsPath = () => path.join(app.getPath('userData'), 'settings.json');
+const DEFAULT_GEMINI_MODEL = 'gemini-3-flash-preview';
+const DEFAULT_KIMI_MODEL = 'moonshotai/Kimi-K2.5';
+const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-6';
+const DEFAULT_GEMINI_PRO_MODEL = 'gemini-3.1-pro-preview';
+const CANONICAL_QWEN_OLLAMA_MODEL = 'qwen3:latest';
+const LEGACY_QWEN_OLLAMA_MODELS = new Set(['qwen3', 'qwen3:8b']);
+const SUPPORTED_AI_PROVIDERS = new Set(['gemini', 'claude', 'kimi', 'ollama']);
+const MULTI_AGENT_ROLE_DEFAULTS = Object.freeze({
+  selector: { provider: 'gemini', model: DEFAULT_GEMINI_PRO_MODEL },
+  captain: { provider: 'gemini', model: DEFAULT_GEMINI_PRO_MODEL },
+  domain: { provider: 'gemini', model: DEFAULT_GEMINI_MODEL },
+  ux: { provider: 'gemini', model: DEFAULT_GEMINI_MODEL },
+  ui: { provider: 'kimi', model: DEFAULT_KIMI_MODEL },
+  frontend: { provider: 'kimi', model: DEFAULT_KIMI_MODEL },
+  apiData: { provider: 'kimi', model: DEFAULT_KIMI_MODEL },
+  workflow: { provider: 'kimi', model: DEFAULT_KIMI_MODEL },
+  security: { provider: 'claude', model: DEFAULT_CLAUDE_MODEL },
+  qa: { provider: 'kimi', model: DEFAULT_KIMI_MODEL },
+  gitRelease: { provider: 'kimi', model: DEFAULT_KIMI_MODEL }
+});
+const LEGACY_MULTI_AGENT_ROLE_KEY_MAP = {
+  chef: 'captain',
+  backend: 'apiData',
+  architect: 'security',
+  scrum: 'qa'
+};
+
+const normalizePreferredOllamaModelName = (value, fallback = CANONICAL_QWEN_OLLAMA_MODEL) => {
+  const normalized = String(value || '').trim();
+  const resolvedFallback = String(fallback || CANONICAL_QWEN_OLLAMA_MODEL).trim() || CANONICAL_QWEN_OLLAMA_MODEL;
+  const candidate = normalized || resolvedFallback;
+
+  if (LEGACY_QWEN_OLLAMA_MODELS.has(candidate)) {
+    return CANONICAL_QWEN_OLLAMA_MODEL;
+  }
+
+  return candidate;
+};
+
+const normalizeAIProviderName = (value, fallback = 'gemini') => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return SUPPORTED_AI_PROVIDERS.has(normalized) ? normalized : fallback;
+};
+
+const getDefaultModelForAIProvider = (provider) => {
+  const normalizedProvider = normalizeAIProviderName(provider);
+  if (normalizedProvider === 'claude') return DEFAULT_CLAUDE_MODEL;
+  if (normalizedProvider === 'kimi') return DEFAULT_KIMI_MODEL;
+  if (normalizedProvider === 'ollama') return CANONICAL_QWEN_OLLAMA_MODEL;
+  return DEFAULT_GEMINI_MODEL;
+};
+
+const normalizeMultiAgentRoles = (raw = {}) => {
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  return Object.entries(MULTI_AGENT_ROLE_DEFAULTS).reduce((acc, [roleKey, defaults]) => {
+    const legacyKey = Object.entries(LEGACY_MULTI_AGENT_ROLE_KEY_MAP)
+      .find(([, nextKey]) => nextKey === roleKey)?.[0];
+    const roleSource = source[roleKey] || source[legacyKey];
+    const role = roleSource && typeof roleSource === 'object' ? roleSource : {};
+    const provider = normalizeAIProviderName(role.provider, defaults.provider);
+    const fallbackModel = defaults.model || getDefaultModelForAIProvider(provider);
+    acc[roleKey] = {
+      provider,
+      model: String(role.model || fallbackModel || getDefaultModelForAIProvider(provider)).trim()
+    };
+    return acc;
+  }, {});
+};
 
 const DEFAULT_APP_SETTINGS = Object.freeze({
   defaultProvider: 'gemini',
   thinkingMode: false,
-  ollamaModel: 'qwen3:8b',
-  ollamaModelArchitect: 'qwen3:8b',
-  ollamaModelCoder: 'qwen3:8b',
-  ollamaModelTester: 'qwen3:8b',
+  geminiModel: DEFAULT_GEMINI_MODEL,
+  claudeModel: DEFAULT_CLAUDE_MODEL,
+  kimiModel: DEFAULT_KIMI_MODEL,
+  ollamaModel: CANONICAL_QWEN_OLLAMA_MODEL,
+  ollamaModelArchitect: CANONICAL_QWEN_OLLAMA_MODEL,
+  ollamaModelCoder: CANONICAL_QWEN_OLLAMA_MODEL,
+  ollamaModelTester: CANONICAL_QWEN_OLLAMA_MODEL,
+  multiAgentRoles: normalizeMultiAgentRoles(),
   devPort: '3004',
   allowDangerousActions: false,
   aiContextPreset: 'safe',
@@ -1166,7 +1349,13 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   qualityGateBlockOnFail: true,
   onboardingCompleted: false,
   contextMode: 'auto', // auto | mentions | none
-  contextMaxFiles: 120
+  contextMaxFiles: 120,
+  localAIOptimizationMode: 'safe', // safe | auto | manual
+  localAIHardwareConsent: false,
+  localAIMaxConcurrentLocal: 1,
+  localAIMaxConcurrentCloud: 3,
+  localAIContextBudget: 'short', // short | medium | long
+  localAIMaxTokens: 4096
 });
 
 const normalizePermissionMode = (value) => {
@@ -1199,17 +1388,54 @@ const normalizeSettings = (raw) => {
     ? Math.min(50000, Math.max(10, Math.floor(maxFiles)))
     : 120;
 
+  const localMode = String(normalized.localAIOptimizationMode || 'safe').trim();
+  normalized.localAIOptimizationMode = localMode === 'auto' || localMode === 'manual' ? localMode : 'safe';
+  normalized.localAIHardwareConsent = !!normalized.localAIHardwareConsent;
+
+  const localMax = Number(normalized.localAIMaxConcurrentLocal);
+  normalized.localAIMaxConcurrentLocal = Number.isFinite(localMax)
+    ? Math.min(4, Math.max(1, Math.floor(localMax)))
+    : 1;
+
+  const cloudMax = Number(normalized.localAIMaxConcurrentCloud);
+  normalized.localAIMaxConcurrentCloud = Number.isFinite(cloudMax)
+    ? Math.min(6, Math.max(1, Math.floor(cloudMax)))
+    : 3;
+
+  const localTokens = Number(normalized.localAIMaxTokens);
+  normalized.localAIMaxTokens = Number.isFinite(localTokens)
+    ? Math.min(8192, Math.max(512, Math.floor(localTokens)))
+    : 4096;
+
+  const localContextBudget = String(normalized.localAIContextBudget || 'short').trim();
+  normalized.localAIContextBudget = ['short', 'medium', 'long'].includes(localContextBudget)
+    ? localContextBudget
+    : 'short';
+
   const devPort = String(normalized.devPort || '3004').trim();
   normalized.devPort = devPort || '3004';
 
-  const normalizeModelName = (value, fallback) => {
-    const candidate = String(value || '').trim();
-    return candidate || fallback;
-  };
-  normalized.ollamaModel = normalizeModelName(normalized.ollamaModel, DEFAULT_APP_SETTINGS.ollamaModel);
-  normalized.ollamaModelArchitect = normalizeModelName(normalized.ollamaModelArchitect, normalized.ollamaModel);
-  normalized.ollamaModelCoder = normalizeModelName(normalized.ollamaModelCoder, normalized.ollamaModel);
-  normalized.ollamaModelTester = normalizeModelName(normalized.ollamaModelTester, normalized.ollamaModel);
+  normalized.geminiModel = String(normalized.geminiModel || DEFAULT_GEMINI_MODEL).trim() || DEFAULT_GEMINI_MODEL;
+  normalized.claudeModel = String(normalized.claudeModel || DEFAULT_CLAUDE_MODEL).trim() || DEFAULT_CLAUDE_MODEL;
+  normalized.kimiModel = String(normalized.kimiModel || DEFAULT_KIMI_MODEL).trim() || DEFAULT_KIMI_MODEL;
+
+  normalized.ollamaModel = normalizePreferredOllamaModelName(
+    normalized.ollamaModel,
+    DEFAULT_APP_SETTINGS.ollamaModel
+  );
+  normalized.ollamaModelArchitect = normalizePreferredOllamaModelName(
+    normalized.ollamaModelArchitect,
+    normalized.ollamaModel
+  );
+  normalized.ollamaModelCoder = normalizePreferredOllamaModelName(
+    normalized.ollamaModelCoder,
+    normalized.ollamaModel
+  );
+  normalized.ollamaModelTester = normalizePreferredOllamaModelName(
+    normalized.ollamaModelTester,
+    normalized.ollamaModel
+  );
+  normalized.multiAgentRoles = normalizeMultiAgentRoles(normalized.multiAgentRoles);
 
   const preset = String(normalized.aiContextPreset || 'safe');
   normalized.aiContextPreset = preset === 'full' || preset === 'god' ? preset : 'safe';
@@ -1256,6 +1482,152 @@ const ensureTerminalPermission = async () => {
   return settings;
 };
 
+const TERMINAL_ALLOWED_COMMANDS = new Set([
+  'npm', 'npx', 'node',
+  'git',
+  'python', 'py',
+  'go', 'cargo', 'rustc', 'gradlew', 'mvn',
+  'ollama',
+  'curl',
+  'ls', 'dir', 'cat', 'type', 'echo', 'mkdir',
+  'n8n-search', 'n8n-import'
+]);
+const TERMINAL_DANGEROUS_COMMAND_PATTERNS = /(rm\s+-rf|del\s+\/[a-z]+|rmdir\s+\/[a-z]+|format\s+|shutdown|reboot|halt|mkfs|diskpart|git\s+reset\s+--hard|git\s+clean\s+-fd|:\(\)\{:\|:&\};:)/i;
+const TERMINAL_CONTROL_OPERATOR_PATTERNS = /(&&|\|\||[|;&`<>]|\r|\n|\$\()/;
+const MAX_CMD_OUTPUT = 4000;
+
+const normalizeCommandName = (command) => {
+  const base = path.basename(String(command || '').trim()).toLowerCase();
+  return base.replace(/\.(cmd|exe|bat|ps1)$/i, '');
+};
+
+const tokenizeCommandLine = (commandLine) => {
+  const text = String(commandLine || '').trim();
+  const tokens = [];
+  let current = '';
+  let quote = null;
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === '\\' && quote) {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+    current += char;
+  }
+  if (quote) throw new Error('Guillemets non fermes');
+  if (escaped) current += '\\';
+  if (current) tokens.push(current);
+  return tokens;
+};
+
+const buildCommandTokens = (command, args = []) => {
+  const rawCommand = String(command || '').trim();
+  const safeArgs = Array.isArray(args) ? args.map((arg) => String(arg ?? '')) : [];
+  if (!rawCommand) throw new Error('Commande vide');
+  if (safeArgs.length > 0) {
+    if (/\s/.test(rawCommand) || TERMINAL_CONTROL_OPERATOR_PATTERNS.test(rawCommand)) {
+      throw new Error('Commande invalide avec arguments separes');
+    }
+    return [rawCommand, ...safeArgs];
+  }
+  return tokenizeCommandLine(rawCommand);
+};
+
+const validateCommandTokens = (tokens) => {
+  if (!Array.isArray(tokens) || tokens.length === 0) {
+    throw new Error('Commande vide');
+  }
+  const normalizedCommandLine = tokens.join(' ').trim();
+  if (TERMINAL_CONTROL_OPERATOR_PATTERNS.test(normalizedCommandLine)) {
+    throw new Error('Operateurs shell interdits (&&, |, ;, redirections, etc.)');
+  }
+  if (TERMINAL_DANGEROUS_COMMAND_PATTERNS.test(normalizedCommandLine)) {
+    throw new Error('Commande jugee dangereuse');
+  }
+
+  const commandName = normalizeCommandName(tokens[0]);
+  if (!TERMINAL_ALLOWED_COMMANDS.has(commandName)) {
+    throw new Error(`Commande non autorisee: ${tokens[0]}`);
+  }
+  return { commandName, normalizedCommandLine };
+};
+
+const resolveExecutableForPlatform = (commandName) => {
+  if (process.platform === 'win32') {
+    if (commandName === 'npm') return 'npm.cmd';
+    if (commandName === 'npx') return 'npx.cmd';
+    if (commandName === 'gradlew') return 'gradlew.bat';
+  }
+  return commandName;
+};
+
+const buildSafeSpawnRequest = (command, args = []) => {
+  const tokens = buildCommandTokens(command, args);
+  const { commandName, normalizedCommandLine } = validateCommandTokens(tokens);
+  return {
+    executable: resolveExecutableForPlatform(commandName),
+    args: tokens.slice(1),
+    commandName,
+    normalizedCommandLine
+  };
+};
+
+const isUrlLikeToken = (value) => /^[a-z][a-z0-9+.-]*:\/\//i.test(String(value || ''));
+
+const validateCommandPathTokenForWorkspace = (value, workspaceRoot) => {
+  const raw = String(value || '').trim();
+  if (!raw || isUrlLikeToken(raw)) return;
+  const candidates = raw.includes('=') ? [raw.slice(raw.indexOf('=') + 1)] : [raw];
+  for (const candidate of candidates) {
+    const token = String(candidate || '').trim();
+    if (!token || isUrlLikeToken(token)) continue;
+    const normalized = token.replace(/\\/g, '/');
+    const looksPathLike = normalized.includes('/') || normalized.startsWith('.') || /^[a-zA-Z]:\//.test(normalized) || normalized.startsWith('~');
+    if (!looksPathLike) continue;
+    if (path.isAbsolute(token) || /^[a-zA-Z]:\//.test(normalized) || normalized.startsWith('~')) {
+      throw new Error(`Chemin absolu interdit dans la commande: ${token}`);
+    }
+    if (normalized === '..' || normalized.startsWith('../') || normalized.includes('/../') || normalized.endsWith('/..')) {
+      throw new Error(`Chemin hors workspace interdit dans la commande: ${token}`);
+    }
+    const resolved = path.resolve(workspaceRoot, token);
+    assertSafePath(workspaceRoot, resolved);
+  }
+};
+
+const validateCommandArgsWithinWorkspace = (spawnRequest, workspaceRoot) => {
+  const args = Array.isArray(spawnRequest?.args) ? spawnRequest.args : [];
+  for (const arg of args) {
+    validateCommandPathTokenForWorkspace(arg, workspaceRoot);
+  }
+};
+
 ipcMain.handle('save-settings', async (event, settings) => {
   try {
     const normalized = normalizeSettings(settings);
@@ -1276,13 +1648,175 @@ ipcMain.handle('load-settings', async () => {
   }
 });
 
+const readWindowsGpuInfo = () => new Promise((resolve) => {
+  if (process.platform !== 'win32') {
+    resolve([]);
+    return;
+  }
+
+  const child = spawn('wmic', ['path', 'win32_VideoController', 'get', 'Name,AdapterRAM', '/format:csv'], {
+    windowsHide: true
+  });
+  let stdout = '';
+  let stderr = '';
+  let finished = false;
+
+  const done = (items) => {
+    if (finished) return;
+    finished = true;
+    try { child.kill(); } catch { /* ignore */ }
+    resolve(items);
+  };
+
+  const timer = setTimeout(() => done([]), 2500);
+  child.stdout?.on('data', (data) => { stdout += String(data); });
+  child.stderr?.on('data', (data) => { stderr += String(data); });
+  child.on('error', () => {
+    clearTimeout(timer);
+    done([]);
+  });
+  child.on('close', () => {
+    clearTimeout(timer);
+    if (stderr && !stdout) {
+      done([]);
+      return;
+    }
+    const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const items = lines
+      .filter((line) => !/^Node,/i.test(line))
+      .map((line) => {
+        const parts = line.split(',');
+        const adapterRam = Number(parts[1]);
+        const name = parts.slice(2).join(',').trim();
+        return {
+          name,
+          vramGb: Number.isFinite(adapterRam) && adapterRam > 0
+            ? Number((adapterRam / 1024 / 1024 / 1024).toFixed(1))
+            : null
+        };
+      })
+      .filter((item) => item.name);
+    done(items);
+  });
+});
+
+ipcMain.handle('get-system-ai-profile', async (_event, options = {}) => {
+  try {
+    const settings = await readSettingsSafe();
+    const explicitConsent = options?.consent === true;
+    if (!explicitConsent && (settings.localAIOptimizationMode !== 'auto' || !settings.localAIHardwareConsent)) {
+      return {
+        success: false,
+        denied: true,
+        error: 'Lecture hardware non autorisee. Activez Auto-adaptatif avec consentement explicite.'
+      };
+    }
+
+    const cpus = os.cpus() || [];
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const gpus = await readWindowsGpuInfo();
+    let ollama = { available: false, models: [], error: null };
+    try {
+      const ollamaResponse = await fetchOllamaTags(OLLAMA_BASE_URL, 2500);
+      const models = (ollamaResponse.data?.models || []).map((model) => ({
+        name: model.name,
+        size: model.size,
+        sizeGb: Number.isFinite(Number(model.size))
+          ? Number((Number(model.size) / 1024 / 1024 / 1024).toFixed(2))
+          : null,
+        modified: model.modified_at
+      }));
+      ollama = { available: true, models, error: null };
+    } catch (error) {
+      ollama = {
+        available: false,
+        models: [],
+        error: error.message
+      };
+    }
+    const ramGb = Number((totalMem / 1024 / 1024 / 1024).toFixed(1));
+    const profile = ramGb >= 64 ? 'Workstation' : ramGb >= 32 ? 'High' : ramGb >= 16 ? 'Standard' : 'Low';
+
+    return {
+      success: true,
+      profile,
+      os: {
+        platform: process.platform,
+        arch: process.arch,
+        release: os.release()
+      },
+      cpu: {
+        cores: cpus.length,
+        model: cpus[0]?.model || 'unknown'
+      },
+      memory: {
+        totalGb: ramGb,
+        freeGb: Number((freeMem / 1024 / 1024 / 1024).toFixed(1))
+      },
+      gpu: gpus,
+      ollama
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Chemin de base pour les projets de l'IDE (utilisé par défaut si aucun dossier n'est ouvert)
 const getDefaultProjectsDir = () => {
   return path.join(app.getPath('userData'), 'IDE_Projects');
 };
 
+let cspInstalled = false;
+
+const buildElectronContentSecurityPolicy = () => {
+  const scriptSrc = isDev
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net"
+    : "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net";
+  return [
+    "default-src 'self'",
+    scriptSrc,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+    "img-src 'self' data: blob: file: https://cdn.jsdelivr.net",
+    "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
+    "connect-src 'self' https://generativelanguage.googleapis.com https://api.together.xyz https://api.anthropic.com http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*",
+    "frame-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
+    "worker-src 'self' blob: https://cdn.jsdelivr.net",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'"
+  ].join('; ');
+};
+
+const installContentSecurityPolicy = () => {
+  if (cspInstalled) return;
+  cspInstalled = true;
+  const csp = buildElectronContentSecurityPolicy();
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [csp]
+      }
+    });
+  });
+};
+
+const isAllowedAppNavigationUrl = (targetUrl) => {
+  try {
+    const parsed = new URL(String(targetUrl || ''));
+    if (isDev) {
+      return parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && parsed.port === '3004';
+    }
+    return parsed.protocol === 'file:';
+  } catch {
+    return false;
+  }
+};
+
 async function createWindow() {
   await logger.info('Début de la création de la fenêtre principale');
+  installContentSecurityPolicy();
 
   // Chemin correct pour preload.js
   const preloadPath = path.join(__dirname, 'preload.js');
@@ -1310,25 +1844,28 @@ async function createWindow() {
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
-      allowRunningInsecureContent: false,
-      additionalArguments: [`--content-security-policy=${"default-src 'self'; " +
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
-        "style-src 'self' 'unsafe-inline'; " +
-        "img-src 'self' data: blob:; " +
-        "font-src 'self'; " +
-        "connect-src 'self' https://generativelanguage.googleapis.com https://api.together.xyz http://localhost:*; " +
-        "frame-src 'self' data: blob: http://localhost:*; " +
-        "frame-ancestors 'none';"
-        }`]
+      allowRunningInsecureContent: false
     },
     icon: path.join(__dirname, 'assets', 'iconeDesktop.png')
   });
 
   createAppMenu();
 
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url).catch(() => { /* ignore */ });
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isAllowedAppNavigationUrl(url)) return;
+    event.preventDefault();
+    shell.openExternal(url).catch(() => { /* ignore */ });
+  });
+
   // Crée le dossier des projets par défaut s'il n'existe pas
   try {
     await fs.mkdir(getDefaultProjectsDir(), { recursive: true });
+    trustProjectPath(getDefaultProjectsDir());
     await logger.info(`Dossier des projets par défaut créé ou déjà existant: ${getDefaultProjectsDir()}`);
   } catch (error) {
     await logger.error('Erreur lors de la création du dossier des projets par défaut', { error: error.message });
@@ -1339,7 +1876,7 @@ async function createWindow() {
 
   // Charge l'application React
   if (isDev) {
-    const appUrl = 'http://localhost:3004';
+    const appUrl = 'http://127.0.0.1:3004';
     console.log(`[Main] 4. Chargement de l'application depuis: ${appUrl}`);
     await logger.info('Chargement de l\'application', { url: appUrl });
     mainWindow.loadURL(appUrl);
@@ -1369,14 +1906,15 @@ async function createWindow() {
       { role: 'selectAll', label: 'Tout sélectionner' }
     ];
 
-    // Ajouter l'inspecteur uniquement si pas de sélection de texte brut ou pour le confort dev
-    contextMenuTemplate.push({ type: 'separator' });
-    contextMenuTemplate.push({
-      label: 'Inspecter l\'élément',
-      click: () => {
-        mainWindow.webContents.inspectElement(params.x, params.y);
-      }
-    });
+    if (isDev) {
+      contextMenuTemplate.push({ type: 'separator' });
+      contextMenuTemplate.push({
+        label: 'Inspecter l\'élément',
+        click: () => {
+          mainWindow.webContents.inspectElement(params.x, params.y);
+        }
+      });
+    }
 
     const contextMenu = Menu.buildFromTemplate(contextMenuTemplate);
     contextMenu.popup({ window: mainWindow });
@@ -1458,13 +1996,23 @@ ipcMain.handle('open-folder-dialog', async () => {
   if (canceled) {
     return { success: true, path: null }; // Annulé
   } else {
-    return { success: true, path: filePaths[0] }; // Retourne le chemin du dossier sélectionné
+    const trustedPath = trustProjectPath(filePaths[0]);
+    return { success: true, path: trustedPath }; // Retourne le chemin du dossier sélectionné
+  }
+});
+
+ipcMain.handle('authorize-project-path', async (event, projectPath) => {
+  try {
+    return await requestProjectPathApproval(projectPath);
+  } catch (error) {
+    return { success: false, error: error.message };
   }
 });
 
 // Lister tous les fichiers et dossiers dans un répertoire donné avec structure hiérarchique
 ipcMain.handle('get-all-files', async (event, folderPath) => {
   try {
+    const trustedFolderPath = await ensureTrustedProjectPath(folderPath);
     async function buildFileTree(dirPath, relativePath = '') {
       const items = await fs.readdir(dirPath, { withFileTypes: true });
       const treeItems = [];
@@ -1496,7 +2044,7 @@ ipcMain.handle('get-all-files', async (event, folderPath) => {
       return treeItems;
     }
 
-    const projectItems = await buildFileTree(folderPath);
+    const projectItems = await buildFileTree(trustedFolderPath);
     return { success: true, items: projectItems };
   } catch (error) {
     console.error('Erreur lors de la lecture du dossier:', error);
@@ -1507,14 +2055,16 @@ ipcMain.handle('get-all-files', async (event, folderPath) => {
 // Nouvelle fonction pour charger les enfants d'un dossier spécifique
 ipcMain.handle('get-folder-children', async (event, projectPath, folderPath) => {
   try {
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     if (!folderPath || typeof folderPath !== 'string') {
       return { success: false, error: 'Chemin du dossier manquant' };
     }
 
-    const basePath = projectPath && typeof projectPath === 'string' ? projectPath : folderPath;
+    const basePath = trustedProjectPath;
     const resolvedFolderPath = path.isAbsolute(folderPath)
       ? folderPath
-      : (projectPath ? path.join(projectPath, folderPath) : folderPath);
+      : path.join(trustedProjectPath, folderPath);
+    assertSafePath(trustedProjectPath, resolvedFolderPath);
 
     async function getChildren(dirPath) {
       const items = await fs.readdir(dirPath, { withFileTypes: true });
@@ -1560,6 +2110,7 @@ ipcMain.handle('list-project-files', async (event, projectPath, options = {}) =>
     if (!projectPath) {
       return { success: false, error: 'Chemin du projet non fourni' };
     }
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
 
     const safeOptions = options && typeof options === 'object' ? options : {};
     const includeHidden = !!safeOptions.includeHidden;
@@ -1716,7 +2267,7 @@ ipcMain.handle('list-project-files', async (event, projectPath, options = {}) =>
       }
     }
 
-    await walk(projectPath);
+    await walk(trustedProjectPath);
 
     return {
       success: true,
@@ -1748,6 +2299,7 @@ ipcMain.handle('search-in-project', async (event, projectPath, query, options = 
     if (!projectPath) {
       return { success: false, error: 'Chemin du projet non fourni' };
     }
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
 
     const q = String(query || '');
     if (!q.trim()) {
@@ -1962,7 +2514,7 @@ ipcMain.handle('search-in-project', async (event, projectPath, query, options = 
       }
     }
 
-    await walk(projectPath);
+    await walk(trustedProjectPath);
 
     return {
       success: true,
@@ -1996,6 +2548,7 @@ ipcMain.handle('search-symbols', async (event, projectPath, query, options = {})
     if (!projectPath) {
       return { success: false, error: 'Chemin du projet non fourni' };
     }
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
 
     const q = String(query || '').trim().toLowerCase();
     if (!q) {
@@ -2101,7 +2654,7 @@ ipcMain.handle('search-symbols', async (event, projectPath, query, options = {})
       }
     };
 
-    await walk(projectPath);
+    await walk(trustedProjectPath);
 
     return {
       success: true,
@@ -2122,6 +2675,7 @@ ipcMain.handle('search-symbols', async (event, projectPath, query, options = {})
 ipcMain.handle('run-quality-gates', async (event, projectPath, options = {}) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     await ensureTerminalPermission();
 
     const settings = await readSettingsSafe();
@@ -2148,7 +2702,7 @@ ipcMain.handle('run-quality-gates', async (event, projectPath, options = {}) => 
     let passed = true;
 
     for (const gate of gates) {
-      const runResult = await runCommandForTask(gate.command, projectPath, timeoutMs);
+      const runResult = await runCommandForTask(gate.command, trustedProjectPath, timeoutMs);
       const entry = {
         id: gate.id,
         command: gate.command,
@@ -2175,8 +2729,9 @@ ipcMain.handle('run-quality-gates', async (event, projectPath, options = {}) => 
 // Lire le contenu d'un fichier
 ipcMain.handle('read-file', async (event, projectPath, filename) => {
   try {
-    const filePath = path.join(projectPath, filename);
-    assertSafePath(projectPath, filePath);
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const filePath = path.join(trustedProjectPath, filename);
+    assertSafePath(trustedProjectPath, filePath);
 
     // Vérifier si le fichier existe avant de le lire
     await fs.access(filePath);
@@ -2202,8 +2757,9 @@ ipcMain.handle('write-file', async (event, projectPath, filename, content, write
   try {
     await ensureEditPermission();
 
-    const filePath = path.join(projectPath, filename);
-    assertSafePath(projectPath, filePath);
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const filePath = path.join(trustedProjectPath, filename);
+    assertSafePath(trustedProjectPath, filePath);
     const expectedMtimeMsRaw = Number(writeOptions?.expectedMtimeMs);
     const hasExpectedMtime = Number.isFinite(expectedMtimeMsRaw);
 
@@ -2260,8 +2816,9 @@ ipcMain.handle('delete-file', async (event, projectPath, filename, deleteOptions
   try {
     await ensureEditPermission();
 
-    const filePath = path.join(projectPath, filename);
-    assertSafePath(projectPath, filePath);
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const filePath = path.join(trustedProjectPath, filename);
+    assertSafePath(trustedProjectPath, filePath);
     const expectedMtimeMsRaw = Number(deleteOptions?.expectedMtimeMs);
     if (Number.isFinite(expectedMtimeMsRaw)) {
       const statsBefore = await fs.stat(filePath);
@@ -2290,8 +2847,9 @@ ipcMain.handle('createNewFile', async (event, projectPath, filename, initialCont
   try {
     await ensureEditPermission();
 
-    const filePath = path.join(projectPath, filename);
-    assertSafePath(projectPath, filePath);
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const filePath = path.join(trustedProjectPath, filename);
+    assertSafePath(trustedProjectPath, filePath);
 
     console.log(`Tentative de création du fichier: ${filePath}`);
 
@@ -2338,8 +2896,9 @@ ipcMain.handle('createDirectory', async (event, projectPath, dirname) => {
   try {
     await ensureEditPermission();
 
-    const dirPath = path.join(projectPath, dirname);
-    assertSafePath(projectPath, dirPath);
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const dirPath = path.join(trustedProjectPath, dirname);
+    assertSafePath(trustedProjectPath, dirPath);
     // Vérifier si le dossier existe
     try {
       await fs.access(dirPath);
@@ -2359,8 +2918,9 @@ ipcMain.handle('deleteDirectory', async (event, projectPath, dirname) => {
   try {
     await ensureEditPermission();
 
-    const dirPath = path.join(projectPath, dirname);
-    assertSafePath(projectPath, dirPath);
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const dirPath = path.join(trustedProjectPath, dirname);
+    assertSafePath(trustedProjectPath, dirPath);
     await fs.rm(dirPath, { recursive: true, force: true }); // fs.rm est plus moderne que fs.rmdir
     return { success: true };
   } catch (error) {
@@ -2374,8 +2934,9 @@ ipcMain.handle('editFile', async (event, projectPath, filename, searchText, repl
   try {
     await ensureEditPermission();
 
-    const filePath = path.join(projectPath, filename);
-    assertSafePath(projectPath, filePath);
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const filePath = path.join(trustedProjectPath, filename);
+    assertSafePath(trustedProjectPath, filePath);
 
     // Lire le contenu actuel
     const currentContent = await fs.readFile(filePath, 'utf-8');
@@ -2413,10 +2974,11 @@ ipcMain.handle('renameFile', async (event, projectPath, oldFilename, newFilename
   try {
     await ensureEditPermission();
 
-    const oldPath = path.join(projectPath, oldFilename);
-    const newPath = path.join(projectPath, newFilename);
-    assertSafePath(projectPath, oldPath);
-    assertSafePath(projectPath, newPath);
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const oldPath = path.join(trustedProjectPath, oldFilename);
+    const newPath = path.join(trustedProjectPath, newFilename);
+    assertSafePath(trustedProjectPath, oldPath);
+    assertSafePath(trustedProjectPath, newPath);
 
     // Vérifier si le fichier source existe
     try {
@@ -2461,10 +3023,11 @@ ipcMain.handle('copyFile', async (event, projectPath, sourceFilename, destFilena
   try {
     await ensureEditPermission();
 
-    const sourcePath = path.join(projectPath, sourceFilename);
-    const destPath = path.join(projectPath, destFilename);
-    assertSafePath(projectPath, sourcePath);
-    assertSafePath(projectPath, destPath);
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const sourcePath = path.join(trustedProjectPath, sourceFilename);
+    const destPath = path.join(trustedProjectPath, destFilename);
+    assertSafePath(trustedProjectPath, sourcePath);
+    assertSafePath(trustedProjectPath, destPath);
 
     // Vérifier si le fichier source existe
     try {
@@ -2513,10 +3076,11 @@ ipcMain.handle('moveFile', async (event, projectPath, sourceFilename, destFilena
   try {
     await ensureEditPermission();
 
-    const sourcePath = path.join(projectPath, sourceFilename);
-    const destPath = path.join(projectPath, destFilename);
-    assertSafePath(projectPath, sourcePath);
-    assertSafePath(projectPath, destPath);
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const sourcePath = path.join(trustedProjectPath, sourceFilename);
+    const destPath = path.join(trustedProjectPath, destFilename);
+    assertSafePath(trustedProjectPath, sourcePath);
+    assertSafePath(trustedProjectPath, destPath);
 
     // Vérifier si le fichier source existe
     try {
@@ -2569,6 +3133,7 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
       console.error('[Main] Erreur:', error);
       return { success: false, error };
     }
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
 
     const safeOptions = options && typeof options === 'object' ? options : {};
     const includeHidden = !!safeOptions.includeHidden;
@@ -2800,7 +3365,7 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
       }
     }
 
-    await readDirectory(projectPath);
+    await readDirectory(trustedProjectPath);
 
     const fileCount = Object.keys(projectFiles).length;
     console.log(`[Main] Succès: ${fileCount} fichiers lus pour le projet (octets=${totalBytes}, limite=${hitLimit})`);
@@ -2808,7 +3373,7 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
     return {
       success: true,
       files: projectFiles,
-      projectPath: projectPath,
+      projectPath: trustedProjectPath,
       stats: {
         fileCount,
         totalBytes,
@@ -2844,11 +3409,12 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
 // Sauvegarder une conversation dans un fichier TXT
 ipcMain.handle('saveConversation', async (event, projectPath, conversationHistory) => {
   try {
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     // Générer un nom de fichier intelligent basé sur le contenu
     const conversationTitle = generateConversationTitle(conversationHistory);
     const timestamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
     const fileName = `${timestamp}_${conversationTitle}.txt`;
-    const conversationsDir = path.join(projectPath, 'conversations');
+    const conversationsDir = path.join(trustedProjectPath, 'conversations');
     const filePath = path.join(conversationsDir, fileName);
     assertSafePath(conversationsDir, filePath);
 
@@ -2862,7 +3428,7 @@ ipcMain.handle('saveConversation', async (event, projectPath, conversationHistor
     // Formater la conversation
     let conversationText = `CONVERSATION AVEC L'AGENT IA\n`;
     conversationText += `Date: ${new Date().toLocaleString('fr-FR')}\n`;
-    conversationText += `Projet: ${path.basename(projectPath)}\n`;
+    conversationText += `Projet: ${path.basename(trustedProjectPath)}\n`;
     conversationText += `${'='.repeat(60)}\n\n`;
 
     conversationHistory.forEach((msg, index) => {
@@ -2894,8 +3460,9 @@ ipcMain.handle('listConversations', async (event, projectPath) => {
     if (!projectPath) {
       return { success: false, error: 'Aucun chemin de projet fourni.' };
     }
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
 
-    const conversationsDir = path.join(projectPath, 'conversations');
+    const conversationsDir = path.join(trustedProjectPath, 'conversations');
     let entries;
 
     try {
@@ -2947,8 +3514,9 @@ ipcMain.handle('loadConversation', async (event, projectPath, fileName) => {
     if (!projectPath || !fileName) {
       return { success: false, error: 'Chemin de projet ou fichier de conversation manquant.' };
     }
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
 
-    const conversationsDir = path.join(projectPath, 'conversations');
+    const conversationsDir = path.join(trustedProjectPath, 'conversations');
     const filePath = path.join(conversationsDir, fileName);
     assertSafePath(conversationsDir, filePath);
     const content = await fs.readFile(filePath, 'utf-8');
@@ -3026,16 +3594,6 @@ function generateConversationTitle(conversationHistory) {
 
 // ==================== AI TERMINAL AGENT LOOP ====================
 
-/**
- * Executes a shell command on behalf of the AI agent and returns the output.
- * Commands are run with a 30s timeout in the project directory.
- * Output is capped at 4000 chars to stay within token limits.
- */
-const ALLOWED_COMMANDS = /^(npm|node|npx|git|ls|dir|cd|mkdir|echo|cat|type|python|py|go|cargo|rustc|gradlew|mvn|n8n-search|n8n-import)(?:\s|$)/i;
-const DANGEROUS_COMMAND_PATTERNS = /(rm\s+-rf|del\s+\/[a-z]+|rmdir\s+\/[a-z]+|format\s+|shutdown|reboot|halt|mkfs|diskpart|git\s+reset\s+--hard|git\s+clean\s+-fd|:\(\)\{:\|:&\};:)/i;
-const SHELL_CONTROL_OPERATOR_PATTERNS = /(&&|\|\||[|;&`<>]|\r|\n|\$\()/;
-const MAX_CMD_OUTPUT = 4000;
-
 const requestTerminalApproval = async (commandText) => {
   try {
     const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
@@ -3055,13 +3613,29 @@ const requestTerminalApproval = async (commandText) => {
   }
 };
 
+/**
+ * Executes a validated command on behalf of the AI agent.
+ * Commands run without a shell, inside a trusted project, with output caps.
+ */
 const executeCommandForAI = (cmd, projectPath) => {
   return new Promise(async (resolve) => {
     if (!cmd || typeof cmd !== 'string' || !cmd.trim()) {
       return resolve({ success: false, output: '[AI TERMINAL] Commande vide ignorée.' });
     }
     const trimmedCmd = cmd.trim();
-    const settings = await readSettingsSafe();
+    let settings;
+    let spawnRequest;
+    let trustedProjectPath = null;
+    try {
+      settings = await readSettingsSafe();
+      spawnRequest = buildSafeSpawnRequest(trimmedCmd, []);
+      trustedProjectPath = projectPath ? await ensureTrustedProjectPath(projectPath) : null;
+    } catch (error) {
+      return resolve({
+        success: false,
+        output: `[AI TERMINAL] Commande bloquee: ${error.message}`
+      });
+    }
 
     if (!canUseTerminal(settings.permissionMode)) {
       return resolve({
@@ -3070,41 +3644,19 @@ const executeCommandForAI = (cmd, projectPath) => {
       });
     }
 
-    // Check if the command starts with an allowed word
-    if (!ALLOWED_COMMANDS.test(trimmedCmd)) {
-      return resolve({
-        success: false,
-        output: `[AI TERMINAL] ❌ Commande bloquée par sécurité.\nSeules les commandes de build/dev standards sont autorisées (npm, git, python, etc.).\nCommande refusée: ${trimmedCmd}`
-      });
-    }
-
-    if (DANGEROUS_COMMAND_PATTERNS.test(trimmedCmd)) {
-      return resolve({
-        success: false,
-        output: `[AI TERMINAL] ❌ Commande jugee dangereuse et refusee: ${trimmedCmd}`
-      });
-    }
-
-    if (SHELL_CONTROL_OPERATOR_PATTERNS.test(trimmedCmd)) {
-      return resolve({
-        success: false,
-        output: `[AI TERMINAL] Commande bloquee: operateurs shell interdits (&&, |, ;, redirections, etc.). Commande refusee: ${trimmedCmd}`
-      });
-    }
-
     if (settings.aiTerminalApprovalMode !== false) {
-      const approved = await requestTerminalApproval(trimmedCmd);
+      const approved = await requestTerminalApproval(spawnRequest.normalizedCommandLine);
       if (!approved) {
         return resolve({
           success: false,
-          output: `[AI TERMINAL] Commande refusee par l'utilisateur: ${trimmedCmd}`
+          output: `[AI TERMINAL] Commande refusee par l'utilisateur: ${spawnRequest.normalizedCommandLine}`
         });
       }
     }
 
     // --- Pseudo-commandes N8N Catalog ---
-    if (trimmedCmd.startsWith('n8n-search')) {
-      const query = trimmedCmd.replace('n8n-search', '').trim().toLowerCase();
+    if (spawnRequest.commandName === 'n8n-search') {
+      const query = spawnRequest.args.join(' ').trim().toLowerCase();
       try {
         const catalog = await getN8nCatalogEntries(15000);
         const entries = Array.isArray(catalog.items) ? catalog.items : [];
@@ -3127,11 +3679,15 @@ const executeCommandForAI = (cmd, projectPath) => {
       }
     }
 
-    if (trimmedCmd.startsWith('n8n-import')) {
-      const importArgs = trimmedCmd.replace(/^n8n-import/i, '').trim();
-      const firstSpaceIndex = importArgs.indexOf(' ');
-      const url = firstSpaceIndex === -1 ? importArgs : importArgs.slice(0, firstSpaceIndex);
-      const requestedName = firstSpaceIndex === -1 ? '' : importArgs.slice(firstSpaceIndex + 1).trim();
+    if (spawnRequest.commandName === 'n8n-import') {
+      if (!trustedProjectPath) {
+        return resolve({
+          success: false,
+          output: '[N8N IMPORT ERROR] Projet autorise requis pour importer un workflow.'
+        });
+      }
+      const url = String(spawnRequest.args[0] || '').trim();
+      const requestedName = spawnRequest.args.slice(1).join(' ').trim();
       const saveName = sanitizeN8nImportFilename(requestedName || 'imported_n8n_workflow');
 
       if (!url || !isTrustedN8nDownloadUrl(url)) {
@@ -3203,7 +3759,7 @@ const executeCommandForAI = (cmd, projectPath) => {
           });
         }
 
-        const workflowsDir = path.join(projectPath || process.cwd(), '.vibe-workflows');
+        const workflowsDir = path.join(trustedProjectPath, '.vibe-workflows');
         await fs.mkdir(workflowsDir, { recursive: true });
         const filePath = path.join(workflowsDir, saveName);
         assertSafePath(workflowsDir, filePath);
@@ -3215,11 +3771,27 @@ const executeCommandForAI = (cmd, projectPath) => {
       }
     }
 
-    console.log(`[AI Terminal] Exécution: ${trimmedCmd}`);
-    const child = spawn(trimmedCmd, [], {
-      shell: true,
-      cwd: projectPath || process.cwd(),
-      timeout: 30000
+    if (!trustedProjectPath) {
+      return resolve({
+        success: false,
+        output: '[AI TERMINAL] Projet autorise requis pour executer une commande.'
+      });
+    }
+
+    try {
+      validateCommandArgsWithinWorkspace(spawnRequest, trustedProjectPath);
+    } catch (error) {
+      return resolve({
+        success: false,
+        output: `[AI TERMINAL] Commande bloquee: ${error.message}`
+      });
+    }
+
+    console.log(`[AI Terminal] Exécution: ${spawnRequest.normalizedCommandLine}`);
+    const child = spawn(spawnRequest.executable, spawnRequest.args, {
+      shell: false,
+      cwd: trustedProjectPath,
+      windowsHide: true
     });
 
     let stdout = '';
@@ -3324,7 +3896,7 @@ const parseRunCommand = (text) => {
 ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
   const apiKey = options.apiKey || process.env.KIMI_API_KEY || process.env.TOGETHER_API_KEY;
   const modelFromEnv = process.env.KIMI_MODEL;
-  const model = options.model || modelFromEnv || 'moonshotai/Kimi-K2.5';
+  const model = options.model || modelFromEnv || DEFAULT_KIMI_MODEL;
   const thinkingMode = !!options.thinkingMode;
   const images = Array.isArray(options.images) ? options.images : [];
   const fastMode = options.fastMode !== false;
@@ -3424,7 +3996,7 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
     }
 
     const lastMessage = effectiveHistory[effectiveHistory.length - 1];
-    const projectPath = options.projectPath || null;
+    const projectPath = await resolveOptionalTrustedProjectPath(options.projectPath);
 
     // Construire le contexte du projet si disponible (similaire à Gemini)
     let projectContext = '';
@@ -3457,6 +4029,7 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
 
     const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
     const globalSkillsContent = includeGlobalSkills ? await loadAllGlobalSkillsForCompletion() : '';
+    const selectedSkill = await loadSkillForCompletion(options.skill, projectPath);
     const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, String(lastMessage.text), options);
     const n8nCatalogContext = await buildN8nCatalogContextForPrompt(String(lastMessage.text), options);
 
@@ -3464,9 +4037,15 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
 
-    const skillContext = globalSkillsContent
-      ? `\n--- SKILLS GLOBAUX INSTALLÉS ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
-      : '';
+    const skillContext = [
+      globalSkillsContent
+        ? `\n--- SKILLS GLOBAUX INSTALLÉS ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
+        : '',
+      selectedSkill
+        ? `\n--- SKILL SELECTIONNÉ (${selectedSkill.name}) ---\n${selectedSkill.content}\n--- FIN SKILL SELECTIONNÉ ---\n`
+        : '',
+      formatAvailableSkillsListForPrompt(options.skillsContent)
+    ].filter(Boolean).join('\n');
 
     const thinkingInstructionsKimi = thinkingMode
       ? `\nMODE THINKING ACTIVÉ : détaillez explicitement votre raisonnement étape par étape avant de proposer le code final.\n`
@@ -3812,7 +4391,7 @@ ipcMain.handle('list-gemini-models', async (event, apiKey) => {
 // --- IPC Handler for Inline Completion (Ghost Text / Ctrl+K) ---
 ipcMain.handle('get-inline-completion', async (event, prompt, code, options = {}) => {
   const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
-  const model = options.model || 'gemini-2.5-flash';
+  const model = options.model || DEFAULT_GEMINI_MODEL;
 
   if (!apiKey) return { success: false, error: "La clé API Gemini est requise pour l'autocomplétion." };
 
@@ -3866,7 +4445,7 @@ RÈGLES ABSOLUES:
 // --- IPC Handler for Ghost Text / Autocomplete (FIM) ---
 ipcMain.handle('get-ghost-completion', async (event, prefix, suffix, options = {}) => {
   const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
-  const model = options.model || 'gemini-2.5-flash';
+  const model = options.model || DEFAULT_GEMINI_MODEL;
 
   if (!apiKey) return { success: false, error: "La clé API Gemini est requise." };
 
@@ -3922,7 +4501,7 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
   const apiKey = options.apiKey || process.env.GEMINI_API_KEY; // Clé prioritaire depuis les Settings côté renderer
   const modelFromEnv = process.env.GEMINI_MODEL;
   const modelFromOptions = options.model;
-  const model = modelFromOptions || modelFromEnv || 'gemini-2.5-flash';
+  const model = modelFromOptions || modelFromEnv || DEFAULT_GEMINI_MODEL;
   const thinkingMode = !!options.thinkingMode;
   const images = Array.isArray(options.images) ? options.images : [];
 
@@ -4008,7 +4587,7 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       return { success: false, error: errorMsg };
     }
 
-    const projectPath = options.projectPath || null;
+    const projectPath = await resolveOptionalTrustedProjectPath(options.projectPath);
 
     // Construire le contexte du projet si disponible
     let projectContext = '';
@@ -4044,6 +4623,7 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
     const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
     // Replace single skill loading with all global skills
     const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
+    const selectedSkill = await loadSkillForCompletion(options.skill, projectPath);
     const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, lastMessage.parts?.[0]?.text || '', options);
     const n8nCatalogContext = await buildN8nCatalogContextForPrompt(lastMessage.parts?.[0]?.text || '', options);
 
@@ -4051,9 +4631,15 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
 
-    const skillContext = globalSkillsContent
-      ? `\n--- SKILLS GLOBAUX INSTALLÉS ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
-      : '';
+    const skillContext = [
+      globalSkillsContent
+        ? `\n--- SKILLS GLOBAUX INSTALLÉS ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
+        : '',
+      selectedSkill
+        ? `\n--- SKILL SELECTIONNÉ (${selectedSkill.name}) ---\n${selectedSkill.content}\n--- FIN SKILL SELECTIONNÉ ---\n`
+        : '',
+      formatAvailableSkillsListForPrompt(options.skillsContent)
+    ].filter(Boolean).join('\n');
 
     const thinkingInstructionsGemini = thinkingMode
       ? `
@@ -4162,7 +4748,6 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
       };
 
       // ReAct agent loop — max 8 iterations
-      const projectPath = options.projectPath || null;
       let contents = buildGeminiContents();
       let fullTranscript = '';
       const MAX_ITERATIONS = 8;
@@ -4266,19 +4851,11 @@ registerWorkflowHandlers({
   fs,
   path,
   ensureEditPermission,
+  ensureTrustedProjectPath,
   assertSafePath,
   toPositiveInt,
   getN8nCatalogEntries,
   fetchTrustedN8nWorkflow
-});
-
-registerGitHandlers({
-  ipcMain,
-  fs,
-  path,
-  runGit,
-  ensureEditPermission,
-  assertSafePath
 });
 
 // ==================== CLAUDE API INTEGRATION ====================
@@ -4287,7 +4864,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 ipcMain.handle('get-claude-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
   const apiKey = options.apiKey || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
   const modelFromEnv = process.env.CLAUDE_MODEL;
-  const model = options.model || modelFromEnv || 'claude-4.6';
+  const model = options.model || modelFromEnv || DEFAULT_CLAUDE_MODEL;
   const thinkingMode = !!options.thinkingMode;
   const images = Array.isArray(options.images) ? options.images : [];
 
@@ -4315,7 +4892,7 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
       return { success: false, error: "Aucun message valide trouvé." };
     }
 
-    const projectPath = options.projectPath || null;
+    const projectPath = await resolveOptionalTrustedProjectPath(options.projectPath);
     const lastUserText = String(validHistory[validHistory.length - 1]?.text || '');
     let projectContext = '';
     if (allProjectFiles && allProjectFiles.files) {
@@ -4345,6 +4922,7 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
 
     const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
     const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
+    const selectedSkill = await loadSkillForCompletion(options.skill, projectPath);
     const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, lastUserText, options);
     const n8nCatalogContext = await buildN8nCatalogContextForPrompt(lastUserText, options);
 
@@ -4352,9 +4930,15 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
 
-    const skillContext = globalSkillsContent
-      ? `\n--- SKILLS GLOBAUX INSTALLÉS ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
-      : '';
+    const skillContext = [
+      globalSkillsContent
+        ? `\n--- SKILLS GLOBAUX INSTALLÉS ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
+        : '',
+      selectedSkill
+        ? `\n--- SKILL SELECTIONNÉ (${selectedSkill.name}) ---\n${selectedSkill.content}\n--- FIN SKILL SELECTIONNÉ ---\n`
+        : '',
+      formatAvailableSkillsListForPrompt(options.skillsContent)
+    ].filter(Boolean).join('\n');
 
     const thinkingInstructions = thinkingMode
       ? `\nMODE THINKING ACTIVÉ : Détaillez explicitement votre raisonnement étape par étape dans des balises <thinking> avant de proposer le code final.\n`
@@ -4506,11 +5090,12 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
 ipcMain.handle('create-ai-snapshot', async (event, projectPath, files = [], label = 'ai') => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     if (!Array.isArray(files) || files.length === 0) {
       return { success: false, error: 'Aucun fichier fourni pour le snapshot' };
     }
 
-    const snapshotDir = getSnapshotDir(projectPath);
+    const snapshotDir = getSnapshotDir(trustedProjectPath);
     await fs.mkdir(snapshotDir, { recursive: true });
 
     const snapshotId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
@@ -4522,8 +5107,8 @@ ipcMain.handle('create-ai-snapshot', async (event, projectPath, files = [], labe
 
     const entries = [];
     for (const relPath of normalizedFiles) {
-      const fullPath = path.join(projectPath, relPath);
-      assertSafePath(projectPath, fullPath);
+      const fullPath = path.join(trustedProjectPath, relPath);
+      assertSafePath(trustedProjectPath, fullPath);
       const state = await readTextFileIfExists(fullPath);
       entries.push({
         path: relPath.replace(/\\/g, '/'),
@@ -4550,7 +5135,8 @@ ipcMain.handle('create-ai-snapshot', async (event, projectPath, files = [], labe
 ipcMain.handle('list-ai-snapshots', async (event, projectPath) => {
   try {
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-    const snapshotDir = getSnapshotDir(projectPath);
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const snapshotDir = getSnapshotDir(trustedProjectPath);
     let files = [];
     try {
       files = await fs.readdir(snapshotDir);
@@ -4588,10 +5174,12 @@ ipcMain.handle('restore-ai-snapshot', async (event, projectPath, snapshotId) => 
     await ensureEditPermission();
 
     if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     if (!snapshotId) return { success: false, error: 'snapshotId manquant' };
 
-    const snapshotFile = path.join(getSnapshotDir(projectPath), `${snapshotId}.json`);
-    assertSafePath(getSnapshotDir(projectPath), snapshotFile);
+    const snapshotRoot = getSnapshotDir(trustedProjectPath);
+    const snapshotFile = path.join(snapshotRoot, `${snapshotId}.json`);
+    assertSafePath(snapshotRoot, snapshotFile);
     const raw = await fs.readFile(snapshotFile, 'utf-8');
     const snapshot = JSON.parse(raw);
     const fileEntries = Array.isArray(snapshot.files) ? snapshot.files : [];
@@ -4600,8 +5188,8 @@ ipcMain.handle('restore-ai-snapshot', async (event, projectPath, snapshotId) => 
     for (const entry of fileEntries) {
       const rel = toRelativeSnapshotPath(entry.path);
       if (!rel) continue;
-      const fullPath = path.join(projectPath, rel);
-      assertSafePath(projectPath, fullPath);
+      const fullPath = path.join(trustedProjectPath, rel);
+      assertSafePath(trustedProjectPath, fullPath);
 
       if (!entry.exists) {
         try {
@@ -4648,8 +5236,9 @@ ipcMain.handle('export-library-pack', async (event, projectPath, options = {}) =
   try {
     const safeOptions = options && typeof options === 'object' ? options : {};
     const scope = safeOptions.scope === 'global' || safeOptions.scope === 'both' ? safeOptions.scope : 'workspace';
+    const trustedProjectPath = scope === 'global' ? null : await ensureTrustedProjectPath(projectPath);
 
-    const targets = getPackTargets(projectPath);
+    const targets = getPackTargets(trustedProjectPath);
     const includeTarget = (key) => {
       if (scope === 'both') return true;
       if (scope === 'global') return key.startsWith('global');
@@ -4711,6 +5300,7 @@ ipcMain.handle('import-library-pack', async (event, projectPath, options = {}) =
 
     const safeOptions = options && typeof options === 'object' ? options : {};
     const overwrite = !!safeOptions.overwrite;
+    const trustedProjectPath = projectPath ? await ensureTrustedProjectPath(projectPath) : null;
 
     const openResult = safeOptions.inputPath
       ? { canceled: false, filePaths: [safeOptions.inputPath] }
@@ -4732,7 +5322,7 @@ ipcMain.handle('import-library-pack', async (event, projectPath, options = {}) =
       return { success: false, error: 'Pack invalide: sections manquantes' };
     }
 
-    const targets = getPackTargets(projectPath);
+    const targets = getPackTargets(trustedProjectPath);
     let imported = 0;
     let skipped = 0;
 
@@ -4921,6 +5511,17 @@ const loadAllGlobalSkillsForCompletion = async () => {
   }
 };
 
+const formatAvailableSkillsListForPrompt = (skillsContent) => {
+  const skills = Array.isArray(skillsContent) ? skillsContent : [];
+  const names = skills
+    .map((skill) => String(skill?.scope ? `${skill.scope}/${skill.name}` : skill?.name || '').trim())
+    .filter(Boolean)
+    .slice(0, 80);
+
+  if (names.length === 0) return '';
+  return `\n--- SKILLS DISPONIBLES ---\n${names.join(', ')}\nChoisissez seulement les skills pertinents pour la mission courante.\n--- FIN SKILLS DISPONIBLES ---\n`;
+};
+
 ipcMain.handle('list-agents', async (event, projectPath) => {
   try {
     const agents = [];
@@ -4957,7 +5558,8 @@ ipcMain.handle('list-agents', async (event, projectPath) => {
 
     await readAgentsFromDir(getGlobalAgentsDir(), 'global');
     if (projectPath) {
-      await readAgentsFromDir(getWorkspaceAgentsDir(projectPath), 'workspace');
+      const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+      await readAgentsFromDir(getWorkspaceAgentsDir(trustedProjectPath), 'workspace');
     }
 
     // Workspace first
@@ -4982,7 +5584,8 @@ ipcMain.handle('get-agent', async (event, name, scope, projectPath) => {
     if (scope === 'global') {
       filePath = path.join(getGlobalAgentsDir(), `${safeName}.md`);
     } else if (scope === 'workspace' && projectPath) {
-      filePath = path.join(getWorkspaceAgentsDir(projectPath), `${safeName}.md`);
+      const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+      filePath = path.join(getWorkspaceAgentsDir(trustedProjectPath), `${safeName}.md`);
     } else {
       return { success: false, error: 'Invalid scope or missing project path' };
     }
@@ -5015,7 +5618,8 @@ ipcMain.handle('save-agent', async (event, name, content, scope, projectPath) =>
     if (scope === 'global') {
       dir = getGlobalAgentsDir();
     } else if (scope === 'workspace' && projectPath) {
-      dir = getWorkspaceAgentsDir(projectPath);
+      const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+      dir = getWorkspaceAgentsDir(trustedProjectPath);
     } else {
       return { success: false, error: 'Invalid scope or missing project path' };
     }
@@ -5045,7 +5649,8 @@ ipcMain.handle('delete-agent', async (event, name, scope, projectPath) => {
     if (scope === 'global') {
       filePath = path.join(getGlobalAgentsDir(), `${safeName}.md`);
     } else if (scope === 'workspace' && projectPath) {
-      filePath = path.join(getWorkspaceAgentsDir(projectPath), `${safeName}.md`);
+      const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+      filePath = path.join(getWorkspaceAgentsDir(trustedProjectPath), `${safeName}.md`);
     } else {
       return { success: false, error: 'Invalid scope or missing project path' };
     }
@@ -5086,7 +5691,8 @@ ipcMain.handle('list-skills', async (event, projectPath) => {
 
     await readSkillsFromDir(getGlobalSkillsDir(), 'global');
     if (projectPath) {
-      await readSkillsFromDir(getWorkspaceSkillsDir(projectPath), 'workspace');
+      const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+      await readSkillsFromDir(getWorkspaceSkillsDir(trustedProjectPath), 'workspace');
     }
 
     skills.sort((a, b) => {
@@ -5108,7 +5714,10 @@ ipcMain.handle('get-skill', async (event, name, scope, projectPath) => {
 
     let dir;
     if (scope === 'global') dir = getGlobalSkillsDir();
-    else if (scope === 'workspace' && projectPath) dir = getWorkspaceSkillsDir(projectPath);
+    else if (scope === 'workspace' && projectPath) {
+      const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+      dir = getWorkspaceSkillsDir(trustedProjectPath);
+    }
     else return { success: false, error: 'Invalid scope or missing project path' };
 
     const skillDir = path.join(dir, safeName);
@@ -5213,13 +5822,27 @@ const runGit = (args, cwd) => {
   });
 };
 
-const runCommandForTask = (command, cwd, timeoutMs = 180000) => {
-  return new Promise((resolve) => {
-    const child = spawn(command, [], {
-      cwd,
-      shell: true,
-      windowsHide: true
-    });
+registerGitHandlers({
+  ipcMain,
+  fs,
+  path,
+  runGit,
+  ensureEditPermission,
+  ensureTrustedProjectPath,
+  assertSafePath
+});
+
+const runCommandForTask = async (command, cwd, timeoutMs = 180000) => {
+  try {
+    const trustedCwd = await ensureTrustedProjectPath(cwd);
+    const spawnRequest = buildSafeSpawnRequest(command, []);
+    validateCommandArgsWithinWorkspace(spawnRequest, trustedCwd);
+    return await new Promise((resolve) => {
+      const child = spawn(spawnRequest.executable, spawnRequest.args, {
+        cwd: trustedCwd,
+        shell: false,
+        windowsHide: true
+      });
     let stdout = '';
     let stderr = '';
     let finished = false;
@@ -5264,6 +5887,15 @@ const runCommandForTask = (command, cwd, timeoutMs = 180000) => {
       });
     });
   });
+  } catch (error) {
+    return {
+      ok: false,
+      code: -1,
+      timedOut: false,
+      stdout: '',
+      stderr: error.message
+    };
+  }
 };
 
 const sanitizePackPath = (value) => {
@@ -5413,7 +6045,10 @@ const installSkillInternal = async (url, scope, projectPath, options = {}) => {
 
   let destBaseDir;
   if (scope === 'global') destBaseDir = getGlobalSkillsDir();
-  else if (scope === 'workspace' && projectPath) destBaseDir = getWorkspaceSkillsDir(projectPath);
+  else if (scope === 'workspace' && projectPath) {
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    destBaseDir = getWorkspaceSkillsDir(trustedProjectPath);
+  }
   else return { success: false, error: 'Invalid scope or missing project path' };
 
   await fs.mkdir(destBaseDir, { recursive: true });
@@ -5700,14 +6335,165 @@ ipcMain.handle('sync-voltagent-subagents', async (event, options = {}) => {
 // ==================== OLLAMA LOCAL AI ====================
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-const DEFAULT_OLLAMA_MODEL = 'qwen3:8b';
+const DEFAULT_OLLAMA_MODEL = CANONICAL_QWEN_OLLAMA_MODEL;
+const OLLAMA_DOWNLOAD_URL = process.platform === 'win32'
+  ? 'https://ollama.com/download/windows'
+  : 'https://ollama.com/download';
 const FALLBACK_OLLAMA_MODEL_CANDIDATES = [
   DEFAULT_OLLAMA_MODEL,
+  'qwen2.5-coder:14b',
+  'qwen3-coder:30b',
+  'qwen3:8b',
   'qwen3:14b',
+  'qwen3:30b',
+  'qwen3:32b'
+];
+const FALLBACK_OLLAMA_ARCHITECT_MODEL_CANDIDATES = [
+  DEFAULT_OLLAMA_MODEL,
+  'qwen3:14b',
+  'qwen3:32b',
+  'qwen3:8b',
+  'qwen2.5-coder:14b',
+  'qwen3-coder:30b'
+];
+const FALLBACK_OLLAMA_CODER_MODEL_CANDIDATES = [
+  DEFAULT_OLLAMA_MODEL,
+  'qwen2.5-coder:14b',
+  'qwen3-coder:30b',
+  'qwen3:14b',
+  'qwen3:32b',
+  'qwen3:8b'
+];
+const FALLBACK_OLLAMA_TESTER_MODEL_CANDIDATES = [
+  DEFAULT_OLLAMA_MODEL,
+  'qwen3:8b',
+  'qwen3:14b',
+  'qwen2.5-coder:14b',
+  'qwen3-coder:30b',
   'qwen3:32b'
 ];
 const activeOllamaPulls = new Set();
 const normalizeOllamaModelName = (value) => String(value || '').trim();
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const runProcessCapture = (executable, args = [], options = {}) => new Promise((resolve) => {
+  const { timeoutMs: rawTimeoutMs, ...spawnOptions } = options || {};
+  const child = spawn(executable, args, {
+    windowsHide: true,
+    shell: false,
+    ...spawnOptions
+  });
+  let stdout = '';
+  let stderr = '';
+  let finished = false;
+  const timeoutMs = Number(rawTimeoutMs) || 30000;
+
+  const done = (payload) => {
+    if (finished) return;
+    finished = true;
+    try { child.kill(); } catch { /* ignore */ }
+    resolve({
+      stdout: stdout.slice(0, 8000),
+      stderr: stderr.slice(0, 8000),
+      ...payload
+    });
+  };
+
+  const timer = setTimeout(() => {
+    done({ ok: false, code: -1, timedOut: true, error: 'Timeout' });
+  }, timeoutMs);
+
+  child.stdout?.on('data', (data) => { stdout += String(data); });
+  child.stderr?.on('data', (data) => { stderr += String(data); });
+  child.on('error', (error) => {
+    clearTimeout(timer);
+    done({ ok: false, code: -1, error: error.message });
+  });
+  child.on('close', (code) => {
+    clearTimeout(timer);
+    done({ ok: code === 0, code });
+  });
+});
+
+const getOllamaExecutableCandidates = () => {
+  const candidates = [];
+  if (process.env.OLLAMA_EXE) candidates.push(process.env.OLLAMA_EXE);
+  if (process.platform === 'win32') {
+    if (process.env.LOCALAPPDATA) {
+      candidates.push(path.join(process.env.LOCALAPPDATA, 'Programs', 'Ollama', 'ollama.exe'));
+    }
+    candidates.push(path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Ollama', 'ollama.exe'));
+    if (process.env.ProgramFiles) {
+      candidates.push(path.join(process.env.ProgramFiles, 'Ollama', 'ollama.exe'));
+    }
+  }
+  candidates.push('ollama');
+  return Array.from(new Set(candidates.filter(Boolean)));
+};
+
+const resolveOllamaExecutable = () => {
+  const candidates = getOllamaExecutableCandidates();
+  const fileCandidate = candidates.find((candidate) => path.isAbsolute(candidate) && fsSync.existsSync(candidate));
+  return fileCandidate || 'ollama';
+};
+
+const isOllamaApiAvailable = async (timeout = 1600) => {
+  try {
+    await fetchOllamaTags(OLLAMA_BASE_URL, timeout);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const waitForOllamaApi = async (timeoutMs = 8000) => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await isOllamaApiAvailable(1000)) return true;
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(500);
+  }
+  return false;
+};
+
+const startOllamaServerIfPossible = async () => {
+  if (await isOllamaApiAvailable()) {
+    return { success: true, alreadyRunning: true };
+  }
+
+  const executable = resolveOllamaExecutable();
+  let launchError = '';
+  try {
+    const child = spawn(executable, ['serve'], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      shell: false
+    });
+    child.once('error', (error) => {
+      launchError = error.message;
+    });
+    child.unref();
+  } catch (error) {
+    return { success: false, error: `Ollama introuvable: ${error.message}` };
+  }
+
+  await sleep(300);
+  if (launchError) {
+    return { success: false, error: `Ollama introuvable: ${launchError}` };
+  }
+
+  const available = await waitForOllamaApi(9000);
+  if (!available) {
+    return {
+      success: false,
+      error: `Ollama ne repond pas sur ${OLLAMA_BASE_URL}. Installez Ollama ou lancez l'application Ollama.`
+    };
+  }
+
+  return { success: true, alreadyRunning: false };
+};
 
 const extractOllamaModelNames = (tagsResponseData) => {
   const modelsRaw = Array.isArray(tagsResponseData?.models) ? tagsResponseData.models : [];
@@ -5753,12 +6539,6 @@ const pickInstalledOllamaModel = (requestedModel, installedModels, preferredCand
   const availableSet = new Set(available);
   if (requested && availableSet.has(requested)) return requested;
 
-  const requestedBase = requested.includes(':') ? requested.split(':')[0] : requested;
-  if (requestedBase) {
-    const sameFamily = available.find((name) => name.startsWith(`${requestedBase}:`) || name === requestedBase);
-    if (sameFamily) return sameFamily;
-  }
-
   for (const candidate of preferredCandidates) {
     const normalizedCandidate = normalizeOllamaModelName(candidate);
     if (normalizedCandidate && availableSet.has(normalizedCandidate)) {
@@ -5766,11 +6546,18 @@ const pickInstalledOllamaModel = (requestedModel, installedModels, preferredCand
     }
   }
 
+  const requestedBase = requested.includes(':') ? requested.split(':')[0] : requested;
+  if (requestedBase) {
+    const sameFamily = available.find((name) => name.startsWith(`${requestedBase}:`) || name === requestedBase);
+    if (sameFamily) return sameFamily;
+  }
+
   return available[0] || '';
 };
 
 ipcMain.handle('list-ollama-models', async () => {
   try {
+    await startOllamaServerIfPossible();
     const response = await fetchOllamaTags(OLLAMA_BASE_URL, 5000);
     const models = (response.data?.models || []).map(m => ({
       name: m.name,
@@ -5779,7 +6566,64 @@ ipcMain.handle('list-ollama-models', async () => {
     }));
     return { success: true, models };
   } catch (error) {
-    return { success: false, error: `Ollama non disponible: ${error.message}. Installez Ollama sur https://ollama.ai` };
+    return { success: false, error: `Ollama non disponible: ${error.message}. Installez Ollama depuis l'app ou via ${OLLAMA_DOWNLOAD_URL}` };
+  }
+});
+
+ipcMain.handle('start-ollama', async () => {
+  try {
+    return await startOllamaServerIfPossible();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('install-ollama', async () => {
+  try {
+    if (await isOllamaApiAvailable()) {
+      return { success: true, alreadyInstalled: true };
+    }
+
+    if (process.platform !== 'win32') {
+      await shell.openExternal('https://ollama.com/download');
+      return { success: true, openedDownload: true };
+    }
+
+    const wingetCheck = await runProcessCapture('winget', ['--version'], { timeoutMs: 10000 });
+    if (!wingetCheck.ok) {
+      await shell.openExternal(OLLAMA_DOWNLOAD_URL);
+      return { success: true, openedDownload: true, warning: 'winget indisponible' };
+    }
+
+    const install = await runProcessCapture('winget', [
+      'install',
+      '--id',
+      'Ollama.Ollama',
+      '-e',
+      '--source',
+      'winget',
+      '--accept-package-agreements',
+      '--accept-source-agreements'
+    ], { timeoutMs: 10 * 60 * 1000 });
+
+    if (!install.ok) {
+      await shell.openExternal(OLLAMA_DOWNLOAD_URL);
+      return {
+        success: true,
+        openedDownload: true,
+        warning: install.stderr || install.stdout || 'Installation winget echouee'
+      };
+    }
+
+    const startResult = await startOllamaServerIfPossible();
+    return {
+      success: true,
+      installed: true,
+      started: !!startResult.success,
+      warning: startResult.success ? '' : startResult.error
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
   }
 });
 
@@ -5801,6 +6645,7 @@ ipcMain.handle('check-ollama-updates', async (_event, modelNames = []) => {
     }
 
     try {
+      await startOllamaServerIfPossible();
       const response = await fetchOllamaTags(OLLAMA_BASE_URL, 5000);
       const installedModels = extractOllamaModelNames(response?.data);
       return {
@@ -5839,6 +6684,11 @@ ipcMain.handle('pull-ollama-model', async (_event, modelName) => {
   sendProgress({ status: 'starting', completed: 0, total: 0 });
 
   try {
+    const startResult = await startOllamaServerIfPossible();
+    if (!startResult.success) {
+      throw new Error(startResult.error || 'Ollama indisponible.');
+    }
+
     const response = await axios.post(`${OLLAMA_BASE_URL}/api/pull`, {
       model,
       stream: true
@@ -5925,16 +6775,20 @@ ipcMain.handle('pull-ollama-model', async (_event, modelName) => {
 
 ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
   const requestedModel = normalizeOllamaModelName(options.model || process.env.OLLAMA_MODEL);
-  const projectPath = options.projectPath || null;
 
   if (!history || !Array.isArray(history) || history.length === 0) {
     return { success: false, error: "Aucun historique fourni pour Ollama." };
   }
 
   try {
+    const projectPath = await resolveOptionalTrustedProjectPath(options.projectPath);
     let model = requestedModel;
     let installedModelNames = [];
     try {
+      const startResult = await startOllamaServerIfPossible();
+      if (!startResult.success) {
+        throw new Error(startResult.error || 'Ollama indisponible.');
+      }
       const tagsResponse = await fetchOllamaTags(OLLAMA_BASE_URL, 5000);
       installedModelNames = extractOllamaModelNames(tagsResponse?.data);
     } catch (error) {
@@ -5965,11 +6819,15 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
       };
     }
 
-    const validHistory = history.filter(msg => msg && typeof msg === 'object' && msg.text !== undefined);
+    // Cap history to last 10 messages to avoid overflowing small local models
+    const validHistory = history
+      .filter(msg => msg && typeof msg === 'object' && msg.text !== undefined)
+      .slice(-10);
     if (validHistory.length === 0) return { success: false, error: "Historique vide pour Ollama." };
 
     const lastMessage = validHistory[validHistory.length - 1];
     const lastUserText = String(lastMessage.text || '');
+    if (!lastUserText.trim()) return { success: false, error: "Dernier message utilisateur vide pour Ollama." };
 
     let projectContext = '';
     if (allProjectFiles?.files) {
@@ -5982,6 +6840,7 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
     }
     const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
     const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
+    const selectedSkill = await loadSkillForCompletion(options.skill, projectPath);
     const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, lastUserText, options);
     const n8nCatalogContext = await buildN8nCatalogContextForPrompt(lastUserText, options);
 
@@ -5989,9 +6848,15 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
 
-    const skillContext = globalSkillsContent
-      ? `\n--- SKILLS GLOBAUX INSTALLES ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
-      : '';
+    const skillContext = [
+      globalSkillsContent
+        ? `\n--- SKILLS GLOBAUX INSTALLES ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
+        : '',
+      selectedSkill
+        ? `\n--- SKILL SELECTIONNE (${selectedSkill.name}) ---\n${selectedSkill.content}\n--- FIN SKILL SELECTIONNE ---\n`
+        : '',
+      formatAvailableSkillsListForPrompt(options.skillsContent)
+    ].filter(Boolean).join('\n');
 
     const systemPrompt = `Tu es un assistant de développement expert et autonome.
 ${agentContext}
@@ -6020,13 +6885,21 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
         const resp = await axios.post(`${OLLAMA_BASE_URL}/api/chat`, {
           model,
           messages,
+          stream: false, // IMPORTANT: must be false to get a single JSON response, not a stream
           options: { temperature: options.temperature || 0.7, num_predict: options.maxTokens || 8192 }
-        }); // no timeout
-        return resp.data?.message?.content || '';
+        }, { timeout: 180000 }); // 3-minute timeout for large local models
+        const content = resp.data?.message?.content;
+        if (content === undefined || content === null) {
+          throw new Error(`Ollama: reponse inattendue (message.content absent). Verifiez que le modele "${model}" est bien charge.`);
+        }
+        return String(content);
       } catch (error) {
         if (axios.isAxiosError(error) && error.response?.status === 404) {
           const details = String(error.response?.data?.error || error.message || '404');
           throw new Error(`Ollama 404 (modele="${model}"): ${details}`);
+        }
+        if (axios.isAxiosError(error) && error.code === 'ECONNABORTED') {
+          throw new Error(`Ollama: timeout apres 3 minutes. Le modele "${model}" est peut-etre trop lent ou bloque.`);
         }
         throw error;
       }
@@ -6074,7 +6947,11 @@ ipcMain.handle('get-ollama-multi-completion', async (event, history, currentCode
     const modelCoder = String(options.modelCoder || fallbackModel).trim() || fallbackModel;
     const modelTester = String(options.modelTester || fallbackModel).trim() || fallbackModel;
     const retryCount = toPositiveInt(options.retryCount, 1, 0, 3);
-    const workspaceRoot = path.resolve(String(options.projectPath || process.cwd()));
+    const trustedProjectPath = await resolveOptionalTrustedProjectPath(options.projectPath);
+    if (!trustedProjectPath) {
+      return { success: false, error: 'Projet autorise requis pour Ollama Multi.' };
+    }
+    const workspaceRoot = trustedProjectPath;
 
     const validHistory = Array.isArray(history) ? history : [];
     const lastMessage = validHistory[validHistory.length - 1];
@@ -6102,7 +6979,7 @@ ipcMain.handle('get-ollama-multi-completion', async (event, history, currentCode
       ? `\nINDEX PROJET (sans contenu brut):\n${fileIndexLines.join('\n')}\n`
       : '\nINDEX PROJET indisponible.\n';
     const codeCtx = currentCode ? `\nFICHIER OUVERT (extrait):\n${String(currentCode).substring(0, 2000)}` : '';
-    const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(options.projectPath, userPrompt, options);
+    const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(trustedProjectPath, userPrompt, options);
     const n8nCatalogContext = await buildN8nCatalogContextForPrompt(userPrompt, options);
     const toolContractText = `OUTILS DISPONIBLES:
 - <read_file file="chemin/relatif.ext" />
@@ -6125,6 +7002,10 @@ REGLES OUTILS:
 
     let installedModelNames = [];
     try {
+      const startResult = await startOllamaServerIfPossible();
+      if (!startResult.success) {
+        throw new Error(startResult.error || 'Ollama indisponible.');
+      }
       const tagsResponse = await fetchOllamaTags(OLLAMA_BASE_URL_MULTI);
       installedModelNames = extractOllamaModelNames(tagsResponse?.data);
     } catch (error) {
@@ -6162,17 +7043,17 @@ REGLES OUTILS:
     const resolvedModelArchitect = resolveRoleModel(
       modelArchitect,
       'Architecte',
-      FALLBACK_OLLAMA_MODEL_CANDIDATES
+      FALLBACK_OLLAMA_ARCHITECT_MODEL_CANDIDATES
     );
     const resolvedModelCoder = resolveRoleModel(
       modelCoder,
       'Codeur',
-      FALLBACK_OLLAMA_MODEL_CANDIDATES
+      FALLBACK_OLLAMA_CODER_MODEL_CANDIDATES
     );
     const resolvedModelTester = resolveRoleModel(
       modelTester,
       'Relecteur',
-      FALLBACK_OLLAMA_MODEL_CANDIDATES
+      FALLBACK_OLLAMA_TESTER_MODEL_CANDIDATES
     );
 
     const emitStreamingDone = (agentLabel) => {
@@ -6348,7 +7229,7 @@ REGLES OUTILS:
           return `<tool_result name="read_lines" file="${relativePath}" start="${excerpt.start}" end="${excerpt.end}" total="${excerpt.total}" status="ok">\n${excerpt.content}\n</tool_result>`;
         }
         if (toolName === 'list_workflows') {
-          const index = await getVisualWorkflowIndex(options.projectPath, 40);
+          const index = await getVisualWorkflowIndex(trustedProjectPath, 40);
           if (index.length === 0) {
             return `<tool_result name="list_workflows" status="ok">\nAucun workflow visuel trouve.\n</tool_result>`;
           }
@@ -6360,7 +7241,7 @@ REGLES OUTILS:
         if (toolName === 'read_workflow') {
           const workflowId = String(attrs.id || attrs.name || attrs.filename || '').trim();
           if (!workflowId) throw new Error('Attribut id requis');
-          const content = await readVisualWorkflowById(options.projectPath, workflowId);
+          const content = await readVisualWorkflowById(trustedProjectPath, workflowId);
           return `<tool_result name="read_workflow" id="${workflowId}" status="ok">\n${content}\n</tool_result>`;
         }
         return formatToolError(toolName || 'unknown_tool', `Outil non supporte: ${toolName}`);
@@ -6459,7 +7340,7 @@ PAS de code. PAS d'explications longues. Juste le plan.`;
         if (filtered.length === 0) return '';
         let content = '--- SKILLS ---\n';
         for (const s of filtered.slice(0, 5)) {
-          const fileContent = await readSkillFile(s.name, s.scope, options.projectPath);
+          const fileContent = await readSkillFile(s.name, s.scope, trustedProjectPath);
           if (fileContent) content += `## ${s.name}\n${fileContent.substring(0, 3000)}\n\n`;
         }
         return content + '---';
@@ -6567,7 +7448,7 @@ Rappel:
 
     // ── Helper to run a shell command and get its output ──────────────────
     const runShellCommandWithSafety = async (cmd, cwd) => {
-      const result = await executeCommandForAI(cmd, cwd || options.projectPath);
+      const result = await executeCommandForAI(cmd, cwd || trustedProjectPath);
       return {
         ok: !!result?.success,
         output: String(result?.output || '')

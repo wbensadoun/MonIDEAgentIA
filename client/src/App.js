@@ -12,24 +12,41 @@ import WorkspaceLayout from './components/AppShell/WorkspaceLayout';
 import StatusBar from './components/AppShell/StatusBar';
 import OnboardingModal from './components/AppShell/OnboardingModal';
 import { isNavigatorDescendant, isSameNavigatorPath, joinNavigatorPath, replaceNavigatorPathPrefix } from './utils/navigatorPaths';
+import {
+  DEFAULT_OLLAMA_MODEL,
+  SUGGESTED_OLLAMA_MODELS,
+  normalizeOllamaModelLabel
+} from './utils/ollamaModels';
+import {
+  DEFAULT_CLAUDE_MODEL,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_KIMI_MODEL,
+  getRemoteModelOptions
+} from './utils/remoteModels';
 
-const DEFAULT_OLLAMA_MODEL = 'qwen3:8b';
-const SUGGESTED_OLLAMA_MODELS = ['qwen3:8b', 'qwen3:14b', 'qwen3:32b'];
-
-const normalizeOllamaModelLabel = (value, fallback = DEFAULT_OLLAMA_MODEL) => {
-  const normalized = String(value || '').trim();
-  if (normalized) return normalized;
-  return String(fallback || DEFAULT_OLLAMA_MODEL).trim() || DEFAULT_OLLAMA_MODEL;
-};
+const DEFAULT_LEFT_WIDTH = 20;
+const DEFAULT_RIGHT_WIDTH = 22;
+const LAYOUT_DENSITY_VERSION = 2;
 
 const AppContent = () => {
-  const [currentProjectPath, setCurrentProjectPath] = useState(() => {
+  const [theme, setTheme] = useState(() => {
     try {
-      return localStorage.getItem('lastProjectPath') || '';
+      return localStorage.getItem('futurIA_theme') || 'midnight';
     } catch {
-      return '';
+      return 'midnight';
     }
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('futurIA_theme', theme);
+    } catch {
+      // ignore
+    }
+    document.body.className = `theme-${theme}`;
+  }, [theme]);
+
+  const [currentProjectPath, setCurrentProjectPath] = useState('');
   const [activeFile, setActiveFile] = useState('');
   const [code, setCode] = useState('');
   const [openFiles, setOpenFiles] = useState([]);
@@ -45,24 +62,28 @@ const AppContent = () => {
     }
   });
   const [previewStatus, setPreviewStatus] = useState('stopped');
-  const [leftWidth, setLeftWidth] = useState(22);
-  const [rightWidth, setRightWidth] = useState(28);
-  const [leftBackup, setLeftBackup] = useState(22);
-  const [rightBackup, setRightBackup] = useState(28);
+  const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
+  const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
+  const [leftBackup, setLeftBackup] = useState(DEFAULT_LEFT_WIDTH);
+  const [rightBackup, setRightBackup] = useState(DEFAULT_RIGHT_WIDTH);
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
   const [isRightCollapsed, setIsRightCollapsed] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [dragging, setDragging] = useState(null);
   const [dragStartX, setDragStartX] = useState(0);
-  const [startWidths, setStartWidths] = useState({ left: 22, right: 28 });
+  const [startWidths, setStartWidths] = useState({ left: DEFAULT_LEFT_WIDTH, right: DEFAULT_RIGHT_WIDTH });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workflowManagerOpen, setWorkflowManagerOpen] = useState(false);
   const [centerView, setCenterView] = useState('code');
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [devPort, setDevPort] = useState('3004');
   const [runtimeDevPort, setRuntimeDevPort] = useState('');
   const [permissionMode, setPermissionMode] = useState('edit_terminal');
   const [contextMode, setContextMode] = useState('auto');
   const [contextMaxFiles, setContextMaxFiles] = useState(120);
+  const [geminiModel, setGeminiModel] = useState(DEFAULT_GEMINI_MODEL);
+  const [claudeModel, setClaudeModel] = useState(DEFAULT_CLAUDE_MODEL);
+  const [kimiModel, setKimiModel] = useState(DEFAULT_KIMI_MODEL);
   const [ollamaModel, setOllamaModel] = useState(DEFAULT_OLLAMA_MODEL);
   const [ollamaModelArchitect, setOllamaModelArchitect] = useState(DEFAULT_OLLAMA_MODEL);
   const [ollamaModelCoder, setOllamaModelCoder] = useState(DEFAULT_OLLAMA_MODEL);
@@ -129,6 +150,48 @@ const AppContent = () => {
   const sessionLoadedRef = useRef(false);
 
   const { isAvailable: isElectronApiAvailable, message, showMessage } = useElectronAPI();
+
+  useEffect(() => {
+    if (!isElectronApiAvailable || currentProjectPath) return;
+    if (!window.electronAPI?.authorizeProjectPath) return;
+
+    let cancelled = false;
+    const restoreLastProject = async () => {
+      let lastProjectPath = '';
+      try {
+        lastProjectPath = localStorage.getItem('lastProjectPath') || '';
+      } catch {
+        lastProjectPath = '';
+      }
+      if (!lastProjectPath) return;
+
+      try {
+        const response = await window.electronAPI.authorizeProjectPath(lastProjectPath);
+        if (cancelled) return;
+        if (response?.success && response.path) {
+          setCurrentProjectPath(response.path);
+          return;
+        }
+        try {
+          localStorage.removeItem('lastProjectPath');
+        } catch {
+          // ignore
+        }
+        if (response?.error) {
+          showMessage(`Projet non restaure: ${response.error}`, 3500);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          showMessage(`Projet non restaure: ${error.message}`, 3500);
+        }
+      }
+    };
+
+    restoreLastProject();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectPath, isElectronApiAvailable, showMessage]);
 
   const bumpLibraryNonce = useCallback(() => {
     setLibraryNonce((n) => n + 1);
@@ -386,12 +449,12 @@ const AppContent = () => {
   const availableOllamaModels = useMemo(() => (
     Array.from(new Set([
       ...SUGGESTED_OLLAMA_MODELS,
-      ollamaModel,
-      ollamaModelArchitect,
-      ollamaModelCoder,
-      ollamaModelTester,
-      ...ollamaModels
-    ].map((model) => normalizeOllamaModelLabel(model)).filter(Boolean)))
+      normalizeOllamaModelLabel(ollamaModel),
+      normalizeOllamaModelLabel(ollamaModelArchitect, ollamaModel),
+      normalizeOllamaModelLabel(ollamaModelCoder, ollamaModel),
+      normalizeOllamaModelLabel(ollamaModelTester, ollamaModel),
+      ...ollamaModels.map((model) => String(model || '').trim()).filter(Boolean)
+    ].filter(Boolean)))
   ), [
     ollamaModel,
     ollamaModelArchitect,
@@ -399,6 +462,30 @@ const AppContent = () => {
     ollamaModelTester,
     ollamaModels
   ]);
+
+  const activeModelField = useMemo(() => {
+    if (aiProvider === 'claude') return 'claudeModel';
+    if (aiProvider === 'kimi') return 'kimiModel';
+    if (aiProvider === 'ollama') return 'ollamaModel';
+    if (aiProvider === 'gemini') return 'geminiModel';
+    return '';
+  }, [aiProvider]);
+
+  const activeModelValue = useMemo(() => {
+    if (aiProvider === 'claude') return claudeModel || DEFAULT_CLAUDE_MODEL;
+    if (aiProvider === 'kimi') return kimiModel || DEFAULT_KIMI_MODEL;
+    if (aiProvider === 'ollama') return resolvedOllamaModel;
+    if (aiProvider === 'gemini') return geminiModel || DEFAULT_GEMINI_MODEL;
+    return '';
+  }, [aiProvider, claudeModel, geminiModel, kimiModel, resolvedOllamaModel]);
+
+  const availableActiveModels = useMemo(() => {
+    if (aiProvider === 'ollama') return availableOllamaModels;
+    if (aiProvider === 'gemini') return getRemoteModelOptions('gemini', geminiModel);
+    if (aiProvider === 'claude') return getRemoteModelOptions('claude', claudeModel);
+    if (aiProvider === 'kimi') return getRemoteModelOptions('kimi', kimiModel);
+    return [];
+  }, [aiProvider, availableOllamaModels, claudeModel, geminiModel, kimiModel]);
 
   useEffect(() => {
     if (!activeFile) return;
@@ -426,10 +513,26 @@ const AppContent = () => {
       if (Array.isArray(parsed.openFiles)) setOpenFiles(parsed.openFiles);
       if (typeof parsed.activeFile === 'string') setActiveFile(parsed.activeFile);
       if (typeof parsed.centerView === 'string') setCenterView(parsed.centerView);
-      if (Number.isFinite(Number(parsed.leftWidth))) setLeftWidth(Number(parsed.leftWidth));
-      if (Number.isFinite(Number(parsed.rightWidth))) setRightWidth(Number(parsed.rightWidth));
-      if (Number.isFinite(Number(parsed.leftBackup))) setLeftBackup(Number(parsed.leftBackup));
-      if (Number.isFinite(Number(parsed.rightBackup))) setRightBackup(Number(parsed.rightBackup));
+      const savedLayoutVersion = Number(parsed.layoutDensityVersion || 0);
+      const shouldAdoptNewDensity = savedLayoutVersion < LAYOUT_DENSITY_VERSION;
+      const normalizeSavedWidth = (value, oldMin, oldMax, nextDefault) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return null;
+        if (shouldAdoptNewDensity && numeric >= oldMin && numeric <= oldMax) {
+          return nextDefault;
+        }
+        return numeric;
+      };
+
+      const savedLeftWidth = normalizeSavedWidth(parsed.leftWidth, 20, 24, DEFAULT_LEFT_WIDTH);
+      const savedRightWidth = normalizeSavedWidth(parsed.rightWidth, 26, 30, DEFAULT_RIGHT_WIDTH);
+      const savedLeftBackup = normalizeSavedWidth(parsed.leftBackup, 20, 24, DEFAULT_LEFT_WIDTH);
+      const savedRightBackup = normalizeSavedWidth(parsed.rightBackup, 26, 30, DEFAULT_RIGHT_WIDTH);
+
+      if (savedLeftWidth !== null) setLeftWidth(savedLeftWidth);
+      if (savedRightWidth !== null) setRightWidth(savedRightWidth);
+      if (savedLeftBackup !== null) setLeftBackup(savedLeftBackup);
+      if (savedRightBackup !== null) setRightBackup(savedRightBackup);
       if (typeof parsed.isLeftCollapsed === 'boolean') setIsLeftCollapsed(parsed.isLeftCollapsed);
       if (typeof parsed.isRightCollapsed === 'boolean') setIsRightCollapsed(parsed.isRightCollapsed);
       if (typeof parsed.isFocusMode === 'boolean') setIsFocusMode(parsed.isFocusMode);
@@ -453,6 +556,7 @@ const AppContent = () => {
         rightWidth,
         leftBackup,
         rightBackup,
+        layoutDensityVersion: LAYOUT_DENSITY_VERSION,
         isLeftCollapsed,
         isRightCollapsed,
         isFocusMode
@@ -498,9 +602,9 @@ const AppContent = () => {
       if (!totalWidth) return;
 
       const deltaPercent = ((e.clientX - dragStartX) / totalWidth) * 100;
-      const minLeft = 16;
+      const minLeft = 15;
       const minRight = 18;
-      const minMiddle = 30;
+      const minMiddle = 42;
 
       if (dragging === 'left') {
         let newLeft = clamp(startWidths.left + deltaPercent, minLeft, 100 - minMiddle - startWidths.right);
@@ -662,6 +766,9 @@ const AppContent = () => {
         setAiProvider(String(settings.defaultProvider));
       }
 
+      setGeminiModel(String(settings.geminiModel || DEFAULT_GEMINI_MODEL).trim() || DEFAULT_GEMINI_MODEL);
+      setClaudeModel(String(settings.claudeModel || DEFAULT_CLAUDE_MODEL).trim() || DEFAULT_CLAUDE_MODEL);
+      setKimiModel(String(settings.kimiModel || DEFAULT_KIMI_MODEL).trim() || DEFAULT_KIMI_MODEL);
       setOllamaModel(normalizeOllamaModelLabel(settings.ollamaModel));
       setOllamaModelArchitect(normalizeOllamaModelLabel(settings.ollamaModelArchitect, settings.ollamaModel));
       setOllamaModelCoder(normalizeOllamaModelLabel(settings.ollamaModelCoder, settings.ollamaModel));
@@ -772,6 +879,12 @@ const AppContent = () => {
     }
   }, [isElectronApiAvailable, showMessage]);
 
+  const handleAiProviderChange = useCallback(async (provider) => {
+    const nextProvider = String(provider || 'gemini');
+    setAiProvider(nextProvider);
+    await saveSettingsPatch({ defaultProvider: nextProvider }, `Assistant: ${nextProvider}`);
+  }, [saveSettingsPatch]);
+
   const handleOllamaSettingChange = useCallback(async (field, value) => {
     const normalizedValue = normalizeOllamaModelLabel(value);
     if (field === 'ollamaModel') {
@@ -786,6 +899,29 @@ const AppContent = () => {
 
     await saveSettingsPatch({ [field]: normalizedValue }, `Modele Ollama: ${normalizedValue}`);
   }, [saveSettingsPatch]);
+
+  const handleActiveModelChange = useCallback(async (value) => {
+    if (!activeModelField) return;
+
+    if (activeModelField === 'ollamaModel') {
+      await handleOllamaSettingChange(activeModelField, value);
+      return;
+    }
+
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) return;
+
+    if (activeModelField === 'geminiModel') {
+      setGeminiModel(normalizedValue);
+    } else if (activeModelField === 'claudeModel') {
+      setClaudeModel(normalizedValue);
+    } else if (activeModelField === 'kimiModel') {
+      setKimiModel(normalizedValue);
+    }
+
+    await saveSettingsPatch({ [activeModelField]: normalizedValue }, `Modele IA: ${normalizedValue}`);
+  }, [activeModelField, handleOllamaSettingChange, saveSettingsPatch]);
+
 
   useEffect(() => {
     setRuntimeDevPort('');
@@ -1039,12 +1175,12 @@ const AppContent = () => {
   }, [rightWidth, rightBackup]);
 
   const expandLeft = useCallback(() => {
-    setLeftWidth(leftBackup || 22);
+    setLeftWidth(leftBackup || DEFAULT_LEFT_WIDTH);
     setIsLeftCollapsed(false);
   }, [leftBackup]);
 
   const expandRight = useCallback(() => {
-    setRightWidth(rightBackup || 28);
+    setRightWidth(rightBackup || DEFAULT_RIGHT_WIDTH);
     setIsRightCollapsed(false);
   }, [rightBackup]);
 
@@ -1141,8 +1277,8 @@ const AppContent = () => {
     },
     {
       id: 'view-terminal',
-      label: 'Vue Terminal',
-      action: () => setCenterView('terminal')
+      label: 'Toggle Terminal',
+      action: () => setIsTerminalOpen(prev => !prev)
     },
     {
       id: 'view-git',
@@ -1726,13 +1862,17 @@ const AppContent = () => {
         isExpertMode={isExpertMode}
         onToggleExpertMode={() => setIsExpertMode((prev) => !prev)}
         aiProvider={aiProvider}
-        onAiProviderChange={setAiProvider}
+        onAiProviderChange={handleAiProviderChange}
+        activeModelValue={activeModelValue}
+        availableActiveModels={availableActiveModels}
+        onActiveModelChange={handleActiveModelChange}
         thinkingMode={thinkingMode}
         onThinkingModeChange={setThinkingMode}
         deepContextEnabled={deepContextEnabled}
         onDeepContextEnabledChange={setDeepContextEnabled}
         isElectronApiAvailable={isElectronApiAvailable}
         isLoading={isLoading}
+        multiAIState={multiAIState}
         resolvedOllamaModel={resolvedOllamaModel}
         resolvedOllamaArchitect={resolvedOllamaArchitect}
         resolvedOllamaCoder={resolvedOllamaCoder}
@@ -1751,6 +1891,10 @@ const AppContent = () => {
         isRightCollapsed={isRightCollapsed}
         onOpenWorkflowManager={() => setWorkflowManagerOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
+        theme={theme}
+        onThemeChange={setTheme}
+        isTerminalOpen={isTerminalOpen}
+        onToggleTerminal={() => setIsTerminalOpen(prev => !prev)}
       />
 
       <WorkspaceLayout
@@ -1787,6 +1931,8 @@ const AppContent = () => {
         gitPanelProps={gitPanelProps}
         workflowProps={workflowPanelProps}
         aiChatProps={aiChatProps}
+        isTerminalOpen={isTerminalOpen}
+        onToggleTerminal={() => setIsTerminalOpen(prev => !prev)}
       />
 
       <StatusBar
@@ -1800,6 +1946,7 @@ const AppContent = () => {
         deepContextEnabled={deepContextEnabled}
         contextMode={contextMode}
         ollamaStatusLabel={ollamaStatusLabel}
+        multiAIState={multiAIState}
         permissionMode={permissionMode}
         projectName={projectName}
       />
@@ -1817,6 +1964,8 @@ const AppContent = () => {
           onClose={() => setSettingsOpen(false)}
           isElectronApiAvailable={isElectronApiAvailable}
           showMessage={showMessage}
+          theme={theme}
+          onThemeChange={setTheme}
         />
       )}
 

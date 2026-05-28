@@ -36,7 +36,8 @@ const TerminalPanel = ({
   showMessage,
   permissionMode = 'edit_terminal',
   preferredDevPort = '3004',
-  onDevPortResolved
+  onDevPortResolved,
+  headerRightControls
 }) => {
   const [logs, setLogs] = useState({});
   const [running, setRunning] = useState({});
@@ -290,22 +291,26 @@ const TerminalPanel = ({
   }
 
   return (
-    <div className="terminal-panel">
-      <div className="terminal-tabs">
-        {TOP_TABS.map((tab) => {
-          const isActive = activeView === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveView(tab.id)}
-              className={`terminal-tab ${isActive ? 'is-active' : ''}`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
+    <div className="terminal-panel" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div className="bottom-terminal-header">
+        <div className="bottom-terminal-header-left">
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: 12 }}>Terminal</span>
+          {TOP_TABS.map((tab) => {
+            const isActive = activeView === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveView(tab.id)}
+                className={`bottom-terminal-title-btn ${isActive ? 'is-active' : ''}`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+        {headerRightControls}
       </div>
-      <div className="terminal-body">
+      <div className="bottom-terminal-content">
         {content}
       </div>
     </div>

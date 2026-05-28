@@ -565,7 +565,8 @@ const CodeEditor = ({
               theme="vibe-ide"
               options={{
                 fontFamily: 'var(--font-code)',
-                fontSize: 14,
+                fontSize: 15,
+                lineHeight: 23,
                 minimap: { enabled: false },
                 renderSideBySide: diffRenderSideBySide,
                 ignoreTrimWhitespace: false,
@@ -583,7 +584,8 @@ const CodeEditor = ({
               theme="vibe-ide"
               options={{
                 fontFamily: 'var(--font-code)',
-                fontSize: 14,
+                fontSize: 15,
+                lineHeight: 23,
                 minimap: { enabled: false },
                 tabSize: 2,
                 insertSpaces: true,

@@ -1,14 +1,191 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
-  AGENT_MODELS,
-  generateArchitectEngineerPrompt,
-  generateBackendDevPrompt,
-  generateChefDeProjetPrompt,
-  generateFrontendDevPrompt,
-  generateScrumMasterPrompt
+  generateCaptainFinalPrompt,
+  generateDynamicTeamAgentPrompt
 } from './aiPrompts';
 import useAISettingsSync from './useAISettingsSync';
 import useAIPendingChanges from './useAIPendingChanges';
+import { DEFAULT_OLLAMA_MODEL } from '../utils/ollamaModels';
+import { DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL, DEFAULT_KIMI_MODEL } from '../utils/remoteModels';
+import {
+  getProviderLabel,
+  normalizeAIProvider,
+  normalizeMultiAgentRoles
+} from '../utils/multiAgentConfig';
+import { buildTeamPlan, formatTeamPlanForPrompt } from '../utils/teamSelector';
+
+const MAX_MULTI_AI_EVENTS = 16;
+
+const normalizeMultiStepStatus = (status) => {
+  if (status === 'done' || status === 'completed') return 'completed';
+  if (status === 'active' || status === 'error') return status;
+  return 'pending';
+};
+
+const truncateMultiDetail = (value, fallback = '') => {
+  const safeValue = String(value || fallback || '').replace(/\s+/g, ' ').trim();
+  if (!safeValue) return '';
+  return safeValue.length > 180 ? `${safeValue.slice(0, 177)}...` : safeValue;
+};
+
+const createEmptyMultiAIState = () => ({
+  isActive: false,
+  mode: null,
+  runLabel: null,
+  currentPhase: null,
+  architectPlan: null,
+  approvedPlan: null,
+  startedAt: null,
+  finishedAt: null,
+  models: null,
+  requestedModels: null,
+  steps: [],
+  events: [],
+  error: null
+});
+
+const resolveMultiRoleKeyFromLabel = (label) => {
+  const safeLabel = String(label || '').toLowerCase();
+  if (safeLabel.includes('chef')) return 'chef';
+  if (safeLabel.includes('frontend')) return 'frontend';
+  if (safeLabel.includes('backend')) return 'backend';
+  if (safeLabel.includes('architecte')) return 'architect';
+  if (safeLabel.includes('codeur')) return 'coder';
+  if (safeLabel.includes('relecteur') || safeLabel.includes('reviewer')) return 'tester';
+  if (safeLabel.includes('scrum')) return 'scrum';
+  return null;
+};
+
+const appendMultiAIEvent = (events, nextEvent) => {
+  const safeEvents = Array.isArray(events) ? events : [];
+  const label = String(nextEvent?.label || 'Equipe IA').trim();
+  const status = normalizeMultiStepStatus(nextEvent?.status);
+  const detail = truncateMultiDetail(nextEvent?.detail, nextEvent?.text);
+  const roleKey = nextEvent?.roleKey || resolveMultiRoleKeyFromLabel(label);
+  const lastEvent = safeEvents[safeEvents.length - 1];
+
+  if (
+    lastEvent &&
+    lastEvent.label === label &&
+    lastEvent.status === status &&
+    lastEvent.detail === detail
+  ) {
+    return safeEvents;
+  }
+
+  const nextEvents = [
+    ...safeEvents.slice(-(MAX_MULTI_AI_EVENTS - 1)),
+    {
+      id: `${Date.now()}-${safeEvents.length}`,
+      at: Date.now(),
+      label,
+      status,
+      detail,
+      roleKey
+    }
+  ];
+
+  return nextEvents;
+};
+
+const buildDynamicTeamSteps = (teamPlan, statusByKey = {}) => (
+  (Array.isArray(teamPlan?.selectedAgents) ? teamPlan.selectedAgents : []).map((agent) => ({
+    key: agent.key,
+    label: agent.title,
+    provider: agent.providerLabel || getProviderLabel(agent.provider),
+    model: agent.model,
+    detail: agent.reason || agent.focus,
+    stage: agent.stage,
+    execution: agent.execution,
+    status: normalizeMultiStepStatus(statusByKey[agent.key])
+  }))
+);
+
+const buildOllamaMultiSteps = (models = {}, statusByKey = {}) => {
+  const baseSteps = [
+    {
+      key: 'architect',
+      label: '🏗️ Architecte',
+      provider: 'Ollama',
+      model: models.architect || null,
+      detail: 'Pose le plan technique et choisit la strategie.'
+    },
+    {
+      key: 'coder',
+      label: '💻 Codeur',
+      provider: 'Ollama',
+      model: models.coder || null,
+      detail: 'Produit le patch, les fichiers et les workflows.'
+    },
+    {
+      key: 'tester',
+      label: '🔍 Relecteur',
+      provider: 'Ollama',
+      model: models.tester || null,
+      detail: 'Verifie le patch, lance les checks et boucle si besoin.'
+    }
+  ];
+
+  return baseSteps.map((step) => ({
+    ...step,
+    status: normalizeMultiStepStatus(statusByKey[step.key])
+  }));
+};
+
+const updateMultiStepsFromEvent = (steps, { label, status, detail, models } = {}) => {
+  const safeSteps = Array.isArray(steps) ? steps : [];
+  const roleKey = resolveMultiRoleKeyFromLabel(label);
+  const normalizedStatus = normalizeMultiStepStatus(status);
+  const shortDetail = truncateMultiDetail(detail);
+
+  return safeSteps.map((step) => {
+    if (!step || typeof step !== 'object') return step;
+
+    const stepModel = models?.[step.key] || step.model || null;
+    const matchesRole = roleKey && step.key === roleKey;
+    const matchesLabel = label && (
+      step.label === label ||
+      String(label).startsWith(`${step.label} `)
+    );
+
+    if (!matchesRole && !matchesLabel) {
+      return stepModel && stepModel !== step.model ? { ...step, model: stepModel } : step;
+    }
+
+    return {
+      ...step,
+      status: normalizedStatus,
+      detail: shortDetail || step.detail,
+      model: stepModel
+    };
+  });
+};
+
+const markAllMultiStepsCompleted = (steps, models = null) => (
+  (Array.isArray(steps) ? steps : []).map((step) => {
+    if (!step || typeof step !== 'object') return step;
+    return {
+      ...step,
+      status: step.status === 'error' ? 'error' : 'completed',
+      model: models?.[step.key] || step.model || null
+    };
+  })
+);
+
+const markActiveMultiStepsErrored = (steps) => (
+  (Array.isArray(steps) ? steps : []).map((step) => {
+    if (!step || typeof step !== 'object') return step;
+    if (step.status !== 'active') return step;
+    return { ...step, status: 'error' };
+  })
+);
+
+const ROLE_PROVIDER_METHODS = {
+  gemini: 'getGeminiCompletion',
+  claude: 'getClaudeCompletion',
+  kimi: 'getKimiCompletion',
+  ollama: 'getOllamaCompletion'
+};
 
 export const useAI = (
   currentProjectPath,
@@ -43,19 +220,17 @@ export const useAI = (
     gemini: geminiApiKey,
     kimi: kimiApiKey,
     claude: claudeApiKey,
+    geminiModel,
+    claudeModel,
+    kimiModel,
     ollamaModel,
     ollamaModelArchitect,
     ollamaModelCoder,
-    ollamaModelTester
+    ollamaModelTester,
+    multiAgentRoles,
+    localAI: localAISettings
   } = apiKeys;
-  const [multiAIState, setMultiAIState] = useState({
-    isActive: false,
-    currentPhase: null,
-    architectPlan: null,
-    approvedPlan: null,
-    steps: [],
-    error: null
-  });
+  const [multiAIState, setMultiAIState] = useState(createEmptyMultiAIState);
   const [conversations, setConversations] = useState([]);
   const [activeConversationFile, setActiveConversationFile] = useState(null);
   const [isConversationLoading, setIsConversationLoading] = useState(false);
@@ -100,14 +275,7 @@ export const useAI = (
 
 
   const resetMultiAIState = useCallback(() => {
-    setMultiAIState({
-      isActive: false,
-      currentPhase: null,
-      architectPlan: null,
-      approvedPlan: null,
-      steps: [],
-      error: null
-    });
+    setMultiAIState(createEmptyMultiAIState());
   }, []);
 
   const stopGeneration = useCallback(() => {
@@ -439,267 +607,365 @@ export const useAI = (
         maxN8nCatalogItems: deepContextEnabled ? 200 : 80
       };
 
-      // Mode Multi-IA: 5 Agents (Hybride Kimi + Gemini)
+      const normalizedMultiAgentRoles = normalizeMultiAgentRoles(multiAgentRoles);
+      const getProviderApiKey = (provider) => {
+        if (provider === 'claude') return claudeApiKey;
+        if (provider === 'kimi') return kimiApiKey;
+        if (provider === 'gemini') return geminiApiKey;
+        return undefined;
+      };
+      const runMultiAgentRole = async ({
+        roleKey,
+        promptText,
+        codeContext = code,
+        projectFiles = allProjectFiles,
+        thinking = false,
+        maxTokens = 4096
+      }) => {
+        const roleConfig = normalizedMultiAgentRoles[roleKey] || {};
+        const provider = normalizeAIProvider(roleConfig.provider);
+        const methodName = ROLE_PROVIDER_METHODS[provider] || ROLE_PROVIDER_METHODS.gemini;
+        const providerOptions = {
+          model: roleConfig.model,
+          thinkingMode: thinking,
+          apiKey: getProviderApiKey(provider),
+          projectPath: currentProjectPath,
+          agent: activeAgent,
+          skill: activeSkill,
+          includeGlobalSkills: true,
+          skillsContent: Array.isArray(skills)
+            ? skills
+              .filter((s) => s && s.name && s.hasSkillMd !== false)
+              .map((s) => ({ name: s.name, scope: s.scope }))
+            : [],
+          maxTokens,
+          ...sharedAgentContextOptions
+        };
+
+        // For ollama, fall back to the globally configured model if role has no explicit model
+        if (provider === 'ollama' && !providerOptions.model) {
+          providerOptions.model = ollamaModel || DEFAULT_OLLAMA_MODEL;
+        }
+
+        if (provider === 'kimi') {
+          Object.assign(providerOptions, {
+            fastMode: true,
+            reactMode: false,
+            streamResponse: false,
+            maxHistoryMessages: 8,
+            contextFilesLimit: deepContextEnabled ? 16 : 8,
+            contextCharsPerFile: 1200
+          });
+        }
+
+        const method = window.electronAPI?.[methodName];
+        if (typeof method !== 'function') {
+          return {
+            success: false,
+            error: `Provider IA indisponible pour ${getProviderLabel(provider)}`
+          };
+        }
+
+        const response = await method(
+          [{ role: 'user', text: promptText }],
+          codeContext,
+          projectFiles,
+          providerOptions
+        );
+
+        return {
+          ...response,
+          provider,
+          model: roleConfig.model
+        };
+      };
+
+      const runWithConcurrency = async (items, limit, worker) => {
+        const safeItems = Array.isArray(items) ? items : [];
+        const safeLimit = Math.max(1, Math.floor(Number(limit) || 1));
+        const results = [];
+        let nextIndex = 0;
+
+        const runWorker = async () => {
+          while (nextIndex < safeItems.length) {
+            const currentIndex = nextIndex;
+            nextIndex += 1;
+            // eslint-disable-next-line no-await-in-loop
+            results[currentIndex] = await worker(safeItems[currentIndex], currentIndex);
+          }
+        };
+
+        await Promise.all(
+          Array.from({ length: Math.min(safeLimit, safeItems.length) }, () => runWorker())
+        );
+        return results.filter(Boolean);
+      };
+
+      const runAgentBatch = async ({
+        agents,
+        phase,
+        previousOutputs,
+        teamPlan,
+        teamPlanText,
+        projectContextStr
+      }) => {
+        const safeAgents = Array.isArray(agents) ? agents : [];
+        const localAgents = safeAgents.filter((agent) => agent.provider === 'ollama');
+        const cloudAgents = safeAgents.filter((agent) => agent.provider !== 'ollama');
+        const outputs = [];
+
+        const runOneAgent = async (agent) => {
+          setMultiAIState(prev => ({
+            ...prev,
+            currentPhase: agent.title,
+            steps: updateMultiStepsFromEvent(prev.steps, {
+              label: agent.title,
+              status: 'active',
+              detail: `${phase} - ${agent.reason || agent.focus}`,
+              models: prev.models
+            }),
+            events: appendMultiAIEvent(prev.events, {
+              label: agent.title,
+              status: 'active',
+              detail: `${phase} - ${agent.reason || agent.focus}`,
+              roleKey: agent.key
+            })
+          }));
+
+          const promptText = generateDynamicTeamAgentPrompt({
+            agent,
+            teamPlanText,
+            userRequest: promptToSend,
+            projectContext: projectContextStr,
+            currentCode: code,
+            previousOutputs,
+            phase
+          });
+
+          const response = await runMultiAgentRole({
+            roleKey: agent.key,
+            promptText,
+            projectFiles: allProjectFiles,
+            thinking: agent.stage === 'planning' || agent.stage === 'validation',
+            maxTokens: Math.min(
+              Number(teamPlan?.budget?.maxTokens) || 4096,
+              agent.canWrite ? 8192 : 4096
+            )
+          });
+
+          if (!response.success) {
+            throw new Error(`${agent.title}: ${response.error}`);
+          }
+
+          const output = {
+            agent,
+            roleKey: agent.key,
+            text: response.text,
+            provider: response.provider,
+            model: response.model
+          };
+
+          setAiConversationHistory(prev => [...prev, {
+            role: 'model',
+            text: `**[${agent.title}]**\n\n${response.text}`,
+            dynamicAgentKey: agent.key,
+            dynamicAgentTitle: agent.title,
+            agentProvider: getProviderLabel(response.provider),
+            agentModel: response.model
+          }]);
+
+          setMultiAIState(prev => ({
+            ...prev,
+            steps: updateMultiStepsFromEvent(prev.steps, {
+              label: agent.title,
+              status: 'completed',
+              detail: 'Termine',
+              models: prev.models
+            }),
+            events: appendMultiAIEvent(prev.events, {
+              label: agent.title,
+              status: 'completed',
+              detail: 'Sortie produite.',
+              roleKey: agent.key
+            })
+          }));
+
+          return output;
+        };
+
+        const [cloudOutputs, localOutputs] = await Promise.all([
+          runWithConcurrency(cloudAgents, teamPlan?.budget?.maxConcurrentCloud || 3, runOneAgent),
+          runWithConcurrency(localAgents, teamPlan?.budget?.maxConcurrentLocal || 1, runOneAgent)
+        ]);
+        outputs.push(...cloudOutputs, ...localOutputs);
+        return outputs;
+      };
+
+      // Mode Multi-IA: selectionneur + equipe dynamique adaptee a la demande.
       if (aiProvider === 'multi') {
-        const projectContextStr = JSON.stringify(allProjectFiles);
+        // Build a compact project context string (file paths + first 300 chars each) — NOT the full raw JSON
+        // Full allProjectFiles is still passed separately to each agent via projectFiles param
+        const buildCompactProjectContext = (projectFiles) => {
+          if (!projectFiles?.files) return 'Aucun contexte projet disponible.';
+          const entries = Object.entries(projectFiles.files).slice(0, 60);
+          let ctx = `Projet (${Object.keys(projectFiles.files).length} fichiers):\n`;
+          for (const [filePath, entry] of entries) {
+            const snippet = String(entry?.content || '').slice(0, 250).replace(/\n/g, ' ');
+            ctx += `- ${filePath}${snippet ? `: ${snippet}` : ''}\n`;
+          }
+          return ctx.slice(0, 8000);
+        };
+        const projectContextStr = buildCompactProjectContext(allProjectFiles);
+        let hardwareProfile = null;
+
+        if (
+          localAISettings?.optimizationMode === 'auto' &&
+          localAISettings?.hardwareConsent &&
+          window.electronAPI?.getSystemAIProfile
+        ) {
+          hardwareProfile = await window.electronAPI.getSystemAIProfile({ consent: true });
+        }
+
+        const teamPlan = buildTeamPlan({
+          userRequest: promptToSend,
+          projectFiles: allProjectFiles,
+          rolesConfig: normalizedMultiAgentRoles,
+          localAISettings,
+          hardwareProfile
+        });
+        const teamPlanText = formatTeamPlanForPrompt(teamPlan);
+        const multiAgentModelMap = (teamPlan.selectedAgents || []).reduce((acc, agent) => {
+          acc[agent.key] = agent.model;
+          return acc;
+        }, {});
 
         setMultiAIState({
+          ...createEmptyMultiAIState(),
           isActive: true,
-          currentPhase: 'chef-projet',
-          architectPlan: null,
+          mode: 'multi',
+          runLabel: `Equipe ${teamPlan.formationLabel}`,
+          currentPhase: 'Selectionneur',
+          architectPlan: teamPlanText,
           approvedPlan: null,
-          steps: [
-            { label: 'Chef de Projet (Gemini 2.5)', status: 'active', provider: 'Gemini' },
-            { label: 'Frontend Dev (Kimi-K2.5)', status: 'pending', provider: 'Together' },
-            { label: 'Backend Dev (Kimi-K2.5)', status: 'pending', provider: 'Together' },
-            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'pending', provider: 'Together' },
-            { label: 'Scrum Master (Gemini 2.5)', status: 'pending', provider: 'Gemini' }
-          ],
+          startedAt: Date.now(),
+          models: multiAgentModelMap,
+          requestedModels: teamPlan.selectedAgents,
+          steps: buildDynamicTeamSteps(teamPlan, { selector: 'completed' }),
+          events: appendMultiAIEvent([], {
+            label: 'Selectionneur',
+            status: 'completed',
+            detail: `${teamPlan.formationLabel}: ${teamPlan.budget?.reason || 'budget etabli'}`,
+            roleKey: 'selector'
+          }),
           error: null
         });
 
-        // ===== PHASE 1: CHEF DE PROJET (GEMINI) =====
-        showMessage("Phase 1/5: Le Chef de Projet (Gemini 2.5) analyse...", 3000);
-        const chefPromptText = generateChefDeProjetPrompt(prompt, projectContextStr, code);
+        setAiConversationHistory(prev => [...prev, {
+          role: 'model',
+          text: `**[Selectionneur - TeamPlan]**\n\n${teamPlanText}`,
+          dynamicAgentKey: 'selector',
+          dynamicAgentTitle: 'Selectionneur',
+          agentProvider: 'Local',
+          agentModel: 'heuristique'
+        }]);
 
-        // Utilisation de l'API GEMINI pour le Chef de Projet
-        const chefResponse = await window.electronAPI.getGeminiCompletion(
-          [{ role: 'user', text: chefPromptText }],
-          code,
-          allProjectFiles,
-          {
-            model: AGENT_MODELS.chefDeProjet,
-            thinkingMode: true,
-            apiKey: geminiApiKey, // Utilise la clé Gemini
-            projectPath: currentProjectPath,
-            agent: activeAgent,
-            skill: activeSkill,
-            ...sharedAgentContextOptions
-          }
-        );
+        showMessage(`Equipe: ${teamPlan.formationLabel} (${teamPlan.selectedAgents.length} agents)`, 3000);
 
-        if (!chefResponse.success) {
-          throw new Error(`Chef de Projet: ${chefResponse.error}`);
+        const outputs = [];
+        const agentsByStage = (stage) => teamPlan.selectedAgents.filter((agent) => agent.stage === stage && agent.key !== 'selector');
+
+        const analysisOutputs = await runAgentBatch({
+          agents: agentsByStage('analysis'),
+          phase: 'Analyse parallele',
+          previousOutputs: outputs,
+          teamPlan,
+          teamPlanText,
+          projectContextStr
+        });
+        outputs.push(...analysisOutputs);
+
+        const planningOutputs = await runAgentBatch({
+          agents: agentsByStage('planning'),
+          phase: 'Plan de jeu',
+          previousOutputs: outputs,
+          teamPlan,
+          teamPlanText,
+          projectContextStr
+        });
+        outputs.push(...planningOutputs);
+
+        const implementationOutputs = await runAgentBatch({
+          agents: agentsByStage('implementation'),
+          phase: 'Implementation',
+          previousOutputs: outputs,
+          teamPlan,
+          teamPlanText,
+          projectContextStr
+        });
+        outputs.push(...implementationOutputs);
+
+        const validationOutputs = await runAgentBatch({
+          agents: agentsByStage('validation'),
+          phase: 'Validation',
+          previousOutputs: outputs,
+          teamPlan,
+          teamPlanText,
+          projectContextStr
+        });
+        outputs.push(...validationOutputs);
+
+        const finalPrompt = generateCaptainFinalPrompt({
+          teamPlanText,
+          userRequest: promptToSend,
+          previousOutputs: outputs
+        });
+        const captainAgent = teamPlan.selectedAgents.find((agent) => agent.key === 'captain');
+        const captainResponse = captainAgent
+          ? await runMultiAgentRole({
+            roleKey: 'captain',
+            promptText: finalPrompt,
+            projectFiles: allProjectFiles,
+            thinking: true,
+            maxTokens: Math.min(Number(teamPlan?.budget?.maxTokens) || 4096, 4096)
+          })
+          : { success: true, text: 'Aucun capitaine selectionne.' };
+
+        if (!captainResponse.success) {
+          throw new Error(`Capitaine Projet: ${captainResponse.error}`);
         }
 
-        const cahierDesCharges = chefResponse.text;
+        const artifactsText = outputs
+          .filter((output) => output?.agent?.canWrite)
+          .map((output) => `\n\n## Artefacts - ${output.agent.title}\n${output.text}`)
+          .join('');
+        const finalDeliverable = `## TeamPlan\n${teamPlanText}\n\n## Synthese Capitaine\n${captainResponse.text}\n${artifactsText}`;
 
         setMultiAIState(prev => ({
           ...prev,
-          architectPlan: cahierDesCharges,
-          currentPhase: 'frontend-dev',
-          steps: [
-            { label: 'Chef de Projet (Gemini 2.5)', status: 'completed', provider: 'Gemini' },
-            { label: 'Frontend Dev (Kimi-K2.5)', status: 'active', provider: 'Together' },
-            { label: 'Backend Dev (Kimi-K2.5)', status: 'pending', provider: 'Together' },
-            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'pending', provider: 'Together' },
-            { label: 'Scrum Master (Gemini 2.5)', status: 'pending', provider: 'Gemini' }
-          ]
+          isActive: false,
+          currentPhase: 'Equipe terminee',
+          finishedAt: Date.now(),
+          steps: markAllMultiStepsCompleted(prev.steps, multiAgentModelMap),
+          events: appendMultiAIEvent(prev.events, {
+            label: '✅ Equipe multi-agent',
+            status: 'completed',
+            detail: `${teamPlan.formationLabel} terminee.`
+          })
         }));
 
         setAiConversationHistory(prev => [...prev, {
           role: 'model',
-          text: `**[🎯 CHEF DE PROJET]**\n\n${cahierDesCharges}`,
-          isChefDeProjet: true
+          text: `**[Capitaine Projet - LIVRABLE FINAL]**\n\n${finalDeliverable}`,
+          dynamicAgentKey: 'captain',
+          dynamicAgentTitle: 'Capitaine Projet',
+          agentProvider: captainResponse.provider ? getProviderLabel(captainResponse.provider) : 'Local',
+          agentModel: captainResponse.model || 'synthese'
         }]);
 
-        // ===== PHASE 2: FRONTEND DEV (KIMI) =====
-        showMessage("Phase 2/5: Le Frontend Dev (Kimi) code l'interface...", 3000);
-        const frontendPromptText = generateFrontendDevPrompt(cahierDesCharges, projectContextStr, code);
-
-        const frontendResponse = await window.electronAPI.getKimiCompletion(
-          [{ role: 'user', text: frontendPromptText }],
-          code,
-          allProjectFiles,
-          {
-            model: AGENT_MODELS.frontendDev, // Kimi K2.5
-            thinkingMode: false,
-            apiKey: kimiApiKey, // Utilise la clé Together
-            projectPath: currentProjectPath,
-            agent: activeAgent,
-            skill: activeSkill,
-            fastMode: true,
-            reactMode: false,
-            includeProjectContext: false,
-            includeGlobalSkills: false,
-            maxTokens: 4096,
-            ...sharedAgentContextOptions
-          }
-        );
-
-        if (!frontendResponse.success) {
-          throw new Error(`Frontend Dev: ${frontendResponse.error}`);
-        }
-
-        const frontendCode = frontendResponse.text;
-
-        setMultiAIState(prev => ({
-          ...prev,
-          currentPhase: 'backend-dev',
-          steps: [
-            { label: 'Chef de Projet (Gemini 2.0)', status: 'completed', provider: 'Gemini' },
-            { label: 'Frontend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
-            { label: 'Backend Dev (Kimi-K2.5)', status: 'active', provider: 'Together' },
-            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'pending', provider: 'Together' },
-            { label: 'Scrum Master (Gemini 2.0)', status: 'pending', provider: 'Gemini' }
-          ]
-        }));
-
-        setAiConversationHistory(prev => [...prev, {
-          role: 'model',
-          text: `**[🎨 FRONTEND DEV]**\n\n${frontendCode}`,
-          isFrontendDev: true
-        }]);
-
-        // ===== PHASE 3: BACKEND DEV (KIMI) =====
-        showMessage("Phase 3/5: Le Backend Dev (Kimi) code le serveur...", 3000);
-        const backendPromptText = generateBackendDevPrompt(cahierDesCharges, prompt, projectContextStr, code);
-
-        const backendResponse = await window.electronAPI.getKimiCompletion(
-          [{ role: 'user', text: backendPromptText }],
-          code,
-          allProjectFiles,
-          {
-            model: AGENT_MODELS.backendDev,
-            thinkingMode: false,
-            apiKey: kimiApiKey,
-            projectPath: currentProjectPath,
-            agent: activeAgent,
-            skill: activeSkill,
-            fastMode: true,
-            reactMode: false,
-            includeProjectContext: false,
-            includeGlobalSkills: false,
-            maxTokens: 4096,
-            ...sharedAgentContextOptions
-          }
-        );
-
-        if (!backendResponse.success) {
-          throw new Error(`Backend Dev: ${backendResponse.error}`);
-        }
-
-        const backendCode = backendResponse.text;
-
-        setMultiAIState(prev => ({
-          ...prev,
-          currentPhase: 'architect-engineer',
-          steps: [
-            { label: 'Chef de Projet (Gemini 2.0)', status: 'completed', provider: 'Gemini' },
-            { label: 'Frontend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
-            { label: 'Backend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
-            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'active', provider: 'Together' },
-            { label: 'Scrum Master (Gemini 2.0)', status: 'pending', provider: 'Gemini' }
-          ]
-        }));
-
-        setAiConversationHistory(prev => [...prev, {
-          role: 'model',
-          text: `**[⚙️ BACKEND DEV]**\n\n${backendCode}`,
-          isBackendDev: true
-        }]);
-
-        // ===== PHASE 4: ARCHITECTE ENGINEER (KIMI) =====
-        showMessage("Phase 4/5: L'Architecte (Kimi) vérifie la cohérence...", 3000);
-        const architectPromptText = generateArchitectEngineerPrompt(cahierDesCharges, frontendCode, backendCode, prompt, projectContextStr);
-
-        const architectResponse = await window.electronAPI.getKimiCompletion(
-          [{ role: 'user', text: architectPromptText }],
-          code,
-          null,
-          {
-            model: AGENT_MODELS.architectEngineer,
-            thinkingMode: true,
-            apiKey: kimiApiKey,
-            projectPath: currentProjectPath,
-            agent: activeAgent,
-            skill: activeSkill,
-            fastMode: true,
-            reactMode: false,
-            includeProjectContext: false,
-            includeGlobalSkills: false,
-            maxTokens: 4096,
-            ...sharedAgentContextOptions
-          }
-        );
-
-        if (!architectResponse.success) {
-          throw new Error(`Architecte Engineer: ${architectResponse.error}`);
-        }
-
-        const architectReview = architectResponse.text;
-
-        setMultiAIState(prev => ({
-          ...prev,
-          currentPhase: 'scrum-master',
-          steps: [
-            { label: 'Chef de Projet (Gemini 2.0)', status: 'completed', provider: 'Gemini' },
-            { label: 'Frontend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
-            { label: 'Backend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
-            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'completed', provider: 'Together' },
-            { label: 'Scrum Master (Gemini 2.0)', status: 'active', provider: 'Gemini' }
-          ]
-        }));
-
-        setAiConversationHistory(prev => [...prev, {
-          role: 'model',
-          text: `**[🏗️ ARCHITECTE ENGINEER]**\n\n${architectReview}`,
-          isArchitectEngineer: true
-        }]);
-
-        // ===== PHASE 5: SCRUM MASTER (GEMINI) =====
-        showMessage("Phase 5/5: Le Scrum Master (Gemini) prépare le livrable final...", 3000);
-        const scrumPromptText = generateScrumMasterPrompt(cahierDesCharges, frontendCode, backendCode, architectReview, prompt);
-
-        // Utilisation de l'API GEMINI pour le Scrum Master
-        const scrumResponse = await window.electronAPI.getGeminiCompletion(
-          [{ role: 'user', text: scrumPromptText }],
-          code,
-          allProjectFiles,
-          {
-            model: AGENT_MODELS.scrumMaster,
-            thinkingMode: true,
-            apiKey: geminiApiKey, // Utilise la clé Gemini
-            projectPath: currentProjectPath,
-            agent: activeAgent,
-            skill: activeSkill,
-            ...sharedAgentContextOptions
-          }
-        );
-
-        if (!scrumResponse.success) {
-          throw new Error(`Scrum Master: ${scrumResponse.error}`);
-        }
-
-        const finalDeliverable = scrumResponse.text;
-
-        setMultiAIState(prev => ({
-          ...prev,
-          currentPhase: 'completed',
-          steps: [
-            { label: 'Chef de Projet (Gemini 2.0)', status: 'completed', provider: 'Gemini' },
-            { label: 'Frontend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
-            { label: 'Backend Dev (Kimi-K2.5)', status: 'completed', provider: 'Together' },
-            { label: 'Architecte Engineer (Kimi-K2.5)', status: 'completed', provider: 'Together' },
-            { label: 'Scrum Master (Gemini 2.0)', status: 'completed', provider: 'Gemini' }
-          ]
-        }));
-
-        // Ajouter le livrable final à l'historique
-        setAiConversationHistory(prev => [...prev, {
-          role: 'model',
-          text: `**[📋 SCRUM MASTER - LIVRABLE FINAL]**\n\n${finalDeliverable}`,
-          isScrumMaster: true
-        }]);
-
-        // Appliquer les modifications de fichiers depuis le livrable final
         await processAIFileModifications(finalDeliverable);
         await autoSaveConversation(updatedHistory.concat([{ role: 'model', text: finalDeliverable }]));
 
-        showMessage("Multi-IA (5 Agents Kimi/Gemini) terminé avec succès ! 🎉", 4000);
-
-        // Réinitialiser après un délai
-        setTimeout(() => resetMultiAIState(), 3000);
+        showMessage("Multi-IA dynamique terminee avec succes ! 🎉", 4000);
 
 
       } else {
@@ -716,7 +982,7 @@ export const useAI = (
             );
 
           const kimiOptions = {
-            model: 'moonshotai/Kimi-K2.5',
+            model: kimiModel || DEFAULT_KIMI_MODEL,
             thinkingMode,
             images,
             apiKey: kimiApiKey,
@@ -743,34 +1009,59 @@ export const useAI = (
           );
         } else if (aiProvider === 'ollama-multi') {
           // Multi-Ollama: 3 agents séquentiels avec steps live
-          const multiSteps = [
-            { label: '🏗️ Architecte', status: 'pending' },
-            { label: '💻 Codeur', status: 'pending' },
-            { label: '🔍 Relecteur', status: 'pending' }
-          ];
-          setMultiAIState({ isActive: true, currentPhase: '🏗️ Architecte...', steps: multiSteps, error: null });
+          const requestedModels = {
+            architect: ollamaModelArchitect || ollamaModel || DEFAULT_OLLAMA_MODEL,
+            coder: ollamaModelCoder || ollamaModel || DEFAULT_OLLAMA_MODEL,
+            tester: ollamaModelTester || ollamaModel || DEFAULT_OLLAMA_MODEL
+          };
+          const multiSteps = buildOllamaMultiSteps(requestedModels, { architect: 'active' });
+          setMultiAIState({
+            ...createEmptyMultiAIState(),
+            isActive: true,
+            mode: 'ollama-multi',
+            runLabel: 'Swarm Ollama',
+            currentPhase: '🏗️ Architecte',
+            startedAt: Date.now(),
+            models: requestedModels,
+            requestedModels,
+            steps: multiSteps,
+            events: appendMultiAIEvent([], {
+              label: '🏗️ Architecte',
+              status: 'active',
+              detail: 'Le swarm demarre par le plan technique.',
+              roleKey: 'architect'
+            }),
+            error: null
+          });
 
           if (window.electronAPI?.onOllamaMultiStep) {
             offOllamaMultiStepListener = window.electronAPI.onOllamaMultiStep((data) => {
               const safeData = data && typeof data === 'object' ? data : {};
               setMultiAIState(prev => ({
                 ...prev,
-                currentPhase: safeData.status === 'active' ? (safeData.label || prev.currentPhase) : prev.currentPhase,
-                steps: (Array.isArray(prev.steps) ? prev.steps : []).map((s) => {
-                  if (!s || typeof s !== 'object') return s;
-                  return safeData.label === s.label || String(safeData.label || '').startsWith(`${s.label} `)
-                    ? { ...s, status: safeData.status }
-                    : s;
+                currentPhase: safeData.status === 'active'
+                  ? (safeData.label || prev.currentPhase)
+                  : prev.currentPhase,
+                steps: updateMultiStepsFromEvent(prev.steps, {
+                  label: safeData.label,
+                  status: safeData.status,
+                  detail: safeData.text,
+                  models: prev.models
+                }),
+                events: appendMultiAIEvent(prev.events, {
+                  label: safeData.label,
+                  status: safeData.status,
+                  detail: safeData.text
                 })
               }));
             });
           }
 
           const ollamaMultiOptions = {
-            model: ollamaModel || 'qwen3:8b',
-            modelArchitect: ollamaModelArchitect || ollamaModel || 'qwen3:8b',
-            modelCoder: ollamaModelCoder || ollamaModel || 'qwen3:8b',
-            modelTester: ollamaModelTester || ollamaModel || 'qwen3:8b',
+            model: ollamaModel || DEFAULT_OLLAMA_MODEL,
+            modelArchitect: ollamaModelArchitect || ollamaModel || DEFAULT_OLLAMA_MODEL,
+            modelCoder: ollamaModelCoder || ollamaModel || DEFAULT_OLLAMA_MODEL,
+            modelTester: ollamaModelTester || ollamaModel || DEFAULT_OLLAMA_MODEL,
             projectPath: currentProjectPath,
             agent: activeAgent,
             skill: activeSkill,
@@ -785,7 +1076,38 @@ export const useAI = (
           response = await window.electronAPI.getOllamaMultiCompletion(
             [...aiConversationHistory, Object.assign({}, newMessage, { text: promptToSend })], code, allProjectFiles, ollamaMultiOptions
           );
-          setMultiAIState({ isActive: false, currentPhase: null, steps: [], error: null });
+          if (response?.success) {
+            const resolvedModels = response.models || requestedModels;
+            setMultiAIState(prev => ({
+              ...prev,
+              isActive: false,
+              currentPhase: 'Swarm termine',
+              finishedAt: Date.now(),
+              models: resolvedModels,
+              requestedModels: response.requestedModels || prev.requestedModels,
+              steps: markAllMultiStepsCompleted(prev.steps, resolvedModels),
+              events: appendMultiAIEvent(prev.events, {
+                label: '✅ Swarm Ollama',
+                status: 'completed',
+                detail: 'Architecture, patch et relecture termines.'
+              }),
+              error: null
+            }));
+          } else {
+            setMultiAIState(prev => ({
+              ...prev,
+              isActive: false,
+              currentPhase: 'Erreur swarm',
+              finishedAt: Date.now(),
+              steps: markActiveMultiStepsErrored(prev.steps),
+              events: appendMultiAIEvent(prev.events, {
+                label: '❌ Swarm Ollama',
+                status: 'error',
+                detail: response?.error || 'Erreur inconnue'
+              }),
+              error: response?.error || 'Erreur inconnue'
+            }));
+          }
 
         } else if (aiProvider === 'claude') {
           const images = updatedHistory
@@ -798,7 +1120,7 @@ export const useAI = (
             );
 
           const claudeOptions = {
-            model: 'claude-4.6',
+            model: claudeModel || DEFAULT_CLAUDE_MODEL,
             thinkingMode,
             images,
             apiKey: claudeApiKey,
@@ -817,7 +1139,7 @@ export const useAI = (
 
         } else if (aiProvider === 'ollama') {
           const ollamaOptions = {
-            model: ollamaModel || 'qwen3:8b',
+            model: ollamaModel || DEFAULT_OLLAMA_MODEL,
             projectPath: currentProjectPath,
             agent: activeAgent,
             skill: activeSkill,
@@ -831,6 +1153,7 @@ export const useAI = (
           );
         } else {
           const geminiOptions = {
+            model: geminiModel || DEFAULT_GEMINI_MODEL,
             thinkingMode,
             apiKey: geminiApiKey,
             projectPath: currentProjectPath,
@@ -865,7 +1188,19 @@ export const useAI = (
       } else {
         showMessage(`Erreur IA: ${error.message}`, 5000);
       }
-      setMultiAIState(prev => ({ ...prev, currentPhase: 'error', error: error.message }));
+      setMultiAIState(prev => ({
+        ...prev,
+        isActive: false,
+        currentPhase: 'Erreur equipe',
+        finishedAt: prev?.finishedAt || Date.now(),
+        steps: markActiveMultiStepsErrored(prev.steps),
+        events: appendMultiAIEvent(prev.events, {
+          label: prev?.currentPhase || 'Equipe IA',
+          status: 'error',
+          detail: error.message
+        }),
+        error: error.message
+      }));
     } finally {
       if (typeof offOllamaMultiStepListener === 'function') {
         offOllamaMultiStepListener();
@@ -891,16 +1226,20 @@ export const useAI = (
     geminiApiKey,
     kimiApiKey,
     claudeApiKey,
+    geminiModel,
+    claudeModel,
+    kimiModel,
     ollamaModel,
     ollamaModelArchitect,
     ollamaModelCoder,
     ollamaModelTester,
+    multiAgentRoles,
+    localAISettings,
     activeAgent,
     activeSkill,
     skills,
     processAIFileModifications,
     autoSaveConversation,
-    resetMultiAIState,
     pendingImages,
     isLoading,
     updateContextEstimate,

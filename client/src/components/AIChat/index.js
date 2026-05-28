@@ -49,6 +49,29 @@ const extractStreamingWorkflowDraft = (text) => {
   };
 };
 
+const normalizeMultiStatus = (status) => {
+  if (status === 'done' || status === 'completed') return 'completed';
+  if (status === 'active' || status === 'error') return status;
+  return 'pending';
+};
+
+const getMultiStatusLabel = (status) => {
+  if (status === 'completed') return 'Termine';
+  if (status === 'active') return 'En cours';
+  if (status === 'error') return 'Erreur';
+  return 'En attente';
+};
+
+const formatMultiDuration = (startedAt, finishedAt) => {
+  if (!startedAt) return '';
+  const endTime = finishedAt || Date.now();
+  const deltaSeconds = Math.max(1, Math.round((endTime - startedAt) / 1000));
+  if (deltaSeconds < 60) return `${deltaSeconds}s`;
+  const minutes = Math.floor(deltaSeconds / 60);
+  const seconds = deltaSeconds % 60;
+  return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds}s`;
+};
+
 const AIChat = ({
   prompt,
   conversationHistory,
@@ -414,7 +437,32 @@ const AIChat = ({
 
   const canApplyPending = permissionMode !== 'read_only';
   const safeMultiSteps = Array.isArray(multiAIState?.steps) ? multiAIState.steps : [];
-  const safeCurrentStepIndex = safeMultiSteps.findIndex((s) => s?.status === 'active');
+  const safeMultiEvents = Array.isArray(multiAIState?.events) ? multiAIState.events : [];
+  const safeCurrentStepIndex = safeMultiSteps.findIndex((s) => normalizeMultiStatus(s?.status) === 'active');
+  const completedMultiCount = safeMultiSteps.filter((step) => normalizeMultiStatus(step?.status) === 'completed').length;
+  const showMultiRunPanel = Boolean(
+    multiAIState?.mode && (
+      multiAIState?.isActive ||
+      safeMultiSteps.length > 0 ||
+      safeMultiEvents.length > 0 ||
+      multiAIState?.error
+    )
+  );
+  const multiRunStatus = multiAIState?.error
+    ? 'error'
+    : multiAIState?.isActive
+      ? 'running'
+      : showMultiRunPanel
+        ? 'completed'
+        : 'idle';
+  const multiRunStatusLabel = multiRunStatus === 'running'
+    ? 'Equipe en cours'
+    : multiRunStatus === 'error'
+      ? 'Equipe en erreur'
+      : 'Dernier run conserve';
+  const multiRunTitle = multiAIState?.runLabel
+    || (multiAIState?.mode === 'ollama-multi' ? 'Swarm Ollama' : 'Equipe IA');
+  const multiRunDuration = formatMultiDuration(multiAIState?.startedAt, multiAIState?.finishedAt);
   const currentWorkflowAnimStep = WORKFLOW_STREAM_STEPS[workflowAnimStep] || WORKFLOW_STREAM_STEPS[0];
   const streamingFileDraft = useMemo(() => extractStreamingFileDraft(streamingText), [streamingText]);
   const streamingWorkflowDraft = useMemo(() => extractStreamingWorkflowDraft(streamingText), [streamingText]);
@@ -513,7 +561,9 @@ const AIChat = ({
           </div>
         )}
         {streamingMode === 'text' && (
-          <pre className="ai-stream-text">{streamingText}</pre>
+          <pre className="ai-stream-text">
+            {streamingText ? streamingText.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trimStart() : ''}
+          </pre>
         )}
       </div>
     );
@@ -557,6 +607,11 @@ const AIChat = ({
     return change.filePath === activeFile;
   };
 
+  const buildAgentBadgeLabel = (msg, baseLabel) => {
+    const provider = String(msg?.agentProvider || '').trim();
+    return provider ? `${baseLabel} (${provider})` : baseLabel;
+  };
+
   const getRoleMeta = (msg) => {
     if (msg.role === 'system') {
       return {
@@ -576,10 +631,19 @@ const AIChat = ({
       };
     }
 
-    // 5 Agents Multi-IA
+    if (msg.dynamicAgentTitle) {
+      return {
+        label: buildAgentBadgeLabel(msg, msg.dynamicAgentTitle),
+        badgeClass: 'chat-badge-model',
+        bubbleClass: 'chat-bubble-model',
+        alignClass: 'chat-row-ai'
+      };
+    }
+
+    // Agents Multi-IA historiques
     if (msg.isChefDeProjet) {
       return {
-        label: '🎯 Chef (Gemini 2.5)',
+        label: buildAgentBadgeLabel(msg, '🎯 Chef'),
         badgeClass: 'chat-badge-chef-projet',
         bubbleClass: 'chat-bubble-chef-projet',
         alignClass: 'chat-row-ai'
@@ -588,7 +652,7 @@ const AIChat = ({
 
     if (msg.isFrontendDev) {
       return {
-        label: '🎨 Front (Kimi)',
+        label: buildAgentBadgeLabel(msg, '🎨 Front'),
         badgeClass: 'chat-badge-frontend-dev',
         bubbleClass: 'chat-bubble-frontend-dev',
         alignClass: 'chat-row-ai'
@@ -597,7 +661,7 @@ const AIChat = ({
 
     if (msg.isBackendDev) {
       return {
-        label: '⚙️ Back (Kimi)',
+        label: buildAgentBadgeLabel(msg, '⚙️ Back'),
         badgeClass: 'chat-badge-backend-dev',
         bubbleClass: 'chat-bubble-backend-dev',
         alignClass: 'chat-row-ai'
@@ -606,7 +670,7 @@ const AIChat = ({
 
     if (msg.isArchitectEngineer || msg.isArchitect) {
       return {
-        label: '🏗️ Archi (Kimi)',
+        label: buildAgentBadgeLabel(msg, '🏗️ Archi'),
         badgeClass: 'chat-badge-architect',
         bubbleClass: 'chat-bubble-architect',
         alignClass: 'chat-row-ai'
@@ -615,7 +679,7 @@ const AIChat = ({
 
     if (msg.isScrumMaster) {
       return {
-        label: '📋 Scrum (Gemini 2.5)',
+        label: buildAgentBadgeLabel(msg, '📋 Scrum'),
         badgeClass: 'chat-badge-scrum-master',
         bubbleClass: 'chat-bubble-scrum-master',
         alignClass: 'chat-row-ai'
@@ -701,128 +765,140 @@ const AIChat = ({
   };
 
   return (
-    <div className="ai-chat-container">
-      <div className="ai-header">
-        <div className="ai-header-left">
-          <div className="ai-title">Agent IA</div>
-          <div className="ai-subtitle">{headerTitle}</div>
+    <div className="ai-chat-root">
+      {/* ===== HEADER ===== */}
+      <div className="ai-chat-header">
+        <div className="ai-chat-header-top">
+          <div className="ai-chat-agent-info">
+            <div className="ai-chat-avatar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 8V4H8" /><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M9 13v2" /><path d="M15 13v2" />
+              </svg>
+              <span className="ai-chat-avatar-dot" />
+            </div>
+            <div>
+              <div className="ai-chat-agent-name">Agent IA</div>
+              <div className="ai-chat-agent-session">{headerTitle}</div>
+            </div>
+          </div>
+
+          <div className="ai-chat-header-actions">
+            <button
+              type="button"
+              onClick={() => { if (onNewConversation) onNewConversation(); setShowConversations(false); }}
+              className="ai-header-btn"
+              disabled={!currentProjectPath || !isElectronApiAvailable}
+              title="Nouvelle conversation"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowConversations(prev => !prev)}
+              className="ai-header-btn"
+              disabled={!currentProjectPath || !isElectronApiAvailable}
+              title="Historique"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+            </button>
+            <button
+              onClick={onSaveConversation}
+              className="ai-header-btn"
+              disabled={!currentProjectPath || conversationHistory.length === 0 || !isElectronApiAvailable}
+              title="Sauvegarder"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Context Bar */}
+        <div className="ai-chat-context-bar">
           {globalSkillsCount > 0 && (
-            <div title={`${globalSkillsCount} skills globaux injectés automatiquement dans chaque requête IA`} style={{
-              display: 'inline-flex', alignItems: 'center', gap: '4px',
-              background: '#00c49a18', border: '1px solid #00c49a44',
-              borderRadius: '20px', padding: '2px 8px',
-              color: '#00c49a', fontSize: '11px', fontWeight: 600,
-              cursor: 'help', marginTop: '2px'
-            }}>
-              ⚡ {globalSkillsCount} skills actifs
+            <span className="ai-chat-skills-badge" title={`${globalSkillsCount} skills globaux actifs`}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+              {globalSkillsCount} skills actifs
+            </span>
+          )}
+          {contextEstimate && (
+            <div className="ai-chat-metrics">
+              <div className="ai-chat-metric">
+                <span className="ai-chat-metric-val">{Number(contextEstimate.contextChars || 0).toLocaleString('fr-FR')}</span>
+                <span className="ai-chat-metric-label">Contexte</span>
+              </div>
+              <div className="ai-chat-metric">
+                <span className="ai-chat-metric-val">{Number(contextEstimate.promptChars || 0).toLocaleString('fr-FR')}</span>
+                <span className="ai-chat-metric-label">Prompt</span>
+              </div>
+              <div className="ai-chat-metric">
+                <span className="ai-chat-metric-val">{Number(contextEstimate.estimatedTokens || 0).toLocaleString('fr-FR')}</span>
+                <span className="ai-chat-metric-label">Tokens est.</span>
+              </div>
+              <div className="ai-chat-metric">
+                <span className="ai-chat-metric-val">${Number(contextEstimate.estimatedCostUsd || 0).toFixed(4)}</span>
+                <span className="ai-chat-metric-label">Coût est.</span>
+              </div>
             </div>
           )}
         </div>
-
-        <div className="ai-controls">
-          <button
-            type="button"
-            onClick={() => {
-              if (onNewConversation) {
-                onNewConversation();
-              }
-              setShowConversations(false);
-            }}
-            className="ai-control-btn"
-            disabled={!currentProjectPath || !isElectronApiAvailable}
-          >
-            Nouveau
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowConversations(prev => !prev)}
-            className="ai-control-btn"
-            disabled={!currentProjectPath || !isElectronApiAvailable}
-          >
-            Historique
-          </button>
-
-          <button
-            onClick={onSaveConversation}
-            className="ai-control-btn"
-            disabled={!currentProjectPath || conversationHistory.length === 0 || !isElectronApiAvailable}
-          >
-            Sauvegarder
-          </button>
-        </div>
       </div>
 
+      {/* ===== CONVERSATIONS DROPDOWN ===== */}
       {showConversations && (
-        <div className="ai-dropdown">
-          <div className="ai-dropdown-header">
-            <span>Conversations</span>
-            <span>{conversations.length}</span>
+        <div className="ai-chat-dropdown" style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', maxHeight: 200, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: '1px solid var(--border)' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Conversations</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{conversations.length}</span>
           </div>
-          <div className="ai-dropdown-search">
+          <div style={{ padding: '4px 14px' }}>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Rechercher..."
+              style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 8px', color: 'var(--text-main)', fontSize: 11, outline: 'none' }}
             />
           </div>
-          <div className="ai-dropdown-list">
-            {isConversationLoading && (
-              <div className="ai-dropdown-empty">Chargement...</div>
-            )}
-            {!isConversationLoading && filteredConversations.length === 0 && (
-              <div className="ai-dropdown-empty">Aucune</div>
-            )}
-            {!isConversationLoading && filteredConversations.length > 0 && (
-              <ul>
-                {filteredConversations.map((conv) => (
-                  <li
-                    key={conv.fileName}
-                    className={`ai-dropdown-item ${conv.fileName === activeConversationFile ? 'is-active' : ''}`}
-                    onClick={() => handleSelectConversation(conv.fileName)}
-                  >
-                    <span className="ai-dropdown-title">{conv.title}</span>
-                    <span className="ai-dropdown-date">
-                      {new Date(conv.createdAt).toLocaleDateString('fr-FR', { month: 'numeric', day: 'numeric' })}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+          <div>
+            {isConversationLoading && <div style={{ padding: '8px 14px', fontSize: 10, color: 'var(--text-muted)' }}>Chargement...</div>}
+            {!isConversationLoading && filteredConversations.length === 0 && <div style={{ padding: '8px 14px', fontSize: 10, color: 'var(--text-muted)' }}>Aucune</div>}
+            {!isConversationLoading && filteredConversations.map((conv) => (
+              <div
+                key={conv.fileName}
+                onClick={() => handleSelectConversation(conv.fileName)}
+                className={`ai-history-item ${conv.fileName === activeConversationFile ? 'is-active' : ''}`}
+              >
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conv.title}</span>
+                <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>
+                  {new Date(conv.createdAt).toLocaleDateString('fr-FR', { month: 'numeric', day: 'numeric' })}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {contextEstimate && (
-        <div className="ai-context-estimate">
-          <span>Contexte: {Number(contextEstimate.contextChars || 0).toLocaleString('fr-FR')} chars</span>
-          <span>Prompt: {Number(contextEstimate.promptChars || 0).toLocaleString('fr-FR')} chars</span>
-          <span>Tokens est.: {Number(contextEstimate.estimatedTokens || 0).toLocaleString('fr-FR')}</span>
-          <span>Coût est.: ${Number(contextEstimate.estimatedCostUsd || 0).toFixed(4)}</span>
-        </div>
-      )}
-
+      {/* ===== PENDING CHANGES PANEL ===== */}
       {Array.isArray(pendingFileChanges) && pendingFileChanges.length > 0 && (
-        <div className="ai-pending-changes">
-          <div className="ai-pending-head">
-            <span>{pendingFileChanges.length} changement(s) IA en attente</span>
-            <div className="ai-pending-head-actions">
+        <div className="ai-pending-section">
+          <div className="ai-pending-header">
+            <span className="ai-pending-label">{pendingFileChanges.length} CHANGEMENTS EN ATTENTE</span>
+            <div style={{ display: 'flex', gap: 4 }}>
               <button
                 type="button"
-                className="ai-control-btn"
+                className="ai-pending-btn ai-pending-btn-apply"
                 onClick={handleApplyAllPending}
                 disabled={!canApplyPending || isApplyingPending || isBulkApplyingPending}
-                title={!canApplyPending ? 'Mode lecture seule' : 'Appliquer tous les changements IA'}
+                title={!canApplyPending ? 'Mode lecture seule' : 'Appliquer tous'}
               >
-                Appliquer tout
+                ✓ Appliquer tout
               </button>
               <button
                 type="button"
-                className="ai-control-btn"
+                className="ai-pending-btn ai-pending-btn-reject"
                 onClick={handleRejectAllPending}
                 disabled={isApplyingPending || isBulkApplyingPending}
-                title="Rejeter tous les changements IA"
+                title="Rejeter tous"
               >
                 Rejeter tout
               </button>
@@ -830,150 +906,232 @@ const AIChat = ({
           </div>
 
           {pendingSnapshotId && (
-            <div className="ai-pending-meta">Snapshot: {pendingSnapshotId}</div>
+            <div style={{ padding: '3px 14px', fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Snapshot: {pendingSnapshotId}</div>
           )}
 
-          <div className="ai-pending-list">
+          <div style={{ padding: '4px 10px' }}>
             {pendingFileChanges.slice(0, 8).map((change, index) => (
               <div
                 key={change.id || `${change.filePath}-${index}`}
-                className={`ai-pending-item ${isPendingChangeActive(change) ? 'is-active' : ''}`}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+                  padding: '3px 6px', borderRadius: 3, fontSize: 11, fontFamily: 'var(--font-mono)',
+                  background: isPendingChangeActive(change) ? 'var(--accent-soft)' : 'transparent',
+                  color: isPendingChangeActive(change) ? 'var(--accent)' : 'var(--text-dim)',
+                  cursor: 'pointer', transition: 'background 0.1s',
+                }}
+                onClick={() => onSelectPendingChange && onSelectPendingChange(index)}
+                title={change.filePath}
               >
-                <button
-                  type="button"
-                  className="ai-pending-file"
-                  onClick={() => onSelectPendingChange && onSelectPendingChange(index)}
-                  title={change.filePath}
-                >
-                  {change.filePath}
-                </button>
-                <div className="ai-pending-item-actions">
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{change.filePath}</span>
+                <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
                   <button
                     type="button"
-                    className="ai-mini-btn is-apply"
-                    onClick={() => handleApplyPending(index)}
+                    onClick={(e) => { e.stopPropagation(); handleApplyPending(index); }}
                     disabled={!canApplyPending || isApplyingPending || isBulkApplyingPending}
-                  >
-                    Apply
-                  </button>
+                    style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 2, padding: '1px 6px', fontSize: 9, fontWeight: 600, cursor: 'pointer' }}
+                  >✓</button>
                   <button
                     type="button"
-                    className="ai-mini-btn is-reject"
-                    onClick={() => handleRejectPending(index)}
+                    onClick={(e) => { e.stopPropagation(); handleRejectPending(index); }}
                     disabled={isApplyingPending || isBulkApplyingPending}
-                  >
-                    Reject
-                  </button>
+                    style={{ background: 'transparent', color: 'var(--text-dim)', border: '1px solid var(--border)', borderRadius: 2, padding: '1px 6px', fontSize: 9, cursor: 'pointer' }}
+                  >✕</button>
                 </div>
               </div>
             ))}
             {pendingFileChanges.length > 8 && (
-              <div className="ai-pending-more">+ {pendingFileChanges.length - 8} autre(s)</div>
+              <div style={{ padding: '3px 6px', fontSize: 9, color: 'var(--text-muted)' }}>+ {pendingFileChanges.length - 8} autre(s)</div>
             )}
           </div>
         </div>
       )}
 
-      {multiAIState?.isActive && (
-        <div className="ai-loading" role="status" aria-live="polite" aria-busy={isLoading}>
-          <AIWorkingIndicator
-            provider={aiProvider}
-            statusText={multiAIState.currentPhase ? `${streamingAgent || multiAIState.currentPhase} en cours...` : "Multi-IA en cours..."}
-          />
-          <LoadingSteps
-            steps={safeMultiSteps}
-            currentStep={safeCurrentStepIndex}
-          />
+      {/* ===== SWARM / MULTI-AGENTS PANEL ===== */}
+      {showMultiRunPanel && (
+        <div className="ai-swarm-section">
+          <div className="ai-swarm-header" style={{ cursor: 'default' }}>
+            <div>
+              <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2 }}>
+                {multiAIState?.mode === 'ollama-multi' ? 'Swarm Ollama' : 'Equipe multi-agent'}
+              </div>
+              <div className="ai-swarm-title">{multiRunTitle}
+                <span style={{ fontSize: 9, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6 }}>
+                  {multiRunStatusLabel}
+                </span>
+              </div>
+            </div>
+            <span style={{
+              fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 3, textTransform: 'uppercase', letterSpacing: '0.08em',
+              background: multiRunStatus === 'running' ? 'var(--accent-soft)' : multiRunStatus === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
+              color: multiRunStatus === 'running' ? 'var(--accent)' : multiRunStatus === 'error' ? 'var(--danger)' : 'var(--success)',
+            }}>
+              {multiRunStatus === 'running' ? 'EN COURS' : multiRunStatus === 'error' ? 'ERREUR' : 'TERMINÉ'}
+            </span>
+          </div>
+
+          {/* Progress bar */}
+          {safeMultiSteps.length > 0 && (
+            <div className="ai-swarm-progress">
+              <div className="ai-swarm-progress-bar" style={{ width: `${safeMultiSteps.length > 0 ? (completedMultiCount / safeMultiSteps.length) * 100 : 0}%` }} />
+            </div>
+          )}
+
+          {/* Meta */}
+          <div style={{ display: 'flex', gap: 12, padding: '2px 14px 6px', fontSize: 9, color: 'var(--text-muted)' }}>
+            <span>{completedMultiCount}/{safeMultiSteps.length || 0} rôle(s)</span>
+            {multiAIState?.currentPhase && <span>Phase: {multiAIState.currentPhase}</span>}
+            {multiRunDuration && <span>{multiRunDuration}</span>}
+            {multiAIState?.startedAt && (
+              <span>{new Date(multiAIState.startedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+            )}
+          </div>
+
+          {/* Agent cards grid */}
+          {safeMultiSteps.length > 0 && (
+            <div className="ai-swarm-grid">
+              {safeMultiSteps.map((step, index) => {
+                const normalizedStatus = normalizeMultiStatus(step?.status);
+                return (
+                  <div key={step?.key || step?.label || index} className="ai-agent-card">
+                    <div className="ai-agent-card-header">
+                      <span className="ai-agent-card-name">{step?.label || `Role ${index + 1}`}</span>
+                      <span className="ai-agent-card-status" style={{
+                        background: normalizedStatus === 'completed' ? 'rgba(16,185,129,0.15)' : normalizedStatus === 'active' ? 'var(--accent-soft)' : normalizedStatus === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)',
+                        color: normalizedStatus === 'completed' ? 'var(--success)' : normalizedStatus === 'active' ? 'var(--accent)' : normalizedStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)',
+                      }}>{getMultiStatusLabel(normalizedStatus)}</span>
+                    </div>
+                    {step?.model && <div className="ai-agent-card-model">{step.model}</div>}
+                    {step?.detail && <div className="ai-agent-card-info">{step.detail}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+
+          {/* Journal du run */}
+          {safeMultiEvents.length > 0 && (
+            <div>
+              <div style={{ padding: '5px 14px', fontSize: 10, color: 'var(--text-dim)', borderTop: '1px solid var(--border)', cursor: 'pointer' }}>
+                ▾ Journal du run ({safeMultiEvents.length})
+              </div>
+              <div style={{ maxHeight: 80, overflowY: 'auto', padding: '4px 14px', fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-dim)', borderTop: '1px solid var(--border)' }}>
+                {safeMultiEvents.map((event, index) => {
+                  const eventStatus = normalizeMultiStatus(event?.status);
+                  return (
+                    <div key={event?.id || `${event?.label}-${event?.at || index}`} style={{ padding: '1px 0', lineHeight: 1.5 }}>
+                      <span style={{
+                        fontSize: 8, fontWeight: 700, padding: '0 4px', borderRadius: 2, marginRight: 4,
+                        color: eventStatus === 'completed' ? 'var(--success)' : eventStatus === 'active' ? 'var(--accent)' : eventStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)',
+                      }}>{getMultiStatusLabel(eventStatus)}</span>
+                      <span>{event?.label || 'Etape'}</span>
+                      {event?.detail && <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>{event.detail}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Working indicator */}
+          {multiAIState?.isActive ? (
+            <AIWorkingIndicator
+              provider={aiProvider}
+              statusText={multiAIState.currentPhase ? `${streamingAgent || multiAIState.currentPhase} en cours...` : 'Multi-IA en cours...'}
+            />
+          ) : (
+            <div style={{ display: 'flex', gap: 6, padding: '4px 14px', fontSize: 10, color: 'var(--text-dim)', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600 }}>Statut</span>
+              <span style={{ color: multiAIState.error ? 'var(--danger)' : 'var(--success)' }}>
+                {multiAIState.error ? `${multiRunTitle} en erreur` : `${multiRunTitle} prêt à relire`}
+              </span>
+            </div>
+          )}
           {renderStreamingBox()}
           {multiAIState.error && (
-            <div className="multi-ai-phase-hint">
-              <span className="phase-error">Erreur : {multiAIState.error}</span>
+            <div style={{ padding: '4px 14px', fontSize: 10, color: 'var(--danger)' }}>
+              Erreur : {multiAIState.error}
             </div>
           )}
         </div>
       )}
 
-      {isLoading && !multiAIState?.isActive && (
-        <div className="ai-loading" role="status" aria-live="polite" aria-busy="true">
-          <AIWorkingIndicator
-            provider={aiProvider}
-            statusText={
-              streamingMode === 'code'
-                ? `Redaction ${streamingAgent ? `par ${streamingAgent}` : 'du code'} en cours...`
-                : (streamingText ? `${streamingAgent || 'IA'} en train de repondre...` : 'Traitement en cours...')
-            }
-          />
+      {/* ===== STREAMING (non-multi) ===== */}
+      {isLoading && !multiAIState?.isActive && aiProvider !== 'multi' && aiProvider !== 'ollama-multi' && streamingText && (
+        <div style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           {renderStreamingBox()}
         </div>
       )}
 
+      {/* ===== MESSAGES ===== */}
       <div
         ref={conversationHistoryRef}
-        className="ai-history custom-scrollbar"
+        className="ai-messages custom-scrollbar"
       >
         {conversationHistory.length === 0 && !isLoading && (
-          <div className="ai-empty">
-            <p>Commencez a discuter avec l&apos;IA</p>
-            <p>Contexte complet du projet pris en compte.</p>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: 'var(--text-muted)', padding: 30, textAlign: 'center' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ width: 40, height: 40, opacity: 0.15 }}>
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <p style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>Commencez à discuter avec l&apos;IA</p>
+            <p style={{ fontSize: 10, margin: 0 }}>Contexte complet du projet pris en compte.</p>
           </div>
         )}
 
         {conversationHistory.map((msg, index) => {
           const meta = getRoleMeta(msg);
+          const isUser = msg.role === 'user';
           return (
-            <div key={index} className={`chat-message ${meta.alignClass}`}>
-              <div className={meta.bubbleClass}>
-                <div className="chat-message-header">
-                  <span className={`chat-badge ${meta.badgeClass}`}>{meta.label}</span>
+            <div key={index} className="ai-message">
+              <div className="ai-message-meta">
+                <div className={`ai-message-avatar ${isUser ? 'user' : 'bot'}`}>
+                  {isUser ? (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V4H8" /><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M9 13v2" /><path d="M15 13v2" /></svg>
+                  )}
                 </div>
-                <p className="chat-message-text whitespace-pre-wrap text-xs mt-1">{msg.text}</p>
-
-                {Array.isArray(msg.images) && msg.images.length > 0 && (
-                  <div className="chat-images">
-                    {msg.images.map((img, i) => (
-                      <div key={i} className="chat-image-wrapper">
-                        <img
-                          src={img.dataUrl}
-                          alt="Image collee"
-                          className="chat-image-thumb"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <span className="ai-message-role">{meta.label}</span>
               </div>
+              <div className="ai-message-body">
+                <p style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {msg.text ? msg.text.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trim() : ''}
+                </p>
+              </div>
+
+              {Array.isArray(msg.images) && msg.images.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 26 }}>
+                  {msg.images.map((img, i) => (
+                    <img key={i} src={img.dataUrl} alt="Collé" style={{ width: 48, height: 48, borderRadius: 4, objectFit: 'cover', border: '1px solid var(--border)' }} />
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
 
         {/* AI Terminal Action Cards (ReAct Loop) */}
         {isLoading && terminalActions.length > 0 && (
-          <div style={{ padding: '8px 0' }}>
+          <div style={{ padding: '8px 14px' }}>
             {terminalActions.map((action, i) => (
               <div key={i} style={{
-                background: '#0d1a0d',
-                border: `1px solid ${action.type === 'done' ? '#00c49a44' : '#f5a62344'}`,
-                borderRadius: '8px',
-                margin: '4px 12px',
-                overflow: 'hidden',
-                fontSize: '12px'
+                background: 'var(--surface-2)', border: '1px solid var(--border)',
+                borderRadius: 4, margin: '4px 0', overflow: 'hidden', fontSize: 11,
               }}>
                 <div style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  padding: '6px 10px',
-                  background: action.type === 'done' ? '#00c49a18' : '#f5a62318',
-                  borderBottom: action.output ? '1px solid #1a1a1a' : 'none'
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+                  background: action.type === 'done' ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)',
+                  borderBottom: action.output ? '1px solid var(--border)' : 'none',
                 }}>
-                  <span style={{ fontSize: '14px' }}>{action.type === 'done' ? '✅' : '⏳'}</span>
-                  <span style={{ fontFamily: 'monospace', color: '#e0e0e0', flex: 1 }}>{action.command}</span>
-                  <span style={{ color: '#666', fontSize: '10px' }}>#{action.iteration}</span>
+                  <span>{action.type === 'done' ? '✓' : '⟳'}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-main)', flex: 1, fontSize: 10 }}>{action.command}</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>#{action.iteration}</span>
                 </div>
                 {action.output && (
                   <pre style={{
-                    margin: 0, padding: '6px 10px',
-                    fontSize: '10px', color: '#aaa',
-                    fontFamily: 'Fira Code, monospace',
-                    whiteSpace: 'pre-wrap', maxHeight: '120px', overflowY: 'auto'
+                    margin: 0, padding: '5px 10px', fontSize: 9, color: 'var(--text-dim)',
+                    fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', maxHeight: 100, overflowY: 'auto',
                   }}>{action.output.substring(0, 800)}{action.output.length > 800 ? '...' : ''}</pre>
                 )}
               </div>
@@ -982,44 +1140,41 @@ const AIChat = ({
         )}
 
         {isLoading && !multiAIState?.isActive && terminalActions.length > 0 && (
-          <div className="ai-loading-inline">
-            <p>🖥️ Exécution... ({terminalActions.filter(a => a.type === 'done').length}/{terminalActions.length} commandes)</p>
+          <div className="ai-message-loading">
+            <div className="ai-loading-dots"><span className="ai-loading-dot" /><span className="ai-loading-dot" /><span className="ai-loading-dot" /></div>
+            <span>Exécution... ({terminalActions.filter(a => a.type === 'done').length}/{terminalActions.length} commandes)</span>
           </div>
         )}
       </div>
 
-      <div className="ai-input-wrap">
+      {/* ===== INPUT SECTION ===== */}
+      <div className="ai-input-section">
         {/* Pending message indicator */}
         {pendingMessage && (
           <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 10px',
-            background: 'rgba(251,191,36,0.12)',
-            border: '1px solid rgba(251,191,36,0.3)',
-            borderRadius: '8px',
-            marginBottom: '6px',
-            fontSize: '11px',
-            color: 'rgba(251,191,36,0.9)'
+            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+            background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
+            borderRadius: 4, fontSize: 10, color: 'var(--warning)',
           }}>
             <span>⏳</span>
             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               En attente&#x202F;: <em>{pendingMessage.text}</em>
             </span>
-            <span style={{ opacity: 0.6 }}>sera envoyé automatiquement</span>
+            <span style={{ opacity: 0.6, fontSize: 9 }}>sera envoyé automatiquement</span>
           </div>
         )}
+
+        {/* Pending images */}
         {pendingImages && pendingImages.length > 0 && (
-          <div className="ai-pending-images" style={{ display: 'flex', gap: '8px', padding: '8px', flexWrap: 'wrap', borderBottom: '1px solid #333' }}>
+          <div className="ai-input-images">
             {pendingImages.map((img, idx) => (
-              <div key={idx} style={{ position: 'relative', width: '60px', height: '60px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #444' }}>
-                <img src={img.dataUrl} alt="Pending" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <div key={idx} style={{ position: 'relative' }}>
+                <img src={img.dataUrl} alt="Pending" className="ai-input-image" />
                 <button
                   onClick={() => onRemovePendingImage && onRemovePendingImage(idx)}
                   style={{
-                    position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff',
-                    borderRadius: '50%', width: '16px', height: '16px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+                    position: 'absolute', top: 1, right: 1, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff',
+                    borderRadius: '50%', width: 14, height: 14, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                   }}
                 >×</button>
               </div>
@@ -1029,66 +1184,68 @@ const AIChat = ({
 
         {/* Explicit Context Tags */}
         {explicitContext.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '8px 10px 0 10px' }}>
+          <div className="ai-message-file-refs">
             {explicitContext.map(filePath => {
               const fileName = filePath.split(/[\\/]/).pop();
               return (
-                <div key={filePath} style={{
-                  display: 'flex', alignItems: 'center', gap: '4px',
-                  background: 'rgba(168, 255, 181, 0.15)',
-                  border: '1px solid rgba(168, 255, 181, 0.3)',
-                  color: '#a8ffb5', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', cursor: 'default'
-                }}>
-                  <span title={filePath}>@{fileName}</span>
-                  <button onClick={() => removeExplicitContext(filePath)} style={{
-                    background: 'none', border: 'none', color: '#a8ffb5', cursor: 'pointer', padding: 0, marginLeft: '4px', fontSize: '14px', lineHeight: 1
-                  }}>×</button>
-                </div>
+                <span key={filePath} className="ai-message-file-ref" title={filePath}>
+                  @{fileName}
+                  <span className="ai-message-file-ref-close" onClick={() => removeExplicitContext(filePath)}>×</span>
+                </span>
               );
             })}
           </div>
         )}
 
-        <textarea
-          ref={promptInputRef}
-          id="ai-prompt"
-          className="ai-input"
-          value={prompt}
-          onChange={(e) => handlePromptChange(e.target.value)}
-          onKeyPress={handleKeyPress}
-          onPaste={handlePaste}
-          placeholder="Votre requête... (Tapez @ pour mentionner un fichier, / pour workflows)"
-          rows={3}
-        />
+        {/* Textarea + tools */}
+        <div className="ai-input-textarea-wrap">
+          <textarea
+            ref={promptInputRef}
+            id="ai-prompt"
+            className="ai-input-textarea"
+            value={prompt}
+            onChange={(e) => handlePromptChange(e.target.value)}
+            onKeyPress={handleKeyPress}
+            onPaste={handlePaste}
+            placeholder="Votre requête... (Tapez @ pour mentionner un fichier, / pour workflows)"
+            rows={3}
+          />
+          <div className="ai-input-tools">
+            <button className="ai-input-tool-btn" title="Joindre un fichier (@)" onClick={() => handlePromptChange(prompt + '@')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+            </button>
+            <button className="ai-input-tool-btn" title="Slash commande (/)" onClick={() => handlePromptChange('/')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>
+            </button>
+          </div>
+        </div>
 
+        {/* Workflow suggestions */}
         {showWorkflowSuggestions && filteredWorkflows.length > 0 && (
-          <div className="ai-workflow-suggest">
-            <div className="ai-workflow-title">Workflows disponibles</div>
+          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto' }}>
+            <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Workflows disponibles</div>
             {filteredWorkflows.map((workflow) => (
               <button
                 key={`${workflow.scope}-${workflow.name}`}
                 onClick={() => handleSelectWorkflow(workflow)}
-                className="ai-workflow-item"
+                style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '5px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
               >
                 <div>
-                  <span className="ai-workflow-name">/{workflow.name}</span>
-                  {workflow.description && (
-                    <span className="ai-workflow-desc">{workflow.description}</span>
-                  )}
+                  <span style={{ color: 'var(--accent)', fontWeight: 600 }}>/{workflow.name}</span>
+                  {workflow.description && <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>{workflow.description}</span>}
                 </div>
-                <span className={`ai-workflow-scope ${workflow.scope}`}>
-                  {workflow.scope}
-                </span>
+                <span style={{ fontSize: 9, color: 'var(--text-muted)', padding: '1px 5px', background: 'var(--surface)', borderRadius: 3 }}>{workflow.scope}</span>
               </button>
             ))}
           </div>
         )}
 
+        {/* Context file suggestions */}
         {showContextSuggestions && (
-          <div className="ai-workflow-suggest">
-            <div className="ai-workflow-title">Fichiers du projet</div>
+          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto' }}>
+            <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Fichiers du projet</div>
             {filteredContextFiles.length === 0 && (
-              <div className="ai-dropdown-empty">Aucun fichier pour {contextFilter}</div>
+              <div style={{ padding: '8px 10px', fontSize: 10, color: 'var(--text-muted)' }}>Aucun fichier pour {contextFilter}</div>
             )}
             {filteredContextFiles.map((filePath) => {
               const fileName = filePath.split(/[\\/]/).pop() || filePath;
@@ -1096,49 +1253,51 @@ const AIChat = ({
                 <button
                   key={filePath}
                   onClick={() => handleSelectContextFile(filePath)}
-                  className="ai-workflow-item"
+                  style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
                 >
-                  <div>
-                    <span className="ai-workflow-name">@{fileName}</span>
-                    <span className="ai-workflow-desc">{filePath}</span>
-                  </div>
-                  <span className="ai-workflow-scope workspace">ctx</span>
+                  <span style={{ color: 'var(--accent)' }}>@{fileName}</span>
+                  <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{filePath}</span>
                 </button>
               );
             })}
           </div>
         )}
+
+        {/* Quick actions */}
+        <div className="ai-quick-actions">
+          {quickActions.map((action) => (
+            <button
+              key={action.id}
+              className="ai-quick-btn"
+              onClick={() => applyQuickPrompt(action.prompt)}
+              disabled={!isElectronApiAvailable}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="ai-actions">
-        {quickActions.map((action) => (
-          <button
-            key={action.id}
-            className="ai-chip"
-            onClick={() => applyQuickPrompt(action.prompt)}
-            disabled={!isElectronApiAvailable}
-          >
-            {action.label}
-          </button>
-        ))}
+      {/* ===== SEND / STOP BUTTON ===== */}
+      <div style={{ padding: '0 14px 10px', flexShrink: 0 }}>
+        <button
+          type="button"
+          onClick={isLoading ? handleStop : handleSend}
+          className={`ai-send-btn ${isLoading ? 'is-stop' : ''}`}
+          disabled={!currentProjectPath || !isElectronApiAvailable}
+          aria-label={isLoading ? "Arrêter la génération" : "Envoyer à l'IA"}
+          style={isLoading ? { background: 'var(--danger)', borderColor: 'var(--danger)' } : undefined}
+        >
+          {isLoading ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 10, height: 10, background: '#fff', borderRadius: 2, flexShrink: 0 }} />
+              <span>Arrêter</span>
+            </span>
+          ) : (
+            "Envoyer à l'IA"
+          )}
+        </button>
       </div>
-
-      <button
-        type="button"
-        onClick={isLoading ? handleStop : handleSend}
-        className={`ai-send-btn ${isLoading ? 'is-stop' : ''}`}
-        disabled={!currentProjectPath || !isElectronApiAvailable}
-        aria-label={isLoading ? 'Arreter la generation de l IA' : "Envoyer a l IA"}
-      >
-        {isLoading ? (
-          <span className="ai-send-btn-content">
-            <span className="ai-stop-icon" aria-hidden="true" />
-            <span>Arreter</span>
-          </span>
-        ) : (
-          'Envoyer a l IA'
-        )}
-      </button>
     </div>
   );
 };

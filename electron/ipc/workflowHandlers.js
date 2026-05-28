@@ -33,6 +33,7 @@ const registerWorkflowHandlers = ({
   fs,
   path,
   ensureEditPermission,
+  ensureTrustedProjectPath,
   assertSafePath,
   toPositiveInt,
   getN8nCatalogEntries,
@@ -45,6 +46,11 @@ const registerWorkflowHandlers = ({
   const handle = (channel, listener) => {
     ipcMain.removeHandler(channel);
     ipcMain.handle(channel, listener);
+  };
+
+  const requireTrustedProjectPath = async (projectPath) => {
+    if (!projectPath) throw new Error('No project path');
+    return ensureTrustedProjectPath(projectPath);
   };
 
   handle('list-workflows', async (event, projectPath) => {
@@ -72,7 +78,8 @@ const registerWorkflowHandlers = ({
       }
 
       if (projectPath) {
-        const workspaceDir = getWorkspaceWorkflowsDir(projectPath);
+        const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+        const workspaceDir = getWorkspaceWorkflowsDir(trustedProjectPath);
         try {
           const workspaceFiles = await fs.readdir(workspaceDir);
           for (const file of workspaceFiles) {
@@ -101,11 +108,16 @@ const registerWorkflowHandlers = ({
 
   handle('get-workflow', async (event, name, scope, projectPath) => {
     try {
+      const safeName = String(name || '').replace(/[<>:"/\\|?*]/g, '_').trim();
+      if (!safeName) {
+        return { success: false, error: 'Invalid workflow name' };
+      }
       let filePath;
       if (scope === 'global') {
-        filePath = path.join(getGlobalWorkflowsDir(), `${name}.md`);
+        filePath = path.join(getGlobalWorkflowsDir(), `${safeName}.md`);
       } else if (scope === 'workspace' && projectPath) {
-        filePath = path.join(getWorkspaceWorkflowsDir(projectPath), `${name}.md`);
+        const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+        filePath = path.join(getWorkspaceWorkflowsDir(trustedProjectPath), `${safeName}.md`);
       } else {
         return { success: false, error: 'Invalid scope or missing project path' };
       }
@@ -115,7 +127,7 @@ const registerWorkflowHandlers = ({
 
       return {
         success: true,
-        workflow: { name, scope, description, body, content, path: filePath }
+        workflow: { name: safeName, scope, description, body, content, path: filePath }
       };
     } catch (error) {
       console.error('[Workflows] Error getting workflow:', error);
@@ -131,7 +143,8 @@ const registerWorkflowHandlers = ({
       if (scope === 'global') {
         dir = getGlobalWorkflowsDir();
       } else if (scope === 'workspace' && projectPath) {
-        dir = getWorkspaceWorkflowsDir(projectPath);
+        const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+        dir = getWorkspaceWorkflowsDir(trustedProjectPath);
       } else {
         return { success: false, error: 'Invalid scope or missing project path' };
       }
@@ -157,11 +170,16 @@ const registerWorkflowHandlers = ({
     try {
       await ensureEditPermission();
 
+      const safeName = String(name || '').replace(/[<>:"/\\|?*]/g, '_').trim();
+      if (!safeName) {
+        return { success: false, error: 'Invalid workflow name' };
+      }
       let filePath;
       if (scope === 'global') {
-        filePath = path.join(getGlobalWorkflowsDir(), `${name}.md`);
+        filePath = path.join(getGlobalWorkflowsDir(), `${safeName}.md`);
       } else if (scope === 'workspace' && projectPath) {
-        filePath = path.join(getWorkspaceWorkflowsDir(projectPath), `${name}.md`);
+        const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+        filePath = path.join(getWorkspaceWorkflowsDir(trustedProjectPath), `${safeName}.md`);
       } else {
         return { success: false, error: 'Invalid scope or missing project path' };
       }
@@ -178,7 +196,8 @@ const registerWorkflowHandlers = ({
   handle('list-visual-workflows', async (event, projectPath) => {
     try {
       if (!projectPath) return { success: false, error: 'No project path' };
-      const dir = getVisualWorkflowsDir(projectPath);
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+      const dir = getVisualWorkflowsDir(trustedProjectPath);
       try {
         await fs.mkdir(dir, { recursive: true });
       } catch {
@@ -219,7 +238,8 @@ const registerWorkflowHandlers = ({
       await ensureEditPermission();
 
       if (!projectPath) return { success: false, error: 'No project path' };
-      const dir = getVisualWorkflowsDir(projectPath);
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+      const dir = getVisualWorkflowsDir(trustedProjectPath);
       await fs.mkdir(dir, { recursive: true });
 
       const wfRaw = typeof workflowJson === 'string' ? JSON.parse(workflowJson) : workflowJson;
@@ -261,7 +281,8 @@ const registerWorkflowHandlers = ({
       await ensureEditPermission();
 
       if (!projectPath || !filename) return { success: false, error: 'Missing params' };
-      const visualWorkflowDir = getVisualWorkflowsDir(projectPath);
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+      const visualWorkflowDir = getVisualWorkflowsDir(trustedProjectPath);
       const filePath = path.join(visualWorkflowDir, filename);
       assertSafePath(visualWorkflowDir, filePath);
       await fs.unlink(filePath);

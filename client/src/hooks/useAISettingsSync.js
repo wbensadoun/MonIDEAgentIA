@@ -1,13 +1,26 @@
 import { useEffect, useState } from 'react';
+import { normalizeMultiAgentRoles } from '../utils/multiAgentConfig';
 
 const buildApiKeysFromSettings = (settings = {}) => ({
   gemini: settings.geminiApiKey || '',
   kimi: settings.kimiApiKey || '',
   claude: settings.claudeApiKey || '',
+  geminiModel: settings.geminiModel || '',
+  claudeModel: settings.claudeModel || '',
+  kimiModel: settings.kimiModel || '',
   ollamaModel: settings.ollamaModel || '',
   ollamaModelArchitect: settings.ollamaModelArchitect || '',
   ollamaModelCoder: settings.ollamaModelCoder || '',
-  ollamaModelTester: settings.ollamaModelTester || ''
+  ollamaModelTester: settings.ollamaModelTester || '',
+  multiAgentRoles: normalizeMultiAgentRoles(settings.multiAgentRoles),
+  localAI: {
+    optimizationMode: settings.localAIOptimizationMode || 'safe',
+    hardwareConsent: !!settings.localAIHardwareConsent,
+    maxConcurrentLocal: Number(settings.localAIMaxConcurrentLocal || 1),
+    maxConcurrentCloud: Number(settings.localAIMaxConcurrentCloud || 3),
+    contextBudget: settings.localAIContextBudget || 'short',
+    maxTokens: Number(settings.localAIMaxTokens || 4096)
+  }
 });
 
 export const useAISettingsSync = (isElectronApiAvailable) => {
@@ -15,10 +28,22 @@ export const useAISettingsSync = (isElectronApiAvailable) => {
     gemini: '',
     kimi: '',
     claude: '',
+    geminiModel: '',
+    claudeModel: '',
+    kimiModel: '',
     ollamaModel: '',
     ollamaModelArchitect: '',
     ollamaModelCoder: '',
-    ollamaModelTester: ''
+    ollamaModelTester: '',
+    multiAgentRoles: normalizeMultiAgentRoles(),
+    localAI: {
+      optimizationMode: 'safe',
+      hardwareConsent: false,
+      maxConcurrentLocal: 1,
+      maxConcurrentCloud: 3,
+      contextBudget: 'short',
+      maxTokens: 4096
+    }
   });
   const [projectScanPreset, setProjectScanPreset] = useState('safe');
   const [projectScanIncludeSecrets, setProjectScanIncludeSecrets] = useState(false);

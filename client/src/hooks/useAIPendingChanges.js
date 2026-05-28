@@ -109,9 +109,9 @@ const useAIPendingChanges = ({
     }
   }, [currentProjectPath, pendingSnapshotId, showMessage]);
 
-  const runQualityGatesBeforeApply = useCallback(async () => {
+  const runQualityGatesBeforeApply = useCallback(async ({ force = false } = {}) => {
     if (!qualityGateConfig?.onApply) return true;
-    if (qualityGatePassedBatch) return true;
+    if (!force && qualityGatePassedBatch) return true;
     if (!window.electronAPI?.runQualityGates || !currentProjectPath) return true;
 
     try {
@@ -213,6 +213,19 @@ const useAIPendingChanges = ({
     }
   }, [currentProjectPath, isElectronApiAvailable]);
 
+  const rollbackAppliedEntries = useCallback(async (entries) => {
+    const failures = [];
+    const appliedEntries = Array.isArray(entries) ? entries : [];
+    for (const entry of [...appliedEntries].reverse()) {
+      const res = await rollbackPatchEntry(entry);
+      if (!res?.success) {
+        failures.push({ filePath: entry?.filePath, error: res?.error || 'rollback inconnu' });
+      }
+    }
+    await loadProjectItems();
+    return { success: failures.length === 0, failures };
+  }, [loadProjectItems, rollbackPatchEntry]);
+
   const applyPendingChangeByIndex = useCallback(async (index) => {
     if (permissionMode === 'read_only') {
       showMessage('Mode lecture seule: application IA bloquee.', 3000);
@@ -221,9 +234,6 @@ const useAIPendingChanges = ({
     if (!Array.isArray(pendingFileChanges) || pendingFileChanges.length === 0) return false;
     const change = pendingFileChanges[index];
     if (!change) return false;
-
-    const gatesOk = await runQualityGatesBeforeApply();
-    if (!gatesOk) return false;
 
     const snapshotOk = await ensureSnapshotForPending(pendingFileChanges);
     if (!snapshotOk) return false;
@@ -249,7 +259,7 @@ const useAIPendingChanges = ({
         return false;
       }
 
-      pushAppliedPatchHistory([{
+      const appliedEntry = {
         patchId,
         filePath: change.filePath,
         existedBefore: !!change.existed,
@@ -257,7 +267,20 @@ const useAIPendingChanges = ({
         appliedContent: change.newContent || '',
         appliedAt: new Date().toISOString(),
         appliedMtimeMs: Number.isFinite(Number(res?.mtimeMs)) ? Number(res.mtimeMs) : null
-      }]);
+      };
+
+      const gatesOk = await runQualityGatesBeforeApply({ force: true });
+      if (!gatesOk && qualityGateConfig?.blockOnFail !== false) {
+        const rollback = await rollbackAppliedEntries([appliedEntry]);
+        if (rollback.success) {
+          showMessage(`Quality gates echoues: rollback applique (${change.filePath}).`, 5500);
+        } else {
+          showMessage(`Quality gates echoues: rollback incomplet (${rollback.failures.length}).`, 6500);
+        }
+        return false;
+      }
+
+      pushAppliedPatchHistory([appliedEntry]);
 
       const nextChanges = pendingFileChanges.filter((_, i) => i !== index);
       setPendingFileChanges(nextChanges);
@@ -284,10 +307,12 @@ const useAIPendingChanges = ({
     pendingFileChanges,
     runQualityGatesBeforeApply,
     ensureSnapshotForPending,
+    rollbackAppliedEntries,
     currentProjectPath,
     loadProjectItems,
     focusPendingChange,
     pushAppliedPatchHistory,
+    qualityGateConfig,
     showMessage
   ]);
 
@@ -324,9 +349,6 @@ const useAIPendingChanges = ({
     if (!Array.isArray(pendingFileChanges) || pendingFileChanges.length === 0) {
       return { success: true, applied: 0, failed: 0 };
     }
-
-    const gatesOk = await runQualityGatesBeforeApply();
-    if (!gatesOk) return { success: false, applied: 0, failed: pendingFileChanges.length };
 
     const snapshotOk = await ensureSnapshotForPending(pendingFileChanges);
     if (!snapshotOk) return { success: false, applied: 0, failed: pendingFileChanges.length };
@@ -370,6 +392,16 @@ const useAIPendingChanges = ({
     }
 
     if (appliedEntries.length > 0) {
+      const gatesOk = await runQualityGatesBeforeApply({ force: true });
+      if (!gatesOk && qualityGateConfig?.blockOnFail !== false) {
+        const rollback = await rollbackAppliedEntries(appliedEntries);
+        if (rollback.success) {
+          showMessage(`Quality gates echoues: rollback de ${appliedEntries.length} fichier(s).`, 6000);
+        } else {
+          showMessage(`Quality gates echoues: rollback incomplet (${rollback.failures.length}).`, 7000);
+        }
+        return { success: false, applied: 0, failed: pendingFileChanges.length, rolledBack: rollback.success };
+      }
       pushAppliedPatchHistory(appliedEntries);
     }
 
@@ -394,10 +426,12 @@ const useAIPendingChanges = ({
     pendingFileChanges,
     runQualityGatesBeforeApply,
     ensureSnapshotForPending,
+    rollbackAppliedEntries,
     currentProjectPath,
     loadProjectItems,
     focusPendingChange,
     pushAppliedPatchHistory,
+    qualityGateConfig,
     showMessage
   ]);
 
@@ -632,7 +666,7 @@ const useAIPendingChanges = ({
         ? idxFromActiveId
         : pendingFileChanges.findIndex((change) => change.filePath === activeFile);
       const nextIndex = idxFromActiveFile >= 0 ? idxFromActiveFile : 0;
-      return applyPendingChangeByIndex(nextIndex) ? 'pending-applied' : 'pending-failed';
+      return await applyPendingChangeByIndex(nextIndex) ? 'pending-applied' : 'pending-failed';
     }
 
     setIsDiffMode(false);

@@ -11,56 +11,106 @@ const StatusBar = ({
   deepContextEnabled,
   contextMode,
   ollamaStatusLabel,
+  multiAIState,
   permissionMode,
-  projectName
-}) => (
-  <footer className="statusbar">
-    <div className="status-group">
-      <span className="status-label">Vue</span>
-      <span className="status-value">{centerView}</span>
-    </div>
-    <div className="status-group">
-      <span className="status-label">Preview</span>
-      <span className={`status-value ${previewStatus === 'running' ? 'status-live' : ''}`}>
-        {previewStatus}
-      </span>
-    </div>
-    {isStreamingCodePreview && (
-      <div className="status-group">
-        <span className="status-label">Flux IA</span>
-        <span className="status-value">{aiDraftPreview?.agent || 'generation'}: {aiDraftPreview?.filePath}</span>
+  projectName,
+}) => {
+  const steps = Array.isArray(multiAIState?.steps) ? multiAIState.steps : [];
+  const doneCount = steps.filter((s) => s?.status === 'done' || s?.status === 'completed').length;
+  const multiLabel = multiAIState?.mode
+    ? multiAIState.error
+      ? `${multiAIState.mode === 'ollama-multi' ? 'Swarm' : 'Équipe'} erreur`
+      : multiAIState.isActive
+        ? `${multiAIState.mode === 'ollama-multi' ? 'Swarm' : 'Équipe'} ${doneCount}/${steps.length || 0}`
+        : `${multiAIState.mode === 'ollama-multi' ? 'Swarm' : 'Équipe'} ${doneCount}/${steps.length || 0} OK`
+    : '';
+
+  const permLabel = permissionMode === 'read_only' ? 'Lecture seule' : permissionMode === 'edit_only' ? 'Édition' : 'Édition + terminal';
+
+  return (
+    <footer className="statusbar">
+      {/* Indicateur connexion */}
+      <div className="statusbar-item">
+        <span
+          className="statusbar-dot"
+          style={{ background: previewStatus === 'running' ? 'var(--success)' : 'var(--text-muted)' }}
+        />
+        <span className="statusbar-value" style={{ color: 'var(--text-dim)' }}>
+          {projectName}
+        </span>
       </div>
-    )}
-    {gitDiffPreview && !isStreamingCodePreview && (
-      <div className="status-group">
-        <span className="status-label">Compare</span>
-        <span className="status-value">{`${gitDiffPreview.baseLabel} -> ${gitDiffPreview.targetLabel}`}</span>
+
+      {/* Vue active */}
+      <div className="statusbar-item">
+        <span className="statusbar-label">Vue</span>
+        <span className="statusbar-value">{centerView}</span>
       </div>
-    )}
-    <div className="status-group">
-      <span className="status-label">IA</span>
-      <span className="status-value">
-        {aiProvider}
-        {thinkingMode ? ' +Think' : ''}
-        {deepContextEnabled ? ' +Ctx' : ''}
-        {contextMode !== 'auto' ? ` (${contextMode})` : ''}
-      </span>
-    </div>
-    {(aiProvider === 'ollama' || aiProvider === 'ollama-multi') && (
-      <div className="status-group">
-        <span className="status-label">Model</span>
-        <span className="status-value">{ollamaStatusLabel}</span>
+
+      {/* Preview */}
+      <div className="statusbar-item">
+        <span className="statusbar-label">Preview</span>
+        <span className={`statusbar-value ${previewStatus === 'running' ? 'is-live' : ''}`}>
+          {previewStatus === 'running' ? '● actif' : previewStatus}
+        </span>
       </div>
-    )}
-    <div className="status-group">
-      <span className="status-label">Mode</span>
-      <span className="status-value">{permissionMode}</span>
-    </div>
-    <div className="status-group">
-      <span className="status-label">Projet</span>
-      <span className="status-value">{projectName}</span>
-    </div>
-  </footer>
-);
+
+      {/* Streaming IA */}
+      {isStreamingCodePreview && (
+        <div className="statusbar-item">
+          <span className="statusbar-dot accent" />
+          <span className="statusbar-value" style={{ color: 'var(--accent)' }}>
+            Flux IA: {aiDraftPreview?.agent || ''} {aiDraftPreview?.filePath || ''}
+          </span>
+        </div>
+      )}
+
+      {/* Git diff */}
+      {gitDiffPreview && !isStreamingCodePreview && (
+        <div className="statusbar-item">
+          <span className="statusbar-label">Diff</span>
+          <span className="statusbar-value">{gitDiffPreview.baseLabel} → {gitDiffPreview.targetLabel}</span>
+        </div>
+      )}
+
+      {/* IA */}
+      <div className="statusbar-item">
+        <span className="statusbar-label">IA</span>
+        <span className="statusbar-value">
+          {aiProvider}
+          {thinkingMode ? ' +Think' : ''}
+          {deepContextEnabled ? ' +Ctx' : ''}
+          {contextMode !== 'auto' ? ` (${contextMode})` : ''}
+        </span>
+      </div>
+
+      {/* Modèle Ollama */}
+      {(aiProvider === 'ollama' || aiProvider === 'ollama-multi') && ollamaStatusLabel && (
+        <div className="statusbar-item">
+          <span className="statusbar-label">Modèle</span>
+          <span className="statusbar-value">{ollamaStatusLabel}</span>
+        </div>
+      )}
+
+      {/* Multi-IA */}
+      {multiLabel && (
+        <div className="statusbar-item">
+          <span
+            className="statusbar-dot"
+            style={{ background: multiAIState?.error ? 'var(--danger)' : multiAIState?.isActive ? 'var(--accent)' : 'var(--success)' }}
+          />
+          <span className="statusbar-value">{multiLabel}</span>
+        </div>
+      )}
+
+      <div className="statusbar-spacer" />
+
+      {/* Permissions */}
+      <div className="statusbar-item">
+        <span className="statusbar-label">Permissions</span>
+        <span className="statusbar-value">{permLabel}</span>
+      </div>
+    </footer>
+  );
+};
 
 export default StatusBar;

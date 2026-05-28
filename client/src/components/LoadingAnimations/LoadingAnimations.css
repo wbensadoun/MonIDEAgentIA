@@ -31,6 +31,11 @@
   opacity: 0.5;
 }
 
+.step-error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+}
+
 .step-indicator {
   width: 1.5rem;
   height: 1.5rem;
@@ -54,6 +59,16 @@
 .step-pending .step-indicator {
   background: rgba(107, 114, 128, 0.5);
   color: #9ca3af;
+}
+
+.step-error .step-indicator {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+}
+
+.step-error-mark {
+  font-size: 0.9rem;
+  line-height: 1;
 }
 
 .step-spinner {

@@ -1,23 +1,40 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './Settings.css';
+import ThemeSwitcher from '../AppShell/ThemeSwitcher';
+import {
+  DEFAULT_OLLAMA_MODEL,
+  SUGGESTED_OLLAMA_MODELS,
+  normalizeOllamaModelLabel
+} from '../../utils/ollamaModels';
+import {
+  AI_PROVIDER_OPTIONS,
+  MULTI_AGENT_ROLE_DEFINITIONS,
+  REMOTE_MODEL_SUGGESTIONS,
+  getDefaultModelForProvider,
+  normalizeMultiAgentRoles
+} from '../../utils/multiAgentConfig';
+import {
+  DEFAULT_CLAUDE_MODEL,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_KIMI_MODEL,
+  getRemoteModelOptions
+} from '../../utils/remoteModels';
 
-const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
-  const suggestedOllamaModels = [
-    'qwen3:8b',
-    'qwen3:14b',
-    'qwen3:32b'
-  ];
-
+const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme, onThemeChange }) => {
   const [settings, setSettings] = useState({
     geminiApiKey: '',
     kimiApiKey: '',
     claudeApiKey: '',
     defaultProvider: 'gemini',
     thinkingMode: false,
-    ollamaModel: 'qwen3:8b',
-    ollamaModelArchitect: 'qwen3:8b',
-    ollamaModelCoder: 'qwen3:8b',
-    ollamaModelTester: 'qwen3:8b',
+    geminiModel: DEFAULT_GEMINI_MODEL,
+    claudeModel: DEFAULT_CLAUDE_MODEL,
+    kimiModel: DEFAULT_KIMI_MODEL,
+    ollamaModel: DEFAULT_OLLAMA_MODEL,
+    ollamaModelArchitect: DEFAULT_OLLAMA_MODEL,
+    ollamaModelCoder: DEFAULT_OLLAMA_MODEL,
+    ollamaModelTester: DEFAULT_OLLAMA_MODEL,
+    multiAgentRoles: normalizeMultiAgentRoles(),
     devPort: '3004',
     allowDangerousActions: false,
     aiContextPreset: 'safe',
@@ -32,20 +49,32 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
     qualityGateBlockOnFail: true,
     onboardingCompleted: false,
     contextMode: 'auto',
-    contextMaxFiles: 120
+    contextMaxFiles: 120,
+    localAIOptimizationMode: 'safe',
+    localAIHardwareConsent: false,
+    localAIMaxConcurrentLocal: 1,
+    localAIMaxConcurrentCloud: 3,
+    localAIContextBudget: 'short',
+    localAIMaxTokens: 4096
   });
 
   const [loading, setLoading] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
   const [validation, setValidation] = useState({ gemini: null, kimi: null, claude: null });
   const [ollamaModels, setOllamaModels] = useState([]);
+  const [systemAIProfile, setSystemAIProfile] = useState(null);
+  const [isSystemProfileLoading, setIsSystemProfileLoading] = useState(false);
 
   const loadSettings = useCallback(async () => {
     if (!isElectronApiAvailable || !window.electronAPI?.loadSettings) return;
     try {
       const response = await window.electronAPI.loadSettings();
       if (response.success && response.settings) {
-        setSettings(prev => ({ ...prev, ...response.settings }));
+        setSettings(prev => ({
+          ...prev,
+          ...response.settings,
+          multiAgentRoles: normalizeMultiAgentRoles(response.settings.multiAgentRoles)
+        }));
       }
     } catch (error) {
       showMessage('Erreur chargement des parametres', 3000);
@@ -144,10 +173,24 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
 
     setLoading(true);
     try {
-      const response = await window.electronAPI.saveSettings(settings);
+      const normalizedSettings = {
+        ...settings,
+        geminiModel: String(settings.geminiModel || DEFAULT_GEMINI_MODEL).trim(),
+        claudeModel: String(settings.claudeModel || DEFAULT_CLAUDE_MODEL).trim(),
+        kimiModel: String(settings.kimiModel || DEFAULT_KIMI_MODEL).trim(),
+        ollamaModel: normalizeOllamaModelLabel(settings.ollamaModel),
+        ollamaModelArchitect: normalizeOllamaModelLabel(settings.ollamaModelArchitect, settings.ollamaModel),
+        ollamaModelCoder: normalizeOllamaModelLabel(settings.ollamaModelCoder, settings.ollamaModel),
+        ollamaModelTester: normalizeOllamaModelLabel(settings.ollamaModelTester, settings.ollamaModel),
+        multiAgentRoles: normalizeMultiAgentRoles(settings.multiAgentRoles),
+        localAIMaxConcurrentLocal: Math.max(1, Math.min(4, Number(settings.localAIMaxConcurrentLocal || 1))),
+        localAIMaxConcurrentCloud: Math.max(1, Math.min(6, Number(settings.localAIMaxConcurrentCloud || 3))),
+        localAIMaxTokens: Math.max(512, Math.min(8192, Number(settings.localAIMaxTokens || 4096)))
+      };
+      const response = await window.electronAPI.saveSettings(normalizedSettings);
       if (response.success) {
         showMessage('Parametres sauvegardes', 3000);
-        window.dispatchEvent(new CustomEvent('settings-updated', { detail: settings }));
+        window.dispatchEvent(new CustomEvent('settings-updated', { detail: normalizedSettings }));
         onClose();
       } else {
         showMessage(`Erreur: ${response.error}`, 4000);
@@ -160,17 +203,91 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
   };
 
   const handleChange = (field, value) => {
-    setSettings(prev => ({ ...prev, [field]: value }));
+    setSettings((prev) => {
+      if (field === 'ollamaModel') {
+        return { ...prev, [field]: normalizeOllamaModelLabel(value) };
+      }
+      if (field === 'ollamaModelArchitect' || field === 'ollamaModelCoder' || field === 'ollamaModelTester') {
+        return { ...prev, [field]: normalizeOllamaModelLabel(value, prev.ollamaModel) };
+      }
+      if (field === 'localAIOptimizationMode' && value === 'safe') {
+        return { ...prev, [field]: value, localAIHardwareConsent: false };
+      }
+      return { ...prev, [field]: value };
+    });
+  };
+
+  const handleMultiAgentRoleChange = (roleKey, field, value) => {
+    setSettings((prev) => {
+      const currentRoles = normalizeMultiAgentRoles(prev.multiAgentRoles);
+      const currentRole = currentRoles[roleKey] || {};
+      const nextRole = { ...currentRole, [field]: value };
+
+      if (field === 'provider') {
+        nextRole.model = getDefaultModelForProvider(value, currentRole.model);
+      }
+
+      return {
+        ...prev,
+        multiAgentRoles: normalizeMultiAgentRoles({
+          ...currentRoles,
+          [roleKey]: nextRole
+        })
+      };
+    });
+  };
+
+  const refreshSystemAIProfile = async () => {
+    if (!isElectronApiAvailable || !window.electronAPI?.getSystemAIProfile) {
+      showMessage && showMessage('Lecture hardware indisponible.', 3000);
+      return;
+    }
+
+    setIsSystemProfileLoading(true);
+    try {
+      const response = await window.electronAPI.getSystemAIProfile({ consent: true });
+      setSystemAIProfile(response);
+      if (response?.success) {
+        setSettings((prev) => ({
+          ...prev,
+          localAIHardwareConsent: true,
+          localAIOptimizationMode: 'auto'
+        }));
+        showMessage && showMessage(`Profil IA locale: ${response.profile}`, 2500);
+      } else {
+        showMessage && showMessage(response?.error || 'Lecture hardware impossible.', 3500);
+      }
+    } catch (error) {
+      showMessage && showMessage(`Lecture hardware: ${error.message}`, 3500);
+    } finally {
+      setIsSystemProfileLoading(false);
+    }
   };
 
   const availableOllamaModels = Array.from(new Set([
-    ...suggestedOllamaModels,
+    ...SUGGESTED_OLLAMA_MODELS,
     settings.ollamaModel,
     settings.ollamaModelArchitect,
     settings.ollamaModelCoder,
     settings.ollamaModelTester,
     ...ollamaModels
   ].map((m) => String(m || '').trim()).filter(Boolean)));
+
+  const availableMultiAgentModels = Array.from(new Set([
+    ...REMOTE_MODEL_SUGGESTIONS,
+    settings.geminiModel,
+    settings.claudeModel,
+    settings.kimiModel,
+    ...SUGGESTED_OLLAMA_MODELS,
+    ...availableOllamaModels,
+    ...Object.values(normalizeMultiAgentRoles(settings.multiAgentRoles))
+      .map((role) => role.model)
+  ].map((m) => String(m || '').trim()).filter(Boolean)));
+
+  const normalizedMultiAgentRoles = normalizeMultiAgentRoles(settings.multiAgentRoles);
+  const geminiModelOptions = getRemoteModelOptions('gemini', settings.geminiModel);
+  const claudeModelOptions = getRemoteModelOptions('claude', settings.claudeModel);
+  const kimiModelOptions = getRemoteModelOptions('kimi', settings.kimiModel);
 
   if (!isOpen) return null;
 
@@ -186,6 +303,14 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
         </div>
 
         <div className="settings-body custom-scrollbar">
+          <div className="settings-section">
+            <label className="settings-label">Apparence</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="settings-hint" style={{ margin: 0 }}>Thème :</span>
+              <ThemeSwitcher theme={theme} onThemeChange={onThemeChange} />
+            </div>
+          </div>
+
           <div className="settings-section">
             <label className="settings-label">Provider IA par defaut</label>
             <select
@@ -203,23 +328,213 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
           </div>
 
           <div className="settings-section">
+            <label className="settings-label">Modeles IA simples</label>
+            <div className="settings-hint">
+              Ces valeurs sont celles utilisees par le chat quand vous choisissez Gemini, Claude ou Kimi dans la barre du haut.
+            </div>
+
+            <label className="settings-label">Gemini</label>
+            <input
+              type="text"
+              list="settings-gemini-models"
+              value={settings.geminiModel || DEFAULT_GEMINI_MODEL}
+              onChange={(e) => handleChange('geminiModel', e.target.value)}
+              className="settings-input"
+            />
+            <datalist id="settings-gemini-models">
+              {geminiModelOptions.map((modelName) => (
+                <option key={`settings-gemini-${modelName}`} value={modelName} />
+              ))}
+            </datalist>
+
+            <label className="settings-label">Claude</label>
+            <input
+              type="text"
+              list="settings-claude-models"
+              value={settings.claudeModel || DEFAULT_CLAUDE_MODEL}
+              onChange={(e) => handleChange('claudeModel', e.target.value)}
+              className="settings-input"
+            />
+            <datalist id="settings-claude-models">
+              {claudeModelOptions.map((modelName) => (
+                <option key={`settings-claude-${modelName}`} value={modelName} />
+              ))}
+            </datalist>
+
+            <label className="settings-label">Kimi / Together</label>
+            <input
+              type="text"
+              list="settings-kimi-models"
+              value={settings.kimiModel || DEFAULT_KIMI_MODEL}
+              onChange={(e) => handleChange('kimiModel', e.target.value)}
+              className="settings-input"
+            />
+            <datalist id="settings-kimi-models">
+              {kimiModelOptions.map((modelName) => (
+                <option key={`settings-kimi-${modelName}`} value={modelName} />
+              ))}
+            </datalist>
+          </div>
+
+          <datalist id="multi-agent-model-suggestions">
+            {availableMultiAgentModels.map((modelName) => (
+              <option key={`multi-agent-model-${modelName}`} value={modelName} />
+            ))}
+          </datalist>
+
+          <div className="settings-section">
+            <label className="settings-label">Multi-IA: roster du selectionneur</label>
+            <div className="settings-hint">
+              Le selectionneur compose une formation selon la demande. Ces reglages fixent le provider et le modele disponibles pour chaque specialiste.
+            </div>
+
+            <div className="settings-agent-grid">
+              {MULTI_AGENT_ROLE_DEFINITIONS.map((role) => {
+                const roleConfig = normalizedMultiAgentRoles[role.key];
+                return (
+                  <div className="settings-agent-role" key={role.key}>
+                    <div className="settings-agent-role-head">
+                      <span className="settings-agent-title">{role.title}</span>
+                      <span className="settings-agent-focus">{role.focus}</span>
+                    </div>
+                    <div className="settings-agent-controls">
+                      <select
+                        value={roleConfig.provider}
+                        onChange={(e) => handleMultiAgentRoleChange(role.key, 'provider', e.target.value)}
+                        className="settings-input"
+                      >
+                        {AI_PROVIDER_OPTIONS.map((providerOption) => (
+                          <option key={`${role.key}-${providerOption.value}`} value={providerOption.value}>
+                            {providerOption.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        list="multi-agent-model-suggestions"
+                        value={roleConfig.model}
+                        onChange={(e) => handleMultiAgentRoleChange(role.key, 'model', e.target.value)}
+                        placeholder={getDefaultModelForProvider(roleConfig.provider)}
+                        className="settings-input"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <label className="settings-label">Optimisation IA locale</label>
+            <select
+              value={settings.localAIOptimizationMode || 'safe'}
+              onChange={(e) => handleChange('localAIOptimizationMode', e.target.value)}
+              className="settings-input"
+            >
+              <option value="safe">Prive / Safe</option>
+              <option value="auto">Auto-adaptatif</option>
+              <option value="manual">Manuel expert</option>
+            </select>
+            <div className="settings-hint">
+              Safe ne lit pas la configuration PC et limite Ollama a un agent local. Auto lit CPU/RAM/GPU uniquement apres accord explicite.
+            </div>
+
+            {settings.localAIOptimizationMode === 'auto' && (
+              <>
+                <label className="settings-toggle">
+                  <input
+                    type="checkbox"
+                    checked={!!settings.localAIHardwareConsent}
+                    onChange={(e) => handleChange('localAIHardwareConsent', e.target.checked)}
+                  />
+                  <span>Autoriser la lecture locale CPU/RAM/GPU pour adapter la puissance</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={refreshSystemAIProfile}
+                  disabled={isSystemProfileLoading}
+                  className="btn btn-ghost"
+                >
+                  {isSystemProfileLoading ? 'Analyse...' : 'Analyser cette machine'}
+                </button>
+                {systemAIProfile?.success && (
+                  <div className="settings-hardware-summary">
+                    <span>Profil {systemAIProfile.profile}</span>
+                    <span>{systemAIProfile.cpu?.cores || 0} coeurs CPU</span>
+                    <span>{systemAIProfile.memory?.totalGb || '?'} Go RAM</span>
+                    <span>
+                      {systemAIProfile.ollama?.available
+                        ? `${systemAIProfile.ollama.models?.length || 0} modeles Ollama`
+                        : 'Ollama non detecte'}
+                    </span>
+                    {Array.isArray(systemAIProfile.gpu) && systemAIProfile.gpu.length > 0 && (
+                      <span>{systemAIProfile.gpu[0].name}</span>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {settings.localAIOptimizationMode === 'manual' && (
+              <div className="settings-agent-controls">
+                <input
+                  type="number"
+                  min="1"
+                  max="4"
+                  value={settings.localAIMaxConcurrentLocal || 1}
+                  onChange={(e) => handleChange('localAIMaxConcurrentLocal', Number(e.target.value || 1))}
+                  className="settings-input"
+                  title="Agents Ollama locaux simultanes"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  max="6"
+                  value={settings.localAIMaxConcurrentCloud || 3}
+                  onChange={(e) => handleChange('localAIMaxConcurrentCloud', Number(e.target.value || 3))}
+                  className="settings-input"
+                  title="Agents API/cloud simultanes"
+                />
+                <select
+                  value={settings.localAIContextBudget || 'short'}
+                  onChange={(e) => handleChange('localAIContextBudget', e.target.value)}
+                  className="settings-input"
+                >
+                  <option value="short">Contexte court</option>
+                  <option value="medium">Contexte moyen</option>
+                  <option value="long">Contexte long</option>
+                </select>
+                <input
+                  type="number"
+                  min="512"
+                  max="8192"
+                  value={settings.localAIMaxTokens || 4096}
+                  onChange={(e) => handleChange('localAIMaxTokens', Number(e.target.value || 4096))}
+                  className="settings-input"
+                  title="Tokens max par agent"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="settings-section">
             <label className="settings-label">Modeles Ollama</label>
             <div className="settings-hint">
-              Utilises pour Ollama simple et Multi-Ollama (Architecte / Codeur / Relecteur).
+              Utilises pour Ollama simple, Multi-Ollama et les agents du roster qui choisissent Ollama.
             </div>
             <div className="settings-hint">
-              Presets proposes: qwen3:8b, qwen3:14b, qwen3:32b (installer via `ollama pull` si absent localement).
+              Presets proposes: qwen3:latest, qwen3:14b, qwen3:30b, qwen3:32b (installer via `ollama pull` si absent localement).
             </div>
 
             <label className="settings-label">Modele Ollama simple</label>
             <select
-              value={settings.ollamaModel || 'qwen3:8b'}
+              value={settings.ollamaModel || DEFAULT_OLLAMA_MODEL}
               onChange={(e) => handleChange('ollamaModel', e.target.value)}
               className="settings-input"
             >
               {availableOllamaModels.length === 0 && (
-                <option value={settings.ollamaModel || 'qwen3:8b'}>
-                  {settings.ollamaModel || 'qwen3:8b'}
+                <option value={settings.ollamaModel || DEFAULT_OLLAMA_MODEL}>
+                  {settings.ollamaModel || DEFAULT_OLLAMA_MODEL}
                 </option>
               )}
               {availableOllamaModels.map((modelName) => (
@@ -229,7 +544,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
 
             <label className="settings-label">Architecte (Multi-Ollama)</label>
             <select
-              value={settings.ollamaModelArchitect || settings.ollamaModel || 'qwen3:8b'}
+              value={settings.ollamaModelArchitect || settings.ollamaModel || DEFAULT_OLLAMA_MODEL}
               onChange={(e) => handleChange('ollamaModelArchitect', e.target.value)}
               className="settings-input"
             >
@@ -240,7 +555,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
 
             <label className="settings-label">Codeur (Multi-Ollama)</label>
             <select
-              value={settings.ollamaModelCoder || settings.ollamaModel || 'qwen3:8b'}
+              value={settings.ollamaModelCoder || settings.ollamaModel || DEFAULT_OLLAMA_MODEL}
               onChange={(e) => handleChange('ollamaModelCoder', e.target.value)}
               className="settings-input"
             >
@@ -251,7 +566,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage }) => {
 
             <label className="settings-label">Relecteur (Multi-Ollama)</label>
             <select
-              value={settings.ollamaModelTester || settings.ollamaModel || 'qwen3:8b'}
+              value={settings.ollamaModelTester || settings.ollamaModel || DEFAULT_OLLAMA_MODEL}
               onChange={(e) => handleChange('ollamaModelTester', e.target.value)}
               className="settings-input"
             >

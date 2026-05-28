@@ -1,467 +1,316 @@
+/* ================================================
+   CodeEditor — Design FuturIA (Midnight Blue)
+   ================================================ */
+
 .code-editor-root {
-  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
-  width: 100%;
-  height: 100%;
   min-height: 0;
+  background: var(--bg);
+  overflow: hidden;
 }
 
-.code-editor-top {
-  border-bottom: 1px solid var(--border-0);
-  background: linear-gradient(180deg, rgba(11, 17, 24, 0.9), rgba(15, 22, 34, 0.65));
-}
-
+/* ---- Barre d'onglets ---- */
 .editor-tabs {
+  height: 36px;
+  min-height: 36px;
   display: flex;
-  gap: 10px;
-  padding: 10px 12px 8px;
+  align-items: flex-end;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
   overflow-x: auto;
-  overflow-y: hidden;
+  flex-shrink: 0;
 }
 
-.editor-tabs-empty {
-  font-size: 0.75rem;
-  color: var(--text-2);
-  padding: 4px 2px;
+.editor-tabs::-webkit-scrollbar {
+  height: 0;
 }
 
 .editor-tab {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 10px;
-  max-width: 360px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border-0);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-1);
-  font-family: var(--font-code);
-  font-size: 0.75rem;
+  gap: 5px;
+  padding: 0 12px;
+  height: 34px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+  position: relative;
+  background: var(--surface);
+}
+
+.editor-tab:hover {
+  color: var(--text-main);
+  background: var(--surface-2);
 }
 
 .editor-tab.is-active {
-  color: var(--text-0);
-  border-color: rgba(0, 245, 212, 0.45);
-  background: rgba(0, 245, 212, 0.1);
-  box-shadow: var(--glow-1);
+  color: var(--text-main);
+  background: var(--bg);
+  border-bottom: 2px solid var(--accent);
+  margin-bottom: -1px;
 }
 
-.editor-tab-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.editor-tab-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.editor-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+  flex-shrink: 0;
 }
 
 .editor-tab-close {
-  width: 18px;
-  height: 18px;
-  border-radius: 7px;
-  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-2);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 13px;
   line-height: 1;
-  font-family: var(--font-ui);
-}
-
-.editor-tab:hover .editor-tab-close {
-  color: var(--text-0);
-  border-color: rgba(255, 255, 255, 0.2);
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
 }
 
 .editor-tab-close:hover {
-  color: #ffb4a2;
-  border-color: rgba(255, 107, 107, 0.4);
-  background: rgba(255, 107, 107, 0.12);
+  background: var(--surface-2);
+  color: var(--text-main);
 }
 
-.code-editor-header {
+/* ---- Breadcrumb ---- */
+.editor-breadcrumb {
+  height: 28px;
+  min-height: 28px;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 12px;
-  padding: 10px 14px;
-  font-size: 0.8rem;
-  color: var(--text-1);
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  background: var(--bg);
+  flex-shrink: 0;
 }
 
-.code-editor-label {
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.65rem;
-  color: var(--text-2);
+.editor-breadcrumb-sep {
+  opacity: 0.4;
+  margin: 0 4px;
 }
 
-.code-editor-file {
-  color: var(--accent-1);
-  font-family: var(--font-code);
-  font-size: 0.78rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.code-editor-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.code-editor-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-1);
-  font-size: 0.68rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.code-editor-chip.is-accent {
-  border-color: rgba(0, 245, 212, 0.28);
-  background: rgba(0, 245, 212, 0.1);
-  color: var(--accent-1);
-}
-
-.code-editor-chip.is-contrast {
-  border-color: rgba(255, 209, 102, 0.26);
-  background: rgba(255, 209, 102, 0.1);
-  color: #ffd166;
-}
-
-.code-editor-actions {
+.editor-breadcrumb-right {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.code-editor-ghost-btn {
-  padding: 5px 11px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-1);
-  font-size: 0.68rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-}
-
-.code-editor-ghost-btn:hover,
-.code-editor-ghost-btn.is-active {
-  border-color: rgba(0, 245, 212, 0.28);
-  background: rgba(0, 245, 212, 0.1);
-  color: var(--accent-1);
-}
-
-.code-editor-body {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-  min-height: 0;
-}
-
-.editor-outline {
-  width: 248px;
-  min-width: 248px;
-  border-right: 1px solid var(--border-0);
-  background: linear-gradient(180deg, rgba(9, 14, 22, 0.96), rgba(13, 19, 30, 0.88));
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.editor-outline-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.editor-outline-title {
-  font-size: 0.68rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--text-2);
-}
-
-.editor-outline-count {
-  padding: 3px 7px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: var(--text-1);
-  font-size: 0.64rem;
-}
-
-.editor-outline-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px;
-  overflow: auto;
-  min-height: 0;
-}
-
-.editor-outline-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  padding: 9px 10px;
-  border-radius: 12px;
-  color: var(--text-1);
-  background: transparent;
-  border: 1px solid transparent;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-}
-
-.editor-outline-item:hover,
-.editor-outline-item.is-active {
-  background: rgba(0, 245, 212, 0.08);
-  border-color: rgba(0, 245, 212, 0.2);
-  color: var(--text-0);
-}
-
-.editor-outline-icon {
-  min-width: 20px;
-  color: var(--accent-1);
-  font-size: 0.76rem;
-  line-height: 1.4;
-}
-
-.editor-outline-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.editor-outline-name {
-  font-family: var(--font-code);
-  font-size: 0.76rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.editor-outline-meta {
-  font-size: 0.68rem;
-  color: var(--text-2);
-}
-
-.monaco-wrap {
-  flex: 1;
-  min-height: 0;
-}
-
-.editor-symbol-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  background: rgba(4, 8, 14, 0.34);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 56px 18px 18px;
-}
-
-.editor-symbol-modal {
-  width: min(560px, 100%);
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 16, 24, 0.96);
-  box-shadow: 0 28px 60px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(18px);
-  overflow: hidden;
-}
-
-.editor-symbol-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.editor-symbol-title {
-  font-size: 0.76rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-1);
-}
-
-.editor-symbol-shortcut {
-  color: var(--text-2);
-  font-size: 0.7rem;
-}
-
-.editor-symbol-input {
-  width: calc(100% - 24px);
-  margin: 12px;
-  padding: 11px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-0);
-  font-size: 0.86rem;
-}
-
-.editor-symbol-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 360px;
-  overflow: auto;
-  padding: 0 12px 12px;
-}
-
-.editor-symbol-empty {
-  padding: 14px 6px;
-  color: var(--text-2);
-  font-size: 0.78rem;
-}
-
-.editor-symbol-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  color: var(--text-1);
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.editor-symbol-item:hover,
-.editor-symbol-item.is-active {
-  border-color: rgba(0, 245, 212, 0.24);
-  background: rgba(0, 245, 212, 0.08);
-  color: var(--text-0);
-}
-
-.editor-symbol-kind {
-  min-width: 20px;
-  color: var(--accent-1);
-  font-size: 0.8rem;
-}
-
-.editor-symbol-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.editor-symbol-name {
-  font-family: var(--font-code);
-  font-size: 0.8rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.editor-symbol-meta {
-  color: var(--text-2);
-  font-size: 0.7rem;
-}
-
-/* --- Inline AI Prompt (Ctrl+K) --- */
-.inline-prompt-box {
-  position: absolute;
-  z-index: 100;
-  width: 500px;
-  background: rgba(15, 22, 34, 0.95);
-  border: 1px solid rgba(0, 245, 212, 0.3);
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(12px);
-  transform: translateY(-100%);
-  /* position above the cursor */
-  margin-top: -10px;
-  /* little gap */
-  overflow: hidden;
-  animation: inlinePromptAppear 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes inlinePromptAppear {
-  from {
-    opacity: 0;
-    transform: translateY(-90%) scale(0.98);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(-100%) scale(1);
-  }
-}
-
-.inline-prompt-header {
   font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-2);
-  padding: 6px 12px;
-  background: rgba(0, 0, 0, 0.2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
 }
 
-.inline-prompt-input-wrapper {
+/* ---- Zone de code ---- */
+.editor-body {
+  flex: 1;
+  display: flex;
+  overflow: auto;
+  min-height: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  position: relative;
+}
+
+.editor-gutter {
+  width: 48px;
+  flex-shrink: 0;
+  padding: 0 8px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+  user-select: none;
+  min-width: 48px;
+}
+
+.editor-gutter-line {
+  line-height: 1.7;
+}
+
+.editor-content {
+  flex: 1;
+  padding: 0 16px;
+  outline: none;
+  min-width: 0;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--text-main);
+}
+
+/* ---- Pending changes bar (bas de l'éditeur) ---- */
+.editor-pending-bar {
+  height: 32px;
+  min-height: 32px;
   display: flex;
   align-items: center;
-  padding: 8px 12px;
   gap: 8px;
+  padding: 0 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 11px;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
-.inline-prompt-icon {
-  font-size: 14px;
+.editor-pending-label {
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.inline-prompt-input {
+.editor-pending-file {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.editor-pending-file:hover,
+.editor-pending-file.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.editor-pending-file-badge {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.editor-pending-spacer {
   flex: 1;
+}
+
+.editor-pending-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.editor-pending-btn-apply {
+  background: var(--accent);
+  color: white;
+  border: 1px solid var(--accent);
+}
+
+.editor-pending-btn-apply:hover {
+  background: color-mix(in srgb, var(--accent) 80%, white);
+}
+
+.editor-pending-btn-reject {
   background: transparent;
-  border: none;
-  outline: none;
-  color: var(--text-0);
-  font-family: var(--font-ui);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.editor-pending-btn-reject:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* ---- Diff viewer ---- */
+.diff-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.diff-header {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.diff-content {
+  flex: 1;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.diff-line-add {
+  background: rgba(34, 197, 94, 0.08);
+  color: var(--success);
+}
+
+.diff-line-remove {
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--danger);
+}
+
+/* ---- Monaco / CodeMirror (si intégré) ---- */
+.monaco-container {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---- Empty state ---- */
+.editor-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
   font-size: 13px;
-  padding: 4px 0;
 }
 
-.inline-prompt-input::placeholder {
-  color: var(--text-3);
+.editor-empty-icon {
+  width: 40px;
+  height: 40px;
+  opacity: 0.3;
 }
 
-.inline-prompt-spinner {
-  font-size: 14px;
-  animation: spin 2s linear infinite;
-}
-
-@media (max-width: 1100px) {
-  .editor-outline {
-    width: 208px;
-    min-width: 208px;
-  }
-
-  .code-editor-header {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
+.editor-empty-hint {
+  font-size: 11px;
+  color: var(--text-muted);
 }

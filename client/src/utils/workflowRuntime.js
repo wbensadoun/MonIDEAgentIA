@@ -1,4 +1,5 @@
-const DEFAULT_WORKFLOW_OLLAMA_MODEL = 'qwen3:8b';
+import { DEFAULT_OLLAMA_MODEL as DEFAULT_WORKFLOW_OLLAMA_MODEL } from './ollamaModels';
+import { DEFAULT_GEMINI_MODEL, DEFAULT_KIMI_MODEL } from './remoteModels';
 
 export const normalizeWorkflowProvider = (value) => {
   const provider = String(value || '').trim().toLowerCase();
@@ -9,7 +10,7 @@ export const normalizeWorkflowProvider = (value) => {
 export const buildWorkflowAIInvocation = ({ provider, prompt, projectPath }) => {
   const normalizedProvider = normalizeWorkflowProvider(provider);
   const history = [{ role: 'user', text: String(prompt || '') }];
-  const baseArgs = [history, '', [], { projectPath }];
+  const baseArgs = [history, '', [], { model: DEFAULT_GEMINI_MODEL, projectPath }];
 
   if (normalizedProvider === 'kimi') {
     return {
@@ -20,7 +21,7 @@ export const buildWorkflowAIInvocation = ({ provider, prompt, projectPath }) => 
         '',
         [],
         {
-          model: 'moonshotai/Kimi-K2.5',
+          model: DEFAULT_KIMI_MODEL,
           projectPath,
           fastMode: true,
           reactMode: false,

@@ -681,7 +681,7 @@ ${formData.body}`;
                             ⚡ Injection automatique — aucune action requise
                           </span>
                           <br />
-                          Ces skills sont injectés dans <strong>chaque requête IA</strong> (Gemini &amp; Kimi), sans que vous ayez à les sélectionner. Installez-en via l&apos;onglet <strong>Packs</strong>.
+                          Ces skills sont injectés dans <strong>chaque requête IA</strong>, quel que soit le provider, sans que vous ayez à les sélectionner. Installez-en via l&apos;onglet <strong>Packs</strong>.
                         </div>
                       </div>
                     </div>

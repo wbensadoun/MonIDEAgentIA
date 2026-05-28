@@ -43,6 +43,7 @@ try {
   const electronAPI = {
     // Nouvelle API pour ouvrir un dialogue de sélection de dossier
     openFolderDialog: () => ipcRenderer.invoke('open-folder-dialog'),
+    authorizeProjectPath: (projectPath) => ipcRenderer.invoke('authorize-project-path', projectPath),
 
     // Événements menu (émis par le processus main)
     onMenuOpenFolder: (callback) => {
@@ -124,6 +125,7 @@ try {
     // Settings
     saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
     loadSettings: () => ipcRenderer.invoke('load-settings'),
+    getSystemAIProfile: (options) => ipcRenderer.invoke('get-system-ai-profile', options),
     validateApiKey: (provider, apiKey) => ipcRenderer.invoke('validate-api-key', provider, apiKey),
 
     // Terminal / Process Runner
@@ -196,6 +198,8 @@ try {
     // Ollama Local AI
     listOllamaModels: () => ipcRenderer.invoke('list-ollama-models'),
     checkOllamaUpdates: (modelNames) => ipcRenderer.invoke('check-ollama-updates', modelNames),
+    startOllama: () => ipcRenderer.invoke('start-ollama'),
+    installOllama: () => ipcRenderer.invoke('install-ollama'),
     pullOllamaModel: (modelName) => ipcRenderer.invoke('pull-ollama-model', modelName),
     onOllamaPullProgress: (callback) => {
       return registerChannelListener('ollama-pull-progress', callback);

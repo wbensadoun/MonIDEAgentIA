@@ -1,5 +1,6 @@
 require('dotenv').config();
 const http = require('http');
+const crypto = require('crypto');
 const { URL } = require('url');
 const { spawn } = require('child_process');
 const axios = require('axios');
@@ -10,7 +11,7 @@ const ACCESS_TOKEN = String(process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
 const PHONE_NUMBER_ID = String(process.env.WHATSAPP_PHONE_NUMBER_ID || '').trim();
 const GRAPH_VERSION = String(process.env.WHATSAPP_GRAPH_VERSION || 'v22.0').trim();
 const OLLAMA_URL = String(process.env.OLLAMA_URL || 'http://localhost:11434').trim().replace(/\/+$/, '');
-const DEFAULT_MODEL = String(process.env.WHATSAPP_OLLAMA_MODEL || 'qwen3:8b').trim() || 'qwen3:8b';
+const DEFAULT_MODEL = String(process.env.WHATSAPP_OLLAMA_MODEL || 'qwen3:latest').trim() || 'qwen3:latest';
 const SYSTEM_PROMPT = String(
   process.env.WHATSAPP_SYSTEM_PROMPT ||
   'Tu es un assistant technique concis. Reponds en francais avec des actions concretes.'
@@ -21,6 +22,10 @@ const ALLOWED_NUMBERS = new Set(
     .map((n) => n.trim())
     .filter(Boolean)
 );
+const ALLOW_ALL_SENDERS = /^(1|true|yes)$/i.test(String(process.env.WHATSAPP_ALLOW_ALL_SENDERS || '').trim());
+const APP_SECRET = String(process.env.WHATSAPP_APP_SECRET || '').trim();
+const DISABLE_SIGNATURE_VERIFY = /^(1|true|yes)$/i.test(String(process.env.WHATSAPP_DISABLE_SIGNATURE_VERIFY || '').trim());
+const MAX_BODY_BYTES = Math.max(1024, Number(process.env.WHATSAPP_MAX_BODY_BYTES || 1024 * 1024));
 const EXEC_ENABLED = /^(1|true|yes)$/i.test(String(process.env.WHATSAPP_EXEC_ENABLED || '').trim());
 const EXEC_TIMEOUT_MS = Math.max(1000, Number(process.env.WHATSAPP_EXEC_TIMEOUT_MS || 30000));
 const EXEC_MAX_OUTPUT = Math.max(500, Number(process.env.WHATSAPP_EXEC_MAX_OUTPUT || 3000));
@@ -38,18 +43,46 @@ const sendJson = (res, code, payload) => {
 
 const readJsonBody = (req) => new Promise((resolve, reject) => {
   const chunks = [];
-  req.on('data', (chunk) => chunks.push(chunk));
+  let totalBytes = 0;
+  req.on('data', (chunk) => {
+    totalBytes += chunk.length;
+    if (totalBytes > MAX_BODY_BYTES) {
+      reject(new Error(`Body trop volumineux (${totalBytes} bytes > ${MAX_BODY_BYTES})`));
+      req.destroy();
+      return;
+    }
+    chunks.push(chunk);
+  });
   req.on('end', () => {
-    const raw = Buffer.concat(chunks).toString('utf8');
-    if (!raw) return resolve({});
+    const rawBuffer = Buffer.concat(chunks);
+    const raw = rawBuffer.toString('utf8');
+    if (!raw) return resolve({ body: {}, raw: rawBuffer });
     try {
-      resolve(JSON.parse(raw));
+      resolve({ body: JSON.parse(raw), raw: rawBuffer });
     } catch (error) {
       reject(new Error(`JSON invalide: ${error.message}`));
     }
   });
   req.on('error', reject);
 });
+
+const verifyWebhookSignature = (req, rawBody) => {
+  if (DISABLE_SIGNATURE_VERIFY) return true;
+  if (!APP_SECRET) return false;
+
+  const received = String(req.headers['x-hub-signature-256'] || '').trim();
+  if (!received.startsWith('sha256=')) return false;
+
+  const expected = `sha256=${crypto
+    .createHmac('sha256', APP_SECRET)
+    .update(rawBody)
+    .digest('hex')}`;
+
+  const receivedBuffer = Buffer.from(received, 'utf8');
+  const expectedBuffer = Buffer.from(expected, 'utf8');
+  if (receivedBuffer.length !== expectedBuffer.length) return false;
+  return crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
+};
 
 const splitForWhatsApp = (text, maxLen = 1500) => {
   const value = String(text || '').trim();
@@ -235,7 +268,7 @@ const handleCommand = async ({ from, text }) => {
   if (input.startsWith('/model ')) {
     const nextModel = input.slice('/model '.length).trim();
     if (!nextModel) {
-      await sendWhatsAppText(from, 'Usage: /model qwen3:8b');
+      await sendWhatsAppText(from, 'Usage: /model qwen3:latest');
       return;
     }
     runtimeModel = nextModel;
@@ -295,7 +328,8 @@ const extractInboundMessages = (body) => {
 };
 
 const isAllowedSender = (from) => {
-  if (ALLOWED_NUMBERS.size === 0) return true;
+  if (ALLOW_ALL_SENDERS) return true;
+  if (ALLOWED_NUMBERS.size === 0) return false;
   return ALLOWED_NUMBERS.has(String(from).trim());
 };
 
@@ -308,7 +342,12 @@ const server = http.createServer(async (req, res) => {
       model: runtimeModel,
       ollamaUrl: OLLAMA_URL,
       execEnabled: EXEC_ENABLED,
-      execAllowlistSize: EXEC_ALLOWLIST.length
+      execAllowlistSize: EXEC_ALLOWLIST.length,
+      allowAllSenders: ALLOW_ALL_SENDERS,
+      allowedNumbersSize: ALLOWED_NUMBERS.size,
+      signatureRequired: !DISABLE_SIGNATURE_VERIFY,
+      appSecretConfigured: !!APP_SECRET,
+      maxBodyBytes: MAX_BODY_BYTES
     });
   }
 
@@ -328,10 +367,17 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && requestUrl.pathname === '/webhook') {
     let body;
+    let raw;
     try {
-      body = await readJsonBody(req);
+      const parsed = await readJsonBody(req);
+      body = parsed.body;
+      raw = parsed.raw;
     } catch (error) {
       return sendJson(res, 400, { ok: false, error: error.message });
+    }
+
+    if (!verifyWebhookSignature(req, raw)) {
+      return sendJson(res, 403, { ok: false, error: 'signature invalide ou WHATSAPP_APP_SECRET manquant' });
     }
 
     sendJson(res, 200, { ok: true });
@@ -358,6 +404,8 @@ server.listen(PORT, () => {
   console.log(`[WhatsApp Bridge] Webhook: /webhook`);
   console.log(`[WhatsApp Bridge] Ollama: ${OLLAMA_URL}`);
   console.log(`[WhatsApp Bridge] Model: ${runtimeModel}`);
+  console.log(`[WhatsApp Bridge] Allowed senders: ${ALLOW_ALL_SENDERS ? 'ALL (override)' : ALLOWED_NUMBERS.size}`);
+  console.log(`[WhatsApp Bridge] Signature required: ${DISABLE_SIGNATURE_VERIFY ? 'non (override)' : 'oui'}`);
   console.log(`[WhatsApp Bridge] Exec enabled: ${EXEC_ENABLED}`);
   if (EXEC_ENABLED) {
     console.log(`[WhatsApp Bridge] Exec allowlist: ${EXEC_ALLOWLIST.join(' | ') || '(vide)'}`);

@@ -5,6 +5,12 @@ import './LoadingAnimations.css';
 // LoadingSteps (unchanged)
 // ─────────────────────────────────────────────────────────
 export const LoadingSteps = ({ steps, currentStep }) => {
+  const normalizeStatus = (stepStatus) => {
+    if (stepStatus === 'done' || stepStatus === 'completed') return 'completed';
+    if (stepStatus === 'active' || stepStatus === 'error') return stepStatus;
+    return null;
+  };
+
   const getStepStatus = (stepIndex) => {
     if (stepIndex < currentStep) return 'completed';
     if (stepIndex === currentStep) return 'active';
@@ -14,7 +20,7 @@ export const LoadingSteps = ({ steps, currentStep }) => {
   return (
     <div className="loading-steps">
       {steps.map((step, index) => {
-        const status = getStepStatus(index);
+        const status = normalizeStatus(step?.status) || getStepStatus(index);
         return (
           <div key={index} className={`step step-${status}`}>
             <div className="step-indicator">
@@ -22,6 +28,8 @@ export const LoadingSteps = ({ steps, currentStep }) => {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                 </svg>
+              ) : status === 'error' ? (
+                <span className="step-error-mark">!</span>
               ) : status === 'active' ? (
                 <div className="step-spinner" />
               ) : (

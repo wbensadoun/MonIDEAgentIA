@@ -10,7 +10,7 @@
 }
 
 .settings-modal {
-  width: min(540px, 92vw);
+  width: min(680px, 92vw);
   max-height: 90vh;
   background: rgba(12, 18, 28, 0.98);
   border: 1px solid var(--border-0);
@@ -146,6 +146,61 @@
   line-height: 1.35;
 }
 
+.settings-agent-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.settings-agent-role {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-0);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.settings-agent-role-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-agent-title {
+  font-size: 0.78rem;
+  color: var(--text-0);
+  font-weight: 700;
+}
+
+.settings-agent-focus {
+  font-size: 0.68rem;
+  color: var(--text-2);
+  line-height: 1.35;
+}
+
+.settings-agent-controls {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.42fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.settings-hardware-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--text-1);
+}
+
+.settings-hardware-summary span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-0);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .settings-valid,
 .settings-invalid {
   display: inline-flex;
@@ -177,4 +232,10 @@
   gap: 10px;
   padding: 14px 16px;
   border-top: 1px solid var(--border-0);
+}
+
+@media (max-width: 640px) {
+  .settings-agent-controls {
+    grid-template-columns: 1fr;
+  }
 }

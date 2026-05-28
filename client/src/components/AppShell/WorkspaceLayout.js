@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import FileExplorer from '../FileExplorer';
 import CodeEditor from '../CodeEditor';
 import LivePreview from '../LivePreview';
@@ -6,6 +6,57 @@ import TerminalPanel from '../TerminalPanel';
 import GitPanel from '../GitPanel';
 import VisualWorkflowEditor from '../VisualWorkflowEditor';
 import AIChat from '../AIChat';
+
+/* Icônes tabs centre */
+const IconCode = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
+    <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
+  </svg>
+);
+const IconEye = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const IconGit = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
+    <circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" />
+  </svg>
+);
+const IconFlow = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+  </svg>
+);
+const IconMaximize = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:12,height:12}}>
+    <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+  </svg>
+);
+const IconChevronDown = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:12,height:12}}>
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+);
+const IconX = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:12,height:12}}>
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+const IconMaximize2 = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:12,height:12}}>
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+  </svg>
+);
+const IconMinimize2 = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:12,height:12}}>
+    <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" />
+  </svg>
+);
+
+const DEFAULT_TERMINAL_HEIGHT = 250;
+const MIN_TERMINAL_HEIGHT = 100;
+const MAX_TERMINAL_HEIGHT_RATIO = 0.7;
 
 const WorkspaceLayout = ({
   layoutRef,
@@ -40,123 +91,203 @@ const WorkspaceLayout = ({
   terminalProps,
   gitPanelProps,
   workflowProps,
-  aiChatProps
-}) => (
-  <div ref={layoutRef} className="workspace">
-    {!isLeftCollapsed && (
-      <aside
-        className="panel nav-panel"
-        style={{ width: `${leftWidth}%` }}
-      >
-        <FileExplorer
-          projectItems={projectItems}
-          currentProjectPath={currentProjectPath}
-          activeFile={activeFile}
-          expandedFolders={expandedFolders}
-          newItemName={newItemName}
-          isElectronApiAvailable={isElectronApiAvailable}
-          onOpenFolder={onOpenFolder}
-          onCreateItem={onCreateItem}
-          onRenameItem={onRenameItem}
-          onMoveItem={onMoveItem}
-          onDeleteItem={onDeleteItem}
-          onToggleFolder={onToggleFolder}
-          onFileClick={onFileClick}
-          onNewItemNameChange={onNewItemNameChange}
-          isReadOnly={isReadOnlyMode}
+  aiChatProps,
+  isTerminalOpen,
+  onToggleTerminal,
+}) => {
+  const [terminalHeight, setTerminalHeight] = useState(() => {
+    try {
+      const saved = localStorage.getItem('futurIA_terminalHeight');
+      return saved ? Math.max(MIN_TERMINAL_HEIGHT, Number(saved)) : DEFAULT_TERMINAL_HEIGHT;
+    } catch { return DEFAULT_TERMINAL_HEIGHT; }
+  });
+  const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
+  const termDragRef = useRef(null);
+  const centerRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('futurIA_terminalHeight', String(terminalHeight));
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+  }, [terminalHeight]);
+
+  // Vertical resizer for bottom terminal
+  const handleTermDragStart = useCallback((e) => {
+    e.preventDefault();
+    termDragRef.current = {
+      startY: e.clientY,
+      startHeight: terminalHeight,
+    };
+
+    const onMouseMove = (ev) => {
+      if (!termDragRef.current) return;
+      const delta = termDragRef.current.startY - ev.clientY;
+      const maxH = centerRef.current
+        ? centerRef.current.clientHeight * MAX_TERMINAL_HEIGHT_RATIO
+        : 600;
+      const newH = Math.min(maxH, Math.max(MIN_TERMINAL_HEIGHT, termDragRef.current.startHeight + delta));
+      setTerminalHeight(newH);
+    };
+    const onMouseUp = () => {
+      termDragRef.current = null;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'row-resize';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [terminalHeight]);
+
+  const toggleMaximize = useCallback(() => {
+    setIsTerminalMaximized(prev => !prev);
+  }, []);
+
+  const effectiveTerminalHeight = isTerminalMaximized
+    ? (centerRef.current ? centerRef.current.clientHeight - 36 : 600)
+    : terminalHeight;
+
+  return (
+    <div ref={layoutRef} className="workspace">
+      {/* Sidebar gauche — Explorateur */}
+      {!isLeftCollapsed && (
+        <aside
+          className="ide-sidebar-left custom-scrollbar"
+          style={{ width: `${leftWidth}%` }}
+        >
+          <FileExplorer
+            projectItems={projectItems}
+            currentProjectPath={currentProjectPath}
+            activeFile={activeFile}
+            expandedFolders={expandedFolders}
+            newItemName={newItemName}
+            isElectronApiAvailable={isElectronApiAvailable}
+            onOpenFolder={onOpenFolder}
+            onCreateItem={onCreateItem}
+            onRenameItem={onRenameItem}
+            onMoveItem={onMoveItem}
+            onDeleteItem={onDeleteItem}
+            onToggleFolder={onToggleFolder}
+            onFileClick={onFileClick}
+            onNewItemNameChange={onNewItemNameChange}
+            isReadOnly={isReadOnlyMode}
+          />
+        </aside>
+      )}
+
+      {/* Resizer gauche */}
+      {!isLeftCollapsed && (
+        <div
+          className={`panel-resizer ${dragging === 'left' ? 'panel-resizer-active' : ''}`}
+          onMouseDown={(e) => onDragStart(e, 'left')}
         />
-      </aside>
-    )}
+      )}
 
-    {!isLeftCollapsed && (
-      <div
-        className={`panel-resizer ${dragging === 'left' ? 'panel-resizer-active' : ''}`}
-        onMouseDown={(event) => onDragStart(event, 'left')}
-      />
-    )}
+      {/* Panneau central */}
+      <main ref={centerRef} className="ide-center" style={{ width: `${middleWidth}%` }}>
+        {/* Tabs (sans Terminal) */}
+        <div className="center-tabs">
+          {[
+            { id: 'code', label: 'Code', Icon: IconCode },
+            { id: 'preview', label: 'Aperçu', Icon: IconEye },
+            { id: 'git', label: 'Git', Icon: IconGit },
+            { id: 'workflows', label: 'Flux', Icon: IconFlow },
+          ].map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onClick={() => onCenterViewChange(id)}
+              className={`center-tab ${centerView === id ? 'is-active' : ''}`}
+            >
+              <Icon />
+              {label}
+            </button>
+          ))}
 
-    <main
-      className="panel center-panel"
-      style={{ width: `${middleWidth}%` }}
-    >
-      <div className="center-tabs">
-        <div className="tab-group">
-          <button
-            onClick={() => onCenterViewChange('code')}
-            className={`tab ${centerView === 'code' ? 'is-active' : ''}`}
-          >
-            Code
-          </button>
-          <button
-            onClick={() => onCenterViewChange('preview')}
-            className={`tab ${centerView === 'preview' ? 'is-active' : ''}`}
-          >
-            Aperçu
-          </button>
-          <button
-            onClick={() => onCenterViewChange('terminal')}
-            className={`tab ${centerView === 'terminal' ? 'is-active' : ''}`}
-          >
-            Terminal
-          </button>
-          <button
-            onClick={() => onCenterViewChange('git')}
-            className={`tab ${centerView === 'git' ? 'is-active' : ''}`}
-            style={{ color: centerView === 'git' ? '#00c49a' : undefined }}
-          >
-            ⎇ Git
-          </button>
-          <button
-            onClick={() => onCenterViewChange('workflows')}
-            className={`tab ${centerView === 'workflows' ? 'is-active' : ''}`}
-            style={{ color: centerView === 'workflows' ? '#a78bfa' : undefined }}
-          >
-            ⚡ Flux
-          </button>
-        </div>
-        <div className="tab-actions">
+          <div className="center-tab-spacer" />
+
           <button
             onClick={onToggleFocusMode}
-            className={`btn btn-ghost ${isFocusMode ? 'is-active' : ''}`}
+            className={`center-tab-action ${isFocusMode ? 'is-active' : ''}`}
+            title={isFocusMode ? 'Quitter le mode focus' : 'Mode focus'}
           >
+            <IconMaximize />
             Focus
           </button>
         </div>
-      </div>
 
-      <div className="center-body">
-        {centerView === 'code' && <CodeEditor {...editorProps} />}
-        {centerView === 'preview' && <LivePreview {...previewProps} />}
-        {centerView === 'terminal' && <TerminalPanel {...terminalProps} />}
-        {centerView === 'git' && <GitPanel {...gitPanelProps} />}
-        <div
-          style={{
-            display: centerView === 'workflows' ? 'flex' : 'none',
-            flex: 1,
-            minHeight: 0
-          }}
-        >
-          <VisualWorkflowEditor {...workflowProps} />
+        {/* Corps principal */}
+        <div className="center-body" style={isTerminalOpen && isTerminalMaximized ? { flex: '0 0 0', overflow: 'hidden' } : undefined}>
+          {centerView === 'code' && <CodeEditor {...editorProps} />}
+          {centerView === 'preview' && <LivePreview {...previewProps} />}
+          {centerView === 'git' && <GitPanel {...gitPanelProps} />}
+          <div style={{ display: centerView === 'workflows' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
+            <VisualWorkflowEditor {...workflowProps} />
+          </div>
         </div>
-      </div>
-    </main>
 
-    {!isRightCollapsed && (
-      <div
-        className={`panel-resizer ${dragging === 'right' ? 'panel-resizer-active' : ''}`}
-        onMouseDown={(event) => onDragStart(event, 'right')}
-      />
-    )}
+        {/* Bottom Terminal Panel */}
+        {isTerminalOpen && (
+          <div
+            className="bottom-terminal-wrapper"
+            style={{ height: effectiveTerminalHeight }}
+          >
+            {/* Resize handle */}
+            {!isTerminalMaximized && (
+              <div
+                className={`bottom-terminal-resizer ${termDragRef.current ? 'is-dragging' : ''}`}
+                onMouseDown={handleTermDragStart}
+              />
+            )}
 
-    {!isRightCollapsed && (
-      <aside
-        className="panel ai-panel"
-        style={{ width: `${rightWidth}%` }}
-      >
-        <AIChat {...aiChatProps} />
-      </aside>
-    )}
-  </div>
-);
+            {/* Terminal Panel (Header + Content) */}
+            <TerminalPanel
+              {...terminalProps}
+              headerRightControls={
+                <div className="bottom-terminal-header-right">
+                  <button
+                    className="bottom-terminal-action"
+                    onClick={toggleMaximize}
+                    title={isTerminalMaximized ? 'Restaurer' : 'Maximiser'}
+                  >
+                    {isTerminalMaximized ? <IconMinimize2 /> : <IconMaximize2 />}
+                  </button>
+                  <button
+                    className="bottom-terminal-action"
+                    onClick={onToggleTerminal}
+                    title="Fermer le terminal"
+                  >
+                    <IconX />
+                  </button>
+                </div>
+              }
+            />
+          </div>
+        )}
+      </main>
+
+      {/* Resizer droit */}
+      {!isRightCollapsed && (
+        <div
+          className={`panel-resizer ${dragging === 'right' ? 'panel-resizer-active' : ''}`}
+          onMouseDown={(e) => onDragStart(e, 'right')}
+        />
+      )}
+
+      {/* Sidebar droite — AI Chat */}
+      {!isRightCollapsed && (
+        <aside
+          className="ide-sidebar-right"
+          style={{ width: `${rightWidth}%` }}
+        >
+          <AIChat {...aiChatProps} />
+        </aside>
+      )}
+    </div>
+  );
+};
 
 export default WorkspaceLayout;

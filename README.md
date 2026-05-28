@@ -6,7 +6,7 @@ Un IDE desktop intelligent avec agent IA intgr (Google Gemini) pour dvelopper pl
 
 - **Frontend** : React 18 + Tailwind CSS
 - **Desktop** : Electron 37
-- **IA** : Google Gemini API (gemini-1.5-flash-latest)
+- **IA** : Google Gemini API (`gemini-3-flash-preview`) avec support Claude, Kimi et Ollama
 - **Architecture** : 3 panneaux (Explorateur | diteur | Chat IA)
 
 ##  Fonctionnalits
@@ -23,7 +23,7 @@ Un IDE desktop intelligent avec agent IA intgr (Google Gemini) pour dvelopper pl
 - Auto-save automatique
 - Undo spcifique pour modifications IA
 
-###  Agent IA (Gemini)
+###  Agent IA
 - Prompts avec contexte projet complet
 - Modification automatique de fichiers
 - Cration de nouveaux fichiers
@@ -110,7 +110,7 @@ Important: les dpendances npm sont intgres au build. L'utilisateur final n'a pas
 1. Installer et verifier Ollama.
 ```bash
 ollama list
-ollama pull qwen3:8b
+ollama pull qwen3:latest
 ```
 
 2. Dans l'app, ouvrir `Settings` puis choisir `Provider IA par defaut = Ollama` ou `Multi-Ollama`, et selectionner un modele Qwen.
@@ -120,7 +120,9 @@ ollama pull qwen3:8b
 WHATSAPP_VERIFY_TOKEN=ton_token_verification
 WHATSAPP_ACCESS_TOKEN=ton_token_temp_ou_long_lived
 WHATSAPP_PHONE_NUMBER_ID=ton_phone_number_id
-WHATSAPP_OLLAMA_MODEL=qwen3:8b
+WHATSAPP_APP_SECRET=ton_app_secret_meta
+WHATSAPP_ALLOWED_NUMBERS=33612345678
+WHATSAPP_OLLAMA_MODEL=qwen3:latest
 WHATSAPP_EXEC_ENABLED=true
 WHATSAPP_EXEC_ALLOWLIST=ollama list,git status,git diff
 ```
@@ -140,12 +142,12 @@ Configurer dans Meta le webhook `https://<ngrok>/webhook` avec le meme `WHATSAPP
 ```text
 /help
 /model
-/model qwen3:14b
+/model qwen3:latest
 /ask explique ce bug...
 /exec ollama list
 ```
 
-Note securite: ne mets jamais une allowlist trop large pour `/exec`.
+Note securite: par defaut, le bridge refuse les numeros absents de `WHATSAPP_ALLOWED_NUMBERS` et les POST non signes (`x-hub-signature-256`). En dev seulement, `WHATSAPP_ALLOW_ALL_SENDERS=true` ou `WHATSAPP_DISABLE_SIGNATURE_VERIFY=true` permettent de lever ces garde-fous explicitement. Ne mets jamais une allowlist trop large pour `/exec`.
 
 ##  Structure du projet
 

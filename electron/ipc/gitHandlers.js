@@ -62,6 +62,7 @@ const registerGitHandlers = ({
   path,
   runGit,
   ensureEditPermission,
+  ensureTrustedProjectPath,
   assertSafePath
 }) => {
   const readGitBlobIfExists = async (projectPath, gitSpecifier) => {
@@ -81,10 +82,15 @@ const registerGitHandlers = ({
     ipcMain.handle(channel, listener);
   };
 
+  const requireTrustedProjectPath = async (projectPath) => {
+    if (!projectPath) throw new Error('Chemin projet manquant');
+    return ensureTrustedProjectPath(projectPath);
+  };
+
   handle('git-status', async (event, projectPath) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-      const { stdout } = await runGit(['status', '--porcelain=v1', '-z', '--untracked-files=all'], projectPath);
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+      const { stdout } = await runGit(['status', '--porcelain=v1', '-z', '--untracked-files=all'], trustedProjectPath);
       return { success: true, files: parseGitStatusPorcelain(stdout) };
     } catch (error) {
       return { success: false, error: error.message };
@@ -93,9 +99,9 @@ const registerGitHandlers = ({
 
   handle('git-diff', async (event, projectPath, filePath) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
       const args = filePath ? ['diff', 'HEAD', '--', filePath] : ['diff', 'HEAD'];
-      const { stdout } = await runGit(args, projectPath);
+      const { stdout } = await runGit(args, trustedProjectPath);
       return { success: true, diff: stdout };
     } catch (error) {
       return { success: false, error: error.message };
@@ -104,10 +110,10 @@ const registerGitHandlers = ({
 
   handle('git-add', async (event, projectPath, files = []) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
       await ensureEditPermission();
       const args = files && files.length > 0 ? ['add', ...files] : ['add', '-A'];
-      await runGit(args, projectPath);
+      await runGit(args, trustedProjectPath);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -116,7 +122,7 @@ const registerGitHandlers = ({
 
   handle('git-unstage', async (event, projectPath, files = []) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
       await ensureEditPermission();
       const normalizedFiles = Array.isArray(files)
         ? files.map((file) => normalizeGitPath(file)).filter(Boolean)
@@ -124,7 +130,7 @@ const registerGitHandlers = ({
       const args = normalizedFiles.length > 0
         ? ['reset', 'HEAD', '--', ...normalizedFiles]
         : ['reset', 'HEAD'];
-      await runGit(args, projectPath);
+      await runGit(args, trustedProjectPath);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -133,10 +139,10 @@ const registerGitHandlers = ({
 
   handle('git-commit', async (event, projectPath, message) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
       await ensureEditPermission();
       if (!message || !message.trim()) return { success: false, error: 'Message de commit manquant' };
-      const { stdout } = await runGit(['commit', '-m', message.trim()], projectPath);
+      const { stdout } = await runGit(['commit', '-m', message.trim()], trustedProjectPath);
       return { success: true, output: stdout };
     } catch (error) {
       return { success: false, error: error.message };
@@ -145,12 +151,12 @@ const registerGitHandlers = ({
 
   handle('git-push', async (event, projectPath, remote, branch) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
       await ensureEditPermission();
       const args = ['push'];
       if (remote) args.push(remote);
       if (branch) args.push(branch);
-      const { stdout } = await runGit(args, projectPath);
+      const { stdout } = await runGit(args, trustedProjectPath);
       return { success: true, output: stdout };
     } catch (error) {
       return { success: false, error: error.message };
@@ -159,9 +165,9 @@ const registerGitHandlers = ({
 
   handle('git-pull', async (event, projectPath) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
       await ensureEditPermission();
-      const { stdout } = await runGit(['pull'], projectPath);
+      const { stdout } = await runGit(['pull'], trustedProjectPath);
       return { success: true, output: stdout };
     } catch (error) {
       return { success: false, error: error.message };
@@ -170,8 +176,8 @@ const registerGitHandlers = ({
 
   handle('git-log', async (event, projectPath, limit = 20) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-      const { stdout } = await runGit(['log', `--max-count=${limit}`, '--pretty=format:%H|%an|%ae|%ar|%s'], projectPath);
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+      const { stdout } = await runGit(['log', `--max-count=${limit}`, '--pretty=format:%H|%an|%ae|%ar|%s'], trustedProjectPath);
       const commits = stdout.split('\n').filter(Boolean).map((line) => {
         const parts = line.split('|');
         return { hash: parts[0], author: parts[1], email: parts[2], date: parts[3], message: parts.slice(4).join('|') };
@@ -184,17 +190,17 @@ const registerGitHandlers = ({
 
   handle('git-read-file-state', async (event, projectPath, filePath) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
 
       const normalizedFile = normalizeGitPath(filePath);
       if (!normalizedFile) return { success: false, error: 'Chemin fichier manquant' };
 
-      const absoluteFilePath = path.join(projectPath, normalizedFile);
-      assertSafePath(projectPath, absoluteFilePath);
+      const absoluteFilePath = path.join(trustedProjectPath, normalizedFile);
+      assertSafePath(trustedProjectPath, absoluteFilePath);
 
       const [headRes, indexRes] = await Promise.all([
-        readGitBlobIfExists(projectPath, `HEAD:${normalizedFile}`),
-        readGitBlobIfExists(projectPath, `:${normalizedFile}`)
+        readGitBlobIfExists(trustedProjectPath, `HEAD:${normalizedFile}`),
+        readGitBlobIfExists(trustedProjectPath, `:${normalizedFile}`)
       ]);
 
       let workingContent = '';
@@ -226,9 +232,9 @@ const registerGitHandlers = ({
 
   handle('git-init', async (event, projectPath) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
       await ensureEditPermission();
-      const { stdout } = await runGit(['init'], projectPath);
+      const { stdout } = await runGit(['init'], trustedProjectPath);
       return { success: true, output: stdout };
     } catch (error) {
       return { success: false, error: error.message };
@@ -237,8 +243,8 @@ const registerGitHandlers = ({
 
   handle('git-branch', async (event, projectPath) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-      const { stdout } = await runGit(['branch', '--show-current'], projectPath);
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+      const { stdout } = await runGit(['branch', '--show-current'], trustedProjectPath);
       return { success: true, branch: stdout.trim() };
     } catch (error) {
       return { success: false, error: error.message };
@@ -247,8 +253,8 @@ const registerGitHandlers = ({
 
   handle('git-remotes', async (event, projectPath) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-      const { stdout } = await runGit(['remote', '-v'], projectPath);
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+      const { stdout } = await runGit(['remote', '-v'], trustedProjectPath);
       return { success: true, remotes: stdout.trim() };
     } catch (error) {
       return { success: false, error: error.message };
@@ -257,8 +263,8 @@ const registerGitHandlers = ({
 
   handle('git-list-branches', async (event, projectPath) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-      const { stdout } = await runGit(['branch', '--all', '--no-color'], projectPath);
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+      const { stdout } = await runGit(['branch', '--all', '--no-color'], trustedProjectPath);
       const branches = stdout
         .split('\n')
         .map((line) => String(line || '').trim())
@@ -275,11 +281,11 @@ const registerGitHandlers = ({
 
   handle('git-checkout-branch', async (event, projectPath, branchName) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
       await ensureEditPermission();
       const target = String(branchName || '').trim();
       if (!target) return { success: false, error: 'Nom de branche manquant' };
-      const { stdout } = await runGit(['checkout', target], projectPath);
+      const { stdout } = await runGit(['checkout', target], trustedProjectPath);
       return { success: true, output: stdout };
     } catch (error) {
       return { success: false, error: error.message };
@@ -288,11 +294,11 @@ const registerGitHandlers = ({
 
   handle('git-create-branch', async (event, projectPath, branchName) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
       await ensureEditPermission();
       const target = String(branchName || '').trim();
       if (!target) return { success: false, error: 'Nom de branche manquant' };
-      const { stdout } = await runGit(['checkout', '-b', target], projectPath);
+      const { stdout } = await runGit(['checkout', '-b', target], trustedProjectPath);
       return { success: true, output: stdout };
     } catch (error) {
       return { success: false, error: error.message };
@@ -301,10 +307,10 @@ const registerGitHandlers = ({
 
   handle('git-stash-save', async (event, projectPath, message) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
       await ensureEditPermission();
       const stashMessage = String(message || '').trim() || `stash-${new Date().toISOString()}`;
-      const { stdout } = await runGit(['stash', 'push', '-u', '-m', stashMessage], projectPath);
+      const { stdout } = await runGit(['stash', 'push', '-u', '-m', stashMessage], trustedProjectPath);
       return { success: true, output: stdout };
     } catch (error) {
       return { success: false, error: error.message };
@@ -313,8 +319,8 @@ const registerGitHandlers = ({
 
   handle('git-stash-list', async (event, projectPath) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
-      const { stdout } = await runGit(['stash', 'list', '--pretty=format:%gd|%cr|%s'], projectPath);
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
+      const { stdout } = await runGit(['stash', 'list', '--pretty=format:%gd|%cr|%s'], trustedProjectPath);
       const stashes = stdout.split('\n').filter(Boolean).map((line) => {
         const [ref, when, ...rest] = line.split('|');
         return { ref: ref || '', when: when || '', message: rest.join('|') || '' };
@@ -327,11 +333,11 @@ const registerGitHandlers = ({
 
   handle('git-stash-pop', async (event, projectPath, stashRef) => {
     try {
-      if (!projectPath) return { success: false, error: 'Chemin projet manquant' };
+      const trustedProjectPath = await requireTrustedProjectPath(projectPath);
       await ensureEditPermission();
       const ref = String(stashRef || '').trim();
       const args = ref ? ['stash', 'pop', ref] : ['stash', 'pop'];
-      const { stdout } = await runGit(args, projectPath);
+      const { stdout } = await runGit(args, trustedProjectPath);
       return { success: true, output: stdout };
     } catch (error) {
       return { success: false, error: error.message };

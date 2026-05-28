@@ -131,12 +131,57 @@
   line-height: 1.45;
 }
 
+.update-checker-error-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
 .update-checker-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
   max-height: min(420px, 60vh);
   overflow: auto;
+}
+
+.update-checker-ready {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(74, 222, 128, 0.18);
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.update-checker-ready-icon {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(74, 222, 128, 0.16);
+  color: #b9f6ce;
+  font-size: 1rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.update-checker-ready-title {
+  color: var(--text-0);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.update-checker-ready-text {
+  margin-top: 3px;
+  color: var(--text-2);
+  font-size: 0.68rem;
+  line-height: 1.45;
 }
 
 .update-checker-item {
@@ -156,8 +201,31 @@
   border-color: rgba(0, 245, 212, 0.18);
 }
 
+.update-checker-item.is-tracked {
+  border-color: rgba(116, 192, 252, 0.22);
+}
+
 .update-checker-item.is-error {
   border-color: rgba(255, 107, 107, 0.2);
+}
+
+.update-checker-group {
+  display: grid;
+  gap: 10px;
+}
+
+.update-checker-group-title {
+  color: var(--text-0);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.update-checker-group-subtitle {
+  margin-top: -4px;
+  color: var(--text-2);
+  font-size: 0.66rem;
+  line-height: 1.45;
 }
 
 .update-checker-item-main {
@@ -216,6 +284,7 @@
 }
 
 .update-checker-install,
+.update-checker-secondary,
 .update-checker-pill {
   min-width: 94px;
   display: inline-flex;
@@ -233,12 +302,24 @@
   color: #ffe7b4;
 }
 
+.update-checker-secondary {
+  border: 1px solid rgba(116, 192, 252, 0.26);
+  background: rgba(116, 192, 252, 0.08);
+  color: #d5eaff;
+}
+
 .update-checker-install:hover:not(:disabled) {
   border-color: rgba(255, 209, 102, 0.5);
   color: #fff4d5;
 }
 
-.update-checker-install:disabled {
+.update-checker-secondary:hover:not(:disabled) {
+  border-color: rgba(116, 192, 252, 0.44);
+  color: #ffffff;
+}
+
+.update-checker-install:disabled,
+.update-checker-secondary:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -252,6 +333,12 @@
   background: rgba(74, 222, 128, 0.12);
   border-color: rgba(74, 222, 128, 0.24);
   color: #b9f6ce;
+}
+
+.update-checker-pill.is-tracked {
+  background: rgba(116, 192, 252, 0.12);
+  border-color: rgba(116, 192, 252, 0.24);
+  color: #cfe6ff;
 }
 
 .update-checker-pill.is-downloading {

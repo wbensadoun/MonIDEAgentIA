@@ -116,6 +116,7 @@ const useWorkflowRunner = ({ isElectronApiAvailable, currentProjectPath, showMes
                         command,
                         args: [],
                         cwd: currentProjectPath,
+                        requireApproval: true,
                     }).catch(err => {
                         finish(`Erreur: ${err.message}`, offOutput, offExit);
                     });

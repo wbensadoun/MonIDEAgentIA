@@ -1,6 +1,6 @@
 {
   "name": "monideagentia",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "main": "main.js",
   "scripts": {
     "start": "concurrently \"npm:start-react\" \"npm:electron-dev\"",
@@ -11,15 +11,15 @@
     "build": "npm run build --prefix client && electron-builder",
     "build:win-installer": "npm run build --prefix client && electron-builder --win nsis",
     "postinstall": "electron-builder install-app-deps",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm test --prefix client -- --watchAll=false --runInBand"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "IDE Electron local avec agents IA multi-providers et workflows visuels.",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
-    "axios": "^1.7.9",
+    "axios": "^1.16.1",
     "dotenv": "^17.2.1",
     "electron-is-dev": "^2.0.0"
   },
@@ -30,6 +30,10 @@
     "electron": "^37.2.4",
     "electron-builder": "^26.0.12",
     "wait-on": "^7.2.0"
+  },
+  "overrides": {
+    "axios": "^1.16.1",
+    "follow-redirects": "^1.16.0"
   },
   "build": {
     "appId": "com.votreentreprise.monide",
@@ -47,7 +51,7 @@
       "buildResources": "assets"
     },
     "win": {
-      "icon": "assets/iconeDesktop.png",
+      "icon": "iconeDesktop.png",
       "target": "nsis",
       "signAndEditExecutable": false
     },
@@ -61,10 +65,10 @@
       "shortcutName": "Mon IDE Agent IA"
     },
     "mac": {
-      "icon": "assets/iconeDesktop.png"
+      "icon": "iconeDesktop.png"
     },
     "linux": {
-      "icon": "assets/iconeDesktop.png"
+      "icon": "iconeDesktop.png"
     }
   }
 }

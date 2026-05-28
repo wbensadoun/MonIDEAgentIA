@@ -1,6 +1,6 @@
 {
   "name": "client",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "homepage": "./",
   "private": true,
   "dependencies": {
@@ -36,7 +36,20 @@
     "extends": [
       "react-app",
       "react-app/jest"
-    ]
+    ],
+    "env": {
+      "jest": true
+    },
+    "globals": {
+      "describe": "readonly",
+      "test": "readonly",
+      "it": "readonly",
+      "expect": "readonly",
+      "jest": "readonly"
+    }
+  },
+  "overrides": {
+    "follow-redirects": "^1.16.0"
   },
   "browserslist": {
     "production": [

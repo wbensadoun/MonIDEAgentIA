@@ -471,87 +471,63 @@ const FileExplorer = ({
 
   return (
     <div className="nav-root">
+      {/* Header compact EXPLORER */}
       <div className="nav-header">
-        <div className="nav-brand">
-          <div className="nav-icon">
-            <svg className="nav-icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-          </div>
-          <div className="nav-brand-text">
-            <div className="nav-title">Navigator</div>
-            <div className="nav-subtitle">{projectName}</div>
-          </div>
-        </div>
-        <div className="nav-actions">
-          <button
-            onClick={onOpenFolder}
-            className="btn btn-primary"
-            disabled={!isElectronApiAvailable}
-          >
-            Ouvrir
-          </button>
-          <button
-            onClick={() => handleCreate('file')}
-            className="btn btn-ghost"
-            disabled={!isElectronApiAvailable || !newItemName || isReadOnly}
-          >
-            + Fichier
-          </button>
+        <span className="nav-header-title">Explorateur</span>
+        <div className="nav-header-actions">
+          {!isReadOnly && (
+            <>
+              <button
+                onClick={() => handleCreate('file')}
+                className="nav-header-btn"
+                title="Nouveau fichier"
+                disabled={!isElectronApiAvailable}
+              >
+                +
+              </button>
+              <button
+                onClick={() => handleCreate('directory')}
+                className="nav-header-btn"
+                title="Nouveau dossier"
+                disabled={!isElectronApiAvailable}
+              >
+                ⊕
+              </button>
+            </>
+          )}
+          {isReadOnly && <span className="nav-meta-chip is-warning" style={{fontSize:9}}>Lecture seule</span>}
         </div>
       </div>
 
-      <div className="nav-subline">
-        <span className="nav-meta-chip">{treeStats.files} fichiers</span>
-        <span className="nav-meta-chip">{treeStats.directories} dossiers</span>
-        {!isReadOnly && <span className="nav-meta-chip">Clic droit / drag-drop</span>}
-        {isReadOnly && <span className="nav-meta-chip is-warning">Lecture seule</span>}
-      </div>
-
-      <div className="nav-section">
-        <div className="nav-section-title">Créer</div>
-        <div className="nav-create">
-          <input
-            type="text"
-            className="input-surface"
-            placeholder="Nom du fichier ou dossier"
-            value={newItemName}
-            onChange={(e) => onNewItemNameChange(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={isReadOnly}
-          />
-          <div className="nav-create-actions">
-            <button
-              onClick={() => handleCreate('file')}
-              className="btn btn-success"
-              disabled={!isElectronApiAvailable || !newItemName || isReadOnly}
-            >
-              Fichier
-            </button>
-            <button
-              onClick={() => handleCreate('directory')}
-              className="btn btn-accent"
-              disabled={!isElectronApiAvailable || !newItemName || isReadOnly}
-            >
-              Dossier
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="nav-section">
-        <div className="nav-section-title">Filtrer</div>
+      {/* Filtre rapide */}
+      <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <input
           type="text"
           className="input-surface"
-          placeholder="Rechercher un fichier..."
+          placeholder="Filtrer les fichiers..."
           value={filterQuery}
           onChange={(e) => setFilterQuery(e.target.value)}
+          style={{ fontSize: 11, padding: '4px 8px' }}
         />
         {filterQuery && (
-          <div className="nav-hint">{filteredFiles.length} resultat(s)</div>
+          <div className="nav-hint" style={{ marginTop: 3 }}>{filteredFiles.length} résultat(s)</div>
         )}
       </div>
+
+      {/* Infos discrètes */}
+      {currentProjectPath && !filterQuery && (
+        <div className="nav-subline">
+          <span className="nav-meta-chip">{treeStats.files} fichiers</span>
+          <span className="nav-meta-chip">{treeStats.directories} dossiers</span>
+        </div>
+      )}
+
+      {/* Champ création rapide (si nom saisi en dehors) — conservé pour compat */}
+      {newItemName !== undefined && newItemName !== null && (
+        <div style={{ display: 'none' }}>
+          <input value={newItemName} onChange={(e) => onNewItemNameChange && onNewItemNameChange(e.target.value)} />
+        </div>
+      )}
 
       <div
         className={`nav-tree custom-scrollbar ${dragState.overRoot ? 'is-root-drop-target' : ''}`}
@@ -623,6 +599,19 @@ const FileExplorer = ({
           </div>
         )}
       </div>
+
+      {/* Bouton Ouvrir dossier en bas */}
+      <button
+        onClick={onOpenFolder}
+        className="nav-open-folder-btn"
+        disabled={!isElectronApiAvailable}
+        title="Ouvrir un dossier de projet"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        </svg>
+        Ouvrir dossier
+      </button>
 
       {contextMenu && contextActions.length > 0 && (
         <div

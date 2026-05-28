@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './UpdateChecker.css';
+import { DEFAULT_OLLAMA_MODEL, normalizeOllamaModelLabel } from '../../utils/ollamaModels';
 
-const DEFAULT_OLLAMA_MODEL = 'qwen3:8b';
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 const MODEL_FIELDS = [
@@ -14,13 +14,13 @@ const MODEL_FIELDS = [
 const normalizeModelName = (value) => String(value || '').trim();
 
 const buildConfiguredModels = (settings = {}) => {
-  const primaryModel = normalizeModelName(settings.ollamaModel) || DEFAULT_OLLAMA_MODEL;
+  const primaryModel = normalizeOllamaModelLabel(settings.ollamaModel, DEFAULT_OLLAMA_MODEL);
   const modelsMap = new Map();
 
   MODEL_FIELDS.forEach(({ key, label }) => {
     const model = key === 'ollamaModel'
       ? primaryModel
-      : (normalizeModelName(settings[key]) || primaryModel);
+      : normalizeOllamaModelLabel(settings[key], primaryModel);
 
     if (!model) return;
 
@@ -54,6 +54,8 @@ const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
   const [statusByModel, setStatusByModel] = useState({});
   const [pullStates, setPullStates] = useState({});
   const [checkError, setCheckError] = useState('');
+  const [isInstallingOllama, setIsInstallingOllama] = useState(false);
+  const [isStartingOllama, setIsStartingOllama] = useState(false);
   const containerRef = useRef(null);
   const configuredModelsRef = useRef([]);
 
@@ -246,14 +248,14 @@ const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
     try {
       const response = await window.electronAPI.pullOllamaModel(model);
       if (!response?.success) {
-        throw new Error(response?.error || `Telechargement impossible pour ${model}.`);
+        throw new Error(response?.error || `Téléchargement impossible pour ${model}.`);
       }
       await checkUpdates(configuredModelsRef.current);
       if (showMessage) {
-        showMessage(`Modele Ollama installe: ${model}`, 3000);
+        showMessage(`Modèle Ollama disponible: ${model}`, 3000);
       }
     } catch (error) {
-      const message = error?.message || `Telechargement impossible pour ${model}.`;
+      const message = error?.message || `Téléchargement impossible pour ${model}.`;
       setPullStates((prev) => ({
         ...prev,
         [model]: {
@@ -273,6 +275,45 @@ const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
       }
     }
   }, [checkUpdates, showMessage]);
+
+  const handleStartOllama = useCallback(async () => {
+    if (!window.electronAPI?.startOllama) return;
+    setIsStartingOllama(true);
+    try {
+      const response = await window.electronAPI.startOllama();
+      if (!response?.success) {
+        throw new Error(response?.error || 'Demarrage Ollama impossible.');
+      }
+      showMessage && showMessage('Ollama demarre.', 2500);
+      await refreshModels();
+    } catch (error) {
+      showMessage && showMessage(error?.message || 'Demarrage Ollama impossible.', 4500);
+    } finally {
+      setIsStartingOllama(false);
+    }
+  }, [refreshModels, showMessage]);
+
+  const handleInstallOllama = useCallback(async () => {
+    if (!window.electronAPI?.installOllama) return;
+    setIsInstallingOllama(true);
+    try {
+      const response = await window.electronAPI.installOllama();
+      if (!response?.success) {
+        throw new Error(response?.error || 'Installation Ollama impossible.');
+      }
+      showMessage && showMessage(
+        response.openedDownload
+          ? 'Page officielle Ollama ouverte.'
+          : 'Ollama installe ou deja disponible.',
+        3500
+      );
+      await refreshModels();
+    } catch (error) {
+      showMessage && showMessage(error?.message || 'Installation Ollama impossible.', 5000);
+    } finally {
+      setIsInstallingOllama(false);
+    }
+  }, [refreshModels, showMessage]);
 
   const effectiveModels = useMemo(() => {
     const statusOrder = { error: 0, downloading: 1, missing: 2, installed: 3 };
@@ -314,16 +355,15 @@ const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
   const missingCount = effectiveModels.filter((entry) => entry.status === 'missing').length;
   const activePullCount = effectiveModels.filter((entry) => entry.status === 'downloading').length;
   const hasError = effectiveModels.some((entry) => entry.status === 'error') || !!checkError;
+  const totalVisibleModels = effectiveModels.length;
+  const actionableModels = effectiveModels.filter((entry) => entry.status !== 'installed');
+  const installedCount = effectiveModels.length - actionableModels.length;
 
-  if (!isElectronApiAvailable || effectiveModels.length === 0) {
+  if (!isElectronApiAvailable || totalVisibleModels === 0) {
     return null;
   }
 
-  if (missingCount === 0 && activePullCount === 0 && !hasError) {
-    return null;
-  }
-
-  let badgeLabel = `🔄 ${missingCount} Update${missingCount > 1 ? 's' : ''}`;
+  let badgeLabel = `🔄 ${missingCount} update${missingCount > 1 ? 's' : ''}`;
   let badgeClassName = 'update-checker-trigger';
 
   if (activePullCount > 0) {
@@ -332,6 +372,8 @@ const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
   } else if (hasError) {
     badgeLabel = '⚠ Ollama';
     badgeClassName += ' is-error';
+  } else if (missingCount === 0) {
+    badgeLabel = 'Ollama OK';
   } else {
     badgeClassName += ' is-pulsing';
   }
@@ -348,7 +390,7 @@ const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
             refreshModels();
           }
         }}
-        title="Verifier et installer les modeles Ollama manquants"
+        title="Verifier Ollama et installer les modeles locaux manquants"
       >
         <span>{badgeLabel}</span>
         {isChecking && <span className="update-checker-spinner" aria-hidden="true"></span>}
@@ -358,13 +400,13 @@ const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
         <div className="update-checker-panel">
           <div className="update-checker-panel-header">
             <div>
-              <div className="update-checker-title">Modeles Ollama</div>
+              <div className="update-checker-title">Ollama local</div>
               <div className="update-checker-subtitle">
-                Verification auto toutes les 5 min. Les commandes ollama pull peuvent durer plusieurs minutes.
+                Vérification des modèles locaux sélectionnés. Le choix du modèle actif se fait dans la barre du haut.
               </div>
             </div>
             <button type="button" className="update-checker-refresh" onClick={refreshModels}>
-              Rechecker
+              Vérifier
             </button>
           </div>
 
@@ -372,69 +414,109 @@ const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
             <div className="update-checker-error-box">
               <div className="update-checker-error-title">Ollama indisponible</div>
               <div className="update-checker-error-text">{checkError}</div>
+              <div className="update-checker-error-actions">
+                <button
+                  type="button"
+                  className="update-checker-secondary"
+                  onClick={handleStartOllama}
+                  disabled={isStartingOllama || isInstallingOllama}
+                >
+                  {isStartingOllama ? 'Demarrage...' : 'Demarrer Ollama'}
+                </button>
+                <button
+                  type="button"
+                  className="update-checker-install"
+                  onClick={handleInstallOllama}
+                  disabled={isStartingOllama || isInstallingOllama}
+                >
+                  {isInstallingOllama ? 'Installation...' : 'Installer Ollama'}
+                </button>
+              </div>
             </div>
           )}
 
           <div className="update-checker-list">
-            {effectiveModels.map((entry) => {
-              const canInstall = entry.status === 'missing' || entry.pullState?.status === 'error';
-              const isBusy = entry.status === 'downloading';
+            {actionableModels.length === 0 && !checkError && (
+              <div className="update-checker-ready">
+                <div className="update-checker-ready-icon" aria-hidden="true">✓</div>
+                <div>
+                  <div className="update-checker-ready-title">Tout est prêt</div>
+                  <div className="update-checker-ready-text">
+                    {installedCount} modèle{installedCount > 1 ? 's' : ''} Ollama disponible{installedCount > 1 ? 's' : ''}. Aucun bouton inutile ici.
+                  </div>
+                </div>
+              </div>
+            )}
 
-              return (
-                <div key={entry.model} className={`update-checker-item is-${entry.status}`}>
-                  <div className="update-checker-item-main">
-                    <div className="update-checker-status-icon" aria-hidden="true">
-                      {entry.status === 'installed' && '✅'}
-                      {entry.status === 'missing' && '⚠️'}
-                      {entry.status === 'downloading' && '⏳'}
-                      {entry.status === 'error' && '❌'}
-                    </div>
+            {actionableModels.length > 0 && (
+              <div className="update-checker-group">
+                <div className="update-checker-group-title">Modèles Ollama locaux</div>
+                <div className="update-checker-group-subtitle">
+                  Action requise uniquement pour les modèles manquants ou en erreur.
+                </div>
+                {actionableModels.map((entry) => {
+                  const isBusy = entry.status === 'downloading';
+                  const canPull = !isBusy && entry.status !== 'installed';
+                  const actionLabel = entry.pullState?.status === 'error'
+                    ? 'Reessayer'
+                    : 'Installer';
 
-                    <div className="update-checker-item-copy">
-                      <div className="update-checker-model-name">{entry.model}</div>
-                      <div className="update-checker-model-roles">{entry.roles.join(' · ')}</div>
+                  return (
+                    <div key={entry.model} className={`update-checker-item is-${entry.status}`}>
+                      <div className="update-checker-item-main">
+                        <div className="update-checker-status-icon" aria-hidden="true">
+                          {entry.status === 'installed' && '✅'}
+                          {entry.status === 'missing' && '⚠️'}
+                          {entry.status === 'downloading' && '⏳'}
+                          {entry.status === 'error' && '❌'}
+                        </div>
+
+                        <div className="update-checker-item-copy">
+                          <div className="update-checker-model-name">{entry.model}</div>
+                          <div className="update-checker-model-roles">{entry.roles.join(' · ')}</div>
+                          {entry.status === 'downloading' && (
+                            <div className="update-checker-model-status">
+                              {entry.pullLabel || 'Téléchargement en cours'}
+                            </div>
+                          )}
+                          {entry.status === 'error' && entry.error && (
+                            <div className="update-checker-model-error">{entry.error}</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="update-checker-item-action">
+                        {canPull && (
+                          <button
+                            type="button"
+                            className="update-checker-install"
+                            onClick={() => handleInstall(entry.model)}
+                            disabled={isBusy}
+                          >
+                            {actionLabel}
+                          </button>
+                        )}
+                        {entry.status === 'downloading' && (
+                          <span className="update-checker-pill is-downloading">En cours</span>
+                        )}
+                      </div>
+
                       {entry.status === 'downloading' && (
-                        <div className="update-checker-model-status">
-                          {entry.pullLabel || 'Telechargement en cours'}
+                        <div className="update-checker-progress">
+                          <div
+                            className={`update-checker-progress-bar ${entry.progressPercent === null ? 'is-indeterminate' : ''}`}
+                            style={entry.progressPercent === null ? undefined : { width: `${entry.progressPercent}%` }}
+                          />
+                          <span className="update-checker-progress-text">
+                            {entry.progressPercent === null ? 'Calcul de la progression...' : `${entry.progressPercent}%`}
+                          </span>
                         </div>
                       )}
-                      {entry.status === 'error' && entry.error && (
-                        <div className="update-checker-model-error">{entry.error}</div>
-                      )}
                     </div>
-                  </div>
-
-                  <div className="update-checker-item-action">
-                    {entry.status === 'installed' && <span className="update-checker-pill is-installed">Installe</span>}
-                    {canInstall && (
-                      <button
-                        type="button"
-                        className="update-checker-install"
-                        onClick={() => handleInstall(entry.model)}
-                        disabled={isBusy}
-                      >
-                        {entry.pullState?.status === 'error' ? 'Reessayer' : 'Installer'}
-                      </button>
-                    )}
-                    {entry.status === 'downloading' && (
-                      <span className="update-checker-pill is-downloading">En cours</span>
-                    )}
-                  </div>
-
-                  {entry.status === 'downloading' && (
-                    <div className="update-checker-progress">
-                      <div
-                        className={`update-checker-progress-bar ${entry.progressPercent === null ? 'is-indeterminate' : ''}`}
-                        style={entry.progressPercent === null ? undefined : { width: `${entry.progressPercent}%` }}
-                      />
-                      <span className="update-checker-progress-text">
-                        {entry.progressPercent === null ? 'Calcul de la progression...' : `${entry.progressPercent}%`}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
