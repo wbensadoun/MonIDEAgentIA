@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import './AIChat.css';
-import { LoadingSteps, AIWorkingIndicator } from '../LoadingAnimations';
+import { AIWorkingIndicator } from '../LoadingAnimations';
 
 const WORKFLOW_STREAM_REGEX = /\*\*WORKFLOW:/i;
 const DIFF_STREAM_REGEX = /<<<<\s*SEARCH/i;
@@ -464,6 +464,7 @@ const AIChat = ({
   const canApplyPending = permissionMode !== 'read_only';
   const safeMultiSteps = Array.isArray(multiAIState?.steps) ? multiAIState.steps : [];
   const safeMultiEvents = Array.isArray(multiAIState?.events) ? multiAIState.events : [];
+  // eslint-disable-next-line no-unused-vars
   const safeCurrentStepIndex = safeMultiSteps.findIndex((s) => normalizeMultiStatus(s?.status) === 'active');
   const completedMultiCount = safeMultiSteps.filter((step) => normalizeMultiStatus(step?.status) === 'completed').length;
   const showMultiRunPanel = Boolean(
