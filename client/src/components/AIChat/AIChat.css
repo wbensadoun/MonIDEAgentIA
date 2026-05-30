@@ -607,6 +607,11 @@
   color: var(--text-muted);
 }
 
+.ai-pending-list {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
 .ai-pending-actions {
   display: flex;
   align-items: center;

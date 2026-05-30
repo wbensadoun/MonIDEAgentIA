@@ -1,0 +1,443 @@
+.ai-changes-panel {
+  display: grid;
+  grid-template-columns: minmax(230px, 28%) 1fr;
+  min-height: 0;
+  height: 100%;
+  background: var(--surface);
+  color: var(--text-main);
+}
+
+.ai-changes-runs {
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+}
+
+.ai-changes-header,
+.ai-review-top,
+.ai-diff-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-changes-header h2,
+.ai-review-top h3 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.ai-changes-eyebrow {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ai-runs-list,
+.ai-review-files,
+.ai-run-log {
+  overflow-y: auto;
+}
+
+.ai-runs-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-run-item,
+.ai-change-file {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-main);
+  border-radius: 4px;
+  padding: 8px;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+}
+
+.ai-run-item:hover,
+.ai-change-file:hover,
+.ai-run-item.is-active,
+.ai-change-file.is-active {
+  border-color: rgba(0, 245, 212, 0.45);
+  background: rgba(0, 245, 212, 0.07);
+}
+
+.ai-run-title,
+.ai-change-file-path {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-run-meta,
+.ai-change-file-meta {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.ai-run-status,
+.ai-change-status {
+  justify-self: start;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ai-run-status.is-verified,
+.ai-change-status.is-verified {
+  color: var(--success);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.ai-run-status.is-failed,
+.ai-run-status.is-conflict,
+.ai-change-status.is-failed,
+.ai-change-status.is-conflict {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.ai-run-status.is-rolled_back,
+.ai-change-status.is-rolled_back,
+.ai-change-status.is-rejected {
+  color: var(--warning);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.ai-changes-review {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-review-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ai-changes-btn,
+.ai-changes-icon-btn {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-main);
+  border-radius: 4px;
+  padding: 5px 9px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ai-changes-btn:hover,
+.ai-changes-icon-btn:hover {
+  border-color: rgba(0, 245, 212, 0.4);
+}
+
+.ai-changes-btn:disabled,
+.ai-changes-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ai-changes-btn.is-primary {
+  border-color: rgba(0, 245, 212, 0.45);
+  background: rgba(0, 245, 212, 0.14);
+  color: var(--accent);
+}
+
+.ai-changes-btn.is-danger {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: var(--danger);
+}
+
+.ai-review-body {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(180px, 24%) 1fr;
+}
+
+.ai-review-files {
+  padding: 8px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-review-diff {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-diff-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.ai-diff-title span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-hunks-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ai-hunk-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 7px;
+  color: var(--text-dim);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.ai-hunk-toggle.is-selected {
+  border-color: rgba(0, 245, 212, 0.45);
+  color: var(--accent);
+  background: rgba(0, 245, 212, 0.08);
+}
+
+.ai-hunk-toggle.is-partial {
+  border-color: rgba(245, 158, 11, 0.45);
+  color: var(--warning);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.ai-hunk-toggle.is-empty {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.025);
+  opacity: 0.72;
+}
+
+.ai-hunk-toggle input {
+  margin: 0;
+}
+
+.ai-hunk-toggle small {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.ai-line-review {
+  max-height: 132px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.ai-line-hunk {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.ai-line-hunk:last-child {
+  border-bottom: 0;
+}
+
+.ai-line-hunk-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.ai-line-toggle {
+  display: grid;
+  grid-template-columns: 16px 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 3px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.ai-line-toggle:hover,
+.ai-line-toggle.is-selected {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ai-line-toggle.is-excluded {
+  color: var(--text-muted);
+  opacity: 0.58;
+}
+
+.ai-line-toggle.is-add .ai-line-marker {
+  color: var(--success);
+}
+
+.ai-line-toggle.is-remove .ai-line-marker {
+  color: var(--danger);
+}
+
+.ai-line-toggle input {
+  margin: 0;
+}
+
+.ai-line-toggle code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+}
+
+.ai-monaco-diff {
+  min-height: 0;
+  flex: 1;
+}
+
+.ai-monaco-line-add.is-selected {
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.ai-monaco-line-remove.is-selected {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.ai-monaco-line-add.is-excluded,
+.ai-monaco-line-remove.is-excluded {
+  background: rgba(148, 163, 184, 0.08);
+  opacity: 0.62;
+}
+
+.ai-monaco-line-marker {
+  width: 3px !important;
+  margin-left: 2px;
+}
+
+.ai-monaco-line-marker-add.is-selected {
+  background: var(--success);
+}
+
+.ai-monaco-line-marker-remove.is-selected {
+  background: var(--danger);
+}
+
+.ai-monaco-line-marker.is-excluded {
+  background: var(--text-muted);
+  opacity: 0.45;
+}
+
+.ai-monaco-glyph {
+  cursor: pointer;
+}
+
+.ai-monaco-glyph::before {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 3px auto 0;
+  border-radius: 3px;
+  color: #06111c;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 14px;
+  text-align: center;
+  opacity: 0.95;
+}
+
+.ai-monaco-glyph-add::before {
+  content: "+";
+  background: var(--success);
+}
+
+.ai-monaco-glyph-remove::before {
+  content: "-";
+  background: var(--danger);
+}
+
+.ai-monaco-glyph.is-excluded::before {
+  background: var(--text-muted);
+  color: var(--surface);
+  opacity: 0.55;
+}
+
+.ai-run-log {
+  max-height: 96px;
+  border-top: 1px solid var(--border);
+  padding: 6px 10px;
+  background: var(--surface-2);
+}
+
+.ai-log-line {
+  display: grid;
+  grid-template-columns: 64px 78px 1fr;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.ai-log-line strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.ai-changes-empty {
+  margin: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .ai-changes-panel,
+  .ai-review-body {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-changes-runs,
+  .ai-review-files {
+    max-height: 180px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}

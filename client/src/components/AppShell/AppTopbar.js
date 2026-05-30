@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import UpdateChecker from '../UpdateChecker';
 import ThemeSwitcher from './ThemeSwitcher';
+import { normalizeRemoteModelName } from '../../utils/remoteModels';
 
 /* ---- Icônes SVG inline ---- */
 const IconBot = () => (
@@ -73,12 +74,16 @@ const IconTerminal = () => (
 
 const getProviderLabel = (provider) => {
   if (provider === 'claude') return 'Claude';
-  if (provider === 'kimi') return 'Kimi K2.5';
+  if (provider === 'kimi') return 'Kimi / Together';
   if (provider === 'multi') return 'Multi-IA';
   if (provider === 'ollama') return 'Ollama';
   if (provider === 'ollama-multi') return 'Multi-Ollama';
   return 'Gemini';
 };
+
+const isRemoteProvider = (provider) => (
+  provider === 'gemini' || provider === 'claude' || provider === 'kimi'
+);
 
 const AppTopbar = ({
   projectName,
@@ -86,7 +91,6 @@ const AppTopbar = ({
   displayedActiveFile,
   isStreamingCodePreview,
   gitDiffPreview,
-  onOpenCommandPalette,
   isExpertMode,
   onToggleExpertMode,
   aiProvider,
@@ -108,7 +112,6 @@ const AppTopbar = ({
   availableOllamaModels,
   onOllamaSettingChange,
   ollamaTopbarLabel,
-  ollamaStatusLabel,
   showMessage,
   onOpenFolder,
   previewStatus,
@@ -125,12 +128,30 @@ const AppTopbar = ({
   onToggleTerminal,
 }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [modelDraft, setModelDraft] = useState(activeModelValue || '');
+  const canEditRemoteModel = isRemoteProvider(aiProvider);
 
   useEffect(() => {
     if (!isExpertMode && showAdvanced && aiProvider === 'ollama-multi') {
       setShowAdvanced(false);
     }
   }, [aiProvider, isExpertMode, showAdvanced]);
+
+  useEffect(() => {
+    setModelDraft(activeModelValue || '');
+  }, [activeModelValue, aiProvider]);
+
+  const commitRemoteModelDraft = () => {
+    const normalized = normalizeRemoteModelName(modelDraft);
+    if (!normalized) {
+      setModelDraft(activeModelValue || '');
+      return;
+    }
+    setModelDraft(normalized);
+    if (normalized !== activeModelValue && typeof onActiveModelChange === 'function') {
+      onActiveModelChange(normalized);
+    }
+  };
 
   const multiAISummary = useMemo(() => {
     if (!multiAIState?.mode) return '';
@@ -206,13 +227,43 @@ const AppTopbar = ({
           >
             <option value="gemini">Gemini</option>
             <option value="claude">Claude</option>
-            <option value="kimi">Kimi K2.5</option>
+            <option value="kimi">Kimi / Together</option>
             <option value="multi">Multi-IA</option>
             <option value="ollama">Ollama</option>
             <option value="ollama-multi">Multi-Ollama</option>
           </select>
 
-          {activeModelValue && Array.isArray(availableActiveModels) && availableActiveModels.length > 0 && (
+          {canEditRemoteModel && activeModelValue && (
+            <>
+              <input
+                type="text"
+                list="topbar-active-models"
+                value={modelDraft}
+                onChange={(e) => setModelDraft(e.target.value)}
+                onBlur={commitRemoteModelDraft}
+                onKeyDown={(e) => {
+                  const key = String(e?.key || '').toLowerCase();
+                  if (key === 'enter') {
+                    e.preventDefault();
+                    commitRemoteModelDraft();
+                  } else if (key === 'escape') {
+                    e.preventDefault();
+                    setModelDraft(activeModelValue || '');
+                  }
+                }}
+                className="topbar-select"
+                disabled={!isElectronApiAvailable || isLoading}
+                title={`Modele ${getProviderLabel(aiProvider)}`}
+              />
+              <datalist id="topbar-active-models">
+                {(Array.isArray(availableActiveModels) ? availableActiveModels : []).map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            </>
+          )}
+
+          {!canEditRemoteModel && activeModelValue && Array.isArray(availableActiveModels) && availableActiveModels.length > 0 && (
             <select
               value={activeModelValue}
               onChange={(e) => onActiveModelChange(e.target.value)}

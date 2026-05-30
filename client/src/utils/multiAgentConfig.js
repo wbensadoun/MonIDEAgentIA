@@ -3,7 +3,8 @@ import {
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_GEMINI_MODEL,
   DEFAULT_GEMINI_PRO_MODEL,
-  DEFAULT_KIMI_MODEL
+  DEFAULT_KIMI_MODEL,
+  KIMI_K2_6_MODEL
 } from './remoteModels';
 
 export const AI_PROVIDER_OPTIONS = [
@@ -199,7 +200,8 @@ export const REMOTE_MODEL_SUGGESTIONS = [
   DEFAULT_GEMINI_MODEL,
   DEFAULT_GEMINI_PRO_MODEL,
   DEFAULT_CLAUDE_MODEL,
-  DEFAULT_KIMI_MODEL
+  DEFAULT_KIMI_MODEL,
+  KIMI_K2_6_MODEL
 ];
 
 export const normalizeAIProvider = (provider, fallback = 'gemini') => {

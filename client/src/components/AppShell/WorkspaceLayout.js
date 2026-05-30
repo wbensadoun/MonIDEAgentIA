@@ -7,6 +7,7 @@ import TerminalPanel from '../TerminalPanel';
 import GitPanel from '../GitPanel';
 import VisualWorkflowEditor from '../VisualWorkflowEditor';
 import AIChat from '../AIChat';
+import AIChangesPanel from '../AIChangesPanel';
 
 /* Icônes tabs centre */
 const IconCode = () => (
@@ -24,6 +25,13 @@ const IconGit = () => (
     <circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" />
   </svg>
 );
+const IconAudit = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
+    <path d="M9 11l2 2 4-4" />
+    <path d="M21 12a9 9 0 1 1-3-6.7" />
+    <path d="M21 3v6h-6" />
+  </svg>
+);
 const IconFlow = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -32,11 +40,6 @@ const IconFlow = () => (
 const IconMaximize = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:12,height:12}}>
     <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
-  </svg>
-);
-const IconChevronDown = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:12,height:12}}>
-    <polyline points="6 9 12 15 18 9" />
   </svg>
 );
 const IconX = () => (
@@ -91,6 +94,7 @@ const WorkspaceLayout = ({
   previewProps,
   terminalProps,
   gitPanelProps,
+  aiChangesPanelProps,
   workflowProps,
   aiChatProps,
   workspacePanelProps,
@@ -220,6 +224,7 @@ const WorkspaceLayout = ({
             { id: 'code', label: 'Code', Icon: IconCode },
             { id: 'preview', label: 'Aperçu', Icon: IconEye },
             { id: 'git', label: 'Git', Icon: IconGit },
+            { id: 'ai-changes', label: 'AI Changes', Icon: IconAudit },
             { id: 'workflows', label: 'Flux', Icon: IconFlow },
           ].map(({ id, label, Icon }) => (
             <button
@@ -249,6 +254,7 @@ const WorkspaceLayout = ({
           {centerView === 'code' && <CodeEditor {...editorProps} />}
           {centerView === 'preview' && <LivePreview {...previewProps} />}
           {centerView === 'git' && <GitPanel {...gitPanelProps} />}
+          {centerView === 'ai-changes' && <AIChangesPanel {...aiChangesPanelProps} />}
           <div style={{ display: centerView === 'workflows' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
             <VisualWorkflowEditor {...workflowProps} />
           </div>

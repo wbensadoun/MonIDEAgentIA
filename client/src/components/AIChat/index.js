@@ -937,8 +937,8 @@ const AIChat = ({
             <div style={{ padding: '3px 14px', fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Snapshot: {pendingSnapshotId}</div>
           )}
 
-          <div style={{ padding: '4px 10px' }}>
-            {pendingFileChanges.slice(0, 8).map((change, index) => (
+          <div className="ai-pending-list custom-scrollbar" style={{ padding: '4px 10px' }}>
+            {pendingFileChanges.map((change, index) => (
               <div
                 key={change.id || `${change.filePath}-${index}`}
                 style={{
@@ -968,9 +968,6 @@ const AIChat = ({
                 </div>
               </div>
             ))}
-            {pendingFileChanges.length > 8 && (
-              <div style={{ padding: '3px 6px', fontSize: 9, color: 'var(--text-muted)' }}>+ {pendingFileChanges.length - 8} autre(s)</div>
-            )}
           </div>
         </div>
       )}

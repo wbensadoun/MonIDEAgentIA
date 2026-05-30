@@ -1,6 +1,7 @@
 export const DEFAULT_GEMINI_MODEL = 'gemini-3-flash-preview';
 export const DEFAULT_GEMINI_PRO_MODEL = 'gemini-3.1-pro-preview';
 export const DEFAULT_KIMI_MODEL = 'moonshotai/Kimi-K2.5';
+export const KIMI_K2_6_MODEL = 'moonshotai/Kimi-K2.6';
 export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-6';
 
 export const REMOTE_MODEL_OPTIONS = {
@@ -12,7 +13,8 @@ export const REMOTE_MODEL_OPTIONS = {
     DEFAULT_CLAUDE_MODEL
   ],
   kimi: [
-    DEFAULT_KIMI_MODEL
+    DEFAULT_KIMI_MODEL,
+    KIMI_K2_6_MODEL
   ]
 };
 
@@ -22,10 +24,16 @@ export const getDefaultRemoteModel = (provider) => {
   return DEFAULT_GEMINI_MODEL;
 };
 
+export const normalizeRemoteModelName = (value, fallback = '') => {
+  const normalized = String(value || '').trim();
+  if (normalized) return normalized;
+  return String(fallback || '').trim();
+};
+
 export const getRemoteModelOptions = (provider, currentModel = '') => (
   Array.from(new Set([
     ...(REMOTE_MODEL_OPTIONS[provider] || []),
-    String(currentModel || '').trim()
+    normalizeRemoteModelName(currentModel)
   ].filter(Boolean)))
 );
 
@@ -59,6 +67,14 @@ export const TRACKED_REMOTE_MODELS = [
     provider: 'Kimi',
     role: 'Code / swarm hybride',
     model: DEFAULT_KIMI_MODEL,
+    channel: 'Together AI',
+    cadence: 'Modele officiel'
+  },
+  {
+    id: 'kimi-k26',
+    provider: 'Kimi',
+    role: 'Code / swarm hybride',
+    model: KIMI_K2_6_MODEL,
     channel: 'Together AI',
     cadence: 'Modele officiel'
   }

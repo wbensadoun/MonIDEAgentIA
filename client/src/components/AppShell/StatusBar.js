@@ -14,6 +14,7 @@ const StatusBar = ({
   multiAIState,
   permissionMode,
   projectName,
+  pendingAIChangeCount = 0,
 }) => {
   const steps = Array.isArray(multiAIState?.steps) ? multiAIState.steps : [];
   const doneCount = steps.filter((s) => s?.status === 'done' || s?.status === 'completed').length;
@@ -25,7 +26,7 @@ const StatusBar = ({
         : `${multiAIState.mode === 'ollama-multi' ? 'Swarm' : 'Équipe'} ${doneCount}/${steps.length || 0} OK`
     : '';
 
-  const permLabel = permissionMode === 'read_only' ? 'Lecture seule' : permissionMode === 'edit_only' ? 'Édition' : 'Édition + terminal';
+  const permLabel = permissionMode === 'read_only' ? 'Lecture seule' : permissionMode === 'edit' ? 'Édition' : 'Édition + terminal';
 
   return (
     <footer className="statusbar">
@@ -69,6 +70,15 @@ const StatusBar = ({
         <div className="statusbar-item">
           <span className="statusbar-label">Diff</span>
           <span className="statusbar-value">{gitDiffPreview.baseLabel} → {gitDiffPreview.targetLabel}</span>
+        </div>
+      )}
+
+      {pendingAIChangeCount > 0 && (
+        <div className="statusbar-item">
+          <span className="statusbar-dot accent" />
+          <span className="statusbar-value" style={{ color: 'var(--accent)' }}>
+            IA review: {pendingAIChangeCount}
+          </span>
         </div>
       )}
 

@@ -17,8 +17,15 @@ import {
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_GEMINI_MODEL,
   DEFAULT_KIMI_MODEL,
-  getRemoteModelOptions
+  getRemoteModelOptions,
+  normalizeRemoteModelName
 } from '../../utils/remoteModels';
+
+const REMOTE_PROVIDER_MODEL_FIELDS = [
+  { provider: 'gemini', field: 'geminiModel', label: 'Gemini', fallback: DEFAULT_GEMINI_MODEL },
+  { provider: 'claude', field: 'claudeModel', label: 'Claude', fallback: DEFAULT_CLAUDE_MODEL },
+  { provider: 'kimi', field: 'kimiModel', label: 'Kimi / Together', fallback: DEFAULT_KIMI_MODEL }
+];
 
 const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme, onThemeChange }) => {
   const [settings, setSettings] = useState({
@@ -175,9 +182,9 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
     try {
       const normalizedSettings = {
         ...settings,
-        geminiModel: String(settings.geminiModel || DEFAULT_GEMINI_MODEL).trim(),
-        claudeModel: String(settings.claudeModel || DEFAULT_CLAUDE_MODEL).trim(),
-        kimiModel: String(settings.kimiModel || DEFAULT_KIMI_MODEL).trim(),
+        geminiModel: normalizeRemoteModelName(settings.geminiModel, DEFAULT_GEMINI_MODEL),
+        claudeModel: normalizeRemoteModelName(settings.claudeModel, DEFAULT_CLAUDE_MODEL),
+        kimiModel: normalizeRemoteModelName(settings.kimiModel, DEFAULT_KIMI_MODEL),
         ollamaModel: normalizeOllamaModelLabel(settings.ollamaModel),
         ollamaModelArchitect: normalizeOllamaModelLabel(settings.ollamaModelArchitect, settings.ollamaModel),
         ollamaModelCoder: normalizeOllamaModelLabel(settings.ollamaModelCoder, settings.ollamaModel),
@@ -210,11 +217,39 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
       if (field === 'ollamaModelArchitect' || field === 'ollamaModelCoder' || field === 'ollamaModelTester') {
         return { ...prev, [field]: normalizeOllamaModelLabel(value, prev.ollamaModel) };
       }
+      if (field === 'geminiModel' || field === 'claudeModel' || field === 'kimiModel') {
+        return { ...prev, [field]: value };
+      }
       if (field === 'localAIOptimizationMode' && value === 'safe') {
         return { ...prev, [field]: value, localAIHardwareConsent: false };
       }
       return { ...prev, [field]: value };
     });
+  };
+
+  const applyModelToProviderRoles = (provider, modelValue) => {
+    const model = normalizeRemoteModelName(modelValue, getDefaultModelForProvider(provider));
+    if (!model) return;
+
+    setSettings((prev) => {
+      const currentRoles = normalizeMultiAgentRoles(prev.multiAgentRoles);
+      const nextRoles = Object.fromEntries(
+        Object.entries(currentRoles).map(([roleKey, roleConfig]) => [
+          roleKey,
+          roleConfig.provider === provider
+            ? { ...roleConfig, model }
+            : roleConfig
+        ])
+      );
+
+      return {
+        ...prev,
+        multiAgentRoles: normalizeMultiAgentRoles(nextRoles)
+      };
+    });
+
+    const providerLabel = REMOTE_PROVIDER_MODEL_FIELDS.find((item) => item.provider === provider)?.label || provider;
+    showMessage && showMessage(`${providerLabel}: modele applique aux roles`, 2500);
   };
 
   const handleMultiAgentRoleChange = (roleKey, field, value) => {
@@ -374,6 +409,22 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
                 <option key={`settings-kimi-${modelName}`} value={modelName} />
               ))}
             </datalist>
+
+            <div className="settings-hint" style={{ marginTop: '10px' }}>
+              Les listes proposent des reperes, mais les champs acceptent aussi les nouvelles versions publiees par les providers.
+            </div>
+            <div className="settings-agent-controls">
+              {REMOTE_PROVIDER_MODEL_FIELDS.map(({ provider, field, label, fallback }) => (
+                <button
+                  type="button"
+                  key={`apply-${provider}-roles`}
+                  className="btn btn-ghost"
+                  onClick={() => applyModelToProviderRoles(provider, settings[field] || fallback)}
+                >
+                  Appliquer aux roles {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <datalist id="multi-agent-model-suggestions">

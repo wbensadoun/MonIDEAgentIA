@@ -8,6 +8,7 @@ const fsSync = require('fs');
 const readline = require('readline');
 const { spawn } = require('child_process');
 const net = require('net');
+const crypto = require('crypto');
 const axios = require('axios');
 const logger = require('./logger');
 const { registerGitHandlers } = require('./electron/ipc/gitHandlers');
@@ -1876,7 +1877,7 @@ async function createWindow() {
 
   // Charge l'application React
   if (isDev) {
-    const appUrl = 'http://127.0.0.1:3004';
+    const appUrl = process.env.ELECTRON_DEV_SERVER_URL || 'http://127.0.0.1:3004';
     console.log(`[Main] 4. Chargement de l'application depuis: ${appUrl}`);
     await logger.info('Chargement de l\'application', { url: appUrl });
     mainWindow.loadURL(appUrl);
@@ -5212,6 +5213,225 @@ ipcMain.handle('restore-ai-snapshot', async (event, projectPath, snapshotId) => 
   }
 });
 
+ipcMain.handle('agent:listRuns', async (event, projectPath) => {
+  try {
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const runs = await listAgentRunsForProject(trustedProjectPath);
+    return { success: true, runs };
+  } catch (error) {
+    return { success: false, error: error.message, runs: [] };
+  }
+});
+
+ipcMain.handle('agent:getRun', async (event, projectPath, runId) => {
+  try {
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const run = await readAgentRun(trustedProjectPath, runId);
+    return { success: true, run };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('agent:createRun', async (event, projectPath, payload = {}) => {
+  try {
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const run = normalizeAgentRunPayload(payload);
+    await writeAgentRun(trustedProjectPath, run);
+    return { success: true, run };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('agent:updateRun', async (event, projectPath, runId, patch = {}) => {
+  try {
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const run = await readAgentRun(trustedProjectPath, runId);
+    const safePatch = patch && typeof patch === 'object' ? patch : {};
+    const updated = normalizeAgentRunPayload({
+      ...run,
+      ...safePatch,
+      id: run.id,
+      changes: Array.isArray(safePatch.changes) ? safePatch.changes : run.changes,
+      logs: Array.isArray(safePatch.logs) ? safePatch.logs : run.logs,
+      updatedAt: new Date().toISOString()
+    });
+    await writeAgentRun(trustedProjectPath, updated);
+    return { success: true, run: updated };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('agent:appendLog', async (event, projectPath, runId, log = {}) => {
+  try {
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const run = await readAgentRun(trustedProjectPath, runId);
+    run.logs = [...(Array.isArray(run.logs) ? run.logs : []), normalizeAgentLogEntry(log)];
+    run.updatedAt = new Date().toISOString();
+    await writeAgentRun(trustedProjectPath, run);
+    return { success: true, run };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('agent:updateChangeStatus', async (event, projectPath, runId, changeId, status, extra = {}) => {
+  try {
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const run = await updateAgentRunChange(trustedProjectPath, runId, changeId, (change) => ({
+      ...change,
+      ...(extra && typeof extra === 'object' ? extra : {}),
+      status: normalizeAgentChangeStatus(status),
+      updatedAt: new Date().toISOString()
+    }));
+    return { success: true, run };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('agent:applyChange', async (event, projectPath, runId, changeId) => {
+  try {
+    await ensureEditPermission();
+
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const run = await readAgentRun(trustedProjectPath, runId);
+    const change = (run.changes || []).find((entry) => entry.id === changeId);
+    if (!change) return { success: false, error: 'Changement IA introuvable' };
+
+    const relPath = toRelativeSnapshotPath(change.filePath);
+    if (!relPath) return { success: false, error: 'Chemin de fichier invalide' };
+
+    const fullPath = path.join(trustedProjectPath, relPath);
+    assertSafePath(trustedProjectPath, fullPath);
+    const currentState = await readTextFileIfExists(fullPath);
+    const currentHash = currentState.exists ? hashAgentContent(currentState.content) : null;
+    if (change.baseHash && currentHash !== change.baseHash) {
+      const updatedRun = await updateAgentRunChange(trustedProjectPath, runId, changeId, (entry) => ({
+        ...entry,
+        status: 'conflict',
+        currentHash,
+        updatedAt: new Date().toISOString()
+      }), {
+        status: 'failed',
+        log: {
+          type: 'conflict',
+          filePath: relPath,
+          message: `Conflit detecte avant application: ${relPath}`
+        }
+      });
+      return { success: false, code: 'FILE_MODIFIED', error: 'Conflit detecte avant application.', run: updatedRun };
+    }
+
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    await fs.writeFile(fullPath, String(change.newContent || ''), 'utf-8');
+    const readBack = await fs.readFile(fullPath, 'utf-8');
+    const verified = readBack === String(change.newContent || '');
+    const stats = await fs.stat(fullPath);
+    const nextHash = hashAgentContent(readBack);
+    const nextStatus = verified ? 'verified' : 'failed';
+
+    const updatedRun = await updateAgentRunChange(trustedProjectPath, runId, changeId, (entry) => ({
+      ...entry,
+      status: nextStatus,
+      appliedAt: new Date().toISOString(),
+      appliedHash: nextHash,
+      appliedMtimeMs: Math.round(Number(stats?.mtimeMs || 0)),
+      verified,
+      updatedAt: new Date().toISOString()
+    }), {
+      status: verified ? 'verified' : 'failed',
+      finishedAt: new Date().toISOString(),
+      log: {
+        type: verified ? 'verified' : 'failed',
+        filePath: relPath,
+        message: verified ? `Changement applique et relu: ${relPath}` : `Verification post-ecriture echouee: ${relPath}`
+      }
+    });
+
+    return { success: verified, verified, run: updatedRun, mtimeMs: Math.round(Number(stats?.mtimeMs || 0)), hash: nextHash };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('agent:rejectChange', async (event, projectPath, runId, changeId) => {
+  try {
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const run = await updateAgentRunChange(trustedProjectPath, runId, changeId, (change) => ({
+      ...change,
+      status: 'rejected',
+      rejectedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }), {
+      log: {
+        type: 'rejected',
+        changeId,
+        message: 'Changement IA rejete'
+      }
+    });
+    return { success: true, run };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('agent:restoreRun', async (event, projectPath, runId) => {
+  try {
+    await ensureEditPermission();
+
+    const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
+    const run = await readAgentRun(trustedProjectPath, runId);
+    let restored = 0;
+
+    for (const change of run.changes || []) {
+      const relPath = toRelativeSnapshotPath(change.filePath);
+      if (!relPath) continue;
+      const fullPath = path.join(trustedProjectPath, relPath);
+      assertSafePath(trustedProjectPath, fullPath);
+
+      if (change.existedBefore === false || change.existed === false) {
+        try {
+          await fs.unlink(fullPath);
+        } catch {
+          // ignore missing files during restore
+        }
+        restored += 1;
+        continue;
+      }
+
+      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+      await fs.writeFile(fullPath, String(change.oldContent || ''), 'utf-8');
+      restored += 1;
+    }
+
+    const restoredRun = normalizeAgentRunPayload({
+      ...run,
+      status: 'rolled_back',
+      finishedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      changes: (run.changes || []).map((change) => ({
+        ...change,
+        status: change.status === 'rejected' ? change.status : 'rolled_back',
+        updatedAt: new Date().toISOString()
+      })),
+      logs: [
+        ...(Array.isArray(run.logs) ? run.logs : []),
+        normalizeAgentLogEntry({
+          type: 'rolled_back',
+          message: `Run restaure (${restored} fichier(s))`
+        })
+      ]
+    });
+    await writeAgentRun(trustedProjectPath, restoredRun);
+    return { success: true, restored, run: restoredRun };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // ==================== AGENTS & SKILLS LIBRARY ====================
 
 const getGlobalAgentsDir = () => path.join(app.getPath('userData'), 'agents');
@@ -5924,6 +6144,198 @@ const readTextFileIfExists = async (filePath) => {
     }
     throw error;
   }
+};
+
+const hashAgentContent = (content) =>
+  crypto.createHash('sha256').update(String(content || ''), 'utf8').digest('hex');
+
+const getAgentRunProjectKey = (projectPath) =>
+  crypto.createHash('sha256').update(String(projectPath || ''), 'utf8').digest('hex').slice(0, 24);
+
+const getAgentRunProjectDir = (projectPath) =>
+  path.join(app.getPath('userData'), 'agent-runs', getAgentRunProjectKey(projectPath));
+
+const sanitizeAgentRunId = (runId) => {
+  const id = String(runId || '').trim();
+  if (!/^[a-zA-Z0-9_.-]+$/.test(id)) return '';
+  return id;
+};
+
+const buildAgentRunId = () => `run-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+
+const normalizeAgentRunStatus = (status) => {
+  const value = String(status || '').trim();
+  if (['running', 'proposed', 'applying', 'verified', 'failed', 'rolled_back'].includes(value)) return value;
+  return 'proposed';
+};
+
+const normalizeAgentChangeStatus = (status) => {
+  const value = String(status || '').trim();
+  if (['pending', 'partial', 'accepted', 'rejected', 'applied', 'verified', 'failed', 'conflict', 'rolled_back'].includes(value)) {
+    return value;
+  }
+  return 'pending';
+};
+
+const normalizeAgentLogEntry = (entry = {}) => {
+  const raw = entry && typeof entry === 'object' ? entry : {};
+  return {
+    id: raw.id || `log-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    at: raw.at || new Date().toISOString(),
+    type: String(raw.type || 'info'),
+    filePath: raw.filePath ? String(raw.filePath) : null,
+    changeId: raw.changeId ? String(raw.changeId) : null,
+    message: String(raw.message || raw.detail || raw.type || 'Action IA'),
+    detail: raw.detail ? String(raw.detail) : ''
+  };
+};
+
+const normalizeAgentChangePayload = (change = {}) => {
+  const raw = change && typeof change === 'object' ? change : {};
+  const oldContent = String(raw.oldContent || raw.previousContent || '');
+  const newContent = String(raw.newContent || raw.appliedContent || '');
+  const filePath = toRelativeSnapshotPath(raw.filePath || raw.path) || 'unknown.txt';
+  return {
+    id: String(raw.id || raw.patchId || `change-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`),
+    patchId: String(raw.patchId || raw.id || ''),
+    filePath,
+    baseHash: raw.baseHash ?? (raw.existed === false || raw.existedBefore === false ? null : hashAgentContent(oldContent)),
+    oldContent,
+    newContent,
+    existed: raw.existed !== false,
+    existedBefore: raw.existedBefore ?? raw.existed ?? true,
+    status: normalizeAgentChangeStatus(raw.status),
+    additions: Number.isFinite(Number(raw.additions)) ? Number(raw.additions) : 0,
+    deletions: Number.isFinite(Number(raw.deletions)) ? Number(raw.deletions) : 0,
+    hunks: Array.isArray(raw.hunks) ? raw.hunks : [],
+    createdAt: raw.createdAt || new Date().toISOString(),
+    updatedAt: raw.updatedAt || new Date().toISOString(),
+    appliedAt: raw.appliedAt || null,
+    rejectedAt: raw.rejectedAt || null,
+    appliedHash: raw.appliedHash || null,
+    appliedMtimeMs: Number.isFinite(Number(raw.appliedMtimeMs)) ? Number(raw.appliedMtimeMs) : null,
+    verified: !!raw.verified
+  };
+};
+
+const normalizeAgentRunPayload = (payload = {}) => {
+  const raw = payload && typeof payload === 'object' ? payload : {};
+  const startedAt = raw.startedAt || raw.createdAt || new Date().toISOString();
+  const changes = Array.isArray(raw.changes) ? raw.changes.map(normalizeAgentChangePayload) : [];
+  const logs = Array.isArray(raw.logs) ? raw.logs.map(normalizeAgentLogEntry) : [];
+  return {
+    id: sanitizeAgentRunId(raw.id) || buildAgentRunId(),
+    prompt: String(raw.prompt || ''),
+    provider: String(raw.provider || raw.aiProvider || ''),
+    model: String(raw.model || ''),
+    status: normalizeAgentRunStatus(raw.status || (changes.length > 0 ? 'proposed' : 'running')),
+    startedAt,
+    finishedAt: raw.finishedAt || null,
+    updatedAt: raw.updatedAt || startedAt,
+    snapshotId: raw.snapshotId || null,
+    summary: String(raw.summary || ''),
+    changes,
+    logs
+  };
+};
+
+const getAgentRunPath = (projectPath, runId) => {
+  const safeRunId = sanitizeAgentRunId(runId);
+  if (!safeRunId) throw new Error('runId invalide');
+  return path.join(getAgentRunProjectDir(projectPath), `${safeRunId}.json`);
+};
+
+const writeAgentRun = async (projectPath, run) => {
+  const normalized = normalizeAgentRunPayload(run);
+  const dirPath = getAgentRunProjectDir(projectPath);
+  await fs.mkdir(dirPath, { recursive: true });
+  const filePath = getAgentRunPath(projectPath, normalized.id);
+  assertSafePath(dirPath, filePath);
+  await fs.writeFile(filePath, JSON.stringify(normalized, null, 2), 'utf-8');
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('agent:action', {
+      type: 'run-updated',
+      runId: normalized.id,
+      status: normalized.status,
+      at: new Date().toISOString()
+    });
+  }
+  return normalized;
+};
+
+const readAgentRun = async (projectPath, runId) => {
+  const dirPath = getAgentRunProjectDir(projectPath);
+  const filePath = getAgentRunPath(projectPath, runId);
+  assertSafePath(dirPath, filePath);
+  const raw = await fs.readFile(filePath, 'utf-8');
+  return normalizeAgentRunPayload(JSON.parse(raw));
+};
+
+const listAgentRunsForProject = async (projectPath) => {
+  const dirPath = getAgentRunProjectDir(projectPath);
+  let files = [];
+  try {
+    files = await fs.readdir(dirPath);
+  } catch {
+    return [];
+  }
+
+  const runs = [];
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    try {
+      const raw = await fs.readFile(path.join(dirPath, file), 'utf-8');
+      const run = normalizeAgentRunPayload(JSON.parse(raw));
+      const additions = run.changes.reduce((sum, change) => sum + Number(change.additions || 0), 0);
+      const deletions = run.changes.reduce((sum, change) => sum + Number(change.deletions || 0), 0);
+      runs.push({
+        id: run.id,
+        prompt: run.prompt,
+        provider: run.provider,
+        model: run.model,
+        status: run.status,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        updatedAt: run.updatedAt,
+        snapshotId: run.snapshotId,
+        changeCount: run.changes.length,
+        additions,
+        deletions,
+        pendingCount: run.changes.filter((change) => change.status === 'pending' || change.status === 'partial').length,
+        verifiedCount: run.changes.filter((change) => change.status === 'verified').length,
+        conflictCount: run.changes.filter((change) => change.status === 'conflict').length
+      });
+    } catch {
+      // ignore malformed agent run files
+    }
+  }
+
+  runs.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
+  return runs;
+};
+
+const updateAgentRunChange = async (projectPath, runId, changeId, updater, options = {}) => {
+  const run = await readAgentRun(projectPath, runId);
+  let found = false;
+  const changes = (run.changes || []).map((change) => {
+    if (change.id !== changeId && change.patchId !== changeId) return change;
+    found = true;
+    return normalizeAgentChangePayload(updater(change));
+  });
+  if (!found) throw new Error('Changement IA introuvable');
+
+  const updated = normalizeAgentRunPayload({
+    ...run,
+    changes,
+    status: normalizeAgentRunStatus(options.status || run.status),
+    finishedAt: options.finishedAt || run.finishedAt,
+    updatedAt: new Date().toISOString(),
+    logs: options.log
+      ? [...(Array.isArray(run.logs) ? run.logs : []), normalizeAgentLogEntry(options.log)]
+      : run.logs
+  });
+  await writeAgentRun(projectPath, updated);
+  return updated;
 };
 
 const collectFilesRecursive = async (dirPath, baseDir, fileList = []) => {

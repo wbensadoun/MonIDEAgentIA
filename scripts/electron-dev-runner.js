@@ -12,6 +12,14 @@ let electronProcess = null;
 let restartRequested = false;
 let shuttingDown = false;
 
+const childEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key, value]) => (
+    value != null
+    && !key.startsWith('=')
+    && key !== 'ELECTRON_RUN_AS_NODE'
+  ))
+);
+
 const log = (message) => {
   process.stdout.write(`[electron-dev] ${message}\n`);
 };
@@ -35,7 +43,10 @@ const startElectron = () => {
   electronProcess = spawn(electronBinary, ['.'], {
     cwd: rootDir,
     stdio: 'inherit',
-    env: process.env
+    env: {
+      ...childEnv,
+      ELECTRON_DEV_SERVER_URL: rendererUrl
+    }
   });
 
   electronProcess.once('exit', (code, signal) => {

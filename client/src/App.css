@@ -393,6 +393,11 @@ select {
   color: var(--text-main);
 }
 
+.topbar-select[type="text"] {
+  min-width: 180px;
+  cursor: text;
+}
+
 /* Chip thème actif */
 .topbar-theme-chip {
   display: flex;

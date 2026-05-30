@@ -21,7 +21,8 @@ import {
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_GEMINI_MODEL,
   DEFAULT_KIMI_MODEL,
-  getRemoteModelOptions
+  getRemoteModelOptions,
+  normalizeRemoteModelName
 } from './utils/remoteModels';
 
 const DEFAULT_LEFT_WIDTH = 20;
@@ -103,6 +104,10 @@ const AppContent = () => {
   const [ollamaModels, setOllamaModels] = useState([]);
   const [aiDraftPreview, setAiDraftPreview] = useState(null);
   const [gitDiffPreview, setGitDiffPreview] = useState(null);
+  const [agentRuns, setAgentRuns] = useState([]);
+  const [activeAgentRun, setActiveAgentRun] = useState(null);
+  const [selectedAgentRunId, setSelectedAgentRunId] = useState('');
+  const [isAgentRunsLoading, setIsAgentRunsLoading] = useState(false);
   const [qualityGateConfig, setQualityGateConfig] = useState({
     onApply: false,
     lint: true,
@@ -376,11 +381,14 @@ const AppContent = () => {
     handleAcceptDiff,
     pendingFileChanges,
     activePendingChangeId,
+    activeAgentRunId,
+    agentRunRefreshKey,
     selectPendingChangeByIndex,
     applyPendingChangeByIndex,
     rejectPendingChangeByIndex,
     applyAllPendingChanges,
     rejectAllPendingChanges,
+    updatePendingChangeContent,
     pendingSnapshotId,
     contextEstimate,
     multiAIState,
@@ -878,9 +886,9 @@ const AppContent = () => {
         setAiProvider(String(settings.defaultProvider));
       }
 
-      setGeminiModel(String(settings.geminiModel || DEFAULT_GEMINI_MODEL).trim() || DEFAULT_GEMINI_MODEL);
-      setClaudeModel(String(settings.claudeModel || DEFAULT_CLAUDE_MODEL).trim() || DEFAULT_CLAUDE_MODEL);
-      setKimiModel(String(settings.kimiModel || DEFAULT_KIMI_MODEL).trim() || DEFAULT_KIMI_MODEL);
+      setGeminiModel(normalizeRemoteModelName(settings.geminiModel, DEFAULT_GEMINI_MODEL));
+      setClaudeModel(normalizeRemoteModelName(settings.claudeModel, DEFAULT_CLAUDE_MODEL));
+      setKimiModel(normalizeRemoteModelName(settings.kimiModel, DEFAULT_KIMI_MODEL));
       setOllamaModel(normalizeOllamaModelLabel(settings.ollamaModel));
       setOllamaModelArchitect(normalizeOllamaModelLabel(settings.ollamaModelArchitect, settings.ollamaModel));
       setOllamaModelCoder(normalizeOllamaModelLabel(settings.ollamaModelCoder, settings.ollamaModel));
@@ -890,8 +898,7 @@ const AppContent = () => {
         setThinkingMode(settings.thinkingMode);
       }
 
-      // Always use edit_terminal mode - terminal is enabled by default
-      setPermissionMode('edit_terminal');
+      setPermissionMode(settings.permissionMode || 'edit_terminal');
 
       if (settings.contextMode) {
         setContextMode(String(settings.contextMode));
@@ -1019,7 +1026,7 @@ const AppContent = () => {
       return;
     }
 
-    const normalizedValue = String(value || '').trim();
+    const normalizedValue = normalizeRemoteModelName(value);
     if (!normalizedValue) return;
 
     if (activeModelField === 'geminiModel') {
@@ -1128,6 +1135,78 @@ const AppContent = () => {
       showMessage(`Diff Git: ${error.message}`, 4000);
     }
   }, [currentProjectPath, isElectronApiAvailable, openFile, showMessage]);
+
+  const loadAgentRun = useCallback(async (runId) => {
+    if (!currentProjectPath || !isElectronApiAvailable || !window.electronAPI?.agentGetRun || !runId) {
+      setActiveAgentRun(null);
+      return null;
+    }
+    const res = await window.electronAPI.agentGetRun(currentProjectPath, runId);
+    if (res?.success && res.run) {
+      setActiveAgentRun(res.run);
+      setSelectedAgentRunId(res.run.id);
+      return res.run;
+    }
+    setActiveAgentRun(null);
+    return null;
+  }, [currentProjectPath, isElectronApiAvailable]);
+
+  const loadAgentRuns = useCallback(async (preferredRunId = selectedAgentRunId) => {
+    if (!currentProjectPath || !isElectronApiAvailable || !window.electronAPI?.agentListRuns) {
+      setAgentRuns([]);
+      setActiveAgentRun(null);
+      setSelectedAgentRunId('');
+      return;
+    }
+
+    setIsAgentRunsLoading(true);
+    try {
+      const res = await window.electronAPI.agentListRuns(currentProjectPath);
+      const runs = res?.success && Array.isArray(res.runs) ? res.runs : [];
+      setAgentRuns(runs);
+      const nextRunId = preferredRunId && runs.some((run) => run.id === preferredRunId)
+        ? preferredRunId
+        : runs[0]?.id || '';
+      setSelectedAgentRunId(nextRunId);
+      if (nextRunId) {
+        await loadAgentRun(nextRunId);
+      } else {
+        setActiveAgentRun(null);
+      }
+    } finally {
+      setIsAgentRunsLoading(false);
+    }
+  }, [currentProjectPath, isElectronApiAvailable, loadAgentRun, selectedAgentRunId]);
+
+  const handleSelectAgentRun = useCallback((runId) => {
+    setSelectedAgentRunId(runId);
+    loadAgentRun(runId);
+  }, [loadAgentRun]);
+
+  const refreshAgentRunAfterMutation = useCallback(async (runId = selectedAgentRunId) => {
+    await loadAgentRuns(runId);
+  }, [loadAgentRuns, selectedAgentRunId]);
+
+  useEffect(() => {
+    loadAgentRuns('');
+  }, [currentProjectPath, loadAgentRuns]);
+
+  useEffect(() => {
+    if (!activeAgentRunId) return;
+    loadAgentRuns(activeAgentRunId);
+    setCenterView('ai-changes');
+  }, [activeAgentRunId, agentRunRefreshKey, loadAgentRuns]);
+
+  useEffect(() => {
+    if (!isElectronApiAvailable || !window.electronAPI?.onAgentAction) return;
+    const off = window.electronAPI.onAgentAction((event) => {
+      if (!event?.runId) return;
+      loadAgentRuns(event.runId);
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, [isElectronApiAvailable, loadAgentRuns]);
 
   const syncNavigatorReferences = useCallback((previousPath, nextPath) => {
     if (!previousPath || !nextPath) return;
@@ -1671,7 +1750,15 @@ const AppContent = () => {
 
   useEffect(() => {
     const handleGlobalKeys = (e) => {
-      const key = e.key.toLowerCase();
+      const target = e?.target;
+      const tagName = String(target?.tagName || '').toLowerCase();
+      if (target?.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select') {
+        return;
+      }
+
+      const key = String(e?.key || '').toLowerCase();
+      if (!key) return;
+
       if ((e.ctrlKey || e.metaKey) && key === 'k') {
         e.preventDefault();
         setCommandOpen(true);
@@ -1910,6 +1997,24 @@ const AppContent = () => {
     onOpenGitDiff: handleOpenGitDiff,
     activeComparisonKey: gitDiffPreview?.comparisonKey || ''
   };
+  const aiChangesPanelProps = {
+    currentProjectPath,
+    runs: agentRuns,
+    activeRun: activeAgentRun,
+    selectedRunId: selectedAgentRunId,
+    isLoading: isAgentRunsLoading,
+    permissionMode,
+    pendingFileChanges,
+    onSelectRun: handleSelectAgentRun,
+    onRefresh: () => loadAgentRuns(selectedAgentRunId),
+    onRunChanged: refreshAgentRunAfterMutation,
+    onSelectPendingChange: selectPendingChangeByIndex,
+    onApplyPendingChange: applyPendingChangeByIndex,
+    onRejectPendingChange: rejectPendingChangeByIndex,
+    onUpdatePendingChangeContent: updatePendingChangeContent,
+    onAfterDiskChange: loadProjectItems,
+    showMessage
+  };
   const workflowPanelProps = {
     currentProjectPath,
     isElectronApiAvailable,
@@ -2060,6 +2165,7 @@ const AppContent = () => {
         previewProps={previewPanelProps}
         terminalProps={terminalPanelProps}
         gitPanelProps={gitPanelProps}
+        aiChangesPanelProps={aiChangesPanelProps}
         workflowProps={workflowPanelProps}
         aiChatProps={aiChatProps}
         workspacePanelProps={workspacePanelProps}
@@ -2081,6 +2187,7 @@ const AppContent = () => {
         multiAIState={multiAIState}
         permissionMode={permissionMode}
         projectName={projectName}
+        pendingAIChangeCount={pendingFileChanges.length}
       />
 
       {showOnboarding && (

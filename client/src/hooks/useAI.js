@@ -252,11 +252,14 @@ export const useAI = (
     pendingFileChanges,
     activePendingChangeId,
     pendingSnapshotId,
+    activeAgentRunId,
+    agentRunRefreshKey,
     processAIFileModifications,
     applyPendingChangeByIndex,
     rejectPendingChangeByIndex,
     applyAllPendingChanges,
     rejectAllPendingChanges,
+    updatePendingChangeContent,
     handleUndo: handlePendingUndo,
     handleAcceptDiff: handlePendingAcceptDiff,
     selectPendingChangeByIndex: selectPendingChangeFromQueue,
@@ -962,7 +965,12 @@ export const useAI = (
           agentModel: captainResponse.model || 'synthese'
         }]);
 
-        await processAIFileModifications(finalDeliverable);
+        await processAIFileModifications(finalDeliverable, {
+          prompt: promptToSend,
+          provider: aiProvider,
+          model: aiProvider === 'ollama-multi' ? `${ollamaModelArchitect}/${ollamaModelCoder}/${ollamaModelTester}` : aiProvider,
+          summary: 'Livrable multi-agent'
+        });
         await autoSaveConversation(updatedHistory.concat([{ role: 'model', text: finalDeliverable }]));
 
         showMessage("Multi-IA dynamique terminee avec succes ! 🎉", 4000);
@@ -1173,7 +1181,12 @@ export const useAI = (
         if (response.success) {
           const fullAiText = response.text;
           setAiConversationHistory(prev => [...prev, { role: 'model', text: fullAiText }]);
-          await processAIFileModifications(fullAiText);
+          await processAIFileModifications(fullAiText, {
+            prompt: promptToSend,
+            provider: aiProvider,
+            model: response.model || geminiModel || kimiModel || claudeModel || ollamaModel,
+            summary: 'Reponse IA'
+          });
           await autoSaveConversation(updatedHistory.concat([{ role: 'model', text: fullAiText }]));
         } else {
           const errorText = response?.error || 'Erreur inconnue';
@@ -1355,11 +1368,14 @@ export const useAI = (
     handleAcceptDiff,
     pendingFileChanges,
     activePendingChangeId,
+    activeAgentRunId,
+    agentRunRefreshKey,
     selectPendingChangeByIndex,
     applyPendingChangeByIndex,
     rejectPendingChangeByIndex,
     applyAllPendingChanges,
     rejectAllPendingChanges,
+    updatePendingChangeContent,
     pendingSnapshotId,
     contextEstimate,
     multiAIState,

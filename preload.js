@@ -82,6 +82,17 @@ try {
     createAISnapshot: (projectPath, files, label) => ipcRenderer.invoke('create-ai-snapshot', projectPath, files, label),
     listAISnapshots: (projectPath) => ipcRenderer.invoke('list-ai-snapshots', projectPath),
     restoreAISnapshot: (projectPath, snapshotId) => ipcRenderer.invoke('restore-ai-snapshot', projectPath, snapshotId),
+    agentListRuns: (projectPath) => ipcRenderer.invoke('agent:listRuns', projectPath),
+    agentGetRun: (projectPath, runId) => ipcRenderer.invoke('agent:getRun', projectPath, runId),
+    agentCreateRun: (projectPath, payload) => ipcRenderer.invoke('agent:createRun', projectPath, payload),
+    agentUpdateRun: (projectPath, runId, patch) => ipcRenderer.invoke('agent:updateRun', projectPath, runId, patch),
+    agentAppendLog: (projectPath, runId, log) => ipcRenderer.invoke('agent:appendLog', projectPath, runId, log),
+    agentUpdateChangeStatus: (projectPath, runId, changeId, status, extra) =>
+      ipcRenderer.invoke('agent:updateChangeStatus', projectPath, runId, changeId, status, extra),
+    agentApplyChange: (projectPath, runId, changeId) => ipcRenderer.invoke('agent:applyChange', projectPath, runId, changeId),
+    agentRejectChange: (projectPath, runId, changeId) => ipcRenderer.invoke('agent:rejectChange', projectPath, runId, changeId),
+    agentRestoreRun: (projectPath, runId) => ipcRenderer.invoke('agent:restoreRun', projectPath, runId),
+    onAgentAction: (callback) => registerChannelListener('agent:action', callback),
 
     // API pour supprimer un fichier
     deleteFile: (projectPath, filename, options) => ipcRenderer.invoke('delete-file', projectPath, filename, options),
