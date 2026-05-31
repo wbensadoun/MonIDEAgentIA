@@ -222,6 +222,26 @@ const AGENT_MAX_TOOL_CALLS = 20;
 const AGENT_TOOL_MAX_ROUNDS = 6;
 const AGENT_TOOL_CONTENT_MAX_CHARS = 120000;
 
+// Familles Ollama a "raisonnement" (thinking) : par defaut elles generent un long
+// bloc de reflexion AVANT de repondre, ce qui est catastrophique sur CPU (plusieurs
+// minutes => "ne repond pas"). On desactive le thinking par defaut et on ne le
+// reactive que si l'utilisateur coche "Reflexion". On n'envoie le champ `think`
+// que pour ces familles, sinon Ollama rejette les modeles non compatibles.
+const OLLAMA_THINKING_FAMILIES = /(qwen3|deepseek-r1|qwq|magistral|cogito|granite3\.2)/i;
+const computeOllamaThink = (model, thinkingMode) => {
+  if (!OLLAMA_THINKING_FAMILIES.test(String(model || ''))) return undefined; // champ omis
+  return thinkingMode === true; // false par defaut (rapide)
+};
+// Filet de securite : certains builds emettent quand meme un bloc de raisonnement
+// <think>...</think> malgre think:false. On le retire de la reponse finale.
+const stripThinkBlocks = (text) => {
+  let out = String(text || '');
+  out = out.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  // Bloc <think> ouvert sans fermeture (reponse coupee) : on retire jusqu'a la fin.
+  out = out.replace(/<think>[\s\S]*$/i, '');
+  return out.trim();
+};
+
 const toPositiveInt = (value, fallback, min = 1, max = Number.MAX_SAFE_INTEGER) => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   if (!Number.isFinite(parsed)) return fallback;
@@ -375,6 +395,65 @@ const parseAgentToolCalls = (text) => {
   return calls;
 };
 
+// Contrat d'outils PARTAGE (balises XML, provider-agnostique). Annonce aux agents
+// les outils de lecture A LA DEMANDE : le contexte n'est plus pre-injecte en entier.
+const AGENT_FILE_TOOL_CONTRACT = `OUTILS DISPONIBLES (lecture du projet a la demande):
+- <read_file file="chemin/relatif.ext" />
+- <read_lines file="chemin/relatif.ext" start="10" end="80" />
+
+REGLES OUTILS:
+- Utilise uniquement des chemins relatifs au workspace, pris dans l'INDEX PROJET.
+- Ne demande que les fichiers reellement utiles a la reponse.
+- Taille max fichier: ${AGENT_MAX_FILE_BYTES} bytes ; read_lines renvoie au max ${AGENT_MAX_LINES_PER_CALL} lignes.
+- Quand tu appelles un outil, reponds UNIQUEMENT avec les balises d'outil, sans texte autour.`;
+
+// Runtime d'outils PARTAGE (provider-agnostique) : execute un appel d'outil de
+// lecture de fichier sur le workspace. Reutilisable par tous les agents (Ollama
+// simple/multi, et a terme Gemini/Claude/Kimi) pour le contexte a la demande.
+const executeAgentFileToolCall = async (workspaceRoot, call) => {
+  const toolName = String(call?.name || '').trim();
+  const attrs = call?.attrs && typeof call.attrs === 'object' ? call.attrs : {};
+  try {
+    if (!workspaceRoot) throw new Error('Aucun projet autorise pour la lecture de fichier.');
+    if (toolName === 'read_file') {
+      const relFile = String(attrs.file || '').trim();
+      if (!relFile) throw new Error('Attribut file requis');
+      const resolvedInfo = safeResolvePath(workspaceRoot, relFile);
+      const content = await readAgentFileWithLimits(workspaceRoot, relFile);
+      return `<tool_result name="read_file" file="${resolvedInfo.relative}" status="ok">\n${content}\n</tool_result>`;
+    }
+    if (toolName === 'read_lines') {
+      const relFile = String(attrs.file || '').trim();
+      if (!relFile) throw new Error('Attribut file requis');
+      const { resolvedPath, relativePath } = await validateAgentFileAccess(workspaceRoot, relFile);
+      const raw = await fs.readFile(resolvedPath);
+      if (isLikelyBinary(raw)) throw new Error(`Fichier binaire non supporte: ${relativePath}`);
+      const excerpt = readAgentLinesWithLimits(raw.toString('utf8'), attrs.start, attrs.end, AGENT_MAX_LINES_PER_CALL);
+      return `<tool_result name="read_lines" file="${relativePath}" start="${excerpt.start}" end="${excerpt.end}" total="${excerpt.total}" status="ok">\n${excerpt.content}\n</tool_result>`;
+    }
+    return formatToolError(toolName || 'unknown_tool', `Outil non supporte: ${toolName}`);
+  } catch (error) {
+    return formatToolError(toolName || 'unknown_tool', error?.message || String(error));
+  }
+};
+
+// Construit un INDEX PROJET leger (chemins + tailles, SANS contenu brut) a injecter
+// dans le prompt. L'agent lit ensuite les fichiers utiles via les outils ci-dessus.
+const buildProjectIndexContext = (allProjectFiles, maxEntries = 200) => {
+  const fileEntries = allProjectFiles?.files && typeof allProjectFiles.files === 'object'
+    ? Object.entries(allProjectFiles.files)
+    : [];
+  if (fileEntries.length === 0) return '';
+  const lines = fileEntries.slice(0, maxEntries).map(([filePath, fileData]) => {
+    const size = Number(fileData?.size || (fileData?.content ? String(fileData.content).length : 0));
+    return `- ${filePath} (${Number.isFinite(size) ? size : 0} bytes)`;
+  });
+  if (fileEntries.length > lines.length) {
+    lines.push(`- ... ${fileEntries.length - lines.length} fichiers supplementaires`);
+  }
+  return `\nINDEX PROJET (sans contenu brut — lis les fichiers utiles via les outils):\n${lines.join('\n')}\n`;
+};
+
 const summarizeWorkflow = (rawWorkflow, fallbackName) => {
   const wf = rawWorkflow && typeof rawWorkflow === 'object' ? rawWorkflow : {};
   const name = String(wf.name || fallbackName || 'workflow').trim() || 'workflow';
@@ -476,6 +555,9 @@ async function buildVisualWorkflowContextForPrompt(projectPath, userText = '', o
   const workflowIntent = safeOptions.forceVisualWorkflowContext === true
     || VISUAL_WORKFLOW_INTENT_REGEX.test(String(userText || ''));
 
+  // Ne charger les workflows que si l'intention est detectable — meme logique que n8n.
+  if (!workflowIntent) return '';
+
   let workflows = [];
   try {
     workflows = await getVisualWorkflowIndex(projectPath, maxIndexItems);
@@ -484,7 +566,7 @@ async function buildVisualWorkflowContextForPrompt(projectPath, userText = '', o
   }
 
   if (!Array.isArray(workflows) || workflows.length === 0) {
-    return '\n--- WORKFLOWS VISUELS (.vibe-workflows) ---\nAucun workflow visuel trouve.\n--- FIN WORKFLOWS VISUELS ---\n';
+    return '';
   }
 
   let context = '\n--- WORKFLOWS VISUELS (.vibe-workflows) ---\n';
@@ -1261,8 +1343,9 @@ const DEFAULT_GEMINI_MODEL = 'gemini-3-flash-preview';
 const DEFAULT_KIMI_MODEL = 'moonshotai/Kimi-K2.5';
 const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_GEMINI_PRO_MODEL = 'gemini-3.1-pro-preview';
-const CANONICAL_QWEN_OLLAMA_MODEL = 'qwen3:latest';
-const LEGACY_QWEN_OLLAMA_MODELS = new Set(['qwen3', 'qwen3:8b']);
+// Defaut concret (jamais ":latest" — alias ambigu supprime). La taille reelle
+// est resolue dynamiquement cote UI selon la puissance machine.
+const CANONICAL_QWEN_OLLAMA_MODEL = 'qwen3:8b';
 const SUPPORTED_AI_PROVIDERS = new Set(['gemini', 'claude', 'kimi', 'ollama']);
 const MULTI_AGENT_ROLE_DEFAULTS = Object.freeze({
   selector: { provider: 'gemini', model: DEFAULT_GEMINI_PRO_MODEL },
@@ -1289,8 +1372,10 @@ const normalizePreferredOllamaModelName = (value, fallback = CANONICAL_QWEN_OLLA
   const resolvedFallback = String(fallback || CANONICAL_QWEN_OLLAMA_MODEL).trim() || CANONICAL_QWEN_OLLAMA_MODEL;
   const candidate = normalized || resolvedFallback;
 
-  if (LEGACY_QWEN_OLLAMA_MODELS.has(candidate)) {
-    return CANONICAL_QWEN_OLLAMA_MODEL;
+  // Migration: l'alias ":latest" est supprime. Toute ancienne valeur "<famille>:latest"
+  // est convertie vers une taille concrete (8b) pour que le choix de l'utilisateur soit respecte.
+  if (/:latest$/i.test(candidate)) {
+    return candidate.replace(/:latest$/i, ':8b');
   }
 
   return candidate;
@@ -3138,6 +3223,10 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
     const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
 
     const safeOptions = options && typeof options === 'object' ? options : {};
+    // metadataOnly : liste les fichiers (chemin + taille) SANS lire le contenu.
+    // Utilise pour les providers locaux (Ollama) : l'index est leger, le contenu
+    // est lu a la demande via les outils read_file/read_lines.
+    const metadataOnly = !!safeOptions.metadataOnly;
     const includeHidden = !!safeOptions.includeHidden;
     const includeSecrets = !!safeOptions.includeSecrets;
     const includeGit = !!safeOptions.includeGit;
@@ -3320,6 +3409,12 @@ ipcMain.handle('getAllProjectFiles', async (event, projectPath, options = {}) =>
 
         try {
           const stats = await fs.stat(fullPath);
+
+          // Mode metadataOnly : on n'ouvre pas le fichier, on stocke juste chemin+taille.
+          if (metadataOnly) {
+            recordFile(relativeFilePath, { type: 'file', content: '', size: stats.size }, 0);
+            continue;
+          }
 
           const treatAsText = shouldReadAsText(itemName);
           if (!treatAsText) {
@@ -4488,13 +4583,14 @@ async function runSingleCompletionProvider({ provider, systemInstruction, userPr
         { role: 'user', content: userPrompt }
       ],
       stream: false,
+      think: computeOllamaThink(model, options.thinkingMode),
       options: {
         temperature,
         num_predict: maxTokens
       }
     }, { timeout: 90000 });
 
-    const text = resp.data?.message?.content || '';
+    const text = stripThinkBlocks(resp.data?.message?.content || '');
     return { success: true, text: stripCompletionMarkdown(text, { trimEndOnly }), provider: 'ollama', requestedModel, model };
   }
 
@@ -6841,6 +6937,10 @@ ipcMain.handle('sync-voltagent-subagents', async (event, options = {}) => {
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const DEFAULT_OLLAMA_MODEL = CANONICAL_QWEN_OLLAMA_MODEL;
+// Anti-blocage du streaming Ollama : delai pour la reponse initiale, et delai
+// d'inactivite (aucun token recu) au-dela duquel on rejette et detruit le flux.
+const OLLAMA_STREAM_RESPONSE_TIMEOUT_MS = Number(process.env.OLLAMA_STREAM_RESPONSE_TIMEOUT_MS) || 60000;
+const OLLAMA_STREAM_INACTIVITY_TIMEOUT_MS = Number(process.env.OLLAMA_STREAM_INACTIVITY_TIMEOUT_MS) || 90000;
 const OLLAMA_DOWNLOAD_URL = process.platform === 'win32'
   ? 'https://ollama.com/download/windows'
   : 'https://ollama.com/download';
@@ -7072,6 +7172,195 @@ ipcMain.handle('list-ollama-models', async () => {
     return { success: true, models };
   } catch (error) {
     return { success: false, error: `Ollama non disponible: ${error.message}. Installez Ollama depuis l'app ou via ${OLLAMA_DOWNLOAD_URL}` };
+  }
+});
+
+// ─── Catalogue Ollama DYNAMIQUE (familles + tailles) depuis la librairie publique ───
+// Source: pages HTML publiques ollama.com (pas d'auth). On detecte la famille de
+// chat la plus recente (ex. qwen3 -> qwen3.6) et ses tailles reelles (8b, 14b, ...),
+// sans jamais utiliser l'alias ":latest".
+const OLLAMA_REGISTRY_CACHE = new Map(); // key -> { value, ts }
+const OLLAMA_REGISTRY_TTL_MS = 30 * 60 * 1000;
+const OLLAMA_REGISTRY_HTTP = { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0 (FuturIA)' } };
+
+const registryCacheGet = (key, force) => {
+  if (force) return null;
+  const hit = OLLAMA_REGISTRY_CACHE.get(key);
+  if (hit && (Date.now() - hit.ts) < OLLAMA_REGISTRY_TTL_MS) return hit.value;
+  return null;
+};
+const registryCacheSet = (key, value) => {
+  OLLAMA_REGISTRY_CACHE.set(key, { value, ts: Date.now() });
+  return value;
+};
+
+// Compare deux versions numeriques de famille ("3.6" > "3.5" > "3" > "2.5").
+const compareFamilyVersions = (a, b) => {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+};
+
+// Detecte la famille de chat de base la plus recente pour un "vendor" (ex. qwen).
+// Exclut les variantes -coder/-vl/-embedding/-next/-math/qwq et la version sans numero.
+const resolveOllamaFamilyFromRegistry = async (vendor = 'qwen', force = false) => {
+  const cacheKey = `family:${vendor}`;
+  const cached = registryCacheGet(cacheKey, force);
+  if (cached) return cached;
+
+  const url = `https://ollama.com/search?q=${encodeURIComponent(vendor)}`;
+  const response = await axios.get(url, OLLAMA_REGISTRY_HTTP);
+  const html = String(response.data || '');
+  const found = new Set();
+  const linkRegex = /\/library\/([a-z0-9._-]+)/gi;
+  let m;
+  while ((m = linkRegex.exec(html)) !== null) {
+    found.add(m[1].toLowerCase());
+  }
+  const baseRegex = new RegExp(`^${vendor}(\\d+(?:\\.\\d+)?)$`, 'i');
+  const families = Array.from(found)
+    .map((name) => {
+      const match = baseRegex.exec(name);
+      return match ? { name, version: match[1] } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => compareFamilyVersions(b.version, a.version));
+
+  const result = {
+    family: families[0]?.name || `${vendor}3`,
+    allFamilies: families.map((f) => f.name)
+  };
+  return registryCacheSet(cacheKey, result);
+};
+
+// Recupere les tailles (8b, 14b, ...) reellement publiees pour une famille. Exclut ":latest".
+const fetchOllamaLibrarySizesFromRegistry = async (family, force = false) => {
+  const safeFamily = String(family || '').trim().toLowerCase();
+  if (!safeFamily) return { family: '', sizes: [] };
+  const cacheKey = `sizes:${safeFamily}`;
+  const cached = registryCacheGet(cacheKey, force);
+  if (cached) return cached;
+
+  const url = `https://ollama.com/library/${encodeURIComponent(safeFamily)}/tags`;
+  const response = await axios.get(url, OLLAMA_REGISTRY_HTTP);
+  const html = String(response.data || '');
+  const escaped = safeFamily.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const tagRegex = new RegExp(`${escaped}:([a-z0-9._-]+)`, 'gi');
+  const sizes = new Set();
+  let m;
+  while ((m = tagRegex.exec(html)) !== null) {
+    const tag = m[1].toLowerCase();
+    if (/^\d+(\.\d+)?b$/.test(tag)) sizes.add(tag); // tailles pures uniquement, jamais "latest"
+  }
+  const sorted = Array.from(sizes).sort((a, b) => parseSizeBillions(a) - parseSizeBillions(b));
+  const result = { family: safeFamily, sizes: sorted };
+  return registryCacheSet(cacheKey, result);
+};
+
+// ─── Recommandation de taille selon la puissance machine ───
+const parseSizeBillions = (tag) => {
+  const match = /^(\d+(?:\.\d+)?)b$/i.exec(String(tag || '').trim());
+  return match ? Number(match[1]) : null;
+};
+// Empreinte memoire approx. (Go) en quantification q4 par taille de modele.
+const OLLAMA_SIZE_FOOTPRINT_GB = {
+  '0.6b': 1, '1.7b': 2, '4b': 4, '8b': 7, '14b': 11, '30b': 22, '32b': 24, '70b': 45, '235b': 140
+};
+const estimateOllamaFootprintGb = (tag) => {
+  const key = String(tag || '').toLowerCase();
+  if (OLLAMA_SIZE_FOOTPRINT_GB[key] != null) return OLLAMA_SIZE_FOOTPRINT_GB[key];
+  const billions = parseSizeBillions(key);
+  return billions != null ? Number((billions * 0.75).toFixed(1)) : null;
+};
+// Choisit la meilleure taille selon DEUX criteres :
+//  - tenir en memoire (VRAM si GPU exploitable, sinon RAM),
+//  - rester REACTIF : sans GPU (inference CPU), on plafonne la taille car les gros
+//    modeles sont trop lents (ex. 8B ~2-3 tokens/s sur un CPU d'ultraportable).
+const recommendOllamaSize = (sizes, { vramGb = 0, totalGb = 0 } = {}) => {
+  const candidates = (Array.isArray(sizes) ? sizes : [])
+    .map((s) => ({ s, gb: estimateOllamaFootprintGb(s), b: parseSizeBillions(s) }))
+    .filter((x) => x.gb != null && x.b != null)
+    .sort((a, b) => a.b - b.b);
+  if (candidates.length === 0) return null;
+
+  const hasUsableGpu = Number(vramGb) >= 4;
+  const fitBudgetGb = hasUsableGpu ? Number(vramGb) : Number(totalGb) * 0.6;
+  // Plancher de QUALITE = 4B (on ne recommande jamais en dessous), puis on monte
+  // jusqu'au max que la machine encaisse. Sur CPU on plafonne la VITESSE selon la RAM.
+  const FLOOR_B = 4;
+  const speedCapB = hasUsableGpu
+    ? Infinity
+    : (totalGb >= 32 ? 14 : totalGb >= 16 ? 8 : FLOOR_B);
+
+  // Plus grande taille qui tient en memoire ET sous le plafond de vitesse.
+  let best = null;
+  for (const c of candidates) {
+    if (c.gb <= fitBudgetGb && c.b <= speedCapB) best = c.s;
+  }
+  // Vise au minimum 4B si une telle taille existe et tient en memoire.
+  if (!best || parseSizeBillions(best) < FLOOR_B) {
+    const floorFit = candidates.find((c) => c.b >= FLOOR_B && c.gb <= fitBudgetGb);
+    best = (floorFit && floorFit.s) || best || candidates[candidates.length - 1].s;
+  }
+  return best;
+};
+
+ipcMain.handle('resolve-ollama-family', async (_event, payload = {}) => {
+  try {
+    const vendor = String(payload?.vendor || 'qwen').trim().toLowerCase() || 'qwen';
+    const force = payload?.force === true;
+    const result = await resolveOllamaFamilyFromRegistry(vendor, force);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: `Detection famille Ollama impossible: ${error.message}` };
+  }
+});
+
+ipcMain.handle('fetch-ollama-library-sizes', async (_event, payload = {}) => {
+  try {
+    const family = String(payload?.family || '').trim();
+    const force = payload?.force === true;
+    const result = await fetchOllamaLibrarySizesFromRegistry(family, force);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: `Recuperation tailles Ollama impossible: ${error.message}` };
+  }
+});
+
+// Recommande une taille selon RAM/VRAM (respecte le consentement materiel).
+ipcMain.handle('recommend-ollama-size', async (_event, payload = {}) => {
+  try {
+    const sizes = Array.isArray(payload?.sizes) ? payload.sizes : [];
+    if (sizes.length === 0) return { success: false, error: 'Aucune taille fournie.' };
+
+    const settings = await readSettingsSafe();
+    const explicitConsent = payload?.consent === true;
+    const hasConsent = explicitConsent || (settings.localAIOptimizationMode === 'auto' && settings.localAIHardwareConsent);
+
+    const totalGb = os.totalmem() / 1024 / 1024 / 1024;
+    let vramGb = 0;
+    if (hasConsent) {
+      try {
+        const gpus = await readWindowsGpuInfo();
+        vramGb = Math.max(0, ...(Array.isArray(gpus) ? gpus.map((g) => Number(g?.vramGb) || 0) : [0]));
+      } catch { /* GPU non lisible: on reste sur la RAM */ }
+    }
+    const recommended = recommendOllamaSize(sizes, { vramGb, totalGb });
+    const hasUsableGpu = vramGb >= 4;
+    return {
+      success: true,
+      recommended,
+      totalGb: Number(totalGb.toFixed(1)),
+      vramGb: Number(vramGb.toFixed(1)),
+      basis: hasUsableGpu ? 'gpu' : 'cpu',
+      consent: hasConsent
+    };
+  } catch (error) {
+    return { success: false, error: `Recommandation taille impossible: ${error.message}` };
   }
 });
 
@@ -7334,18 +7623,19 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
     const lastUserText = String(lastMessage.text || '');
     if (!lastUserText.trim()) return { success: false, error: "Dernier message utilisateur vide pour Ollama." };
 
-    let projectContext = '';
-    if (allProjectFiles?.files) {
-      const filesToShow = pickFilesForContext(allProjectFiles.files, 15);
-      projectContext = '\n--- CONTEXTE PROJET ---\n';
-      for (const [filePath, fileData] of filesToShow) {
-        projectContext += `\n=== ${filePath} ===\n${(fileData.content || '').substring(0, 1500)}\n`;
-      }
-      projectContext += '--- FIN CONTEXTE ---\n';
-    }
+    // Contexte A LA DEMANDE : on injecte un INDEX leger (chemins + tailles, pas le
+    // contenu complet) ; l'agent lit les fichiers utiles via read_file/read_lines.
+    // Fini le bourrage de 15 fichiers tronques dans chaque prompt.
+    const hasProjectTools = !!projectPath && !!allProjectFiles?.files;
+    const projectContext = hasProjectTools ? buildProjectIndexContext(allProjectFiles) : '';
+    const toolContract = hasProjectTools ? `\n${AGENT_FILE_TOOL_CONTRACT}\n` : '';
     const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
-    const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
+    // Skill selectionne : charge le contenu complet (choix explicite de l'utilisateur).
     const selectedSkill = await loadSkillForCompletion(options.skill, projectPath);
+    // Skills globaux : noms seulement — l'agent lit le contenu via outil si besoin.
+    // (Meme logique que Multi-Ollama : on ne bourre pas le prompt avec tout le contenu.)
+    const skillNamesText = formatAvailableSkillsListForPrompt(options.skillsContent);
+    // Workflows et n8n : charger seulement si l'intention est detectee dans la question.
     const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, lastUserText, options);
     const n8nCatalogContext = await buildN8nCatalogContextForPrompt(lastUserText, options);
 
@@ -7354,19 +7644,17 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
       : '';
 
     const skillContext = [
-      globalSkillsContent
-        ? `\n--- SKILLS GLOBAUX INSTALLES ---\n${globalSkillsContent}\n--- FIN SKILLS GLOBAUX ---\n`
-        : '',
       selectedSkill
-        ? `\n--- SKILL SELECTIONNE (${selectedSkill.name}) ---\n${selectedSkill.content}\n--- FIN SKILL SELECTIONNE ---\n`
+        ? `\n--- SKILL ACTIF (${selectedSkill.name}) ---\n${selectedSkill.content}\n--- FIN SKILL ACTIF ---\n`
         : '',
-      formatAvailableSkillsListForPrompt(options.skillsContent)
+      skillNamesText
     ].filter(Boolean).join('\n');
 
     const systemPrompt = `Tu es un assistant de développement expert et autonome.
 ${agentContext}
 ${skillContext}
 ${projectContext}
+${toolContract}
 ${visualWorkflowContext}
 ${n8nCatalogContext}
 FICHIER OUVERT: ${currentCode ? currentCode.substring(0, 2000) : 'Aucun'}
@@ -7391,6 +7679,7 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
           model,
           messages,
           stream: false, // IMPORTANT: must be false to get a single JSON response, not a stream
+          think: computeOllamaThink(model, options.thinkingMode),
           options: { temperature: options.temperature || 0.7, num_predict: options.maxTokens || 8192 }
         }, { timeout: 180000 }); // 3-minute timeout for large local models
         const content = resp.data?.message?.content;
@@ -7416,10 +7705,30 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
 
     for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
       const aiText = await ollamaCall(messages);
-      fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
+
+      // Outils a la demande (lecture fichiers) : prioritaire, et on ne pollue PAS
+      // la reponse finale avec les tours d'outils (balises + resultats).
+      if (hasProjectTools) {
+        const toolCalls = parseAgentToolCalls(aiText);
+        if (toolCalls.length > 0) {
+          const toolResults = [];
+          for (const call of toolCalls.slice(0, AGENT_MAX_TOOL_CALLS)) {
+            // eslint-disable-next-line no-await-in-loop
+            toolResults.push(await executeAgentFileToolCall(projectPath, call));
+          }
+          messages = [
+            ...messages,
+            { role: 'assistant', content: aiText },
+            { role: 'user', content: `[RESULTATS_OUTILS]\n${toolResults.join('\n\n')}\n\nSi les infos suffisent, donne la reponse finale sans nouvel appel outil.` }
+          ];
+          continue;
+        }
+      }
+
+      fullTranscript += (fullTranscript ? '\n\n---\n\n' : '') + aiText;
 
       const cmd = parseRunCommand(aiText);
-      if (!cmd) return { success: true, text: fullTranscript, terminalActions: iter };
+      if (!cmd) return { success: true, text: stripThinkBlocks(fullTranscript), terminalActions: iter };
 
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
@@ -7435,7 +7744,7 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
       }
     }
 
-    return { success: true, text: fullTranscript, terminalActions: MAX_ITERATIONS };
+    return { success: true, text: stripThinkBlocks(fullTranscript), terminalActions: MAX_ITERATIONS };
   } catch (error) {
     console.error('[Ollama] Erreur:', error.message);
     return { success: false, error: `Ollama: ${error.message}` };
@@ -7579,9 +7888,13 @@ REGLES OUTILS:
           model: modelName,
           messages,
           stream: true,
+          think: computeOllamaThink(modelName, options.thinkingMode),
           options: { temperature: 0.7, num_predict: maxTokens || 2048 }
         }, {
-          responseType: 'stream'
+          responseType: 'stream',
+          // Timeout sur la reponse initiale (chargement modele / premiers octets).
+          // Le blocage en cours de flux est gere par le watchdog d'inactivite ci-dessous.
+          timeout: OLLAMA_STREAM_RESPONSE_TIMEOUT_MS
         });
       } catch (error) {
         if (axios.isAxiosError(error) && error.response?.status === 404) {
@@ -7597,6 +7910,7 @@ REGLES OUTILS:
         let settled = false;
         let doneEmitted = false;
         let buffer = '';
+        let inactivityTimer = null;
 
         const loadWarning = setTimeout(() => {
           if (!hasStarted) {
@@ -7611,6 +7925,23 @@ REGLES OUTILS:
         const cleanupTimers = () => {
           clearTimeout(loadWarning);
           clearTimeout(execWarning);
+          if (inactivityTimer) clearTimeout(inactivityTimer);
+        };
+
+        // Watchdog d'inactivite: si Ollama cesse d'emettre des tokens pendant
+        // OLLAMA_STREAM_INACTIVITY_TIMEOUT_MS, on rejette vraiment et on detruit le flux
+        // (evite le spinner infini quand le modele se bloque en cours de generation).
+        const resetWatchdog = () => {
+          if (settled) return;
+          if (inactivityTimer) clearTimeout(inactivityTimer);
+          inactivityTimer = setTimeout(() => {
+            try { response.data?.destroy?.(); } catch { /* noop */ }
+            const phase = hasStarted ? 'generation' : 'chargement';
+            safeReject(new Error(
+              `Ollama (${agentLabel}, modele="${modelName}"): aucune reponse pendant `
+              + `${Math.round(OLLAMA_STREAM_INACTIVITY_TIMEOUT_MS / 1000)}s (${phase} bloquee).`
+            ));
+          }, OLLAMA_STREAM_INACTIVITY_TIMEOUT_MS);
         };
 
         const safeResolve = (value) => {
@@ -7665,6 +7996,7 @@ REGLES OUTILS:
 
         response.data.on('data', (chunk) => {
           hasStarted = true;
+          resetWatchdog();
           buffer += chunk.toString('utf8');
           let newlineIndex = buffer.indexOf('\n');
           while (newlineIndex >= 0) {
@@ -7682,6 +8014,9 @@ REGLES OUTILS:
         response.data.on('error', (err) => {
           safeReject(err);
         });
+
+        // Arme le watchdog des le branchement (couvre aussi le silence avant le 1er token).
+        resetWatchdog();
       });
     };
 

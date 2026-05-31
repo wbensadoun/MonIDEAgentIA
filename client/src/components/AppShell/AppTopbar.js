@@ -110,6 +110,7 @@ const AppTopbar = ({
   resolvedOllamaCoder,
   resolvedOllamaTester,
   availableOllamaModels,
+  recommendedOllamaModel,
   onOllamaSettingChange,
   ollamaTopbarLabel,
   showMessage,
@@ -222,8 +223,8 @@ const AppTopbar = ({
             value={aiProvider}
             onChange={(e) => onAiProviderChange(e.target.value)}
             className="topbar-select"
-            disabled={!isElectronApiAvailable || isLoading}
-            title="Fournisseur IA"
+            disabled={!isElectronApiAvailable}
+            title="Fournisseur IA (modifiable meme pendant un run — applique a la requete suivante)"
           >
             <option value="gemini">Gemini</option>
             <option value="claude">Claude</option>
@@ -252,7 +253,7 @@ const AppTopbar = ({
                   }
                 }}
                 className="topbar-select"
-                disabled={!isElectronApiAvailable || isLoading}
+                disabled={!isElectronApiAvailable}
                 title={`Modele ${getProviderLabel(aiProvider)}`}
               />
               <datalist id="topbar-active-models">
@@ -268,7 +269,7 @@ const AppTopbar = ({
               value={activeModelValue}
               onChange={(e) => onActiveModelChange(e.target.value)}
               className="topbar-select"
-              disabled={!isElectronApiAvailable || isLoading}
+              disabled={!isElectronApiAvailable}
               title="Modèle IA"
             >
               {availableActiveModels.map((m) => (
@@ -422,9 +423,11 @@ const AppTopbar = ({
                     value={resolvedOllamaModel}
                     onChange={(e) => onOllamaSettingChange('ollamaModel', e.target.value)}
                     className="topbar-select"
-                    disabled={!isElectronApiAvailable || isLoading}
+                    disabled={!isElectronApiAvailable}
                   >
-                    {availableOllamaModels.map((m) => <option key={m} value={m}>{m}</option>)}
+                    {availableOllamaModels.map((m) => (
+                      <option key={m} value={m}>{m === recommendedOllamaModel ? `${m} (recommandée)` : m}</option>
+                    ))}
                   </select>
                 </label>
               )}
@@ -442,9 +445,11 @@ const AppTopbar = ({
                         value={val}
                         onChange={(e) => onOllamaSettingChange(key, e.target.value)}
                         className="topbar-select"
-                        disabled={!isElectronApiAvailable || isLoading}
+                        disabled={!isElectronApiAvailable}
                       >
-                        {availableOllamaModels.map((m) => <option key={m} value={m}>{m}</option>)}
+                        {availableOllamaModels.map((m) => (
+                          <option key={m} value={m}>{m === recommendedOllamaModel ? `${m} (recommandée)` : m}</option>
+                        ))}
                       </select>
                     </label>
                   ))}

@@ -215,6 +215,10 @@ try {
     // Ollama Local AI
     listOllamaModels: () => ipcRenderer.invoke('list-ollama-models'),
     getLatestOllamaQwenVersion: () => ipcRenderer.invoke('get-latest-ollama-qwen-version'),
+    // Catalogue dynamique (famille + tailles) depuis la librairie Ollama publique
+    resolveOllamaFamily: (vendor, force) => ipcRenderer.invoke('resolve-ollama-family', { vendor, force }),
+    fetchOllamaLibrarySizes: (family, force) => ipcRenderer.invoke('fetch-ollama-library-sizes', { family, force }),
+    recommendOllamaSize: (sizes, consent) => ipcRenderer.invoke('recommend-ollama-size', { sizes, consent }),
     checkOllamaUpdates: (modelNames) => ipcRenderer.invoke('check-ollama-updates', modelNames),
     startOllama: () => ipcRenderer.invoke('start-ollama'),
     installOllama: () => ipcRenderer.invoke('install-ollama'),

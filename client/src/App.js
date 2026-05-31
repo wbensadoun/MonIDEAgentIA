@@ -111,6 +111,10 @@ const AppContent = () => {
   const [ollamaModelCoder, setOllamaModelCoder] = useState(DEFAULT_OLLAMA_MODEL);
   const [ollamaModelTester, setOllamaModelTester] = useState(DEFAULT_OLLAMA_MODEL);
   const [ollamaModels, setOllamaModels] = useState([]);
+  // Catalogue Ollama dynamique (famille + tailles depuis la librairie publique)
+  const [ollamaFamily, setOllamaFamily] = useState('');
+  const [ollamaSizes, setOllamaSizes] = useState([]);
+  const [recommendedOllamaSize, setRecommendedOllamaSize] = useState('');
   const [aiDraftPreview, setAiDraftPreview] = useState(null);
   const [gitDiffPreview, setGitDiffPreview] = useState(null);
   const [agentRuns, setAgentRuns] = useState([]);
@@ -583,21 +587,41 @@ const AppContent = () => {
     resolvedOllamaTester
   ]);
 
-  const availableOllamaModels = useMemo(() => (
-    Array.from(new Set([
-      ...SUGGESTED_OLLAMA_MODELS,
+  // Modele recommande = famille recente + taille adaptee a la machine.
+  const recommendedOllamaModel = useMemo(() => (
+    ollamaFamily && recommendedOllamaSize ? `${ollamaFamily}:${recommendedOllamaSize}` : ''
+  ), [ollamaFamily, recommendedOllamaSize]);
+
+  const availableOllamaModels = useMemo(() => {
+    // Source principale: tailles dynamiques de la famille recente (jamais ":latest").
+    const dynamicModels = ollamaFamily
+      ? ollamaSizes.map((size) => `${ollamaFamily}:${size}`)
+      : [];
+    // Modeles installes localement, en excluant tout tag ":latest".
+    const installedModels = ollamaModels
+      .map((model) => String(model || '').trim())
+      .filter((model) => model && !/:latest$/i.test(model));
+    // Secours (hors-ligne) seulement si aucune source dynamique/installee.
+    const fallback = dynamicModels.length === 0 && installedModels.length === 0
+      ? SUGGESTED_OLLAMA_MODELS
+      : [];
+    return Array.from(new Set([
+      ...dynamicModels,
+      ...installedModels,
+      ...fallback,
       normalizeOllamaModelLabel(ollamaModel),
       normalizeOllamaModelLabel(ollamaModelArchitect, ollamaModel),
       normalizeOllamaModelLabel(ollamaModelCoder, ollamaModel),
-      normalizeOllamaModelLabel(ollamaModelTester, ollamaModel),
-      ...ollamaModels.map((model) => String(model || '').trim()).filter(Boolean)
-    ].filter(Boolean)))
-  ), [
+      normalizeOllamaModelLabel(ollamaModelTester, ollamaModel)
+    ].filter(Boolean)));
+  }, [
     ollamaModel,
     ollamaModelArchitect,
     ollamaModelCoder,
     ollamaModelTester,
-    ollamaModels
+    ollamaModels,
+    ollamaFamily,
+    ollamaSizes
   ]);
 
   const activeModelField = useMemo(() => {
@@ -990,6 +1014,43 @@ const AppContent = () => {
     loadOllamaModels();
     return () => {
       mounted = false;
+    };
+  }, [aiProvider, isElectronApiAvailable]);
+
+  // Catalogue dynamique: famille la plus recente + tailles publiees + taille recommandee.
+  // Rafraichi au montage, au changement de provider, et sur "update" (event UpdateChecker).
+  useEffect(() => {
+    if (!isElectronApiAvailable || !window.electronAPI?.resolveOllamaFamily) return undefined;
+    if (aiProvider !== 'ollama' && aiProvider !== 'ollama-multi') return undefined;
+
+    let mounted = true;
+    const loadCatalog = async (force = false) => {
+      try {
+        const famResp = await window.electronAPI.resolveOllamaFamily('qwen', force);
+        if (!mounted || !famResp?.success || !famResp.family) return;
+        setOllamaFamily(famResp.family);
+
+        const sizesResp = await window.electronAPI.fetchOllamaLibrarySizes(famResp.family, force);
+        if (!mounted || !sizesResp?.success || !Array.isArray(sizesResp.sizes)) return;
+        setOllamaSizes(sizesResp.sizes);
+
+        if (sizesResp.sizes.length > 0 && window.electronAPI?.recommendOllamaSize) {
+          const recoResp = await window.electronAPI.recommendOllamaSize(sizesResp.sizes);
+          if (mounted && recoResp?.success && recoResp.recommended) {
+            setRecommendedOllamaSize(recoResp.recommended);
+          }
+        }
+      } catch {
+        // Hors-ligne: on garde la liste de secours (SUGGESTED_OLLAMA_MODELS).
+      }
+    };
+
+    loadCatalog(false);
+    const onRefresh = () => loadCatalog(true);
+    window.addEventListener('ollama-models-refreshed', onRefresh);
+    return () => {
+      mounted = false;
+      window.removeEventListener('ollama-models-refreshed', onRefresh);
     };
   }, [aiProvider, isElectronApiAvailable]);
 
@@ -2193,6 +2254,7 @@ const AppContent = () => {
         resolvedOllamaCoder={resolvedOllamaCoder}
         resolvedOllamaTester={resolvedOllamaTester}
         availableOllamaModels={availableOllamaModels}
+        recommendedOllamaModel={recommendedOllamaModel}
         onOllamaSettingChange={handleOllamaSettingChange}
         ollamaTopbarLabel={ollamaTopbarLabel}
         ollamaStatusLabel={ollamaStatusLabel}

@@ -519,13 +519,16 @@ export const useAI = (
       const normalizedContextMode =
         contextMode === 'mentions' || contextMode === 'none' ? contextMode : 'auto';
       const projectIntentRegex = /\b(projet|project|repo|repository|structure|arborescence|architecture|analyse|audit|overview|contexte|context|scan|lire|lis|read|workflow|workflows|flux|visuel|diagramme|n8n)\b/i;
-      const isKimiFastPath = effectiveAIProvider === 'kimi' && !deepContextEnabled;
+      // Decision de contexte INTELLIGENTE : on ne scanne le projet que si c'est
+      // reellement utile. Une simple question conversationnelle (meme longue) ne
+      // declenche plus de scan complet — c'etait la cause des ~460K de contexte
+      // envoyes pour rien (lenteur / non-reponse).
+      // Declencheurs retenus : deep context explicite, intention projet detectee,
+      // ou mentions @fichier (gerees separement). Les modes multi ne forcent plus
+      // a eux seuls un scan complet.
       const autoContextWanted =
         !!deepContextEnabled ||
-        effectiveAIProvider === 'multi' ||
-        effectiveAIProvider === 'ollama-multi' ||
-        projectIntentRegex.test(trimmedPrompt) ||
-        (!isKimiFastPath && trimmedPrompt.length > 140);
+        projectIntentRegex.test(trimmedPrompt);
       const wantsProjectContext =
         normalizedContextMode === 'none'
           ? false
@@ -579,11 +582,16 @@ export const useAI = (
 
         const presetKey = deepContextEnabled || effectiveAIProvider === 'multi' || effectiveAIProvider === 'ollama-multi' ? projectScanPreset : 'safe';
         const baseOptions = scanPresets[presetKey] || scanPresets.safe;
+        // Pour les providers locaux (Ollama), on ne lit jamais le contenu des fichiers :
+        // on envoie uniquement un index (chemins + tailles). Le modele lit ce dont il a
+        // besoin via les outils read_file/read_lines — comme les autres IDE (Cursor etc.).
+        const isLocalProvider = effectiveAIProvider === 'ollama' || effectiveAIProvider === 'ollama-multi';
         const scanOptions = {
           ...baseOptions,
           includeSecrets: projectScanIncludeSecrets,
           largeFileStrategy: projectScanLargeFileStrategy,
-          includeVisualWorkflows: true
+          includeVisualWorkflows: true,
+          metadataOnly: isLocalProvider
         };
         const maxFilesLimit = Number(contextMaxFiles);
         if (Number.isFinite(maxFilesLimit) && maxFilesLimit > 0) {

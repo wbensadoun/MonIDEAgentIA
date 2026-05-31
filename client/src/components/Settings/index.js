@@ -306,7 +306,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
     settings.ollamaModelCoder,
     settings.ollamaModelTester,
     ...ollamaModels
-  ].map((m) => String(m || '').trim()).filter(Boolean)));
+  ].map((m) => String(m || '').trim()).filter((m) => m && !/:latest$/i.test(m))));
 
   const availableMultiAgentModels = Array.from(new Set([
     ...REMOTE_MODEL_SUGGESTIONS,
@@ -574,7 +574,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
               Utilises pour Ollama simple, Multi-Ollama et les agents du roster qui choisissent Ollama.
             </div>
             <div className="settings-hint">
-              Presets proposes: qwen3:latest, qwen3:14b, qwen3:30b, qwen3:32b (installer via `ollama pull` si absent localement).
+              Tailles proposees dynamiquement selon la famille Qwen la plus recente (8b, 14b, 30b, 32b...). La taille adaptee a votre machine est marquee (recommandee) dans la barre du haut. Aucun alias latest. Installer via `ollama pull` si absent localement.
             </div>
 
             <label className="settings-label">Modele Ollama simple</label>

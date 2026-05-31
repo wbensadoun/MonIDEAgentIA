@@ -135,6 +135,10 @@ const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
   const refreshModels = useCallback(async () => {
     const models = await loadConfiguredModels();
     await checkUpdates(models);
+    // Rafraichit le catalogue dynamique (famille la plus recente + tailles) cote App.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('ollama-models-refreshed'));
+    }
   }, [checkUpdates, loadConfiguredModels]);
 
   useEffect(() => {
