@@ -9,7 +9,13 @@ import { buildWorkflowAIInvocation, evaluateWorkflowCondition } from '../utils/w
  * 
  * Chaque nœud reçoit le résultat du nœud précédent via `{{prev}}` dans ses champs.
  */
-const useWorkflowRunner = ({ isElectronApiAvailable, currentProjectPath, showMessage }) => {
+const useWorkflowRunner = ({
+    isElectronApiAvailable,
+    currentProjectPath,
+    showMessage,
+    aiProvider = 'gemini',
+    aiModels = {}
+}) => {
     const [isRunning, setIsRunning] = useState(false);
     const [activeNodeId, setActiveNodeId] = useState(null);
     const [executionLog, setExecutionLog] = useState([]);
@@ -136,10 +142,15 @@ const useWorkflowRunner = ({ isElectronApiAvailable, currentProjectPath, showMes
 
                 try {
                     const request = buildWorkflowAIInvocation({
-                        provider: data.model,
+                        provider: data.model || aiProvider,
                         prompt,
-                        projectPath: currentProjectPath
+                        projectPath: currentProjectPath,
+                        models: aiModels
                     });
+
+                    if (request.disabled) {
+                        return request.error || `Provider IA indisponible: ${data.model || aiProvider}`;
+                    }
 
                     const method = api?.[request.methodName];
                     if (typeof method !== 'function') {
@@ -178,7 +189,7 @@ const useWorkflowRunner = ({ isElectronApiAvailable, currentProjectPath, showMes
             default:
                 return `Nœud "${data.label}" exécuté`;
         }
-    }, [api, currentProjectPath, log, interpolate, showMessage]);
+    }, [api, currentProjectPath, log, interpolate, showMessage, aiProvider, aiModels]);
 
     // ── Exécuter tout le workflow ──
     const runWorkflow = useCallback(async (nodes, edges) => {

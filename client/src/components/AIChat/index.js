@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import './AIChat.css';
 import { AIWorkingIndicator } from '../LoadingAnimations';
 import SyntaxHighlightedCode from './SyntaxHighlightedCode';
+import { EXECUTION_MODES, RUN_PRESETS } from '../../utils/agentModes';
+import { MULTI_AGENT_FORMATIONS, MULTI_AGENT_ROLE_DEFINITIONS } from '../../utils/multiAgentConfig';
 
 const WORKFLOW_STREAM_REGEX = /\*\*WORKFLOW:/i;
 const DIFF_STREAM_REGEX = /<<<<\s*SEARCH/i;
@@ -122,8 +124,17 @@ const AIChat = ({
   getWorkflow,
   parseSlashCommand,
   activeFile,
+  onProviderChange,
   globalSkillsCount = 0,
   aiProvider = 'gemini',
+  executionMode = 'agent',
+  onExecutionModeChange,
+  runPreset = 'default',
+  onRunPresetChange,
+  multiAgentFormationKey = 'product-ui',
+  onMultiAgentFormationChange,
+  disabledAgentKeys = [],
+  onDisabledAgentKeysChange,
   pendingImages = [],
   onRemovePendingImage,
   pendingMessage = null,
@@ -492,6 +503,16 @@ const AIChat = ({
     || (multiAIState?.mode === 'ollama-multi' ? 'Swarm Ollama' : 'Equipe IA');
   const multiRunDuration = formatMultiDuration(multiAIState?.startedAt, multiAIState?.finishedAt);
   const currentWorkflowAnimStep = WORKFLOW_STREAM_STEPS[workflowAnimStep] || WORKFLOW_STREAM_STEPS[0];
+  const disabledAgentSet = useMemo(() => new Set(Array.isArray(disabledAgentKeys) ? disabledAgentKeys : []), [disabledAgentKeys]);
+  const activeFormation = useMemo(() => (
+    MULTI_AGENT_FORMATIONS.find((formation) => formation.key === multiAgentFormationKey)
+    || MULTI_AGENT_FORMATIONS[0]
+  ), [multiAgentFormationKey]);
+  const formationRoles = useMemo(() => (
+    (activeFormation?.defaultAgents || [])
+      .map((key) => MULTI_AGENT_ROLE_DEFINITIONS.find((role) => role.key === key))
+      .filter(Boolean)
+  ), [activeFormation]);
   const streamingFileDraft = useMemo(() => extractStreamingFileDraft(streamingText), [streamingText]);
   const streamingWorkflowDraft = useMemo(() => extractStreamingWorkflowDraft(streamingText), [streamingText]);
   const streamingCodeLineCount = useMemo(() => {
@@ -757,35 +778,83 @@ const AIChat = ({
     setShowConversations(false);
   };
 
+  const setExecutionMode = (modeId) => {
+    if (typeof onExecutionModeChange === 'function') {
+      onExecutionModeChange(modeId);
+    }
+    if (modeId === 'multi-agent' && typeof onProviderChange === 'function') {
+      if (aiProvider === 'ollama' || aiProvider === 'ollama-multi') {
+        onProviderChange('ollama-multi');
+      } else if (aiProvider !== 'multi') {
+        onProviderChange('multi');
+      }
+    }
+  };
+
+  const setPreset = (presetId) => {
+    const preset = RUN_PRESETS.find((item) => item.id === presetId);
+    if (!preset) return;
+    if (typeof onRunPresetChange === 'function') {
+      onRunPresetChange(presetId);
+    }
+    if (typeof onExecutionModeChange === 'function' && preset.mode) {
+      onExecutionModeChange(preset.mode);
+    }
+  };
+
+  const toggleDisabledAgent = (roleKey) => {
+    if (!roleKey || roleKey === 'selector') return;
+    if (typeof onDisabledAgentKeysChange !== 'function') return;
+    const next = new Set(disabledAgentSet);
+    if (next.has(roleKey)) next.delete(roleKey);
+    else next.add(roleKey);
+    onDisabledAgentKeysChange(Array.from(next));
+  };
+
   const quickActions = useMemo(() => ([
     {
       id: 'explain',
       label: 'Expliquer',
+      preset: 'default',
+      mode: 'ask',
       prompt: activeFile ? `Explique le fichier ${activeFile} et ses responsabilites.` : 'Explique le projet et sa structure.'
     },
     {
       id: 'refactor',
       label: 'Refactor',
+      preset: 'refactor',
+      mode: 'agent',
       prompt: activeFile ? `Refactorise ${activeFile} en gardant le comportement.` : 'Propose un refactor global.'
     },
     {
       id: 'tests',
       label: 'Tests',
+      preset: 'tests',
+      mode: 'agent',
       prompt: activeFile ? `Ecris des tests pour ${activeFile}.` : 'Ecris des tests prioritaires.'
     },
     {
       id: 'docs',
       label: 'Docs',
+      preset: 'docs',
+      mode: 'agent',
       prompt: activeFile ? `Documente ${activeFile} (README court).` : 'Redige un README rapide.'
     },
     {
       id: 'plan',
       label: 'Plan',
+      preset: 'default',
+      mode: 'plan',
       prompt: 'Donne un plan clair avant d agir.'
     }
   ]), [activeFile]);
 
-  const applyQuickPrompt = (text) => {
+  const applyQuickPrompt = (action) => {
+    if (action?.preset) {
+      if (typeof onRunPresetChange === 'function') onRunPresetChange(action.preset);
+      if (typeof onExecutionModeChange === 'function') onExecutionModeChange(action.mode || 'agent');
+    }
+    const text = action?.prompt || '';
     const next = prompt && prompt.trim() ? `${prompt}\n${text}` : text;
     onPromptChange(next);
     setShowWorkflowSuggestions(false);
@@ -869,6 +938,70 @@ const AIChat = ({
             </div>
           )}
         </div>
+      </div>
+
+      <div className="ai-mode-panel">
+        <div className="ai-mode-row">
+          {EXECUTION_MODES.map((mode) => (
+            <button
+              type="button"
+              key={mode.id}
+              className={`ai-mode-btn ${executionMode === mode.id ? 'is-active' : ''}`}
+              onClick={() => setExecutionMode(mode.id)}
+              title={mode.description}
+              disabled={isLoading}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+        <div className="ai-preset-row">
+          {RUN_PRESETS.map((preset) => (
+            <button
+              type="button"
+              key={preset.id}
+              className={`ai-preset-btn ${runPreset === preset.id ? 'is-active' : ''}`}
+              onClick={() => setPreset(preset.id)}
+              disabled={isLoading}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+        {executionMode === 'multi-agent' && (
+          <div className="ai-multi-config">
+            <div className="ai-multi-config-head">
+              <select
+                value={activeFormation?.key || multiAgentFormationKey}
+                onChange={(event) => onMultiAgentFormationChange?.(event.target.value)}
+                disabled={isLoading}
+              >
+                {MULTI_AGENT_FORMATIONS.map((formation) => (
+                  <option key={formation.key} value={formation.key}>{formation.title}</option>
+                ))}
+              </select>
+              <span>{activeFormation?.focus}</span>
+            </div>
+            <div className="ai-multi-role-chips">
+              {formationRoles.map((role) => {
+                const disabled = disabledAgentSet.has(role.key);
+                return (
+                  <button
+                    type="button"
+                    key={role.key}
+                    className={`ai-multi-role-chip ${disabled ? 'is-disabled' : ''}`}
+                    onClick={() => toggleDisabledAgent(role.key)}
+                    disabled={isLoading || role.key === 'selector'}
+                    title={`${role.provider}/${role.model}`}
+                  >
+                    <span>{role.shortLabel || role.title}</span>
+                    <small>{role.provider}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ===== CONVERSATIONS DROPDOWN ===== */}
@@ -1029,7 +1162,11 @@ const AIChat = ({
                         color: normalizedStatus === 'completed' ? 'var(--success)' : normalizedStatus === 'active' ? 'var(--accent)' : normalizedStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)',
                       }}>{getMultiStatusLabel(normalizedStatus)}</span>
                     </div>
-                    {step?.model && <div className="ai-agent-card-model">{step.model}</div>}
+                    {(step?.provider || step?.model) && (
+                      <div className="ai-agent-card-model">
+                        {step?.provider ? `${step.provider} / ` : ''}{step?.model || 'modele auto'}
+                      </div>
+                    )}
                     {step?.detail && <div className="ai-agent-card-info">{step.detail}</div>}
                   </div>
                 );
@@ -1297,7 +1434,7 @@ const AIChat = ({
             <button
               key={action.id}
               className="ai-quick-btn"
-              onClick={() => applyQuickPrompt(action.prompt)}
+              onClick={() => applyQuickPrompt(action)}
               disabled={!isElectronApiAvailable}
             >
               {action.label}

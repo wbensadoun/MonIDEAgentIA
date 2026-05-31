@@ -66,6 +66,10 @@ const AppContent = () => {
   const [revealRequest, setRevealRequest] = useState(null);
   const [newItemName, setNewItemName] = useState('');
   const [aiProvider, setAiProvider] = useState('gemini');
+  const [executionMode, setExecutionMode] = useState('agent');
+  const [runPreset, setRunPreset] = useState('default');
+  const [multiAgentFormationKey, setMultiAgentFormationKey] = useState('product-ui');
+  const [disabledAgentKeys, setDisabledAgentKeys] = useState([]);
   const [thinkingMode, setThinkingMode] = useState(false);
   const [deepContextEnabled, setDeepContextEnabled] = useState(() => {
     try {
@@ -97,6 +101,11 @@ const AppContent = () => {
   const [geminiModel, setGeminiModel] = useState(DEFAULT_GEMINI_MODEL);
   const [claudeModel, setClaudeModel] = useState(DEFAULT_CLAUDE_MODEL);
   const [kimiModel, setKimiModel] = useState(DEFAULT_KIMI_MODEL);
+  const [providerApiKeys, setProviderApiKeys] = useState({
+    geminiApiKey: '',
+    claudeApiKey: '',
+    kimiApiKey: ''
+  });
   const [ollamaModel, setOllamaModel] = useState(DEFAULT_OLLAMA_MODEL);
   const [ollamaModelArchitect, setOllamaModelArchitect] = useState(DEFAULT_OLLAMA_MODEL);
   const [ollamaModelCoder, setOllamaModelCoder] = useState(DEFAULT_OLLAMA_MODEL);
@@ -367,6 +376,11 @@ const AppContent = () => {
     openFolder
   } = useFileOperations(currentProjectPath, isElectronApiAvailable, showMessage, setActiveFile, permissionMode);
 
+  const multiAgentRunOptions = useMemo(() => ({
+    formationKey: multiAgentFormationKey,
+    disabledAgentKeys
+  }), [disabledAgentKeys, multiAgentFormationKey]);
+
   const {
     prompt,
     setPrompt,
@@ -419,7 +433,10 @@ const AppContent = () => {
     permissionMode,
     qualityGateConfig,
     contextMode,
-    contextMaxFiles
+    contextMaxFiles,
+    executionMode,
+    runPreset,
+    multiAgentRunOptions
   );
 
   const {
@@ -889,6 +906,11 @@ const AppContent = () => {
       setGeminiModel(normalizeRemoteModelName(settings.geminiModel, DEFAULT_GEMINI_MODEL));
       setClaudeModel(normalizeRemoteModelName(settings.claudeModel, DEFAULT_CLAUDE_MODEL));
       setKimiModel(normalizeRemoteModelName(settings.kimiModel, DEFAULT_KIMI_MODEL));
+      setProviderApiKeys({
+        geminiApiKey: String(settings.geminiApiKey || '').trim(),
+        claudeApiKey: String(settings.claudeApiKey || '').trim(),
+        kimiApiKey: String(settings.kimiApiKey || '').trim()
+      });
       setOllamaModel(normalizeOllamaModelLabel(settings.ollamaModel));
       setOllamaModelArchitect(normalizeOllamaModelLabel(settings.ollamaModelArchitect, settings.ollamaModel));
       setOllamaModelCoder(normalizeOllamaModelLabel(settings.ollamaModelCoder, settings.ollamaModel));
@@ -1476,6 +1498,24 @@ const AppContent = () => {
       action: () => setCenterView('git')
     },
     {
+      id: 'view-brain',
+      label: 'Vue Brain Graph',
+      action: () => setCenterView('brain')
+    },
+    {
+      id: 'mode-plan',
+      label: 'Mode IA Plan',
+      action: () => setExecutionMode('plan')
+    },
+    {
+      id: 'mode-multi-agent',
+      label: 'Mode IA Multi-Agent',
+      action: () => {
+        setExecutionMode('multi-agent');
+        handleAiProviderChange(aiProvider === 'ollama' || aiProvider === 'ollama-multi' ? 'ollama-multi' : 'multi');
+      }
+    },
+    {
       id: 'toggle-preview',
       label: previewStatus === 'running' ? 'Arreter la Preview' : 'Demarrer la Preview',
       action: handleTogglePreview
@@ -1519,6 +1559,8 @@ const AppContent = () => {
     toggleLeftPanel,
     toggleRightPanel,
     toggleFocusMode,
+    handleAiProviderChange,
+    aiProvider,
     previewStatus,
     handleTogglePreview,
     startNewConversation,
@@ -1942,6 +1984,23 @@ const AppContent = () => {
   const activeDiffSource = gitDiffPreview ? 'git' : (isDiffMode ? 'ai' : null);
   const isEditorDiffMode = Boolean(gitDiffPreview) || isDiffMode;
   const editorReadOnly = isReadOnlyMode || isStreamingCodePreview || Boolean(gitDiffPreview);
+  const aiModelSelection = useMemo(() => ({
+    geminiModel,
+    claudeModel,
+    kimiModel,
+    ollamaModel: resolvedOllamaModel,
+    ollamaModelCoder: resolvedOllamaCoder,
+    resolvedOllamaModel,
+    resolvedOllamaCoder,
+    ...providerApiKeys
+  }), [
+    claudeModel,
+    geminiModel,
+    kimiModel,
+    providerApiKeys,
+    resolvedOllamaCoder,
+    resolvedOllamaModel
+  ]);
   const editorProps = {
     openFiles,
     activeFile: displayedActiveFile,
@@ -1958,7 +2017,10 @@ const AppContent = () => {
     onSelectFile: openFile,
     onCloseFile: closeFileTab,
     revealRequest,
-    forceReadOnly: editorReadOnly
+    forceReadOnly: editorReadOnly,
+    currentProjectPath,
+    aiProvider,
+    aiModels: aiModelSelection
   };
   const previewPanelProps = {
     projectId: currentProjectPath || 'default',
@@ -2015,10 +2077,19 @@ const AppContent = () => {
     onAfterDiskChange: loadProjectItems,
     showMessage
   };
+  const brainGraphPanelProps = {
+    currentProjectPath,
+    isElectronApiAvailable,
+    showMessage,
+    activeFile,
+    onOpenFile: openFile
+  };
   const workflowPanelProps = {
     currentProjectPath,
     isElectronApiAvailable,
-    showMessage
+    showMessage,
+    aiProvider,
+    aiModels: aiModelSelection
   };
   const aiChatProps = {
     prompt,
@@ -2030,7 +2101,15 @@ const AppContent = () => {
     onSend: generateAIResponse,
     onSaveConversation: saveConversation,
     aiProvider,
-    onProviderChange: setAiProvider,
+    onProviderChange: handleAiProviderChange,
+    executionMode,
+    onExecutionModeChange: setExecutionMode,
+    runPreset,
+    onRunPresetChange: setRunPreset,
+    multiAgentFormationKey,
+    onMultiAgentFormationChange: setMultiAgentFormationKey,
+    disabledAgentKeys,
+    onDisabledAgentKeysChange: setDisabledAgentKeys,
     thinkingMode,
     onThinkingModeChange: setThinkingMode,
     deepContextEnabled,
@@ -2166,6 +2245,7 @@ const AppContent = () => {
         terminalProps={terminalPanelProps}
         gitPanelProps={gitPanelProps}
         aiChangesPanelProps={aiChangesPanelProps}
+        brainGraphProps={brainGraphPanelProps}
         workflowProps={workflowPanelProps}
         aiChatProps={aiChatProps}
         workspacePanelProps={workspacePanelProps}

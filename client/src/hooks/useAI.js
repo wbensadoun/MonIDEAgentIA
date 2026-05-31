@@ -13,6 +13,12 @@ import {
   normalizeMultiAgentRoles
 } from '../utils/multiAgentConfig';
 import { buildTeamPlan, formatTeamPlanForPrompt } from '../utils/teamSelector';
+import {
+  decoratePromptForMode,
+  isLocalOnlyProvider,
+  resolveProviderForExecutionMode,
+  shouldProcessFileModifications
+} from '../utils/agentModes';
 
 const MAX_MULTI_AI_EVENTS = 16;
 
@@ -205,7 +211,10 @@ export const useAI = (
   permissionMode = 'edit_terminal',
   qualityGateConfig = {},
   contextMode = 'auto',
-  contextMaxFiles = 120
+  contextMaxFiles = 120,
+  executionMode = 'agent',
+  runPreset = 'default',
+  multiAgentOptions = {}
 ) => {
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -427,6 +436,10 @@ export const useAI = (
       return;
     }
 
+    const effectiveAIProvider = resolveProviderForExecutionMode(aiProvider, executionMode);
+    const localOnlyRun = isLocalOnlyProvider(effectiveAIProvider);
+    const canProcessFilesForMode = shouldProcessFileModifications(executionMode, runPreset);
+
     setIsLoading(true);
     setPreviousCode(code);
 
@@ -483,18 +496,34 @@ export const useAI = (
       }
 
       // Ajout du contenu explicite au prompt final envoyé à l'IA
-      const promptToSend = explicitContextFilesContent
+      let promptToSend = explicitContextFilesContent
         ? `${trimmedPrompt}\n\nVoici le contenu des fichiers explicitement mentionnés :\n${explicitContextFilesContent}`
         : trimmedPrompt;
+
+      if (window.electronAPI?.brainGraphSelect) {
+        try {
+          const brainRes = await window.electronAPI.brainGraphSelect(currentProjectPath, trimmedPrompt, {
+            activeFile,
+            maxFiles: deepContextEnabled ? 14 : 8
+          });
+          if (brainRes?.success && brainRes.selection?.contextText) {
+            promptToSend = `${promptToSend}\n\n${brainRes.selection.contextText}`;
+          }
+        } catch {
+          // Brain Graph is local context; keep generation alive if the cache is missing.
+        }
+      }
+
+      promptToSend = decoratePromptForMode(promptToSend, executionMode, runPreset);
 
       const normalizedContextMode =
         contextMode === 'mentions' || contextMode === 'none' ? contextMode : 'auto';
       const projectIntentRegex = /\b(projet|project|repo|repository|structure|arborescence|architecture|analyse|audit|overview|contexte|context|scan|lire|lis|read|workflow|workflows|flux|visuel|diagramme|n8n)\b/i;
-      const isKimiFastPath = aiProvider === 'kimi' && !deepContextEnabled;
+      const isKimiFastPath = effectiveAIProvider === 'kimi' && !deepContextEnabled;
       const autoContextWanted =
         !!deepContextEnabled ||
-        aiProvider === 'multi' ||
-        aiProvider === 'ollama-multi' ||
+        effectiveAIProvider === 'multi' ||
+        effectiveAIProvider === 'ollama-multi' ||
         projectIntentRegex.test(trimmedPrompt) ||
         (!isKimiFastPath && trimmedPrompt.length > 140);
       const wantsProjectContext =
@@ -548,7 +577,7 @@ export const useAI = (
           }
         };
 
-        const presetKey = deepContextEnabled || aiProvider === 'multi' || aiProvider === 'ollama-multi' ? projectScanPreset : 'safe';
+        const presetKey = deepContextEnabled || effectiveAIProvider === 'multi' || effectiveAIProvider === 'ollama-multi' ? projectScanPreset : 'safe';
         const baseOptions = scanPresets[presetKey] || scanPresets.safe;
         const scanOptions = {
           ...baseOptions,
@@ -600,8 +629,12 @@ export const useAI = (
           showMessage("Mode rapide: pas de scan projet (active Ctx si besoin).", 2200);
         }
       }
-      updateContextEstimate(aiProvider, promptToSend, allProjectFiles);
+      updateContextEstimate(effectiveAIProvider, promptToSend, allProjectFiles);
       const sharedAgentContextOptions = {
+        localOnly: localOnlyRun,
+        disallowProviderFallback: true,
+        executionMode,
+        runPreset,
         includeVisualWorkflows: true,
         includeN8nCatalog: true,
         maxVisualWorkflowIndexItems: deepContextEnabled ? 40 : 20,
@@ -805,7 +838,7 @@ export const useAI = (
       };
 
       // Mode Multi-IA: selectionneur + equipe dynamique adaptee a la demande.
-      if (aiProvider === 'multi') {
+      if (effectiveAIProvider === 'multi') {
         // Build a compact project context string (file paths + first 300 chars each) — NOT the full raw JSON
         // Full allProjectFiles is still passed separately to each agent via projectFiles param
         const buildCompactProjectContext = (projectFiles) => {
@@ -834,7 +867,9 @@ export const useAI = (
           projectFiles: allProjectFiles,
           rolesConfig: normalizedMultiAgentRoles,
           localAISettings,
-          hardwareProfile
+          hardwareProfile,
+          preferredFormationKey: multiAgentOptions?.formationKey,
+          disabledAgentKeys: multiAgentOptions?.disabledAgentKeys
         });
         const teamPlanText = formatTeamPlanForPrompt(teamPlan);
         const multiAgentModelMap = (teamPlan.selectedAgents || []).reduce((acc, agent) => {
@@ -965,12 +1000,14 @@ export const useAI = (
           agentModel: captainResponse.model || 'synthese'
         }]);
 
-        await processAIFileModifications(finalDeliverable, {
-          prompt: promptToSend,
-          provider: aiProvider,
-          model: aiProvider === 'ollama-multi' ? `${ollamaModelArchitect}/${ollamaModelCoder}/${ollamaModelTester}` : aiProvider,
-          summary: 'Livrable multi-agent'
-        });
+        if (canProcessFilesForMode) {
+          await processAIFileModifications(finalDeliverable, {
+            prompt: promptToSend,
+            provider: effectiveAIProvider,
+            model: effectiveAIProvider === 'ollama-multi' ? `${ollamaModelArchitect}/${ollamaModelCoder}/${ollamaModelTester}` : effectiveAIProvider,
+            summary: 'Livrable multi-agent'
+          });
+        }
         await autoSaveConversation(updatedHistory.concat([{ role: 'model', text: finalDeliverable }]));
 
         showMessage("Multi-IA dynamique terminee avec succes ! 🎉", 4000);
@@ -979,7 +1016,7 @@ export const useAI = (
       } else {
         // Mode simple (Gemini ou Kimi seul)
         let response;
-        if (aiProvider === 'kimi') {
+        if (effectiveAIProvider === 'kimi') {
           const images = updatedHistory
             .filter(msg => Array.isArray(msg.images))
             .flatMap(msg =>
@@ -1015,7 +1052,7 @@ export const useAI = (
             allProjectFiles,
             kimiOptions
           );
-        } else if (aiProvider === 'ollama-multi') {
+        } else if (effectiveAIProvider === 'ollama-multi') {
           // Multi-Ollama: 3 agents séquentiels avec steps live
           const requestedModels = {
             architect: ollamaModelArchitect || ollamaModel || DEFAULT_OLLAMA_MODEL,
@@ -1117,7 +1154,7 @@ export const useAI = (
             }));
           }
 
-        } else if (aiProvider === 'claude') {
+        } else if (effectiveAIProvider === 'claude') {
           const images = updatedHistory
             .filter(msg => Array.isArray(msg.images))
             .flatMap(msg =>
@@ -1145,7 +1182,7 @@ export const useAI = (
             claudeOptions
           );
 
-        } else if (aiProvider === 'ollama') {
+        } else if (effectiveAIProvider === 'ollama') {
           const ollamaOptions = {
             model: ollamaModel || DEFAULT_OLLAMA_MODEL,
             projectPath: currentProjectPath,
@@ -1181,12 +1218,14 @@ export const useAI = (
         if (response.success) {
           const fullAiText = response.text;
           setAiConversationHistory(prev => [...prev, { role: 'model', text: fullAiText }]);
-          await processAIFileModifications(fullAiText, {
-            prompt: promptToSend,
-            provider: aiProvider,
-            model: response.model || geminiModel || kimiModel || claudeModel || ollamaModel,
-            summary: 'Reponse IA'
-          });
+          if (canProcessFilesForMode) {
+            await processAIFileModifications(fullAiText, {
+              prompt: promptToSend,
+              provider: effectiveAIProvider,
+              model: response.model || geminiModel || kimiModel || claudeModel || ollamaModel,
+              summary: 'Reponse IA'
+            });
+          }
           await autoSaveConversation(updatedHistory.concat([{ role: 'model', text: fullAiText }]));
         } else {
           const errorText = response?.error || 'Erreur inconnue';
@@ -1229,6 +1268,8 @@ export const useAI = (
     isElectronApiAvailable,
     showMessage,
     aiProvider,
+    executionMode,
+    runPreset,
     thinkingMode,
     deepContextEnabled,
     contextMode,
@@ -1248,6 +1289,8 @@ export const useAI = (
     ollamaModelTester,
     multiAgentRoles,
     localAISettings,
+    multiAgentOptions,
+    activeFile,
     activeAgent,
     activeSkill,
     skills,

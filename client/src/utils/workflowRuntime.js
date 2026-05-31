@@ -1,34 +1,45 @@
-import { DEFAULT_OLLAMA_MODEL as DEFAULT_WORKFLOW_OLLAMA_MODEL } from './ollamaModels';
-import { DEFAULT_GEMINI_MODEL, DEFAULT_KIMI_MODEL } from './remoteModels';
+import {
+  AI_PROVIDER_METHODS,
+  buildSingleAIInvocation,
+  normalizeSingleAIProvider
+} from './aiProviderRouting';
 
 export const normalizeWorkflowProvider = (value) => {
-  const provider = String(value || '').trim().toLowerCase();
-  if (provider === 'kimi' || provider === 'ollama') return provider;
-  return 'gemini';
+  return normalizeSingleAIProvider(value);
 };
 
-export const buildWorkflowAIInvocation = ({ provider, prompt, projectPath }) => {
-  const normalizedProvider = normalizeWorkflowProvider(provider);
+export const buildWorkflowAIInvocation = ({ provider, prompt, projectPath, models = {} }) => {
+  const invocation = buildSingleAIInvocation({
+    aiProvider: provider,
+    models,
+    projectPath,
+    maxTokens: 1536,
+    disabledReason: `Provider IA workflow non pris en charge: ${provider || 'aucun'}`
+  });
+
+  if (invocation.disabled) {
+    return {
+      provider: '',
+      methodName: '',
+      args: [],
+      disabled: true,
+      error: invocation.reason
+    };
+  }
+
+  const normalizedProvider = invocation.provider;
   const history = [{ role: 'user', text: String(prompt || '') }];
-  const baseArgs = [history, '', [], { model: DEFAULT_GEMINI_MODEL, projectPath }];
 
   if (normalizedProvider === 'kimi') {
     return {
       provider: normalizedProvider,
-      methodName: 'getKimiCompletion',
+      methodName: AI_PROVIDER_METHODS.kimi,
       args: [
         history,
         '',
         [],
         {
-          model: DEFAULT_KIMI_MODEL,
-          projectPath,
-          fastMode: true,
-          reactMode: false,
-          streamResponse: false,
-          includeProjectContext: false,
-          includeGlobalSkills: false,
-          maxTokens: 1536
+          ...invocation.options
         }
       ]
     };
@@ -37,14 +48,30 @@ export const buildWorkflowAIInvocation = ({ provider, prompt, projectPath }) => 
   if (normalizedProvider === 'ollama') {
     return {
       provider: normalizedProvider,
-      methodName: 'getOllamaCompletion',
+      methodName: AI_PROVIDER_METHODS.ollama,
       args: [
         history,
         '',
         [],
         {
-          model: DEFAULT_WORKFLOW_OLLAMA_MODEL,
-          projectPath,
+          ...invocation.options
+        }
+      ]
+    };
+  }
+
+  if (normalizedProvider === 'claude') {
+    return {
+      provider: normalizedProvider,
+      methodName: AI_PROVIDER_METHODS.claude,
+      args: [
+        history,
+        '',
+        [],
+        {
+          ...invocation.options,
+          includeProjectContext: false,
+          includeGlobalSkills: false,
           maxTokens: 1536
         }
       ]
@@ -53,8 +80,18 @@ export const buildWorkflowAIInvocation = ({ provider, prompt, projectPath }) => 
 
   return {
     provider: normalizedProvider,
-    methodName: 'getGeminiCompletion',
-    args: baseArgs
+    methodName: AI_PROVIDER_METHODS.gemini,
+    args: [
+      history,
+      '',
+      [],
+      {
+        ...invocation.options,
+        includeProjectContext: false,
+        includeGlobalSkills: false,
+        maxTokens: 1536
+      }
+    ]
   };
 };
 

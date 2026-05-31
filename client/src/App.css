@@ -168,6 +168,23 @@ textarea,
 select {
   font-family: inherit;
   font-size: inherit;
+  color-scheme: dark;
+}
+
+select {
+  background-color: var(--surface-2);
+  color: var(--text-main);
+}
+
+select option,
+select optgroup {
+  background-color: var(--surface-2);
+  color: var(--text-main);
+}
+
+select option:checked {
+  background-color: var(--accent);
+  color: #ffffff;
 }
 
 /* ============================

@@ -8,6 +8,7 @@ import {
   getEditorSymbolKindIcon,
   getEditorSymbolKindLabel
 } from '../../utils/editorSymbols';
+import { buildSingleAIInvocation } from '../../utils/aiProviderRouting';
 
 const CodeEditor = ({
   openFiles = [],
@@ -25,7 +26,10 @@ const CodeEditor = ({
   onSelectFile,
   onCloseFile,
   revealRequest,
-  forceReadOnly = false
+  forceReadOnly = false,
+  currentProjectPath = '',
+  aiProvider = 'gemini',
+  aiModels = {}
 }) => {
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
@@ -33,6 +37,7 @@ const CodeEditor = ({
   const ghostTimeoutRef = useRef(null);
   const ghostAbortControllerRef = useRef(null);
   const cursorListenerRef = useRef(null);
+  const completionConfigRef = useRef(null);
 
   // States pour Inline AI (Ctrl+K)
   const [inlinePrompt, setInlinePrompt] = useState({ show: false, text: '', top: 0, left: 0, range: null, selectionText: '' });
@@ -45,6 +50,16 @@ const CodeEditor = ({
   const [symbolIndex, setSymbolIndex] = useState(0);
   const [cursorLine, setCursorLine] = useState(1);
   const [diffRenderSideBySide, setDiffRenderSideBySide] = useState(true);
+  const editorCompletionConfig = useMemo(() => buildSingleAIInvocation({
+    aiProvider,
+    models: aiModels,
+    projectPath: currentProjectPath,
+    disabledReason: 'Completion IA indisponible en mode Multi-IA: choisis un provider simple ou Multi-Ollama.'
+  }), [aiModels, aiProvider, currentProjectPath]);
+
+  useEffect(() => {
+    completionConfigRef.current = editorCompletionConfig;
+  }, [editorCompletionConfig]);
 
   // Auto-focus de l'input inline quand il s'affiche
   useEffect(() => {
@@ -68,8 +83,15 @@ const CodeEditor = ({
     if (e.key === 'Enter') {
       setIsInlineThinking(true);
       try {
+        const completionConfig = completionConfigRef.current || editorCompletionConfig;
+        if (completionConfig?.disabled) {
+          alert(completionConfig.reason || 'Completion IA indisponible pour ce provider.');
+          return;
+        }
+
         const res = await window.electronAPI.getInlineCompletion(inlinePrompt.text, code, {
-          // options au besoin
+          ...completionConfig.options,
+          activeFile
         });
 
         if (res && res.success) {
@@ -284,8 +306,12 @@ const CodeEditor = ({
 
               if (textUntilPosition.trim().length < 5) return resolve({ items: [] });
 
+              const completionConfig = completionConfigRef.current;
+              if (!completionConfig || completionConfig.disabled) return resolve({ items: [] });
+
               const res = await window.electronAPI.getGhostCompletion(textUntilPosition, textAfterPosition, {
-                // pass whatever options needed
+                ...(completionConfig?.options || {}),
+                activeFile
               });
 
               if (res && res.success && res.text) {
@@ -317,7 +343,7 @@ const CodeEditor = ({
       setCursorLine(nextLine);
     });
 
-  }, []);
+  }, [activeFile]);
 
   const handleEditorWillUnmount = useCallback((editor, _monaco) => {
     try {

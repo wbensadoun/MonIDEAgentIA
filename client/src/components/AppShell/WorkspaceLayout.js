@@ -8,6 +8,7 @@ import GitPanel from '../GitPanel';
 import VisualWorkflowEditor from '../VisualWorkflowEditor';
 import AIChat from '../AIChat';
 import AIChangesPanel from '../AIChangesPanel';
+import BrainGraphPanel from '../BrainGraphPanel';
 
 /* Icônes tabs centre */
 const IconCode = () => (
@@ -35,6 +36,17 @@ const IconAudit = () => (
 const IconFlow = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+  </svg>
+);
+const IconBrain = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
+    <circle cx="7" cy="8" r="3" />
+    <circle cx="17" cy="8" r="3" />
+    <circle cx="12" cy="16" r="3" />
+    <path d="M9.5 9.8 11 13.2" />
+    <path d="M14.5 9.8 13 13.2" />
+    <path d="M10 16h-2a4 4 0 0 1-4-4" />
+    <path d="M14 16h2a4 4 0 0 0 4-4" />
   </svg>
 );
 const IconMaximize = () => (
@@ -95,6 +107,7 @@ const WorkspaceLayout = ({
   terminalProps,
   gitPanelProps,
   aiChangesPanelProps,
+  brainGraphProps,
   workflowProps,
   aiChatProps,
   workspacePanelProps,
@@ -225,6 +238,7 @@ const WorkspaceLayout = ({
             { id: 'preview', label: 'Aperçu', Icon: IconEye },
             { id: 'git', label: 'Git', Icon: IconGit },
             { id: 'ai-changes', label: 'AI Changes', Icon: IconAudit },
+            { id: 'brain', label: 'Brain', Icon: IconBrain },
             { id: 'workflows', label: 'Flux', Icon: IconFlow },
           ].map(({ id, label, Icon }) => (
             <button
@@ -255,6 +269,7 @@ const WorkspaceLayout = ({
           {centerView === 'preview' && <LivePreview {...previewProps} />}
           {centerView === 'git' && <GitPanel {...gitPanelProps} />}
           {centerView === 'ai-changes' && <AIChangesPanel {...aiChangesPanelProps} />}
+          {centerView === 'brain' && <BrainGraphPanel {...brainGraphProps} />}
           <div style={{ display: centerView === 'workflows' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
             <VisualWorkflowEditor {...workflowProps} />
           </div>

@@ -210,14 +210,19 @@ export const buildTeamPlan = ({
   projectFiles,
   rolesConfig,
   localAISettings,
-  hardwareProfile
+  hardwareProfile,
+  preferredFormationKey,
+  disabledAgentKeys = []
 } = {}) => {
   const intent = detectTeamIntent(userRequest);
   const signals = analyzeProjectSignals(projectFiles);
-  const formationKey = chooseFormationKey(intent, signals);
+  const formationKey = FORMATION_BY_KEY[preferredFormationKey]
+    ? preferredFormationKey
+    : chooseFormationKey(intent, signals);
   const formation = FORMATION_BY_KEY[formationKey] || FORMATION_BY_KEY['product-ui'];
   const normalizedRoles = normalizeMultiAgentRoles(rolesConfig);
   const selectedKeys = [];
+  const disabledSet = new Set(Array.isArray(disabledAgentKeys) ? disabledAgentKeys : []);
 
   addUnique(selectedKeys, formation.defaultAgents);
 
@@ -231,6 +236,13 @@ export const buildTeamPlan = ({
   if (signals.appKind === 'frontend-only' && !intent.backend && !intent.payment && !intent.auth) {
     const apiIndex = selectedKeys.indexOf('apiData');
     if (apiIndex >= 0) selectedKeys.splice(apiIndex, 1);
+  }
+
+  for (let index = selectedKeys.length - 1; index >= 0; index -= 1) {
+    const key = selectedKeys[index];
+    if (key !== 'selector' && disabledSet.has(key)) {
+      selectedKeys.splice(index, 1);
+    }
   }
 
   const selectedSet = new Set(selectedKeys);

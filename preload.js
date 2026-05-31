@@ -168,6 +168,12 @@ try {
     fetchN8nCatalog: (page, perPage) => ipcRenderer.invoke('fetch-n8n-catalog', page, perPage),
     downloadN8nWorkflow: (downloadUrl) => ipcRenderer.invoke('download-n8n-workflow', downloadUrl),
 
+    // Brain Graph APIs (local-only project graph, no provider dependency)
+    brainGraphIndex: (projectPath, options) => ipcRenderer.invoke('brain-graph:index', projectPath, options),
+    brainGraphGet: (projectPath, options) => ipcRenderer.invoke('brain-graph:get', projectPath, options),
+    brainGraphSelect: (projectPath, query, options) => ipcRenderer.invoke('brain-graph:select', projectPath, query, options),
+    brainGraphPath: (projectPath) => ipcRenderer.invoke('brain-graph:path', projectPath),
+
     // Agents APIs
     listAgents: (projectPath) => ipcRenderer.invoke('list-agents', projectPath),
     getAgent: (name, scope, projectPath) => ipcRenderer.invoke('get-agent', name, scope, projectPath),

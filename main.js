@@ -13,6 +13,7 @@ const axios = require('axios');
 const logger = require('./logger');
 const { registerGitHandlers } = require('./electron/ipc/gitHandlers');
 const { registerWorkflowHandlers } = require('./electron/ipc/workflowHandlers');
+const { registerBrainGraphHandlers } = require('./electron/ipc/brainGraphHandlers');
 const { sanitizeVisualWorkflowPayload } = require('./electron/workflows/visualWorkflowSchema');
 
 const isDev =
@@ -3895,6 +3896,9 @@ const parseRunCommand = (text) => {
 
 // --- IPC Handler pour l'API Kimi K2.5 via Together ---
 ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
+  if (options.localOnly) {
+    return { success: false, error: 'Local-only actif: Kimi/Together interdit.', provider: 'kimi' };
+  }
   const apiKey = options.apiKey || process.env.KIMI_API_KEY || process.env.TOGETHER_API_KEY;
   const modelFromEnv = process.env.KIMI_MODEL;
   const model = options.model || modelFromEnv || DEFAULT_KIMI_MODEL;
@@ -4389,54 +4393,161 @@ ipcMain.handle('list-gemini-models', async (event, apiKey) => {
   }
 });
 
+const normalizeCompletionProvider = (value) => {
+  const provider = String(value || '').trim().toLowerCase();
+  if (provider === 'claude' || provider === 'kimi' || provider === 'ollama') return provider;
+  return 'gemini';
+};
+
+const stripCompletionMarkdown = (value, { trimEndOnly = false } = {}) => {
+  const source = String(value || '')
+    .replace(/^```[a-z]*\n/i, '')
+    .replace(/\n```$/i, '');
+  return trimEndOnly ? source.trimEnd() : source.trim();
+};
+
+async function runSingleCompletionProvider({ provider, systemInstruction, userPrompt, options = {}, maxTokens = 512, trimEndOnly = false }) {
+  const rawProvider = String(provider || '').trim().toLowerCase();
+  if (options.disallowProviderFallback && !['gemini', 'claude', 'kimi', 'ollama'].includes(rawProvider)) {
+    return { success: false, error: `Provider completion non pris en charge: ${provider || 'aucun'}` };
+  }
+  const normalizedProvider = normalizeCompletionProvider(provider);
+  const temperature = Number.isFinite(Number(options.temperature)) ? Number(options.temperature) : 0.1;
+
+  if (options.localOnly && normalizedProvider !== 'ollama') {
+    return {
+      success: false,
+      error: `Local-only actif: provider cloud interdit (${normalizedProvider}).`,
+      provider: normalizedProvider
+    };
+  }
+
+  if (normalizedProvider === 'kimi') {
+    const apiKey = options.apiKey || process.env.KIMI_API_KEY || process.env.TOGETHER_API_KEY;
+    const model = options.model || process.env.KIMI_MODEL || DEFAULT_KIMI_MODEL;
+    if (!apiKey) return { success: false, error: "La cle API Together/Kimi est requise.", provider: 'kimi', model };
+
+    const resp = await axios.post(options.apiUrl || process.env.KIMI_API_URL || 'https://api.together.xyz/v1/chat/completions', {
+      model,
+      messages: [
+        { role: 'system', content: systemInstruction },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: maxTokens,
+      temperature
+    }, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 60000
+    });
+
+    const text = resp.data?.choices?.[0]?.message?.content || '';
+    return { success: true, text: stripCompletionMarkdown(text, { trimEndOnly }), provider: 'kimi', model };
+  }
+
+  if (normalizedProvider === 'claude') {
+    const apiKey = options.apiKey || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
+    const model = options.model || process.env.CLAUDE_MODEL || DEFAULT_CLAUDE_MODEL;
+    if (!apiKey) return { success: false, error: "La cle API Claude est requise.", provider: 'claude', model };
+
+    const anthropic = new Anthropic({ apiKey });
+    const resp = await anthropic.messages.create({
+      model,
+      max_tokens: maxTokens,
+      temperature,
+      system: systemInstruction,
+      messages: [{ role: 'user', content: userPrompt }]
+    });
+
+    const text = Array.isArray(resp.content)
+      ? resp.content.map((part) => part?.text || '').join('')
+      : '';
+    return { success: true, text: stripCompletionMarkdown(text, { trimEndOnly }), provider: 'claude', model };
+  }
+
+  if (normalizedProvider === 'ollama') {
+    const requestedModel = normalizeOllamaModelName(options.model || process.env.OLLAMA_MODEL);
+    const startResult = await startOllamaServerIfPossible();
+    if (!startResult.success) {
+      return { success: false, error: startResult.error || 'Ollama indisponible.', provider: 'ollama', requestedModel };
+    }
+
+    const tagsResponse = await fetchOllamaTags(OLLAMA_BASE_URL, 5000);
+    const installedModelNames = extractOllamaModelNames(tagsResponse?.data);
+    const model = pickInstalledOllamaModel(requestedModel, installedModelNames, FALLBACK_OLLAMA_MODEL_CANDIDATES);
+    if (!model) {
+      return { success: false, error: 'Ollama: aucun modele installe compatible.', provider: 'ollama', requestedModel };
+    }
+
+    const resp = await axios.post(`${OLLAMA_BASE_URL}/api/chat`, {
+      model,
+      messages: [
+        { role: 'system', content: systemInstruction },
+        { role: 'user', content: userPrompt }
+      ],
+      stream: false,
+      options: {
+        temperature,
+        num_predict: maxTokens
+      }
+    }, { timeout: 90000 });
+
+    const text = resp.data?.message?.content || '';
+    return { success: true, text: stripCompletionMarkdown(text, { trimEndOnly }), provider: 'ollama', requestedModel, model };
+  }
+
+  const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
+  const model = options.model || process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+  if (!apiKey) return { success: false, error: "La cle API Gemini est requise.", provider: 'gemini', model };
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const payload = {
+    system_instruction: { parts: [{ text: systemInstruction }] },
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: userPrompt }]
+      }
+    ],
+    generationConfig: {
+      temperature,
+      maxOutputTokens: maxTokens
+    }
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || `Erreur HTTP: ${response.status}`);
+  }
+
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return { success: true, text: stripCompletionMarkdown(text, { trimEndOnly }), provider: 'gemini', model };
+}
+
 // --- IPC Handler for Inline Completion (Ghost Text / Ctrl+K) ---
 ipcMain.handle('get-inline-completion', async (event, prompt, code, options = {}) => {
-  const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
-  const model = options.model || DEFAULT_GEMINI_MODEL;
-
-  if (!apiKey) return { success: false, error: "La clé API Gemini est requise pour l'autocomplétion." };
-
   const systemInstruction = `Tu es un assistant de complétion de code ultra-strict.
 RÈGLES ABSOLUES:
 1. Ne renvoie QUE le code complété ou modifié.
 2. N'ajoute AUCUN bloc markdown (\`\`\`), ni préfixe, ni texte explicatif.
 3. Le texte que tu renvoies remplacera EXACTEMENT la sélection de l'utilisateur.`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-  const payload = {
-    system_instruction: { parts: [{ text: systemInstruction }] },
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { text: `CONTEXTE DU FICHIER:\n${code}\n\nINSTRUCTION OU CODE SÉLECTIONNÉ:\n${prompt}` }
-        ]
-      }
-    ],
-    generationConfig: {
-      temperature: 0.1, // Très faible pour éviter les hallucinations
-      maxOutputTokens: 2048
-    }
-  };
-
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    return await runSingleCompletionProvider({
+      provider: options.provider,
+      systemInstruction,
+      userPrompt: `CONTEXTE DU FICHIER:\n${code}\n\nINSTRUCTION OU CODE SELECTIONNE:\n${prompt}`,
+      options,
+      maxTokens: 2048
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error?.message || `Erreur HTTP: ${response.status}`);
-    }
-
-    let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    // Strip markdown blocks if the AI still included them
-    text = text.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trim();
-
-    return { success: true, text };
   } catch (error) {
     console.error('[Main] Erreur Inline Completion:', error);
     return { success: false, error: error.message };
@@ -4445,11 +4556,6 @@ RÈGLES ABSOLUES:
 
 // --- IPC Handler for Ghost Text / Autocomplete (FIM) ---
 ipcMain.handle('get-ghost-completion', async (event, prefix, suffix, options = {}) => {
-  const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
-  const model = options.model || DEFAULT_GEMINI_MODEL;
-
-  if (!apiKey) return { success: false, error: "La clé API Gemini est requise." };
-
   const systemInstruction = `Tu es une IA ultra-rapide d'autocomplétion de code (Fill-In-The-Middle).
 Ton but est de prédire EXACTEMENT le code qui manque entre le <PREFIX> (avant le curseur) et le <SUFFIX> (après le curseur).
 RÈGLES ABSOLUES:
@@ -4457,40 +4563,15 @@ RÈGLES ABSOLUES:
 2. N'ajoute AUCUN bloc markdown (\`\`\`), ni préfixe, ni explication.
 3. Si aucune complétion n'est logique, renvoie une chaîne vide.`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-  const payload = {
-    system_instruction: { parts: [{ text: systemInstruction }] },
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { text: `<PREFIX>\n${prefix}\n</PREFIX>\n\n<SUFFIX>\n${suffix}\n</SUFFIX>` }
-        ]
-      }
-    ],
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 256 // We want fast, short predictions
-    }
-  };
-
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    return await runSingleCompletionProvider({
+      provider: options.provider,
+      systemInstruction,
+      userPrompt: `<PREFIX>\n${prefix}\n</PREFIX>\n\n<SUFFIX>\n${suffix}\n</SUFFIX>`,
+      options,
+      maxTokens: 256,
+      trimEndOnly: true
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error?.message || `Erreur HTTP: ${response.status}`);
-    }
-
-    let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    text = text.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trimEnd();
-
-    return { success: true, text };
   } catch (error) {
     console.error('[Main] Erreur Ghost Completion:', error);
     return { success: false, error: error.message };
@@ -4499,6 +4580,9 @@ RÈGLES ABSOLUES:
 
 // --- IPC Handler pour l'API Gemini ---
 ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
+  if (options.localOnly) {
+    return { success: false, error: 'Local-only actif: Gemini interdit.', provider: 'gemini' };
+  }
   const apiKey = options.apiKey || process.env.GEMINI_API_KEY; // Clé prioritaire depuis les Settings côté renderer
   const modelFromEnv = process.env.GEMINI_MODEL;
   const modelFromOptions = options.model;
@@ -4859,10 +4943,19 @@ registerWorkflowHandlers({
   fetchTrustedN8nWorkflow
 });
 
+registerBrainGraphHandlers({
+  ipcMain,
+  ensureTrustedProjectPath,
+  assertSafePath
+});
+
 // ==================== CLAUDE API INTEGRATION ====================
 const Anthropic = require('@anthropic-ai/sdk');
 
 ipcMain.handle('get-claude-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
+  if (options.localOnly) {
+    return { success: false, error: 'Local-only actif: Claude interdit.', provider: 'claude' };
+  }
   const apiKey = options.apiKey || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
   const modelFromEnv = process.env.CLAUDE_MODEL;
   const model = options.model || modelFromEnv || DEFAULT_CLAUDE_MODEL;

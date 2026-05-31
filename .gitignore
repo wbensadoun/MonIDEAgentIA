@@ -12,6 +12,7 @@ client/node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.vibe-workspace
 
 # Environment variables
 .env

@@ -12,6 +12,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import './VisualWorkflow.css';
 import useWorkflowRunner from '../../hooks/useWorkflowRunner';
+import { buildSingleAIInvocation, normalizeSingleAIProvider } from '../../utils/aiProviderRouting';
 
 /* ═══════════════════════════════════════════
    Catalogue de nœuds disponibles
@@ -95,10 +96,14 @@ const CustomNode = ({ id, data, selected }) => {
                             <span className="vw-node-label">Provider IA</span>
                             <select
                                 className="vw-node-select"
-                                value={data.model || 'gemini'}
+                                value={data.model ?? ''}
                                 onChange={e => data.onChange?.(id, 'model', e.target.value)}
                             >
+                                <option value="">
+                                    {data.defaultAIProvider ? `Provider global (${data.defaultAIProvider})` : 'Provider global'}
+                                </option>
                                 <option value="gemini">Gemini</option>
+                                <option value="claude">Claude</option>
                                 <option value="kimi">Kimi K2.5</option>
                                 <option value="ollama">Ollama</option>
                             </select>
@@ -160,7 +165,13 @@ const CustomNode = ({ id, data, selected }) => {
 /* ═══════════════════════════════════════════
    Composant principal
    ═══════════════════════════════════════════ */
-const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, showMessage }) => {
+const VisualWorkflowEditor = ({
+    currentProjectPath,
+    isElectronApiAvailable,
+    showMessage,
+    aiProvider = 'gemini',
+    aiModels = {}
+}) => {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
@@ -198,6 +209,16 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
 
     const nodeTypes = useMemo(() => ({ custom: CustomNode }), []);
     const api = isElectronApiAvailable ? window.electronAPI : null;
+    const workflowDefaultProvider = useMemo(() => normalizeSingleAIProvider(aiProvider), [aiProvider]);
+    const nodesForRender = useMemo(() => (
+        nodes.map((node) => ({
+            ...node,
+            data: {
+                ...node.data,
+                defaultAIProvider: workflowDefaultProvider
+            }
+        }))
+    ), [nodes, workflowDefaultProvider]);
     const draftStorageKey = useMemo(() => {
         if (!currentProjectPath) return '';
         return `vibeIDE_workflowDraft:${currentProjectPath}`;
@@ -212,7 +233,13 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
         runWorkflow,
         stopWorkflow,
         clearLog,
-    } = useWorkflowRunner({ isElectronApiAvailable, currentProjectPath, showMessage });
+    } = useWorkflowRunner({
+        isElectronApiAvailable,
+        currentProjectPath,
+        showMessage,
+        aiProvider,
+        aiModels
+    });
 
     // ── Update node visual status during execution ──
     useEffect(() => {
@@ -318,6 +345,7 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
                 label: catalogItem.label,
                 icon: catalogItem.icon,
                 nodeType: catalogItem.type,
+                model: catalogItem.type === 'ai' ? '' : undefined,
                 onChange: handleNodeDataChange,
             },
         };
@@ -929,10 +957,43 @@ const VisualWorkflowEditor = ({ currentProjectPath, isElectronApiAvailable, show
         }, 480);
         if (showMessage) showMessage('🤖 Génération du workflow...', 2000);
 
+        const request = buildSingleAIInvocation({
+            aiProvider,
+            models: aiModels,
+            projectPath: currentProjectPath,
+            maxTokens: 2048,
+            temperature: 0.1,
+            disabledReason: 'Generation IA indisponible en mode Multi-IA: choisis Gemini, Claude, Kimi, Ollama ou Multi-Ollama.'
+        });
+
+        if (request.disabled) {
+            setAiBuildState((prev) => ({
+                ...prev,
+                active: false,
+                statusText: ''
+            }));
+            setAiGenerating(false);
+            if (showMessage) showMessage(request.reason, 3000);
+            return;
+        }
+
+        const method = api?.[request.methodName];
+        if (typeof method !== 'function') {
+            setAiBuildState((prev) => ({
+                ...prev,
+                active: false,
+                statusText: ''
+            }));
+            setAiGenerating(false);
+            if (showMessage) showMessage(`Provider IA indisponible: ${request.provider}`, 3000);
+            return;
+        }
+
         const systemPrompt = `Tu es un générateur de workflows visuels. L'utilisateur décrit ce qu'il veut, et tu génères un JSON de workflow.
 
 Règles STRICTES :
 - Réponds UNIQUEMENT avec du JSON valide, sans texte autour, sans markdown.
+- Pour les nœuds IA, utilise le provider "${request.provider}" sauf demande explicite contraire.
 - Format exact :
 {
   "name": "Nom du workflow",
@@ -945,7 +1006,7 @@ Règles STRICTES :
       "position": { "x": 100, "y": 150 },
       "config": {
         "triggerType": "manual|cron|webhook",
-        "model": "gemini|ollama",
+        "model": "gemini|claude|kimi|ollama",
         "prompt": "texte du prompt",
         "command": "commande shell",
         "condition": "expression JS",
@@ -970,9 +1031,14 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
 
         try {
             const history = [
-                { role: 'user', content: systemPrompt + '\n\nG\u00e9n\u00e8re un workflow pour : ' + aiPrompt }
+                { role: 'user', text: systemPrompt + '\n\nG\u00e9n\u00e8re un workflow pour : ' + aiPrompt }
             ];
-            const result = await api.getGeminiCompletion(history, '', [], {});
+            const result = await method(history, '', [], {
+                ...request.options,
+                includeProjectContext: false,
+                includeGlobalSkills: false,
+                forceVisualWorkflowContext: false
+            });
             const responseText = result?.response || result?.text || '';
 
             // Extraire le JSON de la réponse
@@ -1007,7 +1073,19 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
             if (showMessage) showMessage('Erreur de g\u00e9n\u00e9ration IA: ' + err.message, 3000);
         }
         setAiGenerating(false);
-    }, [aiPrompt, aiGenerating, animateWorkflowIntoCanvas, api, clearAiBuildTimers, parseWorkflowPayload, scheduleAiBuildTimer, showMessage]);
+    }, [
+        aiPrompt,
+        aiGenerating,
+        aiProvider,
+        aiModels,
+        animateWorkflowIntoCanvas,
+        api,
+        clearAiBuildTimers,
+        currentProjectPath,
+        parseWorkflowPayload,
+        scheduleAiBuildTimer,
+        showMessage
+    ]);
 
     return (
         <div className={`vw-editor${aiWritePulse ? ' vw-editor-ai-write' : ''}`}>
@@ -1099,7 +1177,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                     </div>
                 ) : (
                     <ReactFlow
-                        nodes={nodes}
+                        nodes={nodesForRender}
                         edges={edges}
                         onNodesChange={onNodesChange}
                         onEdgesChange={onEdgesChange}

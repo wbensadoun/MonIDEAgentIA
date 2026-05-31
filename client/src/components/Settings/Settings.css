@@ -239,3 +239,17 @@
     grid-template-columns: 1fr;
   }
 }
+.settings-select {
+  color-scheme: dark;
+}
+
+.settings-select option,
+.settings-select optgroup {
+  background: #111827;
+  color: #f3f4f6;
+}
+
+.settings-select option:checked {
+  background: #2563eb;
+  color: #ffffff;
+}
