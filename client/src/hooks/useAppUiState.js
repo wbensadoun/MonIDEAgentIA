@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import useUIStore from '../stores/uiStore';
 
 const useAppUiState = ({
   currentProjectPath,
@@ -82,6 +83,12 @@ const useAppUiState = ({
   }, []);
 
   const previewPort = String(runtimeDevPort || devPort || '3004');
+
+  // Sync key UI state to uiStore for deep components
+  useEffect(() => { useUIStore.getState().setTheme(theme); }, [theme]);
+  useEffect(() => { useUIStore.getState().setCenterView(centerView); }, [centerView]);
+  useEffect(() => { useUIStore.getState().setSettingsOpen(settingsOpen); }, [settingsOpen]);
+  useEffect(() => { useUIStore.getState().setIsTerminalOpen(isTerminalOpen); }, [isTerminalOpen]);
 
   return {
     theme,

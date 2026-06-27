@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import './App.css';
 import ErrorBoundary from './components/ErrorBoundary';
+import FeatureErrorBoundary from './components/FeatureErrorBoundary';
 import Settings from './components/Settings';
 import useElectronAPI from './hooks/useElectronAPI';
 import useFileOperations from './hooks/useFileOperations';
@@ -23,9 +24,12 @@ import WorkspaceLayout from './components/AppShell/WorkspaceLayout';
 import StatusBar from './components/AppShell/StatusBar';
 import OnboardingModal from './components/AppShell/OnboardingModal';
 import CommandCenterOverlays from './components/AppShell/CommandCenterOverlays';
+import useProjectStore from './stores/projectStore';
 
 const AppContent = () => {
-  const [currentProjectPath, setCurrentProjectPath] = useState('');
+  // currentProjectPath in global store — accessible from any component
+  const currentProjectPath = useProjectStore(state => state.currentProjectPath);
+  const setCurrentProjectPath = useProjectStore(state => state.setCurrentProjectPath);
   const [newItemName, setNewItemName] = useState('');
 
   const { isAvailable: isElectronApiAvailable, message, showMessage } = useElectronAPI();
@@ -506,52 +510,55 @@ const AppContent = () => {
         </div>
       )}
 
-      <AppTopbar
-        projectName={projectName}
-        currentProjectPath={currentProjectPath}
-        displayedActiveFile={displayedActiveFile}
-        isStreamingCodePreview={isStreamingCodePreview}
-        gitDiffPreview={gitDiffPreview}
-        onOpenCommandPalette={openCommandPalette}
-        isExpertMode={isExpertMode}
-        onToggleExpertMode={toggleExpertMode}
-        aiProvider={aiProvider}
-        onAiProviderChange={handleAiProviderChange}
-        activeModelValue={activeModelValue}
-        availableActiveModels={availableActiveModels}
-        onActiveModelChange={handleActiveModelChange}
-        thinkingMode={thinkingMode}
-        onThinkingModeChange={setThinkingMode}
-        deepContextEnabled={deepContextEnabled}
-        onDeepContextEnabledChange={setDeepContextEnabled}
-        isElectronApiAvailable={isElectronApiAvailable}
-        isLoading={isLoading}
-        multiAIState={multiAIState}
-        resolvedOllamaModel={resolvedOllamaModel}
-        resolvedOllamaArchitect={resolvedOllamaArchitect}
-        resolvedOllamaCoder={resolvedOllamaCoder}
-        resolvedOllamaTester={resolvedOllamaTester}
-        availableOllamaModels={availableOllamaModels}
-        recommendedOllamaModel={recommendedOllamaModel}
-        onOllamaSettingChange={handleOllamaSettingChange}
-        ollamaTopbarLabel={ollamaTopbarLabel}
-        ollamaStatusLabel={ollamaStatusLabel}
-        showMessage={showMessage}
-        onOpenFolder={handleOpenFolder}
-        previewStatus={previewStatus}
-        onTogglePreview={handleTogglePreview}
-        onToggleLeftPanel={toggleLeftPanel}
-        isLeftCollapsed={isLeftCollapsed}
-        onToggleRightPanel={toggleRightPanel}
-        isRightCollapsed={isRightCollapsed}
-        onOpenWorkflowManager={openWorkflowManager}
-        onOpenSettings={openSettings}
-        theme={theme}
-        onThemeChange={setTheme}
-        isTerminalOpen={isTerminalOpen}
-        onToggleTerminal={toggleTerminal}
-      />
+      <FeatureErrorBoundary feature="topbar">
+        <AppTopbar
+          projectName={projectName}
+          currentProjectPath={currentProjectPath}
+          displayedActiveFile={displayedActiveFile}
+          isStreamingCodePreview={isStreamingCodePreview}
+          gitDiffPreview={gitDiffPreview}
+          onOpenCommandPalette={openCommandPalette}
+          isExpertMode={isExpertMode}
+          onToggleExpertMode={toggleExpertMode}
+          aiProvider={aiProvider}
+          onAiProviderChange={handleAiProviderChange}
+          activeModelValue={activeModelValue}
+          availableActiveModels={availableActiveModels}
+          onActiveModelChange={handleActiveModelChange}
+          thinkingMode={thinkingMode}
+          onThinkingModeChange={setThinkingMode}
+          deepContextEnabled={deepContextEnabled}
+          onDeepContextEnabledChange={setDeepContextEnabled}
+          isElectronApiAvailable={isElectronApiAvailable}
+          isLoading={isLoading}
+          multiAIState={multiAIState}
+          resolvedOllamaModel={resolvedOllamaModel}
+          resolvedOllamaArchitect={resolvedOllamaArchitect}
+          resolvedOllamaCoder={resolvedOllamaCoder}
+          resolvedOllamaTester={resolvedOllamaTester}
+          availableOllamaModels={availableOllamaModels}
+          recommendedOllamaModel={recommendedOllamaModel}
+          onOllamaSettingChange={handleOllamaSettingChange}
+          ollamaTopbarLabel={ollamaTopbarLabel}
+          ollamaStatusLabel={ollamaStatusLabel}
+          showMessage={showMessage}
+          onOpenFolder={handleOpenFolder}
+          previewStatus={previewStatus}
+          onTogglePreview={handleTogglePreview}
+          onToggleLeftPanel={toggleLeftPanel}
+          isLeftCollapsed={isLeftCollapsed}
+          onToggleRightPanel={toggleRightPanel}
+          isRightCollapsed={isRightCollapsed}
+          onOpenWorkflowManager={openWorkflowManager}
+          onOpenSettings={openSettings}
+          theme={theme}
+          onThemeChange={setTheme}
+          isTerminalOpen={isTerminalOpen}
+          onToggleTerminal={toggleTerminal}
+        />
+      </FeatureErrorBoundary>
 
+      <FeatureErrorBoundary feature="workspace">
       <WorkspaceLayout
         layoutRef={layoutRef}
         leftWidth={leftWidth}
@@ -592,7 +599,9 @@ const AppContent = () => {
         isTerminalOpen={isTerminalOpen}
         onToggleTerminal={toggleTerminal}
       />
+      </FeatureErrorBoundary>
 
+      <FeatureErrorBoundary feature="statusbar">
       <StatusBar
         centerView={centerView}
         previewStatus={previewStatus}
@@ -610,44 +619,52 @@ const AppContent = () => {
         pendingAIChangeCount={pendingFileChanges.length}
       />
 
+      </FeatureErrorBoundary>
+
       {showOnboarding && (
-        <OnboardingModal
-          onOpenSettings={openSettings}
-          onComplete={completeOnboarding}
-        />
+        <FeatureErrorBoundary feature="onboarding">
+          <OnboardingModal
+            onOpenSettings={openSettings}
+            onComplete={completeOnboarding}
+          />
+        </FeatureErrorBoundary>
       )}
 
       {settingsOpen && (
-        <Settings
-          isOpen={settingsOpen}
-          onClose={closeSettings}
-          isElectronApiAvailable={isElectronApiAvailable}
-          showMessage={showMessage}
-          theme={theme}
-          onThemeChange={setTheme}
-        />
+        <FeatureErrorBoundary feature="settings">
+          <Settings
+            isOpen={settingsOpen}
+            onClose={closeSettings}
+            isElectronApiAvailable={isElectronApiAvailable}
+            showMessage={showMessage}
+            theme={theme}
+            onThemeChange={setTheme}
+          />
+        </FeatureErrorBoundary>
       )}
 
       {workflowManagerOpen && (
-        <WorkflowManager
-          workflows={workflows}
-          isLoading={isWorkflowsLoading}
-          onSave={saveWorkflow}
-          onDelete={deleteWorkflow}
-          onTrigger={async (workflow) => {
-            const fullWorkflow = await getWorkflow(workflow.name, workflow.scope);
-            if (fullWorkflow) {
-              setPrompt(`/${workflow.name}`);
-              showMessage(`Workflow "/${workflow.name}" charge.`, 3000);
-            }
-            closeWorkflowManager();
-          }}
-          onClose={closeWorkflowManager}
-          currentProjectPath={currentProjectPath}
-          showMessage={showMessage}
-          isElectronApiAvailable={isElectronApiAvailable}
-          onLibraryUpdated={bumpLibraryNonce}
-        />
+        <FeatureErrorBoundary feature="workflow-manager">
+          <WorkflowManager
+            workflows={workflows}
+            isLoading={isWorkflowsLoading}
+            onSave={saveWorkflow}
+            onDelete={deleteWorkflow}
+            onTrigger={async (workflow) => {
+              const fullWorkflow = await getWorkflow(workflow.name, workflow.scope);
+              if (fullWorkflow) {
+                setPrompt(`/${workflow.name}`);
+                showMessage(`Workflow "/${workflow.name}" charge.`, 3000);
+              }
+              closeWorkflowManager();
+            }}
+            onClose={closeWorkflowManager}
+            currentProjectPath={currentProjectPath}
+            showMessage={showMessage}
+            isElectronApiAvailable={isElectronApiAvailable}
+            onLibraryUpdated={bumpLibraryNonce}
+          />
+        </FeatureErrorBoundary>
       )}
 
       <CommandCenterOverlays {...commandCenterOverlayProps} />
