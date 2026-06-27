@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Maquette — Éditeur de Code Amélioré</title>
+<style>
+  :root {
+    --bg: #0c0c0e;
+    --surface: #141416;
+    --surface-2: #1a1a1d;
+    --border: #232326;
+    --accent: #3b82f6;
+    --text-main: #e1e1e6;
+    --text-dim: #8a8a8e;
+    --text-muted: #5a5a5e;
+    --gutter-bg: #0f0f11;
+    --gutter-text: #5a5a5e;
+    --kw: #569cd6;
+    --str: #ce9178;
+    --fn: #dcdcaa;
+    --type: #4ec9b0;
+    --comment: #6a9955;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text-main);
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 20px;
+  }
+  .cap { font-size: 12px; color: var(--text-dim); margin-bottom: 12px; max-width: 600px; line-height: 1.5; }
+  .cap b { color: var(--accent); }
+
+  .editor-container {
+    display: flex;
+    flex-direction: column;
+    width: 700px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .editor-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    gap: 0;
+  }
+  .editor-tab {
+    padding: 8px 14px;
+    font-size: 12px;
+    color: var(--text-dim);
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    border-bottom: 2px solid transparent;
+  }
+  .editor-tab.active {
+    color: var(--text-main);
+    background: var(--bg);
+    border-bottom-color: var(--accent);
+  }
+
+  .editor-breadcrumb {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    gap: 4px;
+  }
+  .breadcrumb-sep { opacity: 0.5; }
+
+  .editor-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .editor-gutter {
+    background: var(--gutter-bg);
+    color: var(--gutter-text);
+    padding: 12px 8px;
+    text-align: right;
+    border-right: 1px solid var(--border);
+    flex-shrink: 0;
+    user-select: none;
+    line-height: 1.6;
+  }
+  .gutter-line { display: block; padding: 0 4px; }
+
+  .editor-code {
+    flex: 1;
+    padding: 12px 16px;
+    overflow-x: auto;
+    background: var(--surface);
+    line-height: 1.6;
+  }
+
+  .code-line {
+    display: block;
+    white-space: pre;
+    color: var(--text-main);
+  }
+
+  .kw { color: var(--kw); font-weight: bold; }
+  .str { color: var(--str); }
+  .fn { color: var(--fn); }
+  .type { color: var(--type); }
+  .comment { color: var(--comment); }
+
+  .comparison {
+    display: flex;
+    gap: 40px;
+    margin-top: 24px;
+    font-size: 12px;
+  }
+  .comparison-col h3 {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .comparison-item {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+    color: var(--text-muted);
+  }
+  .check { color: #22c55e; font-weight: bold; }
+  .cross { color: #ef4444; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<div class="cap">
+  <b>Éditeur de code amélioré</b> avec numéros de ligne, coloration syntaxique,
+  onglets, breadcrumb. Beaucoup plus lisible qu'un bloc de texte collé.
+</div>
+
+<div class="editor-container">
+  <div class="editor-tabs">
+    <div class="editor-tab active">AuthService.ts</div>
+    <div class="editor-tab">UserSchema.ts</div>
+  </div>
+
+  <div class="editor-breadcrumb">
+    <span>src</span>
+    <span class="breadcrumb-sep">›</span>
+    <span>AuthService.ts</span>
+  </div>
+
+  <div class="editor-body">
+    <div class="editor-gutter">
+      <span class="gutter-line">1</span>
+      <span class="gutter-line">2</span>
+      <span class="gutter-line">3</span>
+      <span class="gutter-line">4</span>
+      <span class="gutter-line">5</span>
+      <span class="gutter-line">6</span>
+      <span class="gutter-line">7</span>
+      <span class="gutter-line">8</span>
+      <span class="gutter-line">9</span>
+      <span class="gutter-line">10</span>
+      <span class="gutter-line">11</span>
+      <span class="gutter-line">12</span>
+    </div>
+    <div class="editor-code">
+      <span class="code-line"><span class="kw">import</span> { Database } <span class="kw">from</span> <span class="str">"./db"</span>;</span>
+      <span class="code-line"><span class="kw">import</span> { UserSchema } <span class="kw">from</span> <span class="str">"./UserSchema"</span>;</span>
+      <span class="code-line"></span>
+      <span class="code-line"><span class="kw">export class</span> <span class="type">AuthService</span> {</span>
+      <span class="code-line">  <span class="kw">constructor</span>(<span class="kw">private readonly</span> db: Database) {}</span>
+      <span class="code-line"></span>
+      <span class="code-line">  <span class="kw">async</span> <span class="fn">validateSession</span>(token: <span class="type">string</span>) {</span>
+      <span class="code-line">    <span class="kw">const</span> session = <span class="kw">await</span> <span class="kw">this</span>.db.sessions.<span class="fn">findUnique</span>({</span>
+      <span class="code-line">      where: { token },</span>
+      <span class="code-line">      include: { user: <span class="kw">true</span> }</span>
+      <span class="code-line">    });</span>
+      <span class="code-line">    <span class="kw">return</span> session;</span>
+      <span class="code-line">  }</span>
+      <span class="code-line">}</span>
+    </div>
+  </div>
+</div>
+
+<div class="comparison">
+  <div class="comparison-col">
+    <h3>❌ Avant (Actuel)</h3>
+    <div class="comparison-item"><span class="cross">✗</span> Texte collé sur une ligne</div>
+    <div class="comparison-item"><span class="cross">✗</span> Pas de numéros de ligne</div>
+    <div class="comparison-item"><span class="cross">✗</span> Pas de coloration syntaxique</div>
+    <div class="comparison-item"><span class="cross">✗</span> Pas d'indentation visible</div>
+    <div class="comparison-item"><span class="cross">✗</span> Impossible à lire/naviguer</div>
+  </div>
+  <div class="comparison-col">
+    <h3>✅ Après (Proposé)</h3>
+    <div class="comparison-item"><span class="check">✓</span> Code formaté avec indentation</div>
+    <div class="comparison-item"><span class="check">✓</span> Numéros de ligne à gauche</div>
+    <div class="comparison-item"><span class="check">✓</span> Coloration par token (keywords, strings, types)</div>
+    <div class="comparison-item"><span class="check">✓</span> Onglets fichiers + breadcrumb</div>
+    <div class="comparison-item"><span class="check">✓</span> Lisible et facile à naviguer</div>
+  </div>
+</div>
+
+</body>
+</html>

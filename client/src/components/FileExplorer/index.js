@@ -271,10 +271,6 @@ const FileExplorer = ({
     });
   }, [flatFiles, filterQuery]);
 
-  const projectName = currentProjectPath
-    ? currentProjectPath.split(/[\\/]/).pop()
-    : 'Aucun projet';
-
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
   useEffect(() => {
@@ -307,12 +303,6 @@ const FileExplorer = ({
     }
     setContextMenu(null);
   }, [newItemName, onCreateItem, onNewItemNameChange]);
-
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && newItemName) {
-      handleCreate(newItemName.includes('.') ? 'file' : 'directory');
-    }
-  };
 
   const beginRename = useCallback((item) => {
     const itemPath = item?.path || item?.name || '';
