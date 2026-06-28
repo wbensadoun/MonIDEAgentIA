@@ -1,6 +1,6 @@
 {
   "name": "monideagentia",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "main": "main.js",
   "scripts": {
     "start": "concurrently \"npm:start-react\" \"npm:electron-dev\"",
