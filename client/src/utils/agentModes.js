@@ -25,8 +25,8 @@ export const EXECUTION_MODES = [
   },
   {
     id: 'multi-agent',
-    label: 'Multi-Agent',
-    description: 'Equipe visible avec roles, providers et timeline.',
+    label: 'Collective',
+    description: 'Equipe IA adaptative : Rapide ou Profond, cloud ou local prive.',
     canProposeFiles: true,
     canUseTerminal: true,
     preferredProvider: 'multi'

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { summarizeDiff } from '../utils/aiDiff';
+import { applyBlock } from '../utils/applySearchReplace';
 
 const buildPatchId = () => `patch-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 
@@ -758,11 +759,12 @@ const useAIPendingChanges = ({
           let blockError = '';
 
           for (const block of blocks) {
-            if (!nextContent.includes(block.search)) {
-              blockError = `[${fileName}] Bloc SEARCH introuvable dans le fichier cible.`;
+            const result = applyBlock(nextContent, block.search, block.replace);
+            if (!result.ok) {
+              blockError = `[${fileName}] ${result.error}`;
               break;
             }
-            nextContent = nextContent.replace(block.search, block.replace);
+            nextContent = result.content;
           }
 
           if (blockError) {
@@ -779,7 +781,7 @@ const useAIPendingChanges = ({
         }
       }
 
-      if (diffProposals.length > 0 && proposals.length === 0) {
+      if (diffProposals.length > 0) {
         const registeredDiffProposals = await registerAgentRunForProposals(diffProposals, {
           ...metadata,
           summary: `${diffProposals.length} changement(s) SEARCH/REPLACE proposes`

@@ -15,6 +15,7 @@ const { registerGitHandlers } = require('./electron/ipc/gitHandlers');
 const { registerWorkflowHandlers } = require('./electron/ipc/workflowHandlers');
 const { registerBrainGraphHandlers } = require('./electron/ipc/brainGraphHandlers');
 const { sanitizeVisualWorkflowPayload } = require('./electron/workflows/visualWorkflowSchema');
+const { applyBlock: applySearchReplaceBlock } = require('./client/src/utils/applySearchReplace');
 
 const isDev =
   process.env.NODE_ENV === 'development' ||
@@ -1104,6 +1105,14 @@ const createAppMenu = () => {
 app.whenReady().then(async () => {
   await logger.init();
   createWindow();
+
+  // Démarrer le serveur HTTP pour le bridge WhatsApp (agent headless)
+  try {
+    const { startTaskServer } = require('./electron/remote/taskServer');
+    startTaskServer({ runOllamaCompletion, trustProjectPath });
+  } catch (e) {
+    console.error('[Main] taskServer non démarré:', e.message);
+  }
 });
 
 ipcMain.handle('get-latest-log', async () => {
@@ -3025,27 +3034,19 @@ ipcMain.handle('editFile', async (event, projectPath, filename, searchText, repl
     const filePath = path.join(trustedProjectPath, filename);
     assertSafePath(trustedProjectPath, filePath);
 
-    // Lire le contenu actuel
     const currentContent = await fs.readFile(filePath, 'utf-8');
 
-    // Vérifier si le texte à remplacer existe
-    if (!currentContent.includes(searchText)) {
-      return {
-        success: false,
-        error: `Le texte à remplacer n'a pas été trouvé dans "${filename}"`
-      };
+    const result = applySearchReplaceBlock(currentContent, searchText, replaceText);
+    if (!result.ok) {
+      return { success: false, error: `[${filename}] ${result.error}` };
     }
 
-    // Remplacer le texte
-    const newContent = currentContent.replace(searchText, replaceText);
+    await fs.writeFile(filePath, result.content, 'utf-8');
 
-    // Écrire le nouveau contenu
-    await fs.writeFile(filePath, newContent, 'utf-8');
-
-    console.log(`Fichier modifié: ${filePath}`);
+    console.log(`Fichier modifié (${result.matchType}): ${filePath}`);
     return {
       success: true,
-      message: `Section modifiée dans "${filename}"`
+      message: `Section modifiée dans "${filename}" (match: ${result.matchType})`
     };
   } catch (error) {
     console.error('Erreur lors de la modification du fichier:', error);
@@ -3714,7 +3715,7 @@ const requestTerminalApproval = async (commandText) => {
  * Executes a validated command on behalf of the AI agent.
  * Commands run without a shell, inside a trusted project, with output caps.
  */
-const executeCommandForAI = (cmd, projectPath) => {
+const executeCommandForAI = (cmd, projectPath, execContext = null) => {
   return new Promise(async (resolve) => {
     if (!cmd || typeof cmd !== 'string' || !cmd.trim()) {
       return resolve({ success: false, output: '[AI TERMINAL] Commande vide ignorée.' });
@@ -3734,20 +3735,46 @@ const executeCommandForAI = (cmd, projectPath) => {
       });
     }
 
-    if (!canUseTerminal(settings.permissionMode)) {
-      return resolve({
-        success: false,
-        output: "[AI TERMINAL] Le mode permissions actuel bloque l'execution de commandes terminal."
-      });
-    }
-
-    if (settings.aiTerminalApprovalMode !== false) {
-      const approved = await requestTerminalApproval(spawnRequest.normalizedCommandLine);
-      if (!approved) {
+    // Mode headless (agent WhatsApp) : politique d'approbation programmatique
+    if (execContext?.mode === 'headless') {
+      // Les commandes dangereuses sont toujours bloquées, même en autopilot
+      if (TERMINAL_DANGEROUS_COMMAND_PATTERNS.test(spawnRequest.normalizedCommandLine)) {
         return resolve({
           success: false,
-          output: `[AI TERMINAL] Commande refusee par l'utilisateur: ${spawnRequest.normalizedCommandLine}`
+          output: `[AI TERMINAL] Commande bloquée (dangereuse) : ${spawnRequest.normalizedCommandLine}`
         });
+      }
+      const inAllowlist = TERMINAL_ALLOWED_COMMANDS.has(spawnRequest.commandName);
+      if (!inAllowlist && !execContext.autopilot) {
+        // Demande d'autorisation via WhatsApp (round-trip asynchrone)
+        const approved = typeof execContext.approve === 'function'
+          ? await execContext.approve(spawnRequest.normalizedCommandLine)
+          : false;
+        if (!approved) {
+          return resolve({
+            success: false,
+            output: `[AI TERMINAL] Refusé par l'utilisateur : ${spawnRequest.normalizedCommandLine}`
+          });
+        }
+      }
+      // inAllowlist || autopilot || approved → on continue vers l'exécution
+    } else {
+      // Mode normal (UI Electron) : vérification permission + dialogue natif
+      if (!canUseTerminal(settings.permissionMode)) {
+        return resolve({
+          success: false,
+          output: "[AI TERMINAL] Le mode permissions actuel bloque l'execution de commandes terminal."
+        });
+      }
+
+      if (settings.aiTerminalApprovalMode !== false) {
+        const approved = await requestTerminalApproval(spawnRequest.normalizedCommandLine);
+        if (!approved) {
+          return resolve({
+            success: false,
+            output: `[AI TERMINAL] Commande refusee par l'utilisateur: ${spawnRequest.normalizedCommandLine}`
+          });
+        }
       }
     }
 
@@ -3923,6 +3950,36 @@ const executeCommandForAI = (cmd, projectPath) => {
   });
 };
 
+// ── Protocole d'édition chirurgicale partagé entre tous les providers ────────
+const FILE_EDIT_PROTOCOL = `
+ÉDITION DE FICHIERS — PROTOCOLE CHIRURGICAL :
+
+Pour MODIFIER un fichier EXISTANT → utilise SEARCH/REPLACE (une section par changement) :
+FILE: chemin/relatif/nom.ext
+<<<< SEARCH
+<bloc exact du fichier actuel — assez de lignes pour être unique dans le fichier>
+====
+<nouveau contenu qui le remplace>
+>>>> REPLACE
+
+Règles SEARCH/REPLACE :
+- Le bloc SEARCH doit correspondre EXACTEMENT au texte actuel (espaces, indentation).
+- Plusieurs blocs SEARCH/REPLACE autorisés dans la même réponse.
+- N'inclus jamais le fichier entier — seulement la zone modifiée avec quelques lignes de contexte.
+- Si le fichier n'existe pas encore, utilise le format FICHIER ci-dessous.
+
+Pour CRÉER un nouveau fichier → utilise ce format :
+**FICHIER: chemin/relatif/nom.ext**
+\`\`\`langage
+// contenu complet du nouveau fichier
+\`\`\`
+
+Règles fichiers :
+- JAMAIS réécrire un fichier entier qui existe déjà — utilise SEARCH/REPLACE.
+- Mets le chemin relatif complet (ex: src/components/Button.jsx).
+- Tu peux créer plusieurs nouveaux fichiers en un seul message.
+- NE décris PAS les fichiers — CRÉE-les ou MODIFIE-les directement.`;
+
 const TERMINAL_CAPABILITY_PROMPT = `
 CAPACITÉ TERMINAL — AGENT AUTONOME :
 Tu peux exécuter des commandes shell directement dans le projet de l'utilisateur.
@@ -3940,20 +3997,7 @@ Règles :
 - Si une commande échoue, analyse l'erreur et essaie une solution alternative.
 - Quand tu n'as plus besoin d'exécuter de commandes, réponds normalement sans balise <run_command>.
 
-CRÉATION DE FICHIERS — AGENT AUTONOME :
-Pour créer ou modifier un fichier, utilise EXACTEMENT ce format (appliqué automatiquement) :
-
-**FICHIER: chemin/relatif/nom.ext**
-\`\`\`langage
-// contenu complet du fichier
-\`\`\`
-
-Règles fichiers :
-- Utilise toujours ce format quand l'utilisateur demande du code, une appli, un composant, une config.
-- Mets le chemin relatif complet (ex: src/components/Button.jsx, backend/routes/auth.js).
-- Produis le contenu COMPLET du fichier, jamais un extrait.
-- Tu peux créer plusieurs fichiers en un seul message.
-- NE décris PAS les fichiers — CRÉE-les directement.
+${FILE_EDIT_PROTOCOL}
 
 CRÉATION DE WORKFLOW VISUEL — AGENT AUTONOME :
 Si l'utilisateur demande un workflow, un plan d'architecture, ou un diagramme de processus, génère aussi un workflow visuel avec ce format (importé automatiquement dans l'éditeur visuel) :
@@ -4174,12 +4218,8 @@ ipcMain.handle('get-kimi-completion', async (event, history, currentCode, allPro
 
       INSTRUCTIONS :
       - Analysez le contexte du projet et la demande.
-      - Proposez des modifications de code complètes.
-      - Pour chaque fichier modifié, renvoyez le contenu complet au format :
-        **FICHIER: nom_du_fichier.ext**
-        \`\`\`langage
-        // code complet
-        \`\`\`
+      - Proposez des modifications de code précises.
+      ${FILE_EDIT_PROTOCOL}
     `;
 
     const buildMessages = (baseHistory, userPrompt) => {
@@ -4859,14 +4899,8 @@ ipcMain.handle('get-gemini-completion', async (event, history, currentCode, allP
          - Comprenez l'intention derrière la demande
       
       2. **MODIFICATIONS PRÉCISES** :
-         - Pour chaque fichier à modifier, utilisez ce format :
-         
-         **FICHIER: nom_du_fichier.ext**
-         \`\`\`langage
-         // Code complet du fichier avec vos modifications
-         // Incluez TOUT le contenu, pas seulement les changements
-         \`\`\`
-         
+         ${FILE_EDIT_PROTOCOL}
+
       3. **ACTIONS AUTONOMES** :
          - Corrigez automatiquement les erreurs détectées
          - Ajoutez les imports/dépendances nécessaires
@@ -5152,11 +5186,7 @@ ipcMain.handle('get-claude-completion', async (event, history, currentCode, allP
       
       INSTRUCTIONS POUR AGIR COMME UN AGENT AUTONOME :
       1. **ANALYSE COMPLÈTE** : Analysez le contexte complet du projet
-      2. **MODIFICATIONS PRÉCISES** : Pour chaque fichier à modifier, utilisez ce format strict :
-         **FICHIER: nom_du_fichier.ext**
-         \`\`\`langage
-         // Code complet du fichier avec vos modifications
-         \`\`\`
+      2. **MODIFICATIONS PRÉCISES** : ${FILE_EDIT_PROTOCOL}
       3. **ACTIONS AUTONOMES** : Utilisez <run_command> pour interagir avec le terminal si besoin.
     `;
 
@@ -7567,7 +7597,8 @@ ipcMain.handle('pull-ollama-model', async (_event, modelName) => {
   }
 });
 
-ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
+// Exposée aussi pour l'appel direct depuis taskServer (agent WhatsApp headless)
+async function runOllamaCompletion(history, currentCode, allProjectFiles = null, options = {}) {
   const requestedModel = normalizeOllamaModelName(options.model || process.env.OLLAMA_MODEL);
 
   if (!history || !Array.isArray(history) || history.length === 0) {
@@ -7657,11 +7688,9 @@ ${projectContext}
 ${toolContract}
 ${visualWorkflowContext}
 ${n8nCatalogContext}
-FICHIER OUVERT: ${currentCode ? currentCode.substring(0, 2000) : 'Aucun'}
+FICHIER OUVERT: ${currentCode ? currentCode.substring(0, 60000) : 'Aucun'}
 
-${TERMINAL_CAPABILITY_PROMPT}
-
-Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code complet\n\`\`\``;
+${TERMINAL_CAPABILITY_PROMPT}`;
 
     const buildOllamaMessages = (baseHistory, userPrompt) => {
       const msgs = [{ role: 'system', content: systemPrompt }];
@@ -7733,7 +7762,7 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
       }
-      const { output } = await executeCommandForAI(cmd, projectPath);
+      const { output } = await executeCommandForAI(cmd, projectPath, options.execContext || null);
       messages = [
         ...messages,
         { role: 'assistant', content: aiText },
@@ -7749,7 +7778,11 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
     console.error('[Ollama] Erreur:', error.message);
     return { success: false, error: `Ollama: ${error.message}` };
   }
-});
+}
+
+ipcMain.handle('get-ollama-completion', (event, history, currentCode, allProjectFiles, options) =>
+  runOllamaCompletion(history, currentCode, allProjectFiles, options)
+);
 
 // ==================== MULTI-OLLAMA 3 AGENTS ====================
 
@@ -7792,7 +7825,7 @@ ipcMain.handle('get-ollama-multi-completion', async (event, history, currentCode
     const projectContext = fileIndexLines.length > 0
       ? `\nINDEX PROJET (sans contenu brut):\n${fileIndexLines.join('\n')}\n`
       : '\nINDEX PROJET indisponible.\n';
-    const codeCtx = currentCode ? `\nFICHIER OUVERT (extrait):\n${String(currentCode).substring(0, 2000)}` : '';
+    const codeCtx = currentCode ? `\nFICHIER OUVERT:\n${String(currentCode).substring(0, 60000)}` : '';
     const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(trustedProjectPath, userPrompt, options);
     const n8nCatalogContext = await buildN8nCatalogContextForPrompt(userPrompt, options);
     const toolContractText = `OUTILS DISPONIBLES:

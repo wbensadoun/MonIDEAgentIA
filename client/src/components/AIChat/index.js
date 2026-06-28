@@ -1,9 +1,11 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import './AIChat.css';
-import { AIWorkingIndicator } from '../LoadingAnimations';
+import { AIWorkingIndicator, LiveFilesPanel } from '../LoadingAnimations';
 import SyntaxHighlightedCode from './SyntaxHighlightedCode';
 import { EXECUTION_MODES, RUN_PRESETS } from '../../utils/agentModes';
 import { MULTI_AGENT_FORMATIONS, MULTI_AGENT_ROLE_DEFINITIONS } from '../../utils/multiAgentConfig';
+import { COLLECTIVE_DEPTHS } from '../../utils/collectiveMode';
+import CollectiveTeamPreview from './CollectiveTeamPreview';
 
 const WORKFLOW_STREAM_REGEX = /\*\*WORKFLOW:/i;
 const DIFF_STREAM_REGEX = /<<<<\s*SEARCH/i;
@@ -41,6 +43,21 @@ const extractStreamingFileDraft = (text) => {
     language: String(match[2] || '').trim(),
     code: String(match[3] || '').replace(/^\s*\n/, '')
   };
+};
+
+// Liste tous les fichiers cités dans le stream pour l'affichage live.
+// Le dernier est en cours d'écriture, les précédents sont écrits.
+const FILE_HEADER_STREAM_REGEX = /\*\*FICHIER:\s*(.+?)\*\*/gi;
+const extractStreamingFiles = (text) => {
+  if (!text) return [];
+  const re = new RegExp(FILE_HEADER_STREAM_REGEX.source, FILE_HEADER_STREAM_REGEX.flags);
+  const paths = [];
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const p = String(m[1] || '').trim();
+    if (p && paths[paths.length - 1] !== p) paths.push(p);
+  }
+  return paths.map((p, i) => ({ path: p, status: i === paths.length - 1 ? 'writing' : 'done' }));
 };
 
 const filterUserVisibleText = (text) => {
@@ -101,6 +118,112 @@ const formatMultiDuration = (startedAt, finishedAt) => {
   return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds}s`;
 };
 
+// ─── CollectivePanel ────────────────────────────────────────────────────────
+const CollectivePanel = ({
+  collectiveDepth,
+  onCollectiveDepthChange,
+  localPrivate,
+  onLocalPrivateChange,
+  teamPlanPreview,
+  isLoading,
+  multiAgentFormationKey,
+  activeFormation,
+  onMultiAgentFormationChange,
+  formationRoles,
+  disabledAgentSet,
+  toggleDisabledAgent
+}) => {
+  const [showPreview, setShowPreview] = React.useState(false);
+  const [showAdvanced, setShowAdvanced] = React.useState(false);
+
+  return (
+    <div className="collective-panel">
+      {/* ── Axe profondeur ──────────────────────────────────── */}
+      <div className="collective-depth-row">
+        <span className="collective-depth-label">Profondeur</span>
+        <div className="collective-depth-seg">
+          {COLLECTIVE_DEPTHS.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              className={`collective-depth-btn ${collectiveDepth === d.id ? 'is-active' : ''}`}
+              onClick={() => onCollectiveDepthChange?.(d.id)}
+              disabled={isLoading}
+              title={d.description}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Toggle Local privé ──────────────────────────── */}
+        <label className="collective-private-toggle" title="Tout passe par Ollama local (coût $0)">
+          <input
+            type="checkbox"
+            checked={localPrivate}
+            onChange={(e) => onLocalPrivateChange?.(e.target.checked)}
+            disabled={isLoading}
+          />
+          <span>Local privé</span>
+        </label>
+      </div>
+
+      {/* ── Aperçu équipe ────────────────────────────────── */}
+      <button
+        type="button"
+        className="collective-expand-btn"
+        onClick={() => setShowPreview((v) => !v)}
+      >
+        {showPreview ? '▾' : '▸'} Pourquoi cette équipe ?
+      </button>
+      {showPreview && <CollectiveTeamPreview teamPlan={teamPlanPreview} />}
+
+      {/* ── Avancé ───────────────────────────────────────── */}
+      <button
+        type="button"
+        className="collective-expand-btn"
+        onClick={() => setShowAdvanced((v) => !v)}
+      >
+        {showAdvanced ? '▾' : '▸'} Avancé
+      </button>
+      {showAdvanced && (
+        <div className="ai-multi-config">
+          <div className="ai-multi-config-head">
+            <select
+              value={activeFormation?.key || multiAgentFormationKey}
+              onChange={(event) => onMultiAgentFormationChange?.(event.target.value)}
+              disabled={isLoading}
+            >
+              {MULTI_AGENT_FORMATIONS.map((formation) => (
+                <option key={formation.key} value={formation.key}>{formation.title}</option>
+              ))}
+            </select>
+            <span>{activeFormation?.focus}</span>
+          </div>
+          <div className="ai-multi-role-chips">
+            {formationRoles.map((role) => {
+              const disabled = disabledAgentSet.has(role.key);
+              return (
+                <button
+                  type="button"
+                  key={role.key}
+                  className={`ai-multi-role-chip ${disabled ? 'is-disabled' : ''}`}
+                  onClick={() => toggleDisabledAgent(role.key)}
+                  disabled={isLoading || role.key === 'selector'}
+                  title={`${role.provider}/${role.model}`}
+                >
+                  <span>{role.shortLabel || role.title}</span>
+                  <small>{role.provider}</small>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AIChat = ({
   prompt,
   conversationHistory,
@@ -135,6 +258,11 @@ const AIChat = ({
   onMultiAgentFormationChange,
   disabledAgentKeys = [],
   onDisabledAgentKeysChange,
+  collectiveDepth = 'deep',
+  onCollectiveDepthChange,
+  localPrivate = false,
+  onLocalPrivateChange,
+  teamPlanPreview = null,
   pendingImages = [],
   onRemovePendingImage,
   pendingMessage = null,
@@ -515,6 +643,7 @@ const AIChat = ({
   ), [activeFormation]);
   const streamingFileDraft = useMemo(() => extractStreamingFileDraft(streamingText), [streamingText]);
   const streamingWorkflowDraft = useMemo(() => extractStreamingWorkflowDraft(streamingText), [streamingText]);
+  const liveFiles = useMemo(() => extractStreamingFiles(streamingText), [streamingText]);
   const streamingCodeLineCount = useMemo(() => {
     const code = streamingFileDraft?.code || '';
     if (!code) return 0;
@@ -969,38 +1098,20 @@ const AIChat = ({
           ))}
         </div>
         {executionMode === 'multi-agent' && (
-          <div className="ai-multi-config">
-            <div className="ai-multi-config-head">
-              <select
-                value={activeFormation?.key || multiAgentFormationKey}
-                onChange={(event) => onMultiAgentFormationChange?.(event.target.value)}
-                disabled={isLoading}
-              >
-                {MULTI_AGENT_FORMATIONS.map((formation) => (
-                  <option key={formation.key} value={formation.key}>{formation.title}</option>
-                ))}
-              </select>
-              <span>{activeFormation?.focus}</span>
-            </div>
-            <div className="ai-multi-role-chips">
-              {formationRoles.map((role) => {
-                const disabled = disabledAgentSet.has(role.key);
-                return (
-                  <button
-                    type="button"
-                    key={role.key}
-                    className={`ai-multi-role-chip ${disabled ? 'is-disabled' : ''}`}
-                    onClick={() => toggleDisabledAgent(role.key)}
-                    disabled={isLoading || role.key === 'selector'}
-                    title={`${role.provider}/${role.model}`}
-                  >
-                    <span>{role.shortLabel || role.title}</span>
-                    <small>{role.provider}</small>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <CollectivePanel
+            collectiveDepth={collectiveDepth}
+            onCollectiveDepthChange={onCollectiveDepthChange}
+            localPrivate={localPrivate}
+            onLocalPrivateChange={onLocalPrivateChange}
+            teamPlanPreview={teamPlanPreview}
+            isLoading={isLoading}
+            multiAgentFormationKey={multiAgentFormationKey}
+            activeFormation={activeFormation}
+            onMultiAgentFormationChange={onMultiAgentFormationChange}
+            formationRoles={formationRoles}
+            disabledAgentSet={disabledAgentSet}
+            toggleDisabledAgent={toggleDisabledAgent}
+          />
         )}
       </div>
 
@@ -1201,10 +1312,13 @@ const AIChat = ({
 
           {/* Working indicator */}
           {multiAIState?.isActive ? (
+            <>
             <AIWorkingIndicator
               provider={aiProvider}
               statusText={multiAIState.currentPhase ? `${streamingAgent || multiAIState.currentPhase} en cours...` : 'Multi-IA en cours...'}
             />
+            <LiveFilesPanel files={liveFiles} commands={terminalActions} />
+            </>
           ) : (
             <div style={{ display: 'flex', gap: 6, padding: '4px 14px', fontSize: 10, color: 'var(--text-dim)', alignItems: 'center' }}>
               <span style={{ fontWeight: 600 }}>Statut</span>
@@ -1225,6 +1339,11 @@ const AIChat = ({
       {/* ===== STREAMING (non-multi) ===== */}
       {isLoading && !multiAIState?.isActive && aiProvider !== 'multi' && aiProvider !== 'ollama-multi' && streamingText && (
         <div style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          {liveFiles.length > 0 && (
+            <div style={{ padding: '8px 14px 0' }}>
+              <LiveFilesPanel files={liveFiles} />
+            </div>
+          )}
           {renderStreamingBox()}
         </div>
       )}

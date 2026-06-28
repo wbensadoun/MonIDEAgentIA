@@ -315,10 +315,53 @@ export const VotingAnimation = ({ votes, total }) => {
   );
 };
 
+// ─────────────────────────────────────────────────────────
+// LiveFilesPanel — montre les fichiers édités + commandes en direct (style Claude Code)
+// ─────────────────────────────────────────────────────────
+export const LiveFilesPanel = ({ files = [], commands = [] }) => {
+  const hasFiles = Array.isArray(files) && files.length > 0;
+  const hasCommands = Array.isArray(commands) && commands.length > 0;
+  if (!hasFiles && !hasCommands) return null;
+
+  return (
+    <div className="apf-panel">
+      {hasFiles && (
+        <div className="apf-group">
+          <div className="apf-group-title">📝 Fichiers</div>
+          {files.map((f, i) => (
+            <div key={`${f.path}-${i}`} className={`apf-row ${f.status === 'writing' ? 'is-writing' : 'is-done'}`}>
+              <span className="apf-icon">
+                {f.status === 'writing' ? <span className="apf-spinner" /> : '✓'}
+              </span>
+              <span className="apf-path" title={f.path}>{f.path}</span>
+              <span className="apf-status">{f.status === 'writing' ? 'écriture…' : 'écrit'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {hasCommands && (
+        <div className="apf-group">
+          <div className="apf-group-title">⚡ Commandes</div>
+          {commands.map((c, i) => (
+            <div key={`cmd-${i}`} className={`apf-row ${c.type === 'done' ? 'is-done' : 'is-writing'}`}>
+              <span className="apf-icon">
+                {c.type === 'done' ? '✓' : <span className="apf-spinner" />}
+              </span>
+              <span className="apf-path apf-cmd" title={c.command}>{c.command}</span>
+              {c.iteration ? <span className="apf-status">#{c.iteration}</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default {
   LoadingSteps,
   LoadingPulse,
   AIWorkingIndicator,
+  LiveFilesPanel,
   SuccessAnimation,
   ErrorAnimation,
   VotingAnimation

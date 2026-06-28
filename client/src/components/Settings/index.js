@@ -71,6 +71,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
   const [ollamaModels, setOllamaModels] = useState([]);
   const [systemAIProfile, setSystemAIProfile] = useState(null);
   const [isSystemProfileLoading, setIsSystemProfileLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('general');
 
   const loadSettings = useCallback(async () => {
     if (!isElectronApiAvailable || !window.electronAPI?.loadSettings) return;
@@ -326,6 +327,16 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
 
   if (!isOpen) return null;
 
+  const SETTINGS_TABS = [
+    { id: 'general',  icon: '🎨', label: 'Général' },
+    { id: 'models',   icon: '☁️', label: 'Modèles cloud' },
+    { id: 'multi',    icon: '🤖', label: 'Multi-agents' },
+    { id: 'ollama',   icon: '🦙', label: 'Ollama local' },
+    { id: 'security', icon: '🔒', label: 'Sécurité' },
+    { id: 'context',  icon: '📂', label: 'Contexte & Qualité' },
+    { id: 'advanced', icon: '🔑', label: 'Clés API & Avancé' },
+  ];
+
   return (
     <div className="settings-overlay">
       <div className="settings-modal">
@@ -337,7 +348,22 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
           <button onClick={onClose} className="settings-close">X</button>
         </div>
 
+        <div className="settings-tabs">
+          {SETTINGS_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`settings-tab ${activeTab === t.id ? 'is-active' : ''}`}
+              onClick={() => setActiveTab(t.id)}
+            >
+              <span className="settings-tab-icon">{t.icon}</span>
+              <span className="settings-tab-label">{t.label}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="settings-body custom-scrollbar">
+          {activeTab === 'general' && (<>
           <div className="settings-section">
             <label className="settings-label">Apparence</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -361,7 +387,9 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
               <option value="ollama-multi">Multi-Ollama</option>
             </select>
           </div>
+          </>)}
 
+          {activeTab === 'models' && (<>
           <div className="settings-section">
             <label className="settings-label">Modeles IA simples</label>
             <div className="settings-hint">
@@ -426,7 +454,9 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
               ))}
             </div>
           </div>
+          </>)}
 
+          {activeTab === 'multi' && (<>
           <datalist id="multi-agent-model-suggestions">
             {availableMultiAgentModels.map((modelName) => (
               <option key={`multi-agent-model-${modelName}`} value={modelName} />
@@ -474,7 +504,9 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
               })}
             </div>
           </div>
+          </>)}
 
+          {activeTab === 'ollama' && (<>
           <div className="settings-section">
             <label className="settings-label">Optimisation IA locale</label>
             <select
@@ -626,7 +658,9 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
               ))}
             </select>
           </div>
+          </>)}
 
+          {activeTab === 'security' && (<>
           <div className="settings-section">
             <label className="settings-label">Options</label>
             <label className="settings-toggle">
@@ -670,7 +704,9 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
               Lecture seule bloque les modifications. Edition bloque uniquement les commandes terminal.
             </div>
           </div>
+          </>)}
 
+          {activeTab === 'context' && (<>
           <div className="settings-section">
             <label className="settings-label">Contexte IA (scan projet)</label>
             <select
@@ -773,7 +809,9 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
               <span>Bloquer l&apos;application si un gate echoue</span>
             </label>
           </div>
+          </>)}
 
+          {activeTab === 'advanced' && (<>
           <div className="settings-section">
             <label className="settings-label">Port serveur dev</label>
             <input
@@ -839,6 +877,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
               {getValidationMessage('claude')}
             </div>
           </div>
+          </>)}
         </div>
 
         <div className="settings-footer">
