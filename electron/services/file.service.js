@@ -6,6 +6,7 @@ const fsSync = require('fs');
 const readline = require('readline');
 const { ensureTrustedProjectPath, assertSafePath } = require('../core/security');
 const { ensureEditPermission } = require('./settings.service');
+const { applyBlock: applySearchReplaceBlock } = require('../../client/src/utils/applySearchReplace');
 
 // ---------------------------------------------------------------------------
 // Shared helpers (used across multiple service functions)
@@ -655,13 +656,13 @@ const editFile = async (projectPath, filename, searchText, replaceText) => {
     assertSafePath(trustedProjectPath, filePath);
 
     const currentContent = await fs.readFile(filePath, 'utf-8');
-    if (!currentContent.includes(searchText)) {
-      return { success: false, error: `Le texte à remplacer n'a pas été trouvé dans "${filename}"` };
+    const result = applySearchReplaceBlock(currentContent, searchText, replaceText);
+    if (!result.ok) {
+      return { success: false, error: result.error };
     }
-    const newContent = currentContent.replace(searchText, replaceText);
-    await fs.writeFile(filePath, newContent, 'utf-8');
-    console.log(`Fichier modifié: ${filePath}`);
-    return { success: true, message: `Section modifiée dans "${filename}"` };
+    await fs.writeFile(filePath, result.content, 'utf-8');
+    console.log(`Fichier modifié: ${filePath} (matchType: ${result.matchType})`);
+    return { success: true, message: `Section modifiée dans "${filename}"`, matchType: result.matchType };
   } catch (error) {
     console.error('Erreur lors de la modification du fichier:', error);
     return { success: false, error: error.message };

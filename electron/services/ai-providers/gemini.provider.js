@@ -16,6 +16,7 @@ const {
   pickFilesForContext,
   parseRunCommand,
   TERMINAL_CAPABILITY_PROMPT,
+  FILE_EDIT_PROTOCOL,
   executeCommandForAI: defaultExecuteCommandForAI,
 } = require('../ai.service');
 
@@ -254,15 +255,8 @@ const getGeminiCompletion = async ({
          - Identifiez les patterns, l'architecture, et les dépendances
          - Comprenez l'intention derrière la demande
       
-      2. **MODIFICATIONS PRÉCISES** :
-         - Pour chaque fichier à modifier, utilisez ce format :
-         
-         **FICHIER: nom_du_fichier.ext**
-         \`\`\`langage
-         // Code complet du fichier avec vos modifications
-         // Incluez TOUT le contenu, pas seulement les changements
-         \`\`\`
-         
+      ${FILE_EDIT_PROTOCOL}
+
       3. **ACTIONS AUTONOMES** :
          - Corrigez automatiquement les erreurs détectées
          - Ajoutez les imports/dépendances nécessaires

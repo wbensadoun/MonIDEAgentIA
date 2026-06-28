@@ -1,5 +1,23 @@
 import { DEFAULT_GEMINI_PRO_MODEL, DEFAULT_KIMI_MODEL } from '../utils/remoteModels';
 
+// ── Protocole d'édition chirurgicale partagé entre tous les agents ───────────
+export const FILE_EDIT_PROTOCOL_FR = `
+RÈGLES D'ÉDITION DE FICHIERS :
+- Pour MODIFIER un fichier EXISTANT (dont le contenu est visible dans le contexte) → SEARCH/REPLACE :
+  FILE: chemin/relatif/nom.ext
+  <<<< SEARCH
+  <bloc exact du fichier actuel — assez de lignes pour être unique>
+  ====
+  <nouveau contenu>
+  >>>> REPLACE
+- Pour CRÉER un nouveau fichier → format FICHIER complet :
+  **FICHIER: chemin/relatif/nom.ext**
+  \`\`\`langage
+  // contenu complet du nouveau fichier
+  \`\`\`
+- JAMAIS réécrire en entier un fichier qui existe déjà — utilise SEARCH/REPLACE.
+- Plusieurs blocs SEARCH/REPLACE autorisés dans la même réponse.`;
+
 export const AGENT_MODELS = {
   chefDeProjet: DEFAULT_GEMINI_PRO_MODEL,
   frontendDev: DEFAULT_KIMI_MODEL,
@@ -79,18 +97,13 @@ INSTRUCTIONS:
 1. Lis attentivement le cahier des charges, en particulier les "Spécifications Frontend"
 2. Code UNIQUEMENT les fichiers frontend (composants React, pages, styles CSS, hooks)
 3. NE touche PAS au backend (pas de routes API, pas de modèles de données serveur)
-4. Pour chaque fichier, utilise ce format:
 
-   **FICHIER: chemin/du/fichier.ext**
-   \`\`\`langage
-   // code complet du fichier
-   \`\`\`
+${FILE_EDIT_PROTOCOL_FR}
 
 CONSIGNES:
 - Focus UNIQUEMENT sur l'UI, les composants React/Vue, le state management, les appels API côté client, les hooks, le CSS.
 - NE PAS écrire de code Backend (Node.js, Express, BD).
 - Si un mock est nécessaire, crée-le.
-- FOURNIS le code complet, prêt à être intégré, au format **FICHIER: chemin/nom.ext** \`\`\`lang\ncode\n\`\`\`.
 - NE GÉNÈRE PAS de **WORKFLOW: nom** car tu ne crées que du code.`;
 
 export const generateBackendDevPrompt = (cahierDesCharges, frontendResponse, projectContext, currentCode) => `Tu es le DÉVELOPPEUR BACKEND. Tu ne codes QUE le backend (API, routes, modèles, services, base de données).
@@ -109,18 +122,13 @@ INSTRUCTIONS:
 1. Lis attentivement le cahier des charges, en particulier les "Spécifications Backend"
 2. Code UNIQUEMENT les fichiers backend (routes API, contrôleurs, modèles, services, migrations DB)
 3. NE touche PAS au frontend (pas de composants React, pas de CSS)
-4. Pour chaque fichier, utilise ce format:
 
-   **FICHIER: chemin/du/fichier.ext**
-   \`\`\`langage
-   // code complet du fichier
-   \`\`\`
+${FILE_EDIT_PROTOCOL_FR}
 
 CONSIGNES:
 - Focus UNIQUEMENT sur les serveurs, les routes d'API, la logique métier, l'accès BDD (Mongoose, Prisma), l'auth, etc.
 - Fournis des mocks ou fixtures si besoin.
 - Relie ton code à celui du Frontend Dev si nécessaire.
-- FOURNIS le code complet, prêt à être intégré, au format **FICHIER: chemin/nom.ext** \`\`\`lang\ncode\n\`\`\`.
 - NE GÉNÈRE PAS de **WORKFLOW: nom**.`;
 
 export const generateArchitectEngineerPrompt = (cahierDesCharges, frontendCode, backendCode, userRequest, projectContext) => `Tu es l'ARCHITECTE LOGICIEL / DEVOPS. Ton rôle est de lier le frontend et le backend, d'optimiser, et de créer la configuration de déploiement.
@@ -151,7 +159,7 @@ FORMAT OBLIGATOIRE:
 - Fais le lien entre le Frontend et le Backend. Crée les scripts d'intégration, configurations Docker, CI/CD, etc.
 - Optimise, refactorise si nécessaire. 
 - Vérifie la cohérence globale.
-- FOURNIS le code manquant ou les modifications sous forme de **FICHIER: chemin/nom.ext** \`\`\`lang\ncode\n\`\`\`.
+${FILE_EDIT_PROTOCOL_FR}
 - NE GENERÈ JAMAIS LA SYNTAXE **WORKFLOW:**. L'utilisateur utilise un autre format pour cela.`;
 
 export const generateScrumMasterPrompt = (cahierDesCharges, frontendCode, backendCode, architectReview, userRequest) => `Tu es le SCRUM MASTER. Ton rôle est de synthétiser tout le travail des agents et de produire le LIVRABLE FINAL complet et cohérent.
@@ -186,11 +194,7 @@ FORMAT DE SORTIE OBLIGATOIRE:
 
 ## Fichiers livrés
 
-Pour CHAQUE fichier (frontend + backend), utilise EXACTEMENT ce format stricte !
-**FICHIER: chemin/du/fichier.ext**
-\`\`\`langage
-// code complet final
-\`\`\`
+${FILE_EDIT_PROTOCOL_FR}
 
 NE GÉNÈRE JAMAIS le mot-clé **WORKFLOW:** ni de JSON non-autorisé. Concentre-toi sur le code source.`;
 
@@ -244,11 +248,7 @@ REGLES:
 - Si tu es bloque, indique BLOQUAGE: avec la raison et ce qu'il manque.
 - N'invente pas de backend/API si le TeamPlan l'a exclu.
 ${canWrite ? `
-FORMAT SI TU MODIFIES DU CODE:
-**FICHIER: chemin/du/fichier.ext**
-\`\`\`langage
-// contenu complet du fichier
-\`\`\`
+${FILE_EDIT_PROTOCOL_FR}
 
 ${isWorkflow ? `FORMAT SI TU CREES UN WORKFLOW:
 **WORKFLOW: NomDuWorkflow**

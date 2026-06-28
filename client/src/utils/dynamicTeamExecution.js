@@ -11,6 +11,7 @@ import {
   runWithConcurrency
 } from './aiAgentRuntime';
 import { buildTeamPlan, formatTeamPlanForPrompt } from './teamSelector';
+import { applyCollectiveDepth } from './collectiveMode';
 
 export const runDynamicAgentBatch = async ({
   agents,
@@ -150,15 +151,18 @@ export const runDynamicMultiAgentFlow = async ({
     hardwareProfile = await electronAPI.getSystemAIProfile({ consent: true });
   }
 
-  const teamPlan = buildTeamPlan({
-    userRequest: promptToSend,
-    projectFiles: allProjectFiles,
-    rolesConfig: normalizedMultiAgentRoles,
-    localAISettings,
-    hardwareProfile,
-    preferredFormationKey: multiAgentOptions?.formationKey,
-    disabledAgentKeys: multiAgentOptions?.disabledAgentKeys
-  });
+  const teamPlan = applyCollectiveDepth(
+    buildTeamPlan({
+      userRequest: promptToSend,
+      projectFiles: allProjectFiles,
+      rolesConfig: normalizedMultiAgentRoles,
+      localAISettings,
+      hardwareProfile,
+      preferredFormationKey: multiAgentOptions?.formationKey,
+      disabledAgentKeys: multiAgentOptions?.disabledAgentKeys
+    }),
+    multiAgentOptions?.depth
+  );
   const teamPlanText = formatTeamPlanForPrompt(teamPlan);
   const multiAgentModelMap = (teamPlan.selectedAgents || []).reduce((acc, agent) => {
     acc[agent.key] = agent.model;

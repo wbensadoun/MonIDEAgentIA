@@ -16,6 +16,102 @@
   margin: 4px 0;
 }
 
+/* ══════════════════════════════════════════════════════════
+   LiveFilesPanel — fichiers édités + commandes en direct
+   ══════════════════════════════════════════════════════════ */
+.apf-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 245, 212, 0.18);
+  background: linear-gradient(135deg, rgba(4, 16, 24, 0.96), rgba(2, 10, 18, 0.98));
+  padding: 10px 12px;
+  margin: 6px 0;
+}
+
+.apf-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.apf-group-title {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(0, 245, 212, 0.75);
+  margin-bottom: 2px;
+}
+
+.apf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  font-size: 0.74rem;
+  background: rgba(255, 255, 255, 0.02);
+  transition: background 0.2s ease;
+}
+
+.apf-row.is-writing {
+  background: rgba(0, 245, 212, 0.06);
+}
+
+.apf-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: #00f5d4;
+  font-size: 0.7rem;
+}
+
+.apf-row.is-done .apf-icon {
+  color: #34d399;
+}
+
+.apf-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.88);
+  font-family: var(--font-mono, monospace);
+}
+
+.apf-cmd {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.apf-status {
+  flex-shrink: 0;
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.apf-row.is-writing .apf-status {
+  color: rgba(0, 245, 212, 0.7);
+}
+
+.apf-spinner {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 245, 212, 0.25);
+  border-top-color: #00f5d4;
+  animation: apf-spin 0.7s linear infinite;
+}
+
+@keyframes apf-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ── Top bar ─────────────────────────────────────────────── */
 .ap-topbar {
   display: flex;

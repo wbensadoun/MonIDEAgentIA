@@ -164,6 +164,10 @@ const AppContent = () => {
     setMultiAgentFormationKey,
     disabledAgentKeys,
     setDisabledAgentKeys,
+    collectiveDepth,
+    setCollectiveDepth,
+    localPrivate,
+    setLocalPrivate,
     multiAgentRunOptions
   } = useRunConfiguration();
 
@@ -226,7 +230,8 @@ const AppContent = () => {
     stopGeneration,
     pendingImages,
     setPendingImages,
-    pendingMessage
+    pendingMessage,
+    teamPlanPreview
   } = useAI(
     currentProjectPath,
     code,
@@ -453,6 +458,11 @@ const AppContent = () => {
     onMultiAgentFormationChange: setMultiAgentFormationKey,
     disabledAgentKeys,
     onDisabledAgentKeysChange: setDisabledAgentKeys,
+    collectiveDepth,
+    onCollectiveDepthChange: setCollectiveDepth,
+    localPrivate,
+    onLocalPrivateChange: setLocalPrivate,
+    teamPlanPreview,
     thinkingMode,
     onThinkingModeChange: setThinkingMode,
     deepContextEnabled,

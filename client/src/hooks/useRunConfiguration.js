@@ -5,11 +5,15 @@ const useRunConfiguration = () => {
   const [runPreset, setRunPreset] = useState('default');
   const [multiAgentFormationKey, setMultiAgentFormationKey] = useState('product-ui');
   const [disabledAgentKeys, setDisabledAgentKeys] = useState([]);
+  const [collectiveDepth, setCollectiveDepth] = useState('deep');
+  const [localPrivate, setLocalPrivate] = useState(false);
 
   const multiAgentRunOptions = useMemo(() => ({
     formationKey: multiAgentFormationKey,
-    disabledAgentKeys
-  }), [disabledAgentKeys, multiAgentFormationKey]);
+    disabledAgentKeys,
+    depth: collectiveDepth,
+    localPrivate
+  }), [disabledAgentKeys, multiAgentFormationKey, collectiveDepth, localPrivate]);
 
   return {
     executionMode,
@@ -20,6 +24,10 @@ const useRunConfiguration = () => {
     setMultiAgentFormationKey,
     disabledAgentKeys,
     setDisabledAgentKeys,
+    collectiveDepth,
+    setCollectiveDepth,
+    localPrivate,
+    setLocalPrivate,
     multiAgentRunOptions
   };
 };

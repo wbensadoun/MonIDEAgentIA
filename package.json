@@ -10,6 +10,11 @@
     "whatsapp-bridge": "node scripts/whatsapp-ollama-bridge.js",
     "build": "npm run build --prefix client && electron-builder",
     "build:win-installer": "npm run build --prefix client && electron-builder --win nsis",
+    "build:linux-server": "npm run build --prefix client && electron-builder --linux AppImage",
+    "setup-server": "bash scripts/setup-server.sh",
+    "start-server": "bash scripts/start-server.sh",
+    "stop-server": "bash scripts/stop-server.sh",
+    "logs-server": "bash scripts/logs-server.sh",
     "postinstall": "electron-builder install-app-deps",
     "test": "npm test --prefix client -- --watchAll=false --runInBand"
   },
@@ -70,7 +75,15 @@
       "icon": "iconeDesktop.png"
     },
     "linux": {
-      "icon": "iconeDesktop.png"
+      "icon": "iconeDesktop.png",
+      "target": ["AppImage"],
+      "extraFiles": [
+        "scripts/setup-server.sh",
+        "scripts/start-server.sh",
+        "scripts/stop-server.sh",
+        "scripts/logs-server.sh",
+        ".env.example"
+      ]
     }
   }
 }

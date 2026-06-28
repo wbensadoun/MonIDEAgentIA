@@ -16,6 +16,7 @@ const {
   pickFilesForContext,
   parseRunCommand,
   TERMINAL_CAPABILITY_PROMPT,
+  FILE_EDIT_PROTOCOL,
   executeCommandForAI: defaultExecuteCommandForAI,
 } = require('../ai.service');
 
@@ -135,11 +136,7 @@ const getClaudeCompletion = async ({
       
       INSTRUCTIONS POUR AGIR COMME UN AGENT AUTONOME :
       1. **ANALYSE COMPLÈTE** : Analysez le contexte complet du projet
-      2. **MODIFICATIONS PRÉCISES** : Pour chaque fichier à modifier, utilisez ce format strict :
-         **FICHIER: nom_du_fichier.ext**
-         \`\`\`langage
-         // Code complet du fichier avec vos modifications
-         \`\`\`
+      ${FILE_EDIT_PROTOCOL}
       3. **ACTIONS AUTONOMES** : Utilisez <run_command> pour interagir avec le terminal si besoin.
     `;
 

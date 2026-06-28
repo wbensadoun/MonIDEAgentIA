@@ -768,20 +768,16 @@ Règles :
 - Si une commande échoue, analyse l'erreur et essaie une solution alternative.
 - Quand tu n'as plus besoin d'exécuter de commandes, réponds normalement sans balise <run_command>.
 
-CRÉATION DE FICHIERS — AGENT AUTONOME :
-Pour créer ou modifier un fichier, utilise EXACTEMENT ce format (appliqué automatiquement) :
-
-**FICHIER: chemin/relatif/nom.ext**
-\`\`\`langage
-// contenu complet du fichier
-\`\`\`
-
-Règles fichiers :
-- Utilise toujours ce format quand l'utilisateur demande du code, une appli, un composant, une config.
-- Mets le chemin relatif complet (ex: src/components/Button.jsx, backend/routes/auth.js).
-- Produis le contenu COMPLET du fichier, jamais un extrait.
-- Tu peux créer plusieurs fichiers en un seul message.
-- NE décris PAS les fichiers — CRÉE-les directement.
+ÉDITION DE FICHIERS — PROTOCOLE CHIRURGICAL :
+Pour MODIFIER un fichier EXISTANT → SEARCH/REPLACE:
+  FILE: chemin/relatif/nom.ext
+  <<<< SEARCH
+  <bloc exact du fichier actuel>
+  ====
+  <nouveau contenu>
+  >>>> REPLACE
+Pour CRÉER un NOUVEAU fichier → **FICHIER: chemin** \`\`\`langage\ncontenu\n\`\`\`
+JAMAIS réécrire un fichier entier qui existe déjà.
 
 CRÉATION DE WORKFLOW VISUEL — AGENT AUTONOME :
 Si l'utilisateur demande un workflow, un plan d'architecture, ou un diagramme de processus, génère aussi un workflow visuel avec ce format (importé automatiquement dans l'éditeur visuel) :
@@ -806,6 +802,18 @@ Si l'utilisateur demande un workflow, un plan d'architecture, ou un diagramme de
 
 Types de nœuds disponibles : trigger (▶️) | ai (🤖) | action (💻) | logic (🔀) | output (🔔)
 `;
+
+const FILE_EDIT_PROTOCOL = `
+ÉDITION DE FICHIERS — PROTOCOLE CHIRURGICAL :
+Pour MODIFIER un fichier EXISTANT → SEARCH/REPLACE:
+  FILE: chemin/relatif/nom.ext
+  <<<< SEARCH
+  <bloc exact du fichier actuel>
+  ====
+  <nouveau contenu>
+  >>>> REPLACE
+Pour CRÉER un nouveau fichier → **FICHIER: chemin** \`\`\`langage\ncontenu\n\`\`\`
+JAMAIS réécrire un fichier entier qui existe déjà.`;
 
 const parseRunCommand = (text) => {
   const match = String(text || '').match(/<run_command>([\s\S]*?)<\/run_command>/i);
@@ -1108,6 +1116,7 @@ module.exports = {
   pickFilesForContext,
   AGENT_FILE_TOOL_CONTRACT,
   TERMINAL_CAPABILITY_PROMPT,
+  FILE_EDIT_PROTOCOL,
   AGENT_MAX_FILE_BYTES,
   AGENT_MAX_LINES_PER_CALL,
   AGENT_MAX_TOOL_CALLS,

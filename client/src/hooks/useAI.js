@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   generateCaptainFinalPrompt,
   generateDynamicTeamAgentPrompt
@@ -31,6 +31,8 @@ import {
 } from '../utils/aiAgentRuntime';
 import { runDynamicMultiAgentFlow } from '../utils/dynamicTeamExecution';
 import { runOllamaMultiCompletionFlow } from '../utils/ollamaMultiFlow';
+import { applyCollectiveDepth, resolveCollectiveProvider } from '../utils/collectiveMode';
+import { buildTeamPlan } from '../utils/teamSelector';
 
 export const useAI = (
   currentProjectPath,
@@ -184,7 +186,10 @@ export const useAI = (
       return;
     }
 
-    const effectiveAIProvider = resolveProviderForExecutionMode(aiProvider, executionMode);
+    const isCollective = executionMode === 'multi-agent';
+    const effectiveAIProvider = isCollective && multiAgentOptions?.localPrivate
+      ? resolveCollectiveProvider(true)
+      : resolveProviderForExecutionMode(aiProvider, executionMode);
     const localOnlyRun = isLocalOnlyProvider(effectiveAIProvider);
     const canProcessFilesForMode = shouldProcessFileModifications(executionMode, runPreset);
 
@@ -447,6 +452,29 @@ export const useAI = (
     return selectPendingChangeFromQueue(index);
   }, [selectPendingChangeFromQueue]);
 
+  // Aperçu pré-run du plan d'équipe (calculé seulement en mode Collective)
+  const teamPlanPreview = useMemo(() => {
+    if (executionMode !== 'multi-agent') return null;
+    try {
+      const normalizedMultiAgentRoles = normalizeMultiAgentRoles(multiAgentRoles);
+      return applyCollectiveDepth(
+        buildTeamPlan({
+          userRequest: prompt,
+          projectFiles: null,
+          rolesConfig: normalizedMultiAgentRoles,
+          localAISettings,
+          hardwareProfile: null,
+          preferredFormationKey: multiAgentOptions?.formationKey,
+          disabledAgentKeys: multiAgentOptions?.disabledAgentKeys
+        }),
+        multiAgentOptions?.depth
+      );
+    } catch {
+      return null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [executionMode, prompt, multiAgentRoles, localAISettings, multiAgentOptions]);
+
   return {
     prompt,
     setPrompt,
@@ -482,7 +510,8 @@ export const useAI = (
     pendingImages,
     setPendingImages,
     pendingMessage,
-    setPendingMessage
+    setPendingMessage,
+    teamPlanPreview
   };
 };
 
