@@ -2,8 +2,11 @@ import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import './AIChat.css';
 import { AIWorkingIndicator } from '../LoadingAnimations';
 import SyntaxHighlightedCode from './SyntaxHighlightedCode';
+import AIDecisionBadge from './AIDecisionBadge';
 import { EXECUTION_MODES, RUN_PRESETS } from '../../utils/agentModes';
 import { MULTI_AGENT_FORMATIONS, MULTI_AGENT_ROLE_DEFINITIONS } from '../../utils/multiAgentConfig';
+
+const AUTO_AGENT_OPTION_VALUE = '';
 
 const WORKFLOW_STREAM_REGEX = /\*\*WORKFLOW:/i;
 const DIFF_STREAM_REGEX = /<<<<\s*SEARCH/i;
@@ -149,7 +152,20 @@ const AIChat = ({
   pendingSnapshotId = null,
   contextEstimate = null,
   permissionMode = 'edit_terminal',
-  onStreamingDraftChange
+  onStreamingDraftChange,
+  agents = [],
+  // eslint-disable-next-line no-unused-vars
+  skills = [],
+  activeAgent = null,
+  // eslint-disable-next-line no-unused-vars
+  activeSkill = null,
+  onActiveAgentChange,
+  // eslint-disable-next-line no-unused-vars
+  onActiveSkillChange,
+  agentSelectionMode = 'auto',
+  // eslint-disable-next-line no-unused-vars
+  onAgentSelectionModeChange,
+  routerDecision = null
 }) => {
   const conversationHistoryRef = useRef(null);
   const promptInputRef = useRef(null);
@@ -157,6 +173,9 @@ const AIChat = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showWorkflowSuggestions, setShowWorkflowSuggestions] = useState(false);
   const [workflowFilter, setWorkflowFilter] = useState('');
+  // Intelligent Router: Mode/Preset/Formation controls are secondary now that
+  // the router picks them automatically in 'auto' mode — collapsed by default.
+  const [showAdvancedModePanel, setShowAdvancedModePanel] = useState(false);
 
   // Mentions Context
   const [showContextSuggestions, setShowContextSuggestions] = useState(false);
@@ -553,6 +572,37 @@ const AIChat = ({
   const multiRunDuration = formatMultiDuration(multiAIState?.startedAt, multiAIState?.finishedAt);
   const currentWorkflowAnimStep = WORKFLOW_STREAM_STEPS[workflowAnimStep] || WORKFLOW_STREAM_STEPS[0];
   const disabledAgentSet = useMemo(() => new Set(Array.isArray(disabledAgentKeys) ? disabledAgentKeys : []), [disabledAgentKeys]);
+  const groupedAgentOptions = useMemo(() => {
+    const list = Array.isArray(agents) ? agents : [];
+    const scopeLabels = { global: 'Globaux', workspace: 'Projet' };
+    const groups = new Map();
+    list.forEach((agent) => {
+      if (!agent?.name) return;
+      const scopeKey = agent.scope || 'agents';
+      if (!groups.has(scopeKey)) groups.set(scopeKey, []);
+      groups.get(scopeKey).push(agent);
+    });
+    return Array.from(groups.entries()).map(([scope, items]) => ({
+      scope,
+      label: scopeLabels[scope] || scope,
+      items
+    }));
+  }, [agents]);
+  const activeAgentOptionValue = activeAgent?.name
+    ? `${activeAgent.scope || ''}::${activeAgent.name}`
+    : AUTO_AGENT_OPTION_VALUE;
+  const handleAgentSelectorChange = (event) => {
+    const value = event.target.value;
+    if (!value) {
+      onActiveAgentChange?.(null);
+      return;
+    }
+    const separatorIndex = value.indexOf('::');
+    const scope = separatorIndex >= 0 ? value.slice(0, separatorIndex) : '';
+    const name = separatorIndex >= 0 ? value.slice(separatorIndex + 2) : value;
+    const found = (Array.isArray(agents) ? agents : []).find((a) => a?.name === name && (a?.scope || '') === scope);
+    onActiveAgentChange?.(found || null);
+  };
   const activeFormation = useMemo(() => (
     MULTI_AGENT_FORMATIONS.find((formation) => formation.key === multiAgentFormationKey)
     || MULTI_AGENT_FORMATIONS[0]
@@ -990,65 +1040,102 @@ const AIChat = ({
       </div>
 
       <div className="ai-mode-panel">
-        <div className="ai-mode-row">
-          {EXECUTION_MODES.map((mode) => (
-            <button
-              type="button"
-              key={mode.id}
-              className={`ai-mode-btn ${executionMode === mode.id ? 'is-active' : ''}`}
-              onClick={() => setExecutionMode(mode.id)}
-              title={mode.description}
-              disabled={isLoading}
-            >
-              {mode.label}
-            </button>
-          ))}
-        </div>
-        <div className="ai-preset-row">
-          {RUN_PRESETS.map((preset) => (
-            <button
-              type="button"
-              key={preset.id}
-              className={`ai-preset-btn ${runPreset === preset.id ? 'is-active' : ''}`}
-              onClick={() => setPreset(preset.id)}
-              disabled={isLoading}
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
-        {executionMode === 'multi-agent' && (
-          <div className="ai-multi-config">
-            <div className="ai-multi-config-head">
-              <select
-                value={activeFormation?.key || multiAgentFormationKey}
-                onChange={(event) => onMultiAgentFormationChange?.(event.target.value)}
-                disabled={isLoading}
-              >
-                {MULTI_AGENT_FORMATIONS.map((formation) => (
-                  <option key={formation.key} value={formation.key}>{formation.title}</option>
+        <div className="ai-agent-selector-row">
+          <select
+            className="ai-agent-select"
+            value={activeAgentOptionValue}
+            onChange={handleAgentSelectorChange}
+            disabled={isLoading}
+            title="Choisir un agent, ou laisser le routeur decider automatiquement"
+          >
+            <option value={AUTO_AGENT_OPTION_VALUE}>✨ Auto (Sélection intelligente)</option>
+            {groupedAgentOptions.map((group) => (
+              <optgroup key={group.scope} label={group.label}>
+                {group.items.map((agent) => (
+                  <option key={`${group.scope}::${agent.name}`} value={`${group.scope}::${agent.name}`}>
+                    {agent.name}
+                  </option>
                 ))}
-              </select>
-              <span>{activeFormation?.focus}</span>
+              </optgroup>
+            ))}
+          </select>
+          {agentSelectionMode === 'auto' && (
+            <span className="ai-agent-selector-hint">le routeur choisit mode/agent/skills</span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="ai-advanced-toggle"
+          onClick={() => setShowAdvancedModePanel((prev) => !prev)}
+          aria-expanded={showAdvancedModePanel}
+        >
+          Avancé {showAdvancedModePanel ? '▾' : '▸'}
+        </button>
+
+        {showAdvancedModePanel && (
+          <div className="ai-advanced-panel">
+            <div className="ai-mode-row">
+              {EXECUTION_MODES.map((mode) => (
+                <button
+                  type="button"
+                  key={mode.id}
+                  className={`ai-mode-btn ${executionMode === mode.id ? 'is-active' : ''}`}
+                  onClick={() => setExecutionMode(mode.id)}
+                  title={mode.description}
+                  disabled={isLoading}
+                >
+                  {mode.label}
+                </button>
+              ))}
             </div>
-            <div className="ai-multi-role-chips">
-              {formationRoles.map((role) => {
-                const disabled = disabledAgentSet.has(role.key);
-                return (
-                  <button
-                    type="button"
-                    key={role.key}
-                    className={`ai-multi-role-chip ${disabled ? 'is-disabled' : ''}`}
-                    onClick={() => toggleDisabledAgent(role.key)}
-                    disabled={isLoading || role.key === 'selector'}
-                    title={`${role.provider}/${role.model}`}
+            <div className="ai-preset-row">
+              {RUN_PRESETS.map((preset) => (
+                <button
+                  type="button"
+                  key={preset.id}
+                  className={`ai-preset-btn ${runPreset === preset.id ? 'is-active' : ''}`}
+                  onClick={() => setPreset(preset.id)}
+                  disabled={isLoading}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            {executionMode === 'multi-agent' && (
+              <div className="ai-multi-config">
+                <div className="ai-multi-config-head">
+                  <select
+                    value={activeFormation?.key || multiAgentFormationKey}
+                    onChange={(event) => onMultiAgentFormationChange?.(event.target.value)}
+                    disabled={isLoading}
                   >
-                    <span>{role.shortLabel || role.title}</span>
-                    <small>{role.provider}</small>
-                  </button>
-                );
-              })}
-            </div>
+                    {MULTI_AGENT_FORMATIONS.map((formation) => (
+                      <option key={formation.key} value={formation.key}>{formation.title}</option>
+                    ))}
+                  </select>
+                  <span>{activeFormation?.focus}</span>
+                </div>
+                <div className="ai-multi-role-chips">
+                  {formationRoles.map((role) => {
+                    const disabled = disabledAgentSet.has(role.key);
+                    return (
+                      <button
+                        type="button"
+                        key={role.key}
+                        className={`ai-multi-role-chip ${disabled ? 'is-disabled' : ''}`}
+                        onClick={() => toggleDisabledAgent(role.key)}
+                        disabled={isLoading || role.key === 'selector'}
+                        title={`${role.provider}/${role.model}`}
+                      >
+                        <span>{role.shortLabel || role.title}</span>
+                        <small>{role.provider}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1440,6 +1527,8 @@ const AIChat = ({
             </button>
           </div>
         </div>
+
+        <AIDecisionBadge decision={routerDecision} />
 
         {/* Workflow suggestions */}
         {showWorkflowSuggestions && filteredWorkflows.length > 0 && (

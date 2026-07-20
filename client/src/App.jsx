@@ -169,6 +169,10 @@ const AppContent = () => {
   const [availableSkills, setAvailableSkills] = useState([]);
   const [activeAgent, setActiveAgent] = useState(null);
   const [activeSkill, setActiveSkill] = useState(null);
+  // Intelligent Router (v1.8.0): 'auto' lets the router pick mode/agent/skill,
+  // 'manual' preserves the pre-router behavior driven by activeAgent/activeSkill.
+  const [agentSelectionMode, setAgentSelectionMode] = useState('auto');
+  const [routerDecision, setRouterDecision] = useState(null);
 
   const layoutRef = useRef(null);
   const commandInputRef = useRef(null);
@@ -441,7 +445,11 @@ const AppContent = () => {
     contextMaxFiles,
     executionMode,
     runPreset,
-    multiAgentRunOptions
+    multiAgentRunOptions,
+    agentSelectionMode,
+    availableAgents,
+    routerDecision,
+    setRouterDecision
   );
 
   const {
@@ -1090,6 +1098,20 @@ const AppContent = () => {
     setAiProvider(nextProvider);
     await saveSettingsPatch({ defaultProvider: nextProvider }, `Assistant: ${nextProvider}`);
   }, [saveSettingsPatch]);
+
+  // Intelligent Router: picking a real agent switches to manual selection;
+  // picking "Auto" (agent === null/undefined) hands control back to the
+  // router and clears any stale manual agent/skill selection.
+  const handleActiveAgentChange = useCallback((agent) => {
+    if (agent) {
+      setActiveAgent(agent);
+      setAgentSelectionMode('manual');
+    } else {
+      setAgentSelectionMode('auto');
+      setActiveAgent(null);
+      setActiveSkill(null);
+    }
+  }, []);
 
   const handleOllamaSettingChange = useCallback(async (field, value) => {
     const normalizedValue = normalizeOllamaModelLabel(value);
@@ -2197,8 +2219,11 @@ const AppContent = () => {
     skills: availableSkills,
     activeAgent,
     activeSkill,
-    onActiveAgentChange: setActiveAgent,
+    onActiveAgentChange: handleActiveAgentChange,
     onActiveSkillChange: setActiveSkill,
+    agentSelectionMode,
+    onAgentSelectionModeChange: setAgentSelectionMode,
+    routerDecision,
     globalSkillsCount: availableSkills.filter((skill) => skill.scope === 'global').length,
     pendingImages,
     onRemovePendingImage: (idx) => setPendingImages((prev) => prev.filter((_, i) => i !== idx)),

@@ -13,13 +13,14 @@ import {
   normalizeMultiAgentRoles
 } from '../utils/multiAgentConfig';
 import { buildTeamPlan, formatTeamPlanForPrompt } from '../utils/teamSelector';
-import { isSimpleOllamaChatPrompt, resolveSimpleOllamaMaxTokens } from '../utils/ollamaRuntime';
+import { isSimpleOllamaChatPrompt, resolveSimpleOllamaMaxTokens, classifyPromptLayer1 } from '../utils/ollamaRuntime';
 import {
   decoratePromptForMode,
   isLocalOnlyProvider,
   resolveProviderForExecutionMode,
   shouldProcessFileModifications
 } from '../utils/agentModes';
+import { mapRouterModeToExecutionMode, matchAgentByName, matchSkillByName } from '../utils/routerDecision';
 
 const MAX_MULTI_AI_EVENTS = 16;
 
@@ -219,7 +220,11 @@ export const useAI = (
   contextMaxFiles = 120,
   executionMode = 'agent',
   runPreset = 'default',
-  multiAgentOptions = {}
+  multiAgentOptions = {},
+  agentSelectionMode = 'manual',
+  availableAgents = [],
+  routerDecision = null,
+  setRouterDecision = null
 ) => {
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -446,9 +451,84 @@ export const useAI = (
       return;
     }
 
-    const effectiveAIProvider = resolveProviderForExecutionMode(aiProvider, executionMode);
+    // --- Intelligent Router (auto agent/skill/mode selection) ---
+    // Shadow variables default to the CURRENT manual values so that
+    // agentSelectionMode !== 'auto' (the default) is byte-identical to
+    // the pre-router behavior. Only the 'auto' branch below can change them.
+    let effExecutionMode = executionMode;
+    let effAgent = activeAgent;
+    let effSkill = activeSkill;
+    let effFormationKey = multiAgentOptions?.formationKey;
+    const tierModelOverride = {};
+
+    if (agentSelectionMode === 'auto') {
+      const routerPromptText = effectivePrompt.trim();
+
+      if (classifyPromptLayer1(routerPromptText)) {
+        // Layer 1 (local heuristic): trivial/greeting prompt, skip the LLM
+        // classification round-trip entirely and force a plain single-agent run.
+        effAgent = null;
+        effSkill = null;
+        setRouterDecision?.({
+          mode: 'single_agent',
+          agent: null,
+          skills: [],
+          complexity: 'light',
+          source: 'heuristic'
+        });
+      } else {
+        try {
+          const routerApiKey = aiProvider === 'claude'
+            ? claudeApiKey
+            : aiProvider === 'kimi'
+              ? kimiApiKey
+              : aiProvider === 'gemini'
+                ? geminiApiKey
+                : undefined;
+
+          const routed = await window.electronAPI?.routeRequest?.({
+            prompt: routerPromptText,
+            projectPath: currentProjectPath,
+            provider: aiProvider,
+            apiKey: routerApiKey,
+            settings: apiKeys
+          });
+
+          if (routed?.success) {
+            effExecutionMode = mapRouterModeToExecutionMode(routed.decision?.mode);
+            effAgent = matchAgentByName(availableAgents, routed.decision?.agent);
+            effSkill = routed.decision?.skills?.[0]
+              ? matchSkillByName(skills, routed.decision.skills[0])
+              : null;
+            if (routed.model?.provider) {
+              tierModelOverride[routed.model.provider] = routed.model.resolved;
+            }
+            setRouterDecision?.({ ...routed.decision, model: routed.model, source: routed.source });
+          } else {
+            setRouterDecision?.({
+              mode: 'single_agent',
+              agent: null,
+              skills: [],
+              complexity: 'light',
+              source: 'fallback'
+            });
+          }
+        } catch (routerError) {
+          setRouterDecision?.({
+            mode: 'single_agent',
+            agent: null,
+            skills: [],
+            complexity: 'light',
+            source: 'fallback'
+          });
+        }
+      }
+    }
+    // --- End Intelligent Router ---
+
+    const effectiveAIProvider = resolveProviderForExecutionMode(aiProvider, effExecutionMode);
     const localOnlyRun = isLocalOnlyProvider(effectiveAIProvider);
-    const canProcessFilesForMode = shouldProcessFileModifications(executionMode, runPreset);
+    const canProcessFilesForMode = shouldProcessFileModifications(effExecutionMode, runPreset);
     const ollamaRequestId = effectiveAIProvider === 'ollama' ? createOllamaRequestId() : null;
     if (ollamaRequestId) {
       activeOllamaRequestIdRef.current = ollamaRequestId;
@@ -531,7 +611,7 @@ export const useAI = (
 
       promptToSend = lightweightOllamaChat
         ? trimmedPrompt
-        : decoratePromptForMode(promptToSend, executionMode, runPreset);
+        : decoratePromptForMode(promptToSend, effExecutionMode, runPreset);
 
       const normalizedContextMode =
         contextMode === 'mentions' || contextMode === 'none' ? contextMode : 'auto';
@@ -658,7 +738,7 @@ export const useAI = (
       const sharedAgentContextOptions = {
         localOnly: localOnlyRun,
         disallowProviderFallback: true,
-        executionMode,
+        executionMode: effExecutionMode,
         runPreset,
         includeVisualWorkflows: true,
         includeN8nCatalog: true,
@@ -691,8 +771,8 @@ export const useAI = (
           thinkingMode: thinking,
           apiKey: getProviderApiKey(provider),
           projectPath: currentProjectPath,
-          agent: activeAgent,
-          skill: activeSkill,
+          agent: effAgent,
+          skill: effSkill,
           includeGlobalSkills: true,
           skillsContent: Array.isArray(skills)
             ? skills
@@ -893,7 +973,7 @@ export const useAI = (
           rolesConfig: normalizedMultiAgentRoles,
           localAISettings,
           hardwareProfile,
-          preferredFormationKey: multiAgentOptions?.formationKey,
+          preferredFormationKey: effFormationKey,
           disabledAgentKeys: multiAgentOptions?.disabledAgentKeys
         });
         const teamPlanText = formatTeamPlanForPrompt(teamPlan);
@@ -1052,13 +1132,13 @@ export const useAI = (
             );
 
           const kimiOptions = {
-            model: kimiModel || DEFAULT_KIMI_MODEL,
+            model: tierModelOverride.kimi || kimiModel || DEFAULT_KIMI_MODEL,
             thinkingMode,
             images,
             apiKey: kimiApiKey,
             projectPath: currentProjectPath,
-            agent: activeAgent,
-            skill: activeSkill,
+            agent: effAgent,
+            skill: effSkill,
             fastMode: true,
             reactMode: false,
             streamResponse: true,
@@ -1133,8 +1213,8 @@ export const useAI = (
             modelCoder: ollamaModelCoder || ollamaModel || DEFAULT_OLLAMA_MODEL,
             modelTester: ollamaModelTester || ollamaModel || DEFAULT_OLLAMA_MODEL,
             projectPath: currentProjectPath,
-            agent: activeAgent,
-            skill: activeSkill,
+            agent: effAgent,
+            skill: effSkill,
             // Send only skill metadata; main process will read files only for selected skills.
             skillsContent: Array.isArray(skills)
               ? skills
@@ -1190,13 +1270,13 @@ export const useAI = (
             );
 
           const claudeOptions = {
-            model: claudeModel || DEFAULT_CLAUDE_MODEL,
+            model: tierModelOverride.claude || claudeModel || DEFAULT_CLAUDE_MODEL,
             thinkingMode,
             images,
             apiKey: claudeApiKey,
             projectPath: currentProjectPath,
-            agent: activeAgent,
-            skill: activeSkill,
+            agent: effAgent,
+            skill: effSkill,
             ...sharedAgentContextOptions
           };
 
@@ -1209,13 +1289,13 @@ export const useAI = (
 
         } else if (effectiveAIProvider === 'ollama') {
           const ollamaOptions = {
-            model: ollamaModel || DEFAULT_OLLAMA_MODEL,
+            model: tierModelOverride.ollama || ollamaModel || DEFAULT_OLLAMA_MODEL,
             requestId: ollamaRequestId,
-            maxTokens: resolveSimpleOllamaMaxTokens(executionMode, localAISettings, trimmedPrompt),
+            maxTokens: resolveSimpleOllamaMaxTokens(effExecutionMode, localAISettings, trimmedPrompt),
             lightweightChat: lightweightOllamaChat,
             projectPath: currentProjectPath,
-            agent: activeAgent,
-            skill: activeSkill,
+            agent: effAgent,
+            skill: effSkill,
             ...sharedAgentContextOptions
           };
           response = await window.electronAPI.getOllamaCompletion(
@@ -1226,12 +1306,12 @@ export const useAI = (
           );
         } else {
           const geminiOptions = {
-            model: geminiModel || DEFAULT_GEMINI_MODEL,
+            model: tierModelOverride.gemini || geminiModel || DEFAULT_GEMINI_MODEL,
             thinkingMode,
             apiKey: geminiApiKey,
             projectPath: currentProjectPath,
-            agent: activeAgent,
-            skill: activeSkill,
+            agent: effAgent,
+            skill: effSkill,
             ...sharedAgentContextOptions
           };
 
@@ -1329,6 +1409,10 @@ export const useAI = (
     activeAgent,
     activeSkill,
     skills,
+    apiKeys,
+    agentSelectionMode,
+    availableAgents,
+    setRouterDecision,
     processAIFileModifications,
     autoSaveConversation,
     pendingImages,
@@ -1466,7 +1550,8 @@ export const useAI = (
     pendingImages,
     setPendingImages,
     pendingMessage,
-    setPendingMessage
+    setPendingMessage,
+    routerDecision
   };
 };
 

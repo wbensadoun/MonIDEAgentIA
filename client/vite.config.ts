@@ -29,12 +29,12 @@ export default defineConfig({
       loader: { '.js': 'jsx' },
     },
   },
-  esbuild: {
-    loader: 'jsx',
-    include: /src\/.*\.js$/,
-  },
   define: {
     // CRA compat — replace process.env.NODE_ENV with Vite equivalent
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'development'),
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
   },
 });

@@ -3,6 +3,9 @@ export const DEFAULT_GEMINI_PRO_MODEL = 'gemini-3.1-pro-preview';
 export const DEFAULT_KIMI_MODEL = 'moonshotai/Kimi-K2.5';
 export const KIMI_K2_6_MODEL = 'moonshotai/Kimi-K2.6';
 export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-6';
+// Placeholder tier-resolution "light" pour le routeur intelligent (main.js -> resolveModelForTier) :
+// facilement ajustable si un vrai modele Claude Haiku plus recent sort.
+export const DEFAULT_CLAUDE_LIGHT_MODEL = 'claude-haiku-4-6';
 
 export const REMOTE_MODEL_OPTIONS = {
   gemini: [
@@ -10,6 +13,7 @@ export const REMOTE_MODEL_OPTIONS = {
     DEFAULT_GEMINI_PRO_MODEL
   ],
   claude: [
+    DEFAULT_CLAUDE_LIGHT_MODEL,
     DEFAULT_CLAUDE_MODEL
   ],
   kimi: [

@@ -45,6 +45,12 @@ export const isSimpleOllamaChatPrompt = (value) => {
   return words.length <= 4 && /\b(hi|hello|hey|salut|bonjour|bonsoir|coucou|merci|thanks|ca va)\b/i.test(normalized);
 };
 
+// Provider-agnostic alias: the detection logic above (word count, greeting
+// phrases, project-intent regex, code-marker detection) never actually
+// depended on Ollama specifically. This is Layer 1 of the intelligent
+// router's classification pipeline.
+export const classifyPromptLayer1 = (value) => isSimpleOllamaChatPrompt(value);
+
 export const resolveSimpleOllamaMaxTokens = (executionMode, localAISettings = {}, promptText = '') => {
   if (isSimpleOllamaChatPrompt(promptText)) return 256;
 

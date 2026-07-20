@@ -1400,6 +1400,116 @@ select option:checked {
 }
 
 /* ============================
+   ROUTEUR INTELLIGENT (v1.8.0)
+   Sélecteur d'agent AIChat + repli "Avancé" + badge de décision
+   ============================ */
+.ai-agent-selector-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-agent-select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-main);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.ai-agent-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ai-agent-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ai-agent-selector-hint {
+  flex-shrink: 0;
+  font-size: 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40%;
+}
+
+.ai-advanced-toggle {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 0;
+  cursor: pointer;
+  transition: color 0.1s;
+}
+
+.ai-advanced-toggle:hover {
+  color: var(--text-dim);
+}
+
+.ai-advanced-panel {
+  display: grid;
+  gap: 6px;
+  animation: ai-advanced-panel-in 0.15s ease-out;
+}
+
+@keyframes ai-advanced-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ai-decision-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(0, 245, 212, 0.25);
+  color: var(--text-dim);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  font-family: var(--font-mono);
+  animation: ai-decision-badge-in 0.25s ease-out;
+}
+
+@keyframes ai-decision-badge-in {
+  from {
+    opacity: 0;
+    transform: translate(-4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+}
+
+/* ============================
    AGENT STATUS COLORS
    ============================ */
 .agent-done { color: var(--success); background: var(--success-soft); }

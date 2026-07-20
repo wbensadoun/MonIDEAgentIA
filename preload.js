@@ -139,6 +139,9 @@ try {
     getSystemAIProfile: (options) => ipcRenderer.invoke('get-system-ai-profile', options),
     validateApiKey: (provider, apiKey) => ipcRenderer.invoke('validate-api-key', provider, apiKey),
 
+    // Routeur Intelligent Multi-Agents (v1.8.0) : classification + resolution de modele par tier
+    routeRequest: (payload) => ipcRenderer.invoke('route-request', payload),
+
     // Terminal / Process Runner
     startProcess: (payload) => ipcRenderer.invoke('start-process', payload),
     stopProcess: (id) => ipcRenderer.invoke('stop-process', id),

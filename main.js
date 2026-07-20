@@ -1342,6 +1342,10 @@ const getSettingsPath = () => path.join(app.getPath('userData'), 'settings.json'
 const DEFAULT_GEMINI_MODEL = 'gemini-3-flash-preview';
 const DEFAULT_KIMI_MODEL = 'moonshotai/Kimi-K2.5';
 const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-6';
+// Placeholder facilement ajustable : miroir local de DEFAULT_CLAUDE_LIGHT_MODEL dans
+// client/src/utils/remoteModels.jsx (main.js est CJS et ne peut pas importer ce fichier
+// ESM/Vite). Sert de candidat "light" pour le routeur intelligent (resolveModelForTier).
+const DEFAULT_CLAUDE_LIGHT_MODEL = 'claude-haiku-4-6';
 const DEFAULT_GEMINI_PRO_MODEL = 'gemini-3.1-pro-preview';
 // Defaut concret (jamais ":latest" — alias ambigu supprime). La taille reelle
 // est resolue dynamiquement cote UI selon la puissance machine.
@@ -5932,44 +5936,69 @@ const formatAvailableSkillsListForPrompt = (skillsContent) => {
   return `\n--- SKILLS DISPONIBLES ---\n${names.join(', ')}\nChoisissez seulement les skills pertinents pour la mission courante.\n--- FIN SKILLS DISPONIBLES ---\n`;
 };
 
+// Meme esprit que formatAvailableSkillsListForPrompt, mais une ligne par agent
+// (nom + description tronquee) car il peut y avoir jusqu'a ~130 agents sur disque.
+// Le cap de description (~60 caracteres) et le cap global evitent un prompt demesure.
+const formatAvailableAgentsListForPrompt = (agents) => {
+  const list = Array.isArray(agents) ? agents : [];
+  const lines = list
+    .map((agent) => {
+      const name = String(agent?.name || '').trim();
+      if (!name) return '';
+      const description = truncateTextForPrompt(String(agent?.description || '').trim(), 60, '...');
+      return description ? `${name} — ${description}` : name;
+    })
+    .filter(Boolean)
+    .slice(0, 130);
+
+  if (lines.length === 0) return '';
+  const body = truncateTextForPrompt(lines.join('\n'), 9000, '\n[...LISTE TRONQUEE...]');
+  return `\n--- AGENTS DISPONIBLES ---\n${body}\nChoisissez l'agent le plus pertinent pour la mission courante, ou aucun si la tache est generale.\n--- FIN AGENTS DISPONIBLES ---\n`;
+};
+
+// Lit les fichiers .md d'un dossier d'agents et retourne leur meta (nom/description).
+// Helper reutilise par 'list-agents' et par le handler du routeur intelligent
+// ('route-request') pour ne jamais dupliquer la lecture disque.
+const readAgentsFromDirEntries = async (dir, scope) => {
+  const results = [];
+  try {
+    await fs.mkdir(dir, { recursive: true });
+    const entries = await fs.readdir(dir);
+    for (const file of entries) {
+      if (!file.toLowerCase().endsWith('.md')) continue;
+      const filePath = path.join(dir, file);
+      let content = '';
+      try {
+        content = await fs.readFile(filePath, 'utf-8');
+      } catch {
+        continue;
+      }
+
+      const { meta } = parseSimpleFrontMatter(content);
+      const name = meta.name ? String(meta.name).trim() : file.replace(/\.md$/i, '');
+      const description = meta.description ? String(meta.description).trim() : '';
+
+      results.push({
+        name,
+        scope,
+        description: description ? description.slice(0, 220) : '',
+        path: filePath
+      });
+    }
+  } catch {
+    // ignore
+  }
+  return results;
+};
+
 ipcMain.handle('list-agents', async (event, projectPath) => {
   try {
     const agents = [];
 
-    const readAgentsFromDir = async (dir, scope) => {
-      try {
-        await fs.mkdir(dir, { recursive: true });
-        const entries = await fs.readdir(dir);
-        for (const file of entries) {
-          if (!file.toLowerCase().endsWith('.md')) continue;
-          const filePath = path.join(dir, file);
-          let content = '';
-          try {
-            content = await fs.readFile(filePath, 'utf-8');
-          } catch {
-            continue;
-          }
-
-          const { meta } = parseSimpleFrontMatter(content);
-          const name = meta.name ? String(meta.name).trim() : file.replace(/\.md$/i, '');
-          const description = meta.description ? String(meta.description).trim() : '';
-
-          agents.push({
-            name,
-            scope,
-            description: description ? description.slice(0, 220) : '',
-            path: filePath
-          });
-        }
-      } catch {
-        // ignore
-      }
-    };
-
-    await readAgentsFromDir(getGlobalAgentsDir(), 'global');
+    agents.push(...await readAgentsFromDirEntries(getGlobalAgentsDir(), 'global'));
     if (projectPath) {
       const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
-      await readAgentsFromDir(getWorkspaceAgentsDir(trustedProjectPath), 'workspace');
+      agents.push(...await readAgentsFromDirEntries(getWorkspaceAgentsDir(trustedProjectPath), 'workspace'));
     }
 
     // Workspace first
@@ -6073,36 +6102,40 @@ ipcMain.handle('delete-agent', async (event, name, scope, projectPath) => {
   }
 });
 
+// Lit les sous-dossiers d'un dossier de skills (presence de SKILL.md). Helper reutilise
+// par 'list-skills' et par le handler du routeur intelligent ('route-request').
+const readSkillsFromDirEntries = async (dir, scope) => {
+  const results = [];
+  try {
+    await fs.mkdir(dir, { recursive: true });
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const name = entry.name;
+      const skillDir = path.join(dir, name);
+      const skillFile = path.join(skillDir, 'SKILL.md');
+      const exists = fsSync.existsSync(skillFile);
+      results.push({
+        name,
+        scope,
+        hasSkillMd: exists,
+        path: skillDir
+      });
+    }
+  } catch {
+    // ignore
+  }
+  return results;
+};
+
 ipcMain.handle('list-skills', async (event, projectPath) => {
   try {
     const skills = [];
 
-    const readSkillsFromDir = async (dir, scope) => {
-      try {
-        await fs.mkdir(dir, { recursive: true });
-        const entries = await fs.readdir(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (!entry.isDirectory()) continue;
-          const name = entry.name;
-          const skillDir = path.join(dir, name);
-          const skillFile = path.join(skillDir, 'SKILL.md');
-          const exists = fsSync.existsSync(skillFile);
-          skills.push({
-            name,
-            scope,
-            hasSkillMd: exists,
-            path: skillDir
-          });
-        }
-      } catch {
-        // ignore
-      }
-    };
-
-    await readSkillsFromDir(getGlobalSkillsDir(), 'global');
+    skills.push(...await readSkillsFromDirEntries(getGlobalSkillsDir(), 'global'));
     if (projectPath) {
       const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
-      await readSkillsFromDir(getWorkspaceSkillsDir(trustedProjectPath), 'workspace');
+      skills.push(...await readSkillsFromDirEntries(getWorkspaceSkillsDir(trustedProjectPath), 'workspace'));
     }
 
     skills.sort((a, b) => {
@@ -7386,6 +7419,391 @@ const recommendOllamaSize = (sizes, { vramGb = 0, totalGb = 0 } = {}) => {
   }
   return best;
 };
+
+// ─── Routeur Intelligent Multi-Agents (v1.8.0) ───
+// Table de DONNEES uniquement (aucune logique) : motifs de sous-chaine, par provider et
+// par tier ('light'/'premium'), essayes DANS L'ORDRE (patterns[0] contre tous les
+// candidats, puis patterns[1], etc.). Ajouter une future famille de modeles (2027,
+// 2030, ...) = ajouter une ligne ici, jamais une branche de code.
+const PROVIDER_TIER_PROFILES = Object.freeze({
+  gemini: { light: ['flash-lite', 'flash'], premium: ['ultra', 'pro'] },
+  claude: { light: ['haiku'], premium: ['opus', 'sonnet'] },
+  kimi: { light: ['k2.5', 'k2'], premium: ['k2.6', 'k2'] }
+});
+
+// Petites listes statiques locales (miroir de client/src/utils/remoteModels.jsx, que
+// main.js — CJS — ne peut pas importer directement puisque ce fichier est un module
+// ESM du bundle Vite). Utilisees uniquement en repli quand aucune liste live n'est
+// disponible (Claude/Kimi n'ont pas d'endpoint de listing dynamique aujourd'hui).
+const PROVIDER_TIER_STATIC_CANDIDATES = {
+  gemini: [DEFAULT_GEMINI_MODEL, DEFAULT_GEMINI_PRO_MODEL],
+  claude: [DEFAULT_CLAUDE_LIGHT_MODEL, DEFAULT_CLAUDE_MODEL],
+  kimi: [DEFAULT_KIMI_MODEL]
+};
+
+// Choisit le premier candidat contenant un motif, en essayant les motifs dans l'ordre
+// de preference fourni (pattern[0] contre tous les candidats avant de tenter pattern[1]).
+const pickCandidateByTierPatterns = (candidates, patterns) => {
+  const pool = (Array.isArray(candidates) ? candidates : []).filter(Boolean);
+  if (pool.length === 0) return null;
+  for (const pattern of (Array.isArray(patterns) ? patterns : [])) {
+    const needle = String(pattern || '').toLowerCase();
+    if (!needle) continue;
+    const hit = pool.find((id) => String(id).toLowerCase().includes(needle));
+    if (hit) return hit;
+  }
+  return null;
+};
+
+// Extrait un "vendor" Ollama plausible (ex. "qwen3:8b" -> "qwen") pour interroger le
+// registre ollama.com via resolveOllamaFamilyFromRegistry. Repli sur "qwen" (comme le
+// handler IPC 'resolve-ollama-family' existant) si aucun nom exploitable n'est fourni.
+const extractOllamaVendorFromModelName = (modelName) => {
+  const match = /^([a-z]+)/i.exec(String(modelName || '').trim());
+  return match ? match[1].toLowerCase() : 'qwen';
+};
+
+// Resolution Ollama du tier : reutilise TEL QUEL le registre existant (resolveOllamaFamilyFromRegistry
+// + fetchOllamaLibrarySizesFromRegistry + recommendOllamaSize) — zero deuxieme systeme de
+// tailles. On filtre juste le pool de tailles candidates par tier (light <=8B, premium
+// >=14B) AVANT de laisser recommendOllamaSize choisir la meilleure taille qui tient sur
+// la machine (VRAM/RAM) — la meme logique CPU/GPU qu'aujourd'hui, juste bornee par tier.
+const resolveOllamaModelForTier = async (tier, ctx = {}) => {
+  try {
+    const vendor = extractOllamaVendorFromModelName(ctx?.ollamaVendor || ctx?.settings?.ollamaModel);
+    const hw = ctx?.hardwareProfile || {};
+    const totalGb = Number(hw.totalGb) > 0 ? Number(hw.totalGb) : os.totalmem() / 1024 / 1024 / 1024;
+    const vramGb = Number(hw.vramGb) > 0 ? Number(hw.vramGb) : 0;
+
+    const { family } = await resolveOllamaFamilyFromRegistry(vendor);
+    const { sizes } = await fetchOllamaLibrarySizesFromRegistry(family);
+
+    if (Array.isArray(sizes) && sizes.length > 0) {
+      const tierPool = tier === 'premium'
+        ? sizes.filter((s) => (parseSizeBillions(s) || 0) >= 14)
+        : sizes.filter((s) => (parseSizeBillions(s) || 0) <= 8);
+      const pool = tierPool.length > 0 ? tierPool : sizes;
+      const size = recommendOllamaSize(pool, { vramGb, totalGb }) || pool[pool.length - 1];
+      if (size) return { resolved: `${family}:${size}`, source: 'registry' };
+    }
+  } catch (error) {
+    console.error('[Router] Resolution taille Ollama impossible:', error?.message || 'erreur inconnue');
+  }
+
+  // Repli structurellement identique au comportement actuel (modele configure ou defaut canonique).
+  const fallback = normalizePreferredOllamaModelName(ctx?.settings?.ollamaModel, CANONICAL_QWEN_OLLAMA_MODEL);
+  return { resolved: fallback, source: 'static' };
+};
+
+// Resout le modele physique a utiliser pour un provider + un tier ('light'/'premium').
+// ctx optionnel : { liveModels: string[] (Gemini uniquement), hardwareProfile: {vramGb,totalGb},
+// settings, ollamaVendor }. Retourne { resolved, source: 'live'|'registry'|'static' }.
+const resolveModelForTier = async (provider, tier, ctx = {}) => {
+  const normalizedProvider = normalizeAIProviderName(provider);
+  const normalizedTier = tier === 'premium' ? 'premium' : 'light';
+
+  if (normalizedProvider === 'ollama') {
+    return resolveOllamaModelForTier(normalizedTier, ctx);
+  }
+
+  const patterns = PROVIDER_TIER_PROFILES[normalizedProvider]?.[normalizedTier] || [];
+  const staticCandidates = PROVIDER_TIER_STATIC_CANDIDATES[normalizedProvider]
+    || [getDefaultModelForAIProvider(normalizedProvider)];
+
+  if (normalizedProvider === 'gemini' && Array.isArray(ctx?.liveModels) && ctx.liveModels.length > 0) {
+    const pickedLive = pickCandidateByTierPatterns(ctx.liveModels, patterns);
+    if (pickedLive) return { resolved: pickedLive, source: 'live' };
+  }
+
+  const pickedStatic = pickCandidateByTierPatterns(staticCandidates, patterns);
+  if (pickedStatic) return { resolved: pickedStatic, source: 'static' };
+
+  return { resolved: getDefaultModelForAIProvider(normalizedProvider), source: 'static' };
+};
+
+// Liste live des modeles Gemini (best-effort, jamais bloquant : tableau vide en cas
+// d'echec). Independant du handler IPC 'list-gemini-models' existant pour ne prendre
+// aucun risque sur son comportement actuel — simple lecture, meme endpoint/auth.
+const fetchLiveGeminiModelNamesForRouter = async (apiKey, timeoutMs = 6000) => {
+  try {
+    const key = apiKey || process.env.GEMINI_API_KEY;
+    if (!key) return [];
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
+    const response = await axios.get(url, { timeout: timeoutMs });
+    const models = Array.isArray(response.data?.models) ? response.data.models : [];
+    return models
+      .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+      .map((m) => String(m?.name || '').split('/').pop())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+};
+
+// Appel de classification LEGER et NON-STREAMING (ne reutilise pas les handlers lourds
+// get-*-completion). `systemPrompt` contient DEJA toutes les instructions + le contexte
+// (agents/skills/demande utilisateur) construits par l'appelant — un tour utilisateur
+// minimal suffit a declencher la generation. Ne leve JAMAIS : retourne null au moindre
+// probleme (reseau, cle manquante, timeout ~10s).
+const ROUTER_CLASSIFICATION_TIMEOUT_MS = 10000;
+const ROUTER_CLASSIFICATION_MAX_TOKENS = 400;
+const ROUTER_CLASSIFICATION_USER_TURN = 'Génère uniquement le JSON de classification demandé, sans aucun texte autour.';
+
+async function runRouterClassification(provider, model, systemPrompt, apiKey) {
+  const normalizedProvider = normalizeCompletionProvider(provider);
+
+  try {
+    if (normalizedProvider === 'gemini') {
+      const key = apiKey || process.env.GEMINI_API_KEY;
+      const useModel = model || DEFAULT_GEMINI_MODEL;
+      if (!key) return null;
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), ROUTER_CLASSIFICATION_TIMEOUT_MS);
+      let response;
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent?key=${key}`;
+        response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: ROUTER_CLASSIFICATION_USER_TURN }] }],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: ROUTER_CLASSIFICATION_MAX_TOKENS,
+              responseMimeType: 'application/json'
+            }
+          }),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    }
+
+    if (normalizedProvider === 'ollama') {
+      const useModel = model || CANONICAL_QWEN_OLLAMA_MODEL;
+      const resp = await axios.post(`${OLLAMA_BASE_URL}/api/chat`, {
+        model: useModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: ROUTER_CLASSIFICATION_USER_TURN }
+        ],
+        stream: false,
+        format: 'json',
+        keep_alive: OLLAMA_KEEP_ALIVE,
+        options: { temperature: 0.1, num_predict: ROUTER_CLASSIFICATION_MAX_TOKENS }
+      }, { timeout: ROUTER_CLASSIFICATION_TIMEOUT_MS });
+      return resp.data?.message?.content || null;
+    }
+
+    if (normalizedProvider === 'claude') {
+      const key = apiKey || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
+      const useModel = model || DEFAULT_CLAUDE_MODEL;
+      if (!key) return null;
+      const anthropic = new Anthropic({ apiKey: key, timeout: ROUTER_CLASSIFICATION_TIMEOUT_MS });
+      const resp = await anthropic.messages.create({
+        model: useModel,
+        max_tokens: ROUTER_CLASSIFICATION_MAX_TOKENS,
+        temperature: 0.1,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: ROUTER_CLASSIFICATION_USER_TURN }]
+      });
+      const text = Array.isArray(resp.content) ? resp.content.map((part) => part?.text || '').join('') : '';
+      return stripCompletionMarkdown(text) || null;
+    }
+
+    if (normalizedProvider === 'kimi') {
+      const key = apiKey || process.env.KIMI_API_KEY || process.env.TOGETHER_API_KEY;
+      const useModel = model || DEFAULT_KIMI_MODEL;
+      if (!key) return null;
+      const resp = await axios.post(process.env.KIMI_API_URL || 'https://api.together.xyz/v1/chat/completions', {
+        model: useModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: ROUTER_CLASSIFICATION_USER_TURN }
+        ],
+        max_tokens: ROUTER_CLASSIFICATION_MAX_TOKENS,
+        temperature: 0.1
+      }, {
+        headers: {
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: ROUTER_CLASSIFICATION_TIMEOUT_MS
+      });
+      const text = resp.data?.choices?.[0]?.message?.content || '';
+      return stripCompletionMarkdown(text) || null;
+    }
+
+    return null;
+  } catch (error) {
+    // Jamais de payload/cle API dans les logs — seulement un message d'erreur generique.
+    console.error('[Router] Appel de classification echoue:', error?.message || 'erreur inconnue');
+    return null;
+  }
+}
+
+// Decision de repli SURE : strictement identique au comportement actuel par defaut
+// (agent unique, sans routage) — aucune regression possible en cas d'echec.
+const ROUTER_SAFE_FALLBACK_DECISION = Object.freeze({ mode: 'single_agent', agent: null, skills: [], complexity: 'light' });
+const ROUTER_VALID_MODES = new Set(['single_agent', 'orchestrator', 'multi_agent']);
+const ROUTER_VALID_COMPLEXITY = new Set(['light', 'premium']);
+
+const buildRouterClassificationPrompt = (userPrompt, agents, skills) => {
+  const agentsListText = formatAvailableAgentsListForPrompt(agents);
+  const skillsListText = formatAvailableSkillsListForPrompt(skills);
+  const safePrompt = truncateTextForPrompt(String(userPrompt || '').trim(), 4000, '\n[...TRONQUE...]');
+
+  return `Tu es le routeur de classification de FuturIA, un assistant de developpement multi-agents. Ta seule tache : analyser la demande utilisateur ci-dessous et decider comment la router — tu n'executes JAMAIS la tache toi-meme.
+
+DEMANDE UTILISATEUR :
+"""
+${safePrompt}
+"""
+${agentsListText}${skillsListText}
+RÈGLES ABSOLUES :
+1. Réponds UNIQUEMENT avec un objet JSON strict, sans aucun texte avant ou après, sans bloc markdown (pas de \`\`\`).
+2. Le JSON doit correspondre EXACTEMENT à ce schéma :
+{"mode":"single_agent"|"orchestrator"|"multi_agent","agent":"<nom exact d'un agent ci-dessus ou null>","skills":["<noms exacts de skills ci-dessus>"],"complexity":"light"|"premium"}
+3. "mode" : "single_agent" pour une tâche simple confiée à un seul agent (ou aucun agent particulier) ; "orchestrator" si une tâche complexe nécessite une coordination multi-étapes par un chef d'orchestre ; "multi_agent" si plusieurs agents spécialisés doivent collaborer en parallèle.
+4. "agent" doit être le nom EXACT d'un agent listé ci-dessus, ou null si aucun agent spécifique n'est pertinent.
+5. "skills" doit être un tableau des noms EXACTS de skills listés ci-dessus pertinents pour la tâche (tableau vide si aucun).
+6. "complexity" = "light" pour une tâche simple/rapide, "premium" pour une tâche complexe qui bénéficierait d'un modèle plus puissant.
+7. Si aucun agent ou skill listé n'est pertinent, utilise agent: null et skills: [].`;
+};
+
+// Parsing defensif : retire les fences markdown eventuelles puis extrait le premier
+// bloc {...} avant JSON.parse. Retourne null (jamais une exception) en cas d'echec.
+const parseRouterClassificationResponse = (text) => {
+  if (!text) return null;
+  let cleaned = String(text).trim();
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) return null;
+  try {
+    const parsed = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+// Validation STRICTE contre les vrais noms sur disque : mode/complexity inconnus ->
+// valeur par defaut sure ; agent absent du Set -> null ; skills absents du Set -> filtres.
+const validateRouterDecision = (raw, agentNameSet, skillNameSet) => {
+  const mode = ROUTER_VALID_MODES.has(raw?.mode) ? raw.mode : 'single_agent';
+
+  const agentCandidate = raw?.agent != null ? String(raw.agent).trim() : '';
+  const agent = agentCandidate && agentNameSet.has(agentCandidate) ? agentCandidate : null;
+
+  const skillsRaw = Array.isArray(raw?.skills) ? raw.skills : [];
+  const skills = skillsRaw
+    .map((s) => String(s || '').trim())
+    .filter((s) => s && skillNameSet.has(s));
+
+  const complexity = ROUTER_VALID_COMPLEXITY.has(raw?.complexity) ? raw.complexity : 'light';
+
+  return { mode, agent, skills, complexity };
+};
+
+ipcMain.handle('route-request', async (event, payload = {}) => {
+  const startedAt = Date.now();
+  const provider = normalizeAIProviderName(payload?.provider);
+
+  // execution.executionMode : orchestrator/multi_agent -> 'multi-agent', sinon 'agent'.
+  // preferredFormationKey reste null : le choix de formation appartient a teamSelector.jsx.
+  const buildResponse = (decision, source, modelInfo) => ({
+    success: true,
+    decision,
+    execution: {
+      executionMode: (decision.mode === 'orchestrator' || decision.mode === 'multi_agent') ? 'multi-agent' : 'agent',
+      preferredFormationKey: null
+    },
+    model: {
+      provider,
+      tier: modelInfo.tier,
+      resolved: modelInfo.resolved,
+      source: modelInfo.source
+    },
+    source,
+    timingMs: Date.now() - startedAt
+  });
+
+  try {
+    const projectPath = payload?.projectPath ? await ensureTrustedProjectPath(payload.projectPath) : null;
+
+    const agents = [];
+    agents.push(...await readAgentsFromDirEntries(getGlobalAgentsDir(), 'global'));
+    if (projectPath) {
+      agents.push(...await readAgentsFromDirEntries(getWorkspaceAgentsDir(projectPath), 'workspace'));
+    }
+
+    const skills = [];
+    skills.push(...await readSkillsFromDirEntries(getGlobalSkillsDir(), 'global'));
+    if (projectPath) {
+      skills.push(...await readSkillsFromDirEntries(getWorkspaceSkillsDir(projectPath), 'workspace'));
+    }
+
+    const agentNameSet = new Set(agents.map((a) => String(a?.name || '').trim()).filter(Boolean));
+    const skillNameSet = new Set(
+      skills
+        .map((s) => String(s?.scope ? `${s.scope}/${s.name}` : s?.name || '').trim())
+        .filter(Boolean)
+    );
+
+    const hardwareProfile = payload?.hardwareProfile && typeof payload.hardwareProfile === 'object' ? payload.hardwareProfile : {};
+    const settings = payload?.settings && typeof payload.settings === 'object' ? payload.settings : {};
+    const ctx = {
+      hardwareProfile,
+      settings,
+      ollamaVendor: extractOllamaVendorFromModelName(settings?.ollamaModel)
+    };
+    if (provider === 'gemini' && payload?.apiKey) {
+      ctx.liveModels = await fetchLiveGeminiModelNamesForRouter(payload.apiKey);
+    }
+
+    // Le classifieur (routeur) tourne toujours en tier 'light', quelle que soit la
+    // complexite finale decidee pour la reponse elle-meme.
+    const routerModel = await resolveModelForTier(provider, 'light', ctx);
+
+    let decision = { ...ROUTER_SAFE_FALLBACK_DECISION };
+    let source = 'fallback';
+
+    // Rien sur disque -> rien a router : repli direct, sans appel LLM inutile.
+    if (agentNameSet.size > 0 || skillNameSet.size > 0) {
+      const classificationPrompt = buildRouterClassificationPrompt(payload?.prompt, agents, skills);
+      const rawText = await runRouterClassification(provider, routerModel.resolved, classificationPrompt, payload?.apiKey);
+      const parsed = parseRouterClassificationResponse(rawText);
+      if (parsed) {
+        decision = validateRouterDecision(parsed, agentNameSet, skillNameSet);
+        source = 'llm';
+      }
+    }
+
+    const finalModel = await resolveModelForTier(provider, decision.complexity, ctx);
+
+    return buildResponse(decision, source, {
+      tier: decision.complexity,
+      resolved: finalModel.resolved,
+      source: finalModel.source
+    });
+  } catch (error) {
+    // Jamais de payload (donc jamais de cle API) dans les logs — message generique seulement.
+    console.error('[Router] route-request en echec, repli sur le comportement par defaut:', error?.message || 'erreur inconnue');
+    const fallbackDecision = { ...ROUTER_SAFE_FALLBACK_DECISION };
+    return buildResponse(fallbackDecision, 'fallback', {
+      tier: fallbackDecision.complexity,
+      resolved: getDefaultModelForAIProvider(provider),
+      source: 'static'
+    });
+  }
+});
 
 ipcMain.handle('resolve-ollama-family', async (_event, payload = {}) => {
   try {
