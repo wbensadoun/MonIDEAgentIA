@@ -4584,6 +4584,7 @@ async function runSingleCompletionProvider({ provider, systemInstruction, userPr
       ],
       stream: false,
       think: computeOllamaThink(model, options.thinkingMode),
+      keep_alive: OLLAMA_KEEP_ALIVE,
       options: {
         temperature,
         num_predict: maxTokens
@@ -6939,8 +6940,10 @@ const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const DEFAULT_OLLAMA_MODEL = CANONICAL_QWEN_OLLAMA_MODEL;
 // Anti-blocage du streaming Ollama : delai pour la reponse initiale, et delai
 // d'inactivite (aucun token recu) au-dela duquel on rejette et detruit le flux.
-const OLLAMA_STREAM_RESPONSE_TIMEOUT_MS = Number(process.env.OLLAMA_STREAM_RESPONSE_TIMEOUT_MS) || 60000;
+const OLLAMA_STREAM_RESPONSE_TIMEOUT_MS = Number(process.env.OLLAMA_STREAM_RESPONSE_TIMEOUT_MS) || 180000;
 const OLLAMA_STREAM_INACTIVITY_TIMEOUT_MS = Number(process.env.OLLAMA_STREAM_INACTIVITY_TIMEOUT_MS) || 90000;
+const OLLAMA_KEEP_ALIVE = process.env.OLLAMA_KEEP_ALIVE || '30m';
+const SIMPLE_OLLAMA_CHAT_MAX_TOKENS = 256;
 const OLLAMA_DOWNLOAD_URL = process.platform === 'win32'
   ? 'https://ollama.com/download/windows'
   : 'https://ollama.com/download';
@@ -6978,7 +6981,64 @@ const FALLBACK_OLLAMA_TESTER_MODEL_CANDIDATES = [
   'qwen3:32b'
 ];
 const activeOllamaPulls = new Set();
+const activeOllamaRequests = new Map();
 const normalizeOllamaModelName = (value) => String(value || '').trim();
+const normalizeOllamaRequestId = (value) => String(value || '').trim().slice(0, 120);
+const createOllamaRequestId = () => (
+  typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `ollama-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+);
+const resolveSimpleOllamaMaxTokens = (value, executionMode = 'agent') => {
+  const mode = String(executionMode || '').trim().toLowerCase();
+  const modeDefault = mode === 'ask' || mode === 'plan' ? 512 : 2048;
+  const configured = Number(value);
+  if (!Number.isFinite(configured) || configured <= 0) return modeDefault;
+  const hardMax = configured > 4096 ? 8192 : 4096;
+  return Math.max(128, Math.min(Math.floor(configured), hardMax));
+};
+const extractDecoratedUserPrompt = (value) => {
+  const text = String(value || '').trim();
+  const match = text.match(/DEMANDE UTILISATEUR:\s*([\s\S]*)$/i);
+  return (match ? match[1] : text).trim();
+};
+const normalizePromptForIntent = (value) => (
+  extractDecoratedUserPrompt(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[!?.,;:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+);
+const SIMPLE_OLLAMA_CHAT_PROMPTS = new Set([
+  'hi',
+  'hello',
+  'hey',
+  'yo',
+  'salut',
+  'bonjour',
+  'bonsoir',
+  'coucou',
+  'ca va',
+  'comment ca va',
+  'how are you',
+  'merci',
+  'thanks',
+  'thank you',
+  'ok'
+]);
+const SIMPLE_OLLAMA_PROJECT_INTENT_REGEX = /\b(projet|project|repo|repository|fichier|file|code|bug|test|tests|refactor|corrige|fix|cree|creer|create|modifie|modifier|analyse|audit|terminal|commande|run|workflow|workflows|docs|documentation|php|javascript|typescript|js|jsx|ts|tsx|css|html|sql|fonction|function|classe|class|component|composant)\b/i;
+const isSimpleOllamaChatPrompt = (value) => {
+  const raw = extractDecoratedUserPrompt(value);
+  const normalized = normalizePromptForIntent(raw);
+  if (!normalized || raw.length > 80 || raw.includes('\n')) return false;
+  if (SIMPLE_OLLAMA_PROJECT_INTENT_REGEX.test(normalized)) return false;
+  if (/[`@/\\]|[a-z0-9_-]+\.[a-z0-9]{1,8}/i.test(raw)) return false;
+  if (SIMPLE_OLLAMA_CHAT_PROMPTS.has(normalized)) return true;
+  const words = normalized.split(' ').filter(Boolean);
+  return words.length <= 4 && /\b(hi|hello|hey|salut|bonjour|bonsoir|coucou|merci|thanks|ca va)\b/i.test(normalized);
+};
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const runProcessCapture = (executable, args = [], options = {}) => new Promise((resolve) => {
@@ -7134,6 +7194,24 @@ const fetchOllamaTags = async (baseUrl, timeout = null) => {
     config.timeout = Number(timeout);
   }
   return axios.get(`${baseUrl}/api/tags`, config);
+};
+
+const fetchOllamaLoadedModels = async (baseUrl, timeout = 2000) => {
+  const config = {};
+  if (Number.isFinite(Number(timeout)) && Number(timeout) > 0) {
+    config.timeout = Number(timeout);
+  }
+  const response = await axios.get(`${baseUrl}/api/ps`, config);
+  return Array.isArray(response?.data?.models) ? response.data.models : [];
+};
+
+const hasLoadedOllamaModel = (modelName, loadedModels) => {
+  const target = normalizeOllamaModelName(modelName);
+  if (!target || !Array.isArray(loadedModels)) return false;
+  return loadedModels.some((entry) => {
+    const name = normalizeOllamaModelName(entry?.name || entry?.model || entry);
+    return name === target;
+  });
 };
 
 const pickInstalledOllamaModel = (requestedModel, installedModels, preferredCandidates = []) => {
@@ -7567,12 +7645,41 @@ ipcMain.handle('pull-ollama-model', async (_event, modelName) => {
   }
 });
 
+ipcMain.handle('cancel-ollama-request', async (_event, requestId) => {
+  const id = normalizeOllamaRequestId(requestId);
+  if (!id) return { success: false, cancelled: false, error: 'requestId manquant.' };
+  const active = activeOllamaRequests.get(id);
+  if (!active) return { success: true, cancelled: false };
+
+  active.cancelled = true;
+  try { active.controller?.abort?.(); } catch { /* noop */ }
+  try { active.stream?.destroy?.(new Error('Ollama request cancelled')); } catch { /* noop */ }
+  activeOllamaRequests.delete(id);
+  return { success: true, cancelled: true };
+});
+
 ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allProjectFiles = null, options = {}) => {
   const requestedModel = normalizeOllamaModelName(options.model || process.env.OLLAMA_MODEL);
 
   if (!history || !Array.isArray(history) || history.length === 0) {
     return { success: false, error: "Aucun historique fourni pour Ollama." };
   }
+
+  const requestId = normalizeOllamaRequestId(options.requestId) || createOllamaRequestId();
+  const controller = new AbortController();
+  const requestState = { requestId, controller, stream: null, cancelled: false };
+  activeOllamaRequests.set(requestId, requestState);
+  const emitOllamaEvent = (channel, payload = {}) => {
+    try {
+      if (event.sender && !event.sender.isDestroyed()) {
+        event.sender.send(channel, { requestId, ...payload });
+      }
+    } catch {
+      // Renderer may have navigated away.
+    }
+  };
+  const isCancelled = () => requestState.cancelled || controller.signal.aborted;
+  const makeCancelledError = () => Object.assign(new Error('Generation Ollama annulee.'), { code: 'OLLAMA_CANCELLED' });
 
   try {
     const projectPath = await resolveOptionalTrustedProjectPath(options.projectPath);
@@ -7587,11 +7694,13 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
       installedModelNames = extractOllamaModelNames(tagsResponse?.data);
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 404) {
+        emitOllamaEvent('ollama-error', { model: requestedModel, error: `Endpoint introuvable: ${OLLAMA_BASE_URL}/api/tags` });
         return {
           success: false,
           error: `Ollama: endpoint introuvable (${OLLAMA_BASE_URL}/api/tags -> 404). Verifiez OLLAMA_URL.`
         };
       }
+      emitOllamaEvent('ollama-error', { model: requestedModel, error: `Impossible de joindre Ollama: ${error.message}` });
       return {
         success: false,
         error: `Ollama: impossible de joindre Ollama (${OLLAMA_BASE_URL}). ${error.message}`
@@ -7599,19 +7708,48 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
     }
 
     if (!Array.isArray(installedModelNames) || installedModelNames.length === 0) {
+      emitOllamaEvent('ollama-error', { model: requestedModel, error: 'Aucun modele installe.' });
       return {
         success: false,
         error: `Ollama: aucun modele installe. Lancez par exemple: ollama pull ${DEFAULT_OLLAMA_MODEL}`
       };
     }
 
-    model = pickInstalledOllamaModel(requestedModel, installedModelNames, FALLBACK_OLLAMA_MODEL_CANDIDATES);
+    const installedModelSet = new Set(installedModelNames);
+    if (requestedModel) {
+      if (!installedModelSet.has(requestedModel)) {
+        emitOllamaEvent('ollama-error', { model: requestedModel, error: `Modele non installe: ${requestedModel}` });
+        return {
+          success: false,
+          error: `Ollama: modele "${requestedModel}" non installe. Installez-le avec: ollama pull ${requestedModel}`,
+          provider: 'ollama',
+          requestedModel,
+          requestId
+        };
+      }
+      model = requestedModel;
+    } else {
+      model = pickInstalledOllamaModel(requestedModel, installedModelNames, FALLBACK_OLLAMA_MODEL_CANDIDATES);
+    }
     if (!model) {
+      emitOllamaEvent('ollama-error', { model: requestedModel, error: 'Aucun modele compatible.' });
       return {
         success: false,
         error: 'Ollama: aucun modele installe compatible avec la configuration courante.'
       };
     }
+    let selectedModelLoaded = false;
+    try {
+      selectedModelLoaded = hasLoadedOllamaModel(model, await fetchOllamaLoadedModels(OLLAMA_BASE_URL, 2000));
+    } catch {
+      selectedModelLoaded = false;
+    }
+    emitOllamaEvent('ollama-status', {
+      status: selectedModelLoaded ? 'model-ready' : 'ready',
+      model,
+      requestedModel,
+      text: selectedModelLoaded ? `Modele pret: ${model}` : `Ollama pret: ${model}`
+    });
 
     // Cap history to last 10 messages to avoid overflowing small local models
     const validHistory = history
@@ -7622,22 +7760,25 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
     const lastMessage = validHistory[validHistory.length - 1];
     const lastUserText = String(lastMessage.text || '');
     if (!lastUserText.trim()) return { success: false, error: "Dernier message utilisateur vide pour Ollama." };
+    const userPromptText = extractDecoratedUserPrompt(lastUserText);
+    const isLightweightChat = isSimpleOllamaChatPrompt(lastUserText)
+      || (options.lightweightChat === true && isSimpleOllamaChatPrompt(userPromptText));
 
     // Contexte A LA DEMANDE : on injecte un INDEX leger (chemins + tailles, pas le
     // contenu complet) ; l'agent lit les fichiers utiles via read_file/read_lines.
     // Fini le bourrage de 15 fichiers tronques dans chaque prompt.
-    const hasProjectTools = !!projectPath && !!allProjectFiles?.files;
+    const hasProjectTools = !isLightweightChat && !!projectPath && !!allProjectFiles?.files;
     const projectContext = hasProjectTools ? buildProjectIndexContext(allProjectFiles) : '';
     const toolContract = hasProjectTools ? `\n${AGENT_FILE_TOOL_CONTRACT}\n` : '';
-    const agentPrompt = await loadAgentForCompletion(options.agent, projectPath);
+    const agentPrompt = isLightweightChat ? null : await loadAgentForCompletion(options.agent, projectPath);
     // Skill selectionne : charge le contenu complet (choix explicite de l'utilisateur).
-    const selectedSkill = await loadSkillForCompletion(options.skill, projectPath);
+    const selectedSkill = isLightweightChat ? null : await loadSkillForCompletion(options.skill, projectPath);
     // Skills globaux : noms seulement — l'agent lit le contenu via outil si besoin.
     // (Meme logique que Multi-Ollama : on ne bourre pas le prompt avec tout le contenu.)
-    const skillNamesText = formatAvailableSkillsListForPrompt(options.skillsContent);
+    const skillNamesText = isLightweightChat ? '' : formatAvailableSkillsListForPrompt(options.skillsContent);
     // Workflows et n8n : charger seulement si l'intention est detectee dans la question.
-    const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, lastUserText, options);
-    const n8nCatalogContext = await buildN8nCatalogContextForPrompt(lastUserText, options);
+    const visualWorkflowContext = isLightweightChat ? '' : await buildVisualWorkflowContextForPrompt(projectPath, lastUserText, options);
+    const n8nCatalogContext = isLightweightChat ? '' : await buildN8nCatalogContextForPrompt(lastUserText, options);
 
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
@@ -7650,7 +7791,9 @@ ipcMain.handle('get-ollama-completion', async (event, history, currentCode, allP
       skillNamesText
     ].filter(Boolean).join('\n');
 
-    const systemPrompt = `Tu es un assistant de développement expert et autonome.
+    const systemPrompt = isLightweightChat
+      ? 'Tu es FuturIA, un assistant local. Reponds directement, brievement et naturellement.'
+      : `Tu es un assistant de développement expert et autonome.
 ${agentContext}
 ${skillContext}
 ${projectContext}
@@ -7665,46 +7808,183 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
 
     const buildOllamaMessages = (baseHistory, userPrompt) => {
       const msgs = [{ role: 'system', content: systemPrompt }];
-      baseHistory.slice(0, -1).forEach(msg => {
-        if (msg.role === 'model') msgs.push({ role: 'assistant', content: String(msg.text) });
-        else if (msg.role === 'user') msgs.push({ role: 'user', content: String(msg.text) });
-      });
+      if (!isLightweightChat) {
+        baseHistory.slice(0, -1).forEach(msg => {
+          if (msg.role === 'model') msgs.push({ role: 'assistant', content: String(msg.text) });
+          else if (msg.role === 'user') msgs.push({ role: 'user', content: String(msg.text) });
+        });
+      }
       msgs.push({ role: 'user', content: userPrompt });
       return msgs;
     };
 
+    const maxTokens = isLightweightChat
+      ? Math.min(resolveSimpleOllamaMaxTokens(options.maxTokens, options.executionMode), SIMPLE_OLLAMA_CHAT_MAX_TOKENS)
+      : resolveSimpleOllamaMaxTokens(options.maxTokens, options.executionMode);
     const ollamaCall = async (messages) => {
+      if (isCancelled()) throw makeCancelledError();
+      let response;
       try {
-        const resp = await axios.post(`${OLLAMA_BASE_URL}/api/chat`, {
+        emitOllamaEvent('ollama-status', {
+          status: selectedModelLoaded ? 'generating' : 'model-starting',
+          model,
+          text: selectedModelLoaded
+            ? `Modele pret, generation en cours: ${model}`
+            : `Demarrage local du modele ${model}...`
+        });
+        response = await axios.post(`${OLLAMA_BASE_URL}/api/chat`, {
           model,
           messages,
-          stream: false, // IMPORTANT: must be false to get a single JSON response, not a stream
+          stream: true,
           think: computeOllamaThink(model, options.thinkingMode),
-          options: { temperature: options.temperature || 0.7, num_predict: options.maxTokens || 8192 }
-        }, { timeout: 180000 }); // 3-minute timeout for large local models
-        const content = resp.data?.message?.content;
-        if (content === undefined || content === null) {
-          throw new Error(`Ollama: reponse inattendue (message.content absent). Verifiez que le modele "${model}" est bien charge.`);
-        }
-        return String(content);
+          keep_alive: OLLAMA_KEEP_ALIVE,
+          options: { temperature: options.temperature || 0.7, num_predict: maxTokens }
+        }, {
+          responseType: 'stream',
+          timeout: OLLAMA_STREAM_RESPONSE_TIMEOUT_MS,
+          signal: controller.signal
+        });
+        selectedModelLoaded = true;
+        requestState.stream = response.data;
       } catch (error) {
+        if (isCancelled() || error.code === 'ERR_CANCELED' || error.name === 'CanceledError') {
+          throw makeCancelledError();
+        }
         if (axios.isAxiosError(error) && error.response?.status === 404) {
           const details = String(error.response?.data?.error || error.message || '404');
           throw new Error(`Ollama 404 (modele="${model}"): ${details}`);
         }
         if (axios.isAxiosError(error) && error.code === 'ECONNABORTED') {
-          throw new Error(`Ollama: timeout apres 3 minutes. Le modele "${model}" est peut-etre trop lent ou bloque.`);
+          throw new Error(`Ollama: aucun premier token apres ${Math.round(OLLAMA_STREAM_RESPONSE_TIMEOUT_MS / 1000)}s. Le modele "${model}" est peut-etre trop lent ou bloque.`);
         }
         throw error;
       }
+
+      return new Promise((resolve, reject) => {
+        let fullText = '';
+        let buffer = '';
+        let settled = false;
+        let hasStarted = false;
+        let inactivityTimer = null;
+
+        const cleanup = () => {
+          if (inactivityTimer) clearTimeout(inactivityTimer);
+          requestState.stream = null;
+        };
+
+        const safeResolve = (value) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(value);
+        };
+
+        const safeReject = (error) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(error);
+        };
+
+        const resetWatchdog = () => {
+          if (settled) return;
+          if (inactivityTimer) clearTimeout(inactivityTimer);
+          inactivityTimer = setTimeout(() => {
+            try { response.data?.destroy?.(); } catch { /* noop */ }
+            const phase = hasStarted ? 'generation' : 'attente du premier token';
+            safeReject(new Error(
+              `Ollama (modele="${model}"): aucune reponse pendant `
+              + `${Math.round(OLLAMA_STREAM_INACTIVITY_TIMEOUT_MS / 1000)}s (${phase} bloque).`
+            ));
+          }, OLLAMA_STREAM_INACTIVITY_TIMEOUT_MS);
+        };
+
+        const processLine = (line) => {
+          const trimmed = String(line || '').trim();
+          if (!trimmed || settled) return;
+          let payload;
+          try {
+            payload = JSON.parse(trimmed);
+          } catch {
+            return;
+          }
+
+          if (payload.error) {
+            safeReject(new Error(String(payload.error)));
+            return;
+          }
+
+          const token = payload?.message?.content || '';
+          if (token) {
+            hasStarted = true;
+            fullText += token;
+            emitOllamaEvent('ollama-token', {
+              model,
+              token,
+              done: false
+            });
+          }
+
+          if (payload.done) {
+            safeResolve(fullText);
+          }
+        };
+
+        response.data.on('data', (chunk) => {
+          if (isCancelled()) {
+            safeReject(makeCancelledError());
+            return;
+          }
+          resetWatchdog();
+          buffer += chunk.toString('utf8');
+          let newlineIndex = buffer.indexOf('\n');
+          while (newlineIndex >= 0) {
+            const line = buffer.slice(0, newlineIndex);
+            buffer = buffer.slice(newlineIndex + 1);
+            processLine(line);
+            newlineIndex = buffer.indexOf('\n');
+          }
+        });
+
+        response.data.on('end', () => {
+          if (buffer.trim()) processLine(buffer);
+          safeResolve(fullText);
+        });
+
+        response.data.on('error', (error) => {
+          if (isCancelled()) {
+            safeReject(makeCancelledError());
+            return;
+          }
+          safeReject(error);
+        });
+
+        resetWatchdog();
+      });
     };
 
-    let messages = buildOllamaMessages(validHistory, String(lastMessage.text));
+    let messages = buildOllamaMessages(validHistory, isLightweightChat ? userPromptText : String(lastMessage.text));
     let fullTranscript = '';
-    const MAX_ITERATIONS = 8;
+    const MAX_ITERATIONS = isLightweightChat ? 1 : 8;
 
     for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
       const aiText = await ollamaCall(messages);
+
+      if (isLightweightChat) {
+        const finalText = stripThinkBlocks(aiText);
+        emitOllamaEvent('ollama-done', { model, done: true });
+        return {
+          success: true,
+          text: finalText,
+          terminalActions: 0,
+          provider: 'ollama',
+          requestedModel,
+          model,
+          requestId,
+          maxTokens,
+          lightweightChat: true
+        };
+      }
 
       // Outils a la demande (lecture fichiers) : prioritaire, et on ne pollue PAS
       // la reponse finale avec les tours d'outils (balises + resultats).
@@ -7728,7 +8008,11 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
       fullTranscript += (fullTranscript ? '\n\n---\n\n' : '') + aiText;
 
       const cmd = parseRunCommand(aiText);
-      if (!cmd) return { success: true, text: stripThinkBlocks(fullTranscript), terminalActions: iter };
+      if (!cmd) {
+        const finalText = stripThinkBlocks(fullTranscript);
+        emitOllamaEvent('ollama-done', { model, done: true });
+        return { success: true, text: finalText, terminalActions: iter, provider: 'ollama', requestedModel, model, requestId, maxTokens };
+      }
 
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
@@ -7744,10 +8028,19 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
       }
     }
 
-    return { success: true, text: stripThinkBlocks(fullTranscript), terminalActions: MAX_ITERATIONS };
+    const finalText = stripThinkBlocks(fullTranscript);
+    emitOllamaEvent('ollama-done', { model, done: true });
+    return { success: true, text: finalText, terminalActions: MAX_ITERATIONS, provider: 'ollama', requestedModel, model, requestId, maxTokens };
   } catch (error) {
+    if (error?.code === 'OLLAMA_CANCELLED') {
+      emitOllamaEvent('ollama-done', { model: requestedModel, done: true, cancelled: true });
+      return { success: false, cancelled: true, error: error.message, provider: 'ollama', requestedModel, requestId };
+    }
     console.error('[Ollama] Erreur:', error.message);
-    return { success: false, error: `Ollama: ${error.message}` };
+    emitOllamaEvent('ollama-error', { model: requestedModel, error: error.message });
+    return { success: false, error: `Ollama: ${error.message}`, provider: 'ollama', requestedModel, requestId };
+  } finally {
+    activeOllamaRequests.delete(requestId);
   }
 });
 
@@ -7889,6 +8182,7 @@ REGLES OUTILS:
           messages,
           stream: true,
           think: computeOllamaThink(modelName, options.thinkingMode),
+          keep_alive: OLLAMA_KEEP_ALIVE,
           options: { temperature: 0.7, num_predict: maxTokens || 2048 }
         }, {
           responseType: 'stream',

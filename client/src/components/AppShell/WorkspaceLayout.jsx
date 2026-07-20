@@ -9,6 +9,68 @@ import VisualWorkflowEditor from '../VisualWorkflowEditor';
 import AIChat from '../AIChat';
 import AIChangesPanel from '../AIChangesPanel';
 import BrainGraphPanel from '../BrainGraphPanel';
+import AgentVerse from '../../agentverse/index';
+
+/* ============================
+   Activity Bar icons
+   ============================ */
+const IconFiles = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:20,height:20}}>
+    <path d="M3 3h8l2 2h8v14H3z"/>
+  </svg>
+);
+const IconProjects = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:20,height:20}}>
+    <rect x="2" y="7" width="20" height="14" rx="2"/>
+    <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+    <line x1="12" y1="12" x2="12" y2="17"/>
+    <line x1="9" y1="14.5" x2="15" y2="14.5"/>
+  </svg>
+);
+const IconSearch = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:20,height:20}}>
+    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+  </svg>
+);
+const IconGitAB = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:20,height:20}}>
+    <circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>
+  </svg>
+);
+const IconBrainAB = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:20,height:20}}>
+    <circle cx="7" cy="8" r="3"/><circle cx="17" cy="8" r="3"/><circle cx="12" cy="16" r="3"/>
+    <path d="M9.5 9.8 11 13.2"/><path d="M14.5 9.8 13 13.2"/>
+    <path d="M10 16h-2a4 4 0 0 1-4-4"/><path d="M14 16h2a4 4 0 0 0 4-4"/>
+  </svg>
+);
+const IconFlowAB = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:20,height:20}}>
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+  </svg>
+);
+const IconAIChat = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:20,height:20}}>
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    <circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/>
+    <circle cx="12" cy="10" r="1" fill="currentColor" stroke="none"/>
+    <circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/>
+  </svg>
+);
+const IconMarketAB = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:20,height:20}}>
+    <path d="M3 9l1.2-4.2A1 1 0 0 1 5.16 4h13.68a1 1 0 0 1 .96.8L21 9"/>
+    <path d="M3 9h18v2a2.5 2.5 0 0 1-5 0 2.5 2.5 0 0 1-5 0 2.5 2.5 0 0 1-5 0 2.5 2.5 0 0 1-3 0z"/>
+    <path d="M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/>
+    <path d="M9 20v-4h6v4"/>
+  </svg>
+);
+const IconSettingsAB = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:20,height:20}}>
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </svg>
+);
 
 /* Icônes tabs centre */
 const IconCode = () => (
@@ -47,6 +109,14 @@ const IconBrain = () => (
     <path d="M14.5 9.8 13 13.2" />
     <path d="M10 16h-2a4 4 0 0 1-4-4" />
     <path d="M14 16h2a4 4 0 0 0 4-4" />
+  </svg>
+);
+const IconAgents = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
+    <circle cx="9" cy="8" r="3" />
+    <path d="M3 20a6 6 0 0 1 12 0" />
+    <path d="M16 3.5a3 3 0 0 1 0 5.5" />
+    <path d="M18.5 14a6 6 0 0 1 2.5 5" />
   </svg>
 );
 const IconMaximize = () => (
@@ -113,6 +183,10 @@ const WorkspaceLayout = ({
   workspacePanelProps,
   isTerminalOpen,
   onToggleTerminal,
+  onToggleLeftPanel,
+  onToggleRightPanel,
+  onOpenSearch,
+  onOpenSettings,
 }) => {
   const [sidebarTab, setSidebarTab] = useState('files');
   const [terminalHeight, setTerminalHeight] = useState(() => {
@@ -171,8 +245,73 @@ const WorkspaceLayout = ({
     ? (centerRef.current ? centerRef.current.clientHeight - 36 : 600)
     : terminalHeight;
 
+  const handleActivityClick = useCallback((action) => {
+    if (action === 'files' || action === 'projects') {
+      if (isLeftCollapsed) {
+        onToggleLeftPanel();
+        setSidebarTab(action);
+      } else if (sidebarTab === action) {
+        onToggleLeftPanel();
+      } else {
+        setSidebarTab(action);
+      }
+    } else if (action === 'search') {
+      onOpenSearch?.();
+    } else if (action === 'ai') {
+      onToggleRightPanel();
+    } else if (action === 'settings') {
+      onOpenSettings?.();
+    } else {
+      onCenterViewChange(action);
+    }
+  }, [isLeftCollapsed, sidebarTab, onToggleLeftPanel, onToggleRightPanel, onCenterViewChange, onOpenSearch, onOpenSettings]);
+
+  const abItems = [
+    { id: 'files',     Icon: IconFiles,    title: 'Explorateur' },
+    { id: 'projects',  Icon: IconProjects, title: 'Projets' },
+    { id: 'search',    Icon: IconSearch,   title: 'Rechercher (Ctrl+Shift+F)' },
+    { id: 'git',       Icon: IconGitAB,    title: 'Git' },
+    { id: 'brain',     Icon: IconBrainAB,  title: 'Brain' },
+    { id: 'workflows', Icon: IconFlowAB,   title: 'Flux' },
+    { id: 'agents',    Icon: IconMarketAB, title: 'Marketplace — templates multi-agents' },
+    { id: 'ai',        Icon: IconAIChat,   title: 'AI Chat' },
+  ];
+
+  const getAbActive = (id) => {
+    if (id === 'files') return !isLeftCollapsed && sidebarTab === 'files';
+    if (id === 'projects') return !isLeftCollapsed && sidebarTab === 'projects';
+    if (id === 'ai') return !isRightCollapsed;
+    if (['git', 'brain', 'workflows', 'agents'].includes(id)) return centerView === id;
+    return false;
+  };
+
   return (
     <div ref={layoutRef} className="workspace">
+      {/* Activity Bar */}
+      <div className="activity-bar">
+        <div className="activity-bar-top">
+          {abItems.map(({ id, Icon, title }) => (
+            <button
+              key={id}
+              className={`activity-bar-btn${getAbActive(id) ? ' is-active' : ''}`}
+              title={title}
+              onClick={() => handleActivityClick(id)}
+            >
+              <Icon />
+            </button>
+          ))}
+        </div>
+        <div className="activity-bar-bottom">
+          <button
+            className="activity-bar-btn"
+            title="Paramètres"
+            onClick={() => handleActivityClick('settings')}
+          >
+            <IconSettingsAB />
+          </button>
+        </div>
+      </div>
+
       {/* Sidebar gauche — Explorateur */}
       {!isLeftCollapsed && (
         <aside
@@ -239,6 +378,7 @@ const WorkspaceLayout = ({
             { id: 'git', label: 'Git', Icon: IconGit },
             { id: 'ai-changes', label: 'AI Changes', Icon: IconAudit },
             { id: 'brain', label: 'Brain', Icon: IconBrain },
+            { id: 'agents', label: 'Agents', Icon: IconAgents },
             { id: 'workflows', label: 'Flux', Icon: IconFlow },
           ].map(({ id, label, Icon }) => (
             <button
@@ -270,6 +410,9 @@ const WorkspaceLayout = ({
           {centerView === 'git' && <GitPanel {...gitPanelProps} />}
           {centerView === 'ai-changes' && <AIChangesPanel {...aiChangesPanelProps} />}
           {centerView === 'brain' && <BrainGraphPanel {...brainGraphProps} />}
+          {centerView === 'agents' && (
+            <AgentVerse onViewChanges={() => onCenterViewChange('ai-changes')} />
+          )}
           <div style={{ display: centerView === 'workflows' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
             <VisualWorkflowEditor {...workflowProps} />
           </div>

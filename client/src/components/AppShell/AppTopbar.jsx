@@ -111,6 +111,7 @@ const AppTopbar = ({
   resolvedOllamaTester,
   availableOllamaModels,
   recommendedOllamaModel,
+  recommendedOllamaChatModel,
   onOllamaSettingChange,
   ollamaTopbarLabel,
   showMessage,
@@ -429,6 +430,14 @@ const AppTopbar = ({
                       <option key={m} value={m}>{m === recommendedOllamaModel ? `${m} (recommandée)` : m}</option>
                     ))}
                   </select>
+                  {recommendedOllamaChatModel && (
+                    <span
+                      title={`${recommendedOllamaChatModel} est installe et repond souvent plus vite en chat.`}
+                      style={{ fontSize: 10, color: 'var(--warning)', whiteSpace: 'nowrap' }}
+                    >
+                      Instruct plus rapide
+                    </span>
+                  )}
                 </label>
               )}
 

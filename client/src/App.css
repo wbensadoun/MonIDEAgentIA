@@ -535,6 +535,58 @@ select option:checked {
   overflow: hidden;
 }
 
+/* ============================
+   ACTIVITY BAR (bande icônes gauche, style VS Code)
+   ============================ */
+.activity-bar {
+  width: 48px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 4px 0;
+  z-index: 5;
+}
+
+.activity-bar-top,
+.activity-bar-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.activity-bar-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+  position: relative;
+}
+
+.activity-bar-btn:hover {
+  color: var(--text-main);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.activity-bar-btn.is-active {
+  color: var(--text-main);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-left-color: var(--accent);
+  border-radius: 0 6px 6px 0;
+}
+
 /* Sidebar gauche */
 .ide-sidebar-left {
   flex-shrink: 0;

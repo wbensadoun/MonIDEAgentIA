@@ -167,6 +167,7 @@ const AIChat = ({
 
   const [terminalActions, setTerminalActions] = useState([]); // AI terminal ReAct cards
   const [streamingText, setStreamingText] = useState('');       // live streaming output
+  const [streamingStatus, setStreamingStatus] = useState('');
   const [streamingAgent, setStreamingAgent] = useState('');     // which agent is streaming
   const [streamingMode, setStreamingMode] = useState('text');   // text | workflow | code | diff
   const [workflowAnimStep, setWorkflowAnimStep] = useState(0);
@@ -264,11 +265,59 @@ const AIChat = ({
     };
   }, [flushStreamingBuffer, isElectronApiAvailable]);
 
+  useEffect(() => {
+    if (!isElectronApiAvailable || !window.electronAPI?.onOllamaToken) return;
+    const offToken = window.electronAPI.onOllamaToken((data) => {
+      if (!data || aiProvider !== 'ollama') return;
+      setStreamingAgent(data.model ? `Ollama ${data.model}` : 'Ollama');
+      setStreamingStatus('');
+
+      if (typeof data.token === 'string' && data.token.length > 0) {
+        streamingBufferRef.current += data.token;
+        if (streamingFlushRafRef.current === null) {
+          streamingFlushRafRef.current = window.requestAnimationFrame(flushStreamingBuffer);
+        }
+      }
+    });
+
+    const offStatus = window.electronAPI.onOllamaStatus?.((data) => {
+      if (!data || aiProvider !== 'ollama') return;
+      setStreamingAgent(data.model ? `Ollama ${data.model}` : 'Ollama');
+      setStreamingStatus(String(data.text || data.status || 'Ollama travaille...'));
+    });
+
+    const offDone = window.electronAPI.onOllamaDone?.((data) => {
+      if (!data || aiProvider !== 'ollama') return;
+      if (streamingFlushRafRef.current !== null) {
+        window.cancelAnimationFrame(streamingFlushRafRef.current);
+        flushStreamingBuffer();
+      }
+      setStreamingStatus('');
+    });
+
+    const offError = window.electronAPI.onOllamaError?.((data) => {
+      if (!data || aiProvider !== 'ollama') return;
+      if (streamingFlushRafRef.current !== null) {
+        window.cancelAnimationFrame(streamingFlushRafRef.current);
+        flushStreamingBuffer();
+      }
+      setStreamingStatus(String(data.error || 'Erreur Ollama'));
+    });
+
+    return () => {
+      if (typeof offToken === 'function') offToken();
+      if (typeof offStatus === 'function') offStatus();
+      if (typeof offDone === 'function') offDone();
+      if (typeof offError === 'function') offError();
+    };
+  }, [aiProvider, flushStreamingBuffer, isElectronApiAvailable]);
+
   // Clear terminal actions and streaming when loading starts
   useEffect(() => {
     if (isLoading) {
       setTerminalActions([]);
       setStreamingText('');
+      setStreamingStatus('');
       setStreamingAgent('');
       setStreamingMode('text');
       setWorkflowAnimStep(0);
@@ -344,7 +393,7 @@ const AIChat = ({
     if (conversationHistoryRef.current) {
       conversationHistoryRef.current.scrollTop = conversationHistoryRef.current.scrollHeight;
     }
-  }, [conversationHistory, isLoading]);
+  }, [conversationHistory, isLoading, streamingStatus, streamingText]);
 
   const handlePromptChange = (value) => {
     onPromptChange(value);
@@ -537,7 +586,7 @@ const AIChat = ({
   }, [isLoading, onStreamingDraftChange, streamingAgent, streamingFileDraft, streamingMode, streamingText]);
 
   const renderStreamingBox = () => {
-    if (!streamingText) return null;
+    if (!streamingText && !streamingStatus) return null;
 
     return (
       <div
@@ -611,7 +660,7 @@ const AIChat = ({
         )}
         {streamingMode === 'text' && (
           <pre className="ai-stream-text">
-            {filterUserVisibleText(streamingText ? streamingText.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trimStart() : '')}
+            {filterUserVisibleText(streamingText ? streamingText.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trimStart() : '') || streamingStatus}
           </pre>
         )}
       </div>
@@ -1222,13 +1271,6 @@ const AIChat = ({
         </div>
       )}
 
-      {/* ===== STREAMING (non-multi) ===== */}
-      {isLoading && !multiAIState?.isActive && aiProvider !== 'multi' && aiProvider !== 'ollama-multi' && streamingText && (
-        <div style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          {renderStreamingBox()}
-        </div>
-      )}
-
       {/* ===== MESSAGES ===== */}
       <div
         ref={conversationHistoryRef}
@@ -1275,6 +1317,20 @@ const AIChat = ({
             </div>
           );
         })}
+
+        {isLoading && !multiAIState?.isActive && aiProvider !== 'multi' && aiProvider !== 'ollama-multi' && (streamingText || streamingStatus) && (
+          <div className="ai-message ai-message-streaming">
+            <div className="ai-message-meta">
+              <div className="ai-message-avatar bot">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V4H8" /><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M9 13v2" /><path d="M15 13v2" /></svg>
+              </div>
+              <span className="ai-message-role">{streamingAgent || 'IA'}</span>
+            </div>
+            <div className="ai-message-body ai-message-body-streaming">
+              {renderStreamingBox()}
+            </div>
+          </div>
+        )}
 
         {/* AI Terminal Action Cards (ReAct Loop) */}
         {isLoading && terminalActions.length > 0 && (

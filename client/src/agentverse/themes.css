@@ -1,0 +1,955 @@
+/* ==========================================================================
+   AgentVerse - sellable skins.
+   Each theme overrides the design tokens (chrome) and paints the world art.
+   The engine and components never change.
+   ========================================================================== */
+
+/* =========================== 1. AGENT TOWN ================================ */
+.av-root--town {
+  --av-accent: #2f9e62;
+  --av-accent-soft: rgba(47, 158, 98, 0.18);
+  --av-bg: #11190f;
+  --av-panel: #172417;
+  --av-panel-2: #20311f;
+  --av-border: #365132;
+  --av-font-game: 'Courier New', 'Lucida Console', monospace;
+}
+.av-world--town .av-world__floor {
+  background-color: #74c96a;
+  background-image:
+    radial-gradient(circle at 12% 12%, rgba(255, 255, 255, 0.2) 0 2px, transparent 2.5px),
+    radial-gradient(circle at 86% 72%, rgba(32, 93, 45, 0.2) 0 22%, transparent 22.5%),
+    linear-gradient(rgba(28, 72, 34, 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(28, 72, 34, 0.16) 1px, transparent 1px),
+    linear-gradient(45deg, rgba(78, 169, 78, 0.48) 25%, transparent 25%, transparent 75%, rgba(78, 169, 78, 0.48) 75%),
+    linear-gradient(45deg, rgba(78, 169, 78, 0.48) 25%, transparent 25%, transparent 75%, rgba(78, 169, 78, 0.48) 75%);
+  background-size: 12.5% 18.18%, 100% 100%, 6.25% 9.09%, 6.25% 9.09%, 12.5% 18.18%, 12.5% 18.18%;
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 6.25% 9.09%;
+}
+.av-world--town .av-world__decor {
+  background-image:
+    linear-gradient(90deg, transparent 38%, #e9c879 38%, #e9c879 62%, transparent 62%),
+    linear-gradient(180deg, transparent 43%, #e9c879 43%, #e9c879 60%, transparent 60%),
+    linear-gradient(90deg, transparent 4%, rgba(48, 118, 55, 0.52) 4%, rgba(48, 118, 55, 0.52) 5%, transparent 5%, transparent 95%, rgba(48, 118, 55, 0.52) 95%, rgba(48, 118, 55, 0.52) 96%, transparent 96%),
+    radial-gradient(circle at 17% 70%, #6fbfe8 0 6%, transparent 6.5%),
+    radial-gradient(circle at 75% 24%, rgba(255, 236, 144, 0.42) 0 3%, transparent 3.5%);
+  opacity: 0.92;
+}
+.av-world--town .av-room {
+  border: 2px solid #5d4930;
+  border-radius: 3px;
+  background-color: #d9c284;
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.13) 0 18%, transparent 18% 52%, rgba(0, 0, 0, 0.07) 52% 70%, transparent 70%),
+    linear-gradient(rgba(90, 65, 35, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(90, 65, 35, 0.12) 1px, transparent 1px);
+  background-size: 34px 34px, 18px 18px, 18px 18px;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.2), 3px 3px 0 rgba(0, 0, 0, 0.16);
+}
+.av-world--town .av-room--standup { background-color: #e3c688; }
+.av-world--town .av-room--focus { background-color: #b9dce7; }
+.av-world--town .av-room--design { background-color: #bce6ad; }
+.av-world--town .av-room--code { background-color: #d8bd83; }
+.av-world--town .av-room--qa { background-color: #a8d88f; }
+.av-world--town .av-room--ops { background-color: #c9d7f1; }
+.av-world--town .av-room__label {
+  border: 2px solid #5d4930;
+  border-radius: 3px;
+  background: #fff4cf;
+  color: #4b3320;
+  font-family: var(--av-font-game);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.16);
+}
+.av-world--town .av-object {
+  border: 2px solid #5d4930;
+  border-radius: 3px;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.14);
+}
+.av-world--town .av-object--cottage,
+.av-world--town .av-object--lab {
+  background:
+    linear-gradient(135deg, transparent 0 30%, #b9423f 30% 50%, transparent 50%),
+    linear-gradient(45deg, transparent 0 30%, #b9423f 30% 50%, transparent 50%),
+    linear-gradient(180deg, transparent 0 28%, #f4dda1 28% 74%, #7d5630 74% 100%);
+  border-color: #6b4726;
+}
+.av-world--town .av-object--lab {
+  background:
+    radial-gradient(circle at 74% 52%, #8ae2ff 0 7%, transparent 8%),
+    linear-gradient(135deg, transparent 0 30%, #4a80bf 30% 50%, transparent 50%),
+    linear-gradient(45deg, transparent 0 30%, #4a80bf 30% 50%, transparent 50%),
+    linear-gradient(180deg, transparent 0 28%, #fff0bf 28% 74%, #6b4726 74% 100%);
+}
+.av-world--town .av-object--market-stall {
+  background:
+    repeating-linear-gradient(90deg, #ef5d57 0 18%, #fff0bf 18% 32%),
+    linear-gradient(180deg, transparent 0 42%, #a7723d 42% 100%);
+}
+.av-world--town .av-object--signpost {
+  background:
+    linear-gradient(90deg, transparent 43%, #6b4726 43% 57%, transparent 57%),
+    linear-gradient(180deg, #fff0bf 0 48%, transparent 48%);
+}
+.av-world--town .av-object--tree {
+  border-radius: 50% 50% 6px 6px;
+  background:
+    radial-gradient(circle at 36% 33%, #7ad568 0 23%, transparent 24%),
+    radial-gradient(circle at 64% 32%, #4fa84f 0 28%, transparent 29%),
+    radial-gradient(circle at 50% 56%, #2f8a43 0 34%, transparent 35%),
+    linear-gradient(90deg, transparent 42%, #6b4726 42% 58%, transparent 58%);
+}
+.av-world--town .av-object--flower-patch {
+  border: 0;
+  background:
+    radial-gradient(circle at 12% 50%, #ff6ea8 0 6%, transparent 7%),
+    radial-gradient(circle at 28% 46%, #fff0bf 0 6%, transparent 7%),
+    radial-gradient(circle at 45% 54%, #7b61ff 0 6%, transparent 7%),
+    radial-gradient(circle at 63% 48%, #ff6ea8 0 6%, transparent 7%),
+    radial-gradient(circle at 80% 54%, #fff0bf 0 6%, transparent 7%);
+  box-shadow: none;
+}
+.av-world--town .av-object--pond {
+  border-color: #3d7ca2;
+  border-radius: 48%;
+  background:
+    radial-gradient(ellipse at 32% 34%, rgba(255, 255, 255, 0.44) 0 11%, transparent 12%),
+    linear-gradient(180deg, #78d8f0, #3d97cf);
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.22), 3px 3px 0 rgba(0,0,0,0.14);
+}
+.av-world--town .av-object--fence,
+.av-world--town .av-object--bridge {
+  background:
+    repeating-linear-gradient(90deg, #6b4726 0 13%, transparent 13% 28%),
+    linear-gradient(180deg, transparent 38%, #a7723d 38% 62%, transparent 62%);
+}
+.av-world--town .av-object--bridge {
+  background: repeating-linear-gradient(90deg, #b9804f 0 18%, #6b4726 18% 22%);
+}
+.av-world--town .av-object--boulder {
+  border-radius: 46% 50% 42% 38%;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255,255,255,0.24) 0 12%, transparent 13%),
+    linear-gradient(180deg, #9aa06c, #6d724a);
+}
+.av-world--town .av-object--creature-den {
+  border-radius: 50% 50% 8px 8px;
+  background:
+    radial-gradient(ellipse at 50% 74%, #25170d 0 28%, transparent 29%),
+    radial-gradient(circle at 30% 28%, #8b7550 0 18%, transparent 19%),
+    linear-gradient(180deg, #b49b6a, #6b4726);
+}
+.av-world--town .av-npc { transition: left 0.32s linear, top 0.32s linear; }
+.av-world--town .av-sprite { image-rendering: pixelated; filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.25)); }
+.av-root--town .av-npc__name,
+.av-root--town .av-bubble { font-family: var(--av-font-game); font-weight: 700; }
+.av-world--town .av-bubble {
+  border-radius: 3px; border: 2px solid #11151d; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3);
+}
+.av-world--town .av-bubble__tail { border-width: 6px; }
+.av-world--town .av-desk {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 240, 191, 0.5) 0 18%, transparent 19%),
+    linear-gradient(180deg, #caa06a, #a87b45);
+  border: 2px solid #6e4a23; border-radius: 4px; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.22);
+}
+.av-world--town .av-desk__screen {
+  width: 32%;
+  height: 34%;
+  margin-bottom: 14%;
+  background: var(--accent, #2f9e62);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #2c2114, 0 0 8px var(--accent, #2f9e62);
+  opacity: 1;
+}
+.av-world--town .av-desk__label { color: #3a2a16; max-width: 92%; overflow: hidden; text-overflow: ellipsis; }
+.av-world--town .av-world__hint { border-radius: 4px; font-family: var(--av-font-game); }
+
+/* =========================== 2. CYBERPUNK STUDIO ========================= */
+.av-root--cyberpunk {
+  --av-accent: #00e5ff;
+  --av-accent-soft: rgba(0, 229, 255, 0.18);
+  --av-bg: #05080f;
+  --av-panel: #0c1220;
+  --av-panel-2: #111a2b;
+  --av-border: #1e3b55;
+  --av-text: #eafcff;
+  --av-muted: #7ca5bd;
+  --av-shadow: 0 14px 40px rgba(0, 229, 255, 0.1), 0 14px 38px rgba(0, 0, 0, 0.58);
+}
+.av-world--cyberpunk .av-world__floor {
+  background:
+    radial-gradient(circle at 18% 16%, rgba(0, 229, 255, 0.2), transparent 34%),
+    radial-gradient(circle at 86% 74%, rgba(255, 45, 178, 0.16), transparent 38%),
+    linear-gradient(180deg, #07101c, #04070d);
+}
+.av-world--cyberpunk .av-world__decor {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 7.7%, rgba(0, 229, 255, 0.18) 7.8% 8%),
+    repeating-linear-gradient(180deg, transparent 0 8.7%, rgba(255, 45, 178, 0.14) 8.8% 9.05%),
+    linear-gradient(90deg, transparent 3%, rgba(0, 229, 255, 0.22) 3% 3.5%, transparent 3.5%, transparent 96%, rgba(255, 45, 178, 0.18) 96% 96.5%, transparent 96.5%),
+    linear-gradient(180deg, transparent 45%, rgba(0, 229, 255, 0.18) 45% 46.5%, transparent 46.5%, transparent 58%, rgba(255, 45, 178, 0.16) 58% 59.5%, transparent 59.5%);
+  opacity: 0.92;
+  -webkit-mask-image: radial-gradient(circle at 50% 54%, #000 46%, rgba(0,0,0,0.6) 76%, transparent 98%);
+  mask-image: radial-gradient(circle at 50% 54%, #000 46%, rgba(0,0,0,0.6) 76%, transparent 98%);
+}
+.av-world--cyberpunk .av-room {
+  border: 1px solid rgba(0, 229, 255, 0.32);
+  border-radius: 4px;
+  background:
+    linear-gradient(135deg, rgba(0, 229, 255, 0.08), rgba(255, 45, 178, 0.06)),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.035) 0 1px, transparent 1px 16px);
+  box-shadow: inset 0 0 16px rgba(0, 229, 255, 0.07), 0 0 18px rgba(0, 0, 0, 0.28);
+}
+.av-world--cyberpunk .av-room::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1px solid rgba(255, 45, 178, 0.18);
+}
+.av-world--cyberpunk .av-room--standup { background-color: rgba(0, 229, 255, 0.08); }
+.av-world--cyberpunk .av-room--focus { background-color: rgba(255, 45, 178, 0.08); }
+.av-world--cyberpunk .av-room--design { background-color: rgba(255, 198, 80, 0.06); }
+.av-world--cyberpunk .av-room--code { background-color: rgba(0, 60, 85, 0.22); }
+.av-world--cyberpunk .av-room--qa { background-color: rgba(42, 255, 159, 0.06); }
+.av-world--cyberpunk .av-room--ops { background-color: rgba(114, 87, 255, 0.08); }
+.av-world--cyberpunk .av-room__label {
+  border: 1px solid rgba(0, 229, 255, 0.42);
+  border-radius: 3px;
+  background: rgba(4, 7, 13, 0.84);
+  color: #00e5ff;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.66);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.12);
+}
+.av-world--cyberpunk .av-object {
+  border: 1px solid rgba(0, 229, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(6, 10, 18, 0.82);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.11), inset 0 0 14px rgba(255, 45, 178, 0.05);
+}
+.av-world--cyberpunk .av-object--holo-table {
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at center, rgba(0, 229, 255, 0.58) 0 18%, transparent 19% 36%, rgba(255, 45, 178, 0.22) 37% 45%, transparent 46%),
+    linear-gradient(180deg, rgba(0, 229, 255, 0.09), rgba(5, 8, 15, 0.7));
+  box-shadow: 0 0 22px rgba(0, 229, 255, 0.28);
+}
+.av-world--cyberpunk .av-object--holo-ad {
+  background:
+    linear-gradient(90deg, transparent 44%, rgba(255,255,255,0.38) 44% 56%, transparent 56%),
+    linear-gradient(180deg, rgba(255, 45, 178, 0.52), rgba(0, 229, 255, 0.14));
+  border-color: rgba(255, 45, 178, 0.55);
+  box-shadow: 0 0 18px rgba(255, 45, 178, 0.24);
+}
+.av-world--cyberpunk .av-object--neon-tube,
+.av-world--cyberpunk .av-object--cable {
+  border-radius: 99px;
+  background:
+    linear-gradient(90deg, #00e5ff, #ff2db2, #2aff9f);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.46);
+}
+.av-world--cyberpunk .av-object--server-stack,
+.av-world--cyberpunk .av-object--data-rack {
+  background:
+    repeating-linear-gradient(180deg, rgba(0, 229, 255, 0.6) 0 3px, transparent 3px 12px),
+    linear-gradient(180deg, #121d2c, #05080f);
+}
+.av-world--cyberpunk .av-object--data-rack {
+  border-color: rgba(42, 255, 159, 0.42);
+  background:
+    repeating-linear-gradient(180deg, rgba(42, 255, 159, 0.58) 0 3px, transparent 3px 12px),
+    linear-gradient(180deg, #101b1a, #05080f);
+}
+.av-world--cyberpunk .av-object--vending {
+  background:
+    radial-gradient(circle at 76% 18%, #ff2db2 0 5%, transparent 6%),
+    linear-gradient(90deg, transparent 0 55%, rgba(0, 229, 255, 0.22) 55% 100%),
+    linear-gradient(180deg, #1d2440, #080c14);
+  border-color: rgba(255, 45, 178, 0.45);
+}
+.av-world--cyberpunk .av-object--drone {
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, #00e5ff 0 12%, transparent 13%),
+    linear-gradient(90deg, #ff2db2 0 18%, transparent 18% 82%, #ff2db2 82% 100%),
+    linear-gradient(180deg, #141b2d, #05080f);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.3);
+}
+.av-world--cyberpunk .av-object--terminal {
+  background:
+    linear-gradient(135deg, transparent 0 20%, rgba(255,255,255,0.45) 20% 31%, transparent 31%),
+    linear-gradient(180deg, rgba(0, 229, 255, 0.28), rgba(8, 12, 20, 0.96));
+  border-color: rgba(0, 229, 255, 0.58);
+}
+.av-world--cyberpunk .av-object--city-tower {
+  background:
+    repeating-linear-gradient(180deg, rgba(0, 229, 255, 0.55) 0 4px, transparent 4px 13px),
+    linear-gradient(180deg, #17233b, #060a12);
+  border-color: rgba(0, 229, 255, 0.5);
+}
+.av-world--cyberpunk .av-object--scanner-gate {
+  border-radius: 8px 8px 3px 3px;
+  background:
+    linear-gradient(90deg, rgba(0, 229, 255, 0.65) 0 12%, transparent 12% 88%, rgba(0, 229, 255, 0.65) 88% 100%),
+    linear-gradient(180deg, rgba(255, 45, 178, 0.36), transparent);
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.28);
+}
+.av-world--cyberpunk .av-desk {
+  background:
+    linear-gradient(90deg, transparent 0 8%, rgba(0, 229, 255, 0.46) 8% 12%, transparent 12% 88%, rgba(255, 45, 178, 0.42) 88% 92%, transparent 92%),
+    linear-gradient(180deg, rgba(0, 229, 255, 0.12), rgba(0, 0, 0, 0.45));
+  border-color: rgba(0, 229, 255, 0.44);
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.16);
+}
+.av-world--cyberpunk .av-desk__screen { background: #00e5ff; box-shadow: 0 0 16px rgba(0, 229, 255, 0.84); }
+.av-world--cyberpunk .av-desk__label { color: rgba(42, 255, 159, 0.75); }
+.av-world--cyberpunk .av-flat {
+  filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.24));
+}
+
+/* =========================== 3. ISOMETRIC HQ ============================= */
+.av-root--isometric {
+  --av-accent: #3b82f6;
+  --av-accent-soft: rgba(59, 130, 246, 0.16);
+  --av-bg: #0b1120;
+  --av-panel: #111a2e;
+  --av-panel-2: #16223b;
+  --av-border: #25324d;
+}
+.av-world--isometric .av-world__floor {
+  background-color: #16223b;
+  background-image:
+    linear-gradient(60deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(-60deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 5% 8.5%, 5% 8.5%;
+}
+.av-world--isometric .av-world__decor {
+  background:
+    radial-gradient(circle at 22% 28%, rgba(59, 130, 246, 0.14), transparent 26%),
+    radial-gradient(circle at 70% 28%, rgba(16, 185, 129, 0.13), transparent 26%),
+    radial-gradient(circle at 22% 74%, rgba(245, 158, 11, 0.11), transparent 26%),
+    radial-gradient(circle at 70% 74%, rgba(168, 85, 247, 0.13), transparent 26%);
+}
+.av-world--isometric .av-desk {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.16), rgba(0, 0, 0, 0.3));
+  border-color: rgba(59, 130, 246, 0.4);
+}
+/* Richer HQ so rooms read as furnished offices, not empty grey blobs. */
+.av-world--isometric .av-room {
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(59, 130, 246, 0.1), rgba(0, 0, 0, 0.18)),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 10px, transparent 10px 20px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 6px 16px rgba(0, 0, 0, 0.32);
+}
+.av-world--isometric .av-room--standup { background-color: rgba(59, 130, 246, 0.12); }
+.av-world--isometric .av-room--focus { background-color: rgba(168, 85, 247, 0.12); }
+.av-world--isometric .av-room--design { background-color: rgba(236, 72, 153, 0.1); }
+.av-world--isometric .av-room--code { background-color: rgba(16, 185, 129, 0.1); }
+.av-world--isometric .av-room--qa { background-color: rgba(245, 158, 11, 0.1); }
+.av-world--isometric .av-room--ops { background-color: rgba(99, 102, 241, 0.12); }
+.av-world--isometric .av-room__label {
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 5px;
+  background: rgba(11, 17, 32, 0.86);
+  color: #bfdbfe;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.16);
+}
+.av-world--isometric .av-object {
+  border: 1px solid rgba(99, 140, 200, 0.4);
+  border-radius: 5px;
+  background: linear-gradient(180deg, #2a3a5a, #131c30);
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.av-world--isometric .av-object--screen {
+  background: linear-gradient(180deg, #1e3a8a 0 70%, #0b1120 70%);
+  border-color: #3b82f6;
+  box-shadow: inset 0 0 10px rgba(59, 130, 246, 0.55), 0 5px 0 rgba(0, 0, 0, 0.3);
+}
+.av-world--isometric .av-object--screen::after {
+  content: '';
+  position: absolute;
+  inset: 14% 12% 34%;
+  border-radius: 2px;
+  background:
+    linear-gradient(180deg, rgba(125, 211, 252, 0.9), rgba(59, 130, 246, 0.5)),
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0 2px, transparent 2px 5px);
+}
+.av-world--isometric .av-object--table {
+  background: linear-gradient(180deg, #3b4a66, #1c2740);
+  border-radius: 6px;
+}
+.av-world--isometric .av-object--table::after {
+  content: '';
+  position: absolute;
+  left: 18%;
+  top: -30%;
+  width: 64%;
+  height: 46%;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #7dd3fc, #2563eb);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+}
+.av-world--isometric .av-object--board {
+  background: linear-gradient(180deg, #eef2f7, #c7d2e0);
+  border-color: #94a3b8;
+}
+.av-world--isometric .av-object--board::after {
+  content: '';
+  position: absolute;
+  inset: 22% 14%;
+  border-radius: 1px;
+  opacity: 0.7;
+  background: linear-gradient(90deg, #ef4444 0 26%, transparent 26% 34%, #3b82f6 34% 64%, transparent 64% 72%, #22c55e 72% 100%);
+}
+.av-world--isometric .av-object--plant {
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.av-world--isometric .av-object--plant::before {
+  content: '';
+  position: absolute;
+  left: 32%;
+  bottom: 0;
+  width: 36%;
+  height: 38%;
+  border-radius: 3px 3px 4px 4px;
+  background: #6b4f2a;
+}
+.av-world--isometric .av-object--plant::after {
+  content: '';
+  position: absolute;
+  left: 8%;
+  bottom: 28%;
+  width: 84%;
+  height: 74%;
+  border-radius: 50% 50% 46% 46%;
+  background: radial-gradient(circle at 40% 34%, #4ade80 0 40%, #16a34a 41% 100%);
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+}
+.av-world--isometric .av-object--rug {
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  opacity: 0.7;
+  box-shadow: none;
+  background: repeating-linear-gradient(45deg, rgba(59, 130, 246, 0.16) 0 8px, rgba(168, 85, 247, 0.12) 8px 16px);
+}
+.av-world--isometric .av-object--sofa {
+  border-radius: 7px 7px 4px 4px;
+  background: linear-gradient(180deg, #4b5b7a 0 40%, #2b3650 40%);
+}
+.av-world--isometric .av-object--sofa::after {
+  content: '';
+  position: absolute;
+  inset: 14% 8% 30%;
+  border-radius: 5px 5px 2px 2px;
+  background: #5d6f92;
+}
+
+/* =========================== 4. RPG GUILD ================================ */
+.av-root--campus {
+  --av-accent: #d6a13f;
+  --av-accent-soft: rgba(214, 161, 63, 0.18);
+  --av-bg: #15120f;
+  --av-panel: #211914;
+  --av-panel-2: #2a2119;
+  --av-border: #473527;
+  --av-text: #f3ead7;
+  --av-muted: #ad9874;
+  --av-shadow: 0 14px 38px rgba(0, 0, 0, 0.48);
+  --av-font-game: 'Courier New', 'Lucida Console', monospace;
+}
+.av-world--campus .av-world__floor {
+  background-color: #485051;
+  background-image:
+    radial-gradient(circle at 7% 8%, rgba(73, 125, 91, 0.36) 0 7%, transparent 7.5%),
+    radial-gradient(circle at 92% 91%, rgba(34, 76, 91, 0.4) 0 8%, transparent 8.5%),
+    linear-gradient(rgba(255, 255, 255, 0.075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.075) 1px, transparent 1px),
+    linear-gradient(45deg, rgba(37, 44, 43, 0.66) 25%, transparent 25%, transparent 75%, rgba(37, 44, 43, 0.66) 75%),
+    linear-gradient(45deg, rgba(37, 44, 43, 0.66) 25%, transparent 25%, transparent 75%, rgba(37, 44, 43, 0.66) 75%);
+  background-size: 100% 100%, 100% 100%, 6.25% 9.09%, 6.25% 9.09%, 12.5% 18.18%, 12.5% 18.18%;
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 6.25% 9.09%;
+}
+.av-world--campus .av-world__decor {
+  background-image:
+    linear-gradient(90deg, transparent 38%, #876238 38%, #876238 62%, transparent 62%),
+    linear-gradient(180deg, transparent 44%, #876238 44%, #876238 59%, transparent 59%),
+    linear-gradient(90deg, transparent 3%, rgba(38, 28, 21, 0.72) 3%, rgba(38, 28, 21, 0.72) 4%, transparent 4%, transparent 96%, rgba(38, 28, 21, 0.72) 96%, rgba(38, 28, 21, 0.72) 97%, transparent 97%),
+    linear-gradient(180deg, transparent 4%, rgba(38, 28, 21, 0.72) 4%, rgba(38, 28, 21, 0.72) 5%, transparent 5%, transparent 95%, rgba(38, 28, 21, 0.72) 95%, rgba(38, 28, 21, 0.72) 96%, transparent 96%),
+    radial-gradient(circle at 8% 10%, #cf5f4a 0 1.25%, transparent 1.5%),
+    radial-gradient(circle at 92% 10%, #4f9a75 0 1.25%, transparent 1.5%),
+    radial-gradient(circle at 10% 92%, #3f6fb4 0 1.25%, transparent 1.5%),
+    radial-gradient(circle at 91% 91%, #8b65c9 0 1.25%, transparent 1.5%);
+  opacity: 0.82;
+}
+.av-world--campus .av-room {
+  border: 2px solid #2b2118;
+  border-radius: 3px;
+  background-color: #72604b;
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 12%, transparent 12% 38%, rgba(0, 0, 0, 0.08) 38% 50%, transparent 50%),
+    linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 36px 36px, 18px 18px, 18px 18px;
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.18), 4px 4px 0 rgba(0, 0, 0, 0.22);
+}
+.av-world--campus .av-room--standup { background-color: #825d34; }
+.av-world--campus .av-room--focus { background-color: #674531; }
+.av-world--campus .av-room--design { background-color: #5f4d3e; }
+.av-world--campus .av-room--code { background-color: #3f4a59; }
+.av-world--campus .av-room--qa { background-color: #465d39; }
+.av-world--campus .av-room--ops { background-color: #504069; }
+.av-world--campus .av-room__label {
+  border: 2px solid #2b2118;
+  border-radius: 3px;
+  background: #f2d28a;
+  color: #302013;
+  font-family: var(--av-font-game);
+  text-shadow: none;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.24);
+}
+.av-world--campus .av-object {
+  border: 2px solid #241a12;
+  border-radius: 3px;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.24);
+}
+.av-world--campus .av-object--guild-table,
+.av-world--campus .av-object--tavern-table {
+  background:
+    linear-gradient(90deg, transparent 5%, rgba(0, 0, 0, 0.22) 5% 9%, transparent 9% 91%, rgba(0, 0, 0, 0.22) 91% 95%, transparent 95%),
+    repeating-linear-gradient(90deg, #a7723d 0 18%, #8b5b34 18% 24%),
+    linear-gradient(180deg, #9a683a, #5a3822);
+}
+.av-world--campus .av-object--guild-table::after,
+.av-world--campus .av-object--tavern-table::after {
+  content: '';
+  position: absolute;
+  inset: 24% 18%;
+  border-radius: 2px;
+  background:
+    radial-gradient(circle at 20% 45%, #f2d28a 0 9%, transparent 10%),
+    radial-gradient(circle at 50% 48%, #c94f4f 0 8%, transparent 9%),
+    radial-gradient(circle at 78% 48%, #d6a13f 0 7%, transparent 8%);
+}
+.av-world--campus .av-object--quest-board,
+.av-world--campus .av-object--bookshelf {
+  background:
+    linear-gradient(90deg, #5a3822 0 10%, transparent 10% 90%, #5a3822 90% 100%),
+    repeating-linear-gradient(90deg, #f2d28a 0 9%, #d4994a 9% 13%, #7f5a31 13% 21%),
+    linear-gradient(180deg, #6b4a2d, #3f291a);
+}
+.av-world--campus .av-object--quest-board::after {
+  content: '';
+  position: absolute;
+  inset: 16% 18%;
+  background:
+    linear-gradient(90deg, transparent 45%, #6b3f25 45% 55%, transparent 55%),
+    repeating-linear-gradient(180deg, #f4dca0 0 17%, #b87938 17% 22%);
+  box-shadow: 0 0 0 1px #2b2118;
+}
+.av-world--campus .av-object--barrel {
+  border-radius: 45% 45% 34% 34%;
+  background:
+    linear-gradient(90deg, transparent 43%, rgba(0, 0, 0, 0.24) 43% 57%, transparent 57%),
+    repeating-linear-gradient(180deg, #d6a13f 0 11%, #6b3f25 11% 16%, #9a6235 16% 38%);
+}
+.av-world--campus .av-object--forge {
+  background:
+    radial-gradient(circle at 50% 55%, #ffe08a 0 18%, #ff7a30 19% 34%, transparent 36%),
+    linear-gradient(180deg, #6a4a33, #2b2118);
+  box-shadow: 0 0 18px rgba(255, 122, 48, 0.45), 3px 3px 0 rgba(0, 0, 0, 0.24);
+}
+.av-world--campus .av-object--forge::before,
+.av-world--campus .av-object--torch::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -18%;
+  width: 46%;
+  height: 50%;
+  border-radius: 50% 50% 45% 45%;
+  background:
+    radial-gradient(circle at 50% 62%, #ffe08a 0 22%, transparent 24%),
+    linear-gradient(180deg, #ffdf6e, #f05b22);
+  transform: translateX(-50%);
+  filter: drop-shadow(0 0 8px rgba(255, 111, 35, 0.85));
+}
+.av-world--campus .av-object--anvil {
+  border-radius: 3px 12px 5px 5px;
+  background:
+    linear-gradient(180deg, transparent 0 48%, #2b2118 48% 58%, transparent 58%),
+    linear-gradient(180deg, #b7c1c5, #556165);
+}
+.av-world--campus .av-object--weapon-rack {
+  background:
+    linear-gradient(90deg, transparent 14%, #d6a13f 14% 20%, transparent 20% 47%, #bfc8c9 47% 53%, transparent 53% 80%, #d6a13f 80% 86%, transparent 86%),
+    linear-gradient(180deg, transparent 12%, #5a3822 12% 20%, transparent 20% 74%, #5a3822 74% 82%, transparent 82%),
+    linear-gradient(180deg, #6b3f25, #3b271a);
+}
+.av-world--campus .av-object--portal {
+  border-radius: 50%;
+  border-color: #2c2148;
+  background:
+    radial-gradient(circle at 50% 50%, #e8d9ff 0 13%, #72e4ff 14% 26%, #8b65c9 27% 42%, transparent 43%),
+    conic-gradient(from 25deg, #51378c, #72e4ff, #2b2149, #8b65c9, #51378c);
+  box-shadow: 0 0 22px rgba(114, 228, 255, 0.58), inset 0 0 16px rgba(255, 255, 255, 0.22);
+  animation: av-portal 2.6s linear infinite;
+}
+.av-world--campus .av-object--crystal {
+  border-color: #243d50;
+  border-radius: 50% 50% 8px 8px;
+  background:
+    linear-gradient(135deg, transparent 0 23%, rgba(255, 255, 255, 0.45) 23% 35%, transparent 35%),
+    linear-gradient(180deg, #8af0ff, #326bb0 55%, #1d3348);
+  box-shadow: 0 0 18px rgba(138, 240, 255, 0.48), 3px 3px 0 rgba(0, 0, 0, 0.24);
+}
+.av-world--campus .av-object--training-dummy {
+  border-radius: 24px 24px 3px 3px;
+  background:
+    radial-gradient(circle at 50% 23%, #d6a13f 0 22%, transparent 23%),
+    linear-gradient(90deg, transparent 0 19%, #5a3822 19% 27%, transparent 27% 73%, #5a3822 73% 81%, transparent 81%),
+    linear-gradient(180deg, transparent 0 34%, #b87938 34% 72%, #5a3822 72% 100%);
+}
+.av-world--campus .av-object--chest {
+  border-radius: 7px 7px 3px 3px;
+  background:
+    linear-gradient(90deg, transparent 44%, #f2d28a 44% 56%, transparent 56%),
+    linear-gradient(180deg, #a45c2b 0 48%, #2b2118 48% 56%, #6b3f25 56% 100%);
+}
+.av-world--campus .av-object--torch {
+  border-radius: 2px;
+  background:
+    linear-gradient(90deg, transparent 36%, #5a3822 36% 64%, transparent 64%),
+    linear-gradient(180deg, transparent 0 34%, #2b2118 34% 100%);
+  box-shadow: 0 0 14px rgba(255, 122, 48, 0.42);
+}
+.av-world--campus .av-object--banner {
+  border-radius: 3px 3px 12px 12px;
+  background:
+    linear-gradient(90deg, transparent 43%, #f2d28a 43% 57%, transparent 57%),
+    linear-gradient(180deg, #8a2432 0 70%, transparent 70%),
+    linear-gradient(135deg, transparent 0 62%, #5d1b25 62% 100%);
+}
+.av-world--campus .av-object--statue {
+  border-radius: 40% 40% 4px 4px;
+  background:
+    radial-gradient(circle at 50% 22%, #c6c0ac 0 18%, transparent 19%),
+    linear-gradient(90deg, transparent 0 24%, #7e7a71 24% 34%, transparent 34% 66%, #7e7a71 66% 76%, transparent 76%),
+    linear-gradient(180deg, transparent 0 34%, #a7a18f 34% 78%, #5b574d 78% 100%);
+}
+.av-world--campus .av-sprite {
+  image-rendering: pixelated;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.34));
+}
+.av-world--campus .av-desk {
+  background:
+    radial-gradient(circle at 50% 35%, rgba(242, 210, 138, 0.32) 0 16%, transparent 17%),
+    repeating-linear-gradient(90deg, #8b5b34 0 18%, #6b3f25 18% 26%),
+    linear-gradient(180deg, #8b5b34, #5a3822);
+  border: 2px solid #241a12;
+  border-radius: 4px;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.24);
+}
+.av-world--campus .av-desk__screen {
+  width: 26%;
+  height: 30%;
+  margin-bottom: 10%;
+  background:
+    radial-gradient(circle at 50% 38%, #ffe08a 0 26%, transparent 28%),
+    linear-gradient(180deg, #f05b22, #7f2b1f);
+  border-radius: 50% 50% 5px 5px;
+  box-shadow: 0 0 10px rgba(255, 122, 48, 0.75);
+  opacity: 1;
+}
+.av-world--campus .av-desk__label { display: none; }
+.av-world--campus .av-world__hint {
+  border-radius: 4px;
+  background: rgba(33, 25, 20, 0.86);
+  border-color: rgba(242, 210, 138, 0.34);
+  font-family: var(--av-font-game);
+}
+.av-world--campus .av-npc { transition: left 0.32s linear, top 0.32s linear; }
+.av-world--campus .av-npc__tag {
+  border: 2px solid rgba(43, 33, 24, 0.95);
+  border-radius: 4px;
+  background: rgba(33, 25, 20, 0.86);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.24);
+}
+.av-world--campus .av-npc__gear {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.av-world--campus .av-npc__sword {
+  position: absolute;
+  right: -4px;
+  top: 14%;
+  width: 4px;
+  height: 58%;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #f7fbff 0 60%, #7f5a31 60% 72%, #d6a13f 72% 100%);
+  box-shadow: 0 0 0 1px #2a2f33, 0 0 8px rgba(255, 255, 255, 0.26);
+  transform: rotate(33deg);
+  transform-origin: 50% 82%;
+}
+.av-world--campus .av-npc__sword::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -7px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 8px solid #f7fbff;
+  transform: translateX(-50%);
+}
+.av-world--campus .av-npc__sword::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  width: 15px;
+  height: 4px;
+  border-radius: 2px;
+  background: #d6a13f;
+  box-shadow: 0 0 0 1px #2b2118;
+  transform: translateX(-50%);
+}
+.av-world--campus .av-npc__shield {
+  position: absolute;
+  left: -6px;
+  top: 34%;
+  width: 19px;
+  height: 22px;
+  border: 2px solid #2b2118;
+  border-radius: 10px 10px 8px 8px;
+  background:
+    linear-gradient(90deg, transparent 44%, rgba(255, 255, 255, 0.34) 44%, rgba(255, 255, 255, 0.34) 56%, transparent 56%),
+    linear-gradient(135deg, var(--accent) 0 50%, #f2d28a 50% 100%);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.22);
+}
+.av-world--campus .av-npc--pm .av-npc__shield { background: linear-gradient(135deg, #818cf8 0 50%, #f2d28a 50% 100%); }
+.av-world--campus .av-npc--ux .av-npc__shield { background: linear-gradient(135deg, #f472b6 0 50%, #f2d28a 50% 100%); }
+.av-world--campus .av-npc--frontend .av-npc__shield { background: linear-gradient(135deg, #22d3ee 0 50%, #f2d28a 50% 100%); }
+.av-world--campus .av-npc--backend .av-npc__shield { background: linear-gradient(135deg, #f59e0b 0 50%, #f2d28a 50% 100%); }
+.av-world--campus .av-npc--qa .av-npc__shield { background: linear-gradient(135deg, #34d399 0 50%, #f2d28a 50% 100%); }
+.av-world--campus .av-npc--devops .av-npc__shield { background: linear-gradient(135deg, #a78bfa 0 50%, #f2d28a 50% 100%); }
+
+@keyframes av-portal {
+  from { filter: hue-rotate(0deg) brightness(1); }
+  50% { filter: hue-rotate(18deg) brightness(1.22); }
+  to { filter: hue-rotate(0deg) brightness(1); }
+}
+
+/* =========================== 5. SYNTHWAVE RETRO GRID ===================== */
+.av-root--synthwave {
+  --av-accent: #ff2db2;
+  --av-accent-soft: rgba(255, 45, 178, 0.2);
+  --av-bg: #070511;
+  --av-panel: #120b21;
+  --av-panel-2: #1a1030;
+  --av-border: #382357;
+  --av-text: #fff1ff;
+  --av-muted: #88bfd2;
+  --av-shadow: 0 14px 40px rgba(0, 238, 255, 0.12), 0 14px 38px rgba(0, 0, 0, 0.62);
+}
+.av-world--synthwave .av-world__floor {
+  background:
+    repeating-linear-gradient(180deg, transparent 0 13px, rgba(7, 5, 17, 0.88) 13px 18px),
+    radial-gradient(circle at 50% 28%, #fff078 0 5%, #ffb13d 5.2% 10%, #ff4f9d 10.2% 15.5%, transparent 15.8%),
+    linear-gradient(180deg, #04030b 0%, #0b0620 24%, #2b0b43 40%, #5a155c 49%, #090615 53%, #03040b 100%);
+}
+.av-world--synthwave .av-world__decor {
+  background:
+    linear-gradient(135deg, transparent 0 20%, rgba(3, 4, 11, 0.94) 20.2% 30%, transparent 30.2%),
+    linear-gradient(225deg, transparent 0 18%, rgba(3, 4, 11, 0.94) 18.2% 31%, transparent 31.2%),
+    repeating-linear-gradient(90deg, transparent 0 8.5%, rgba(0, 238, 255, 0.55) 8.7% 8.95%),
+    repeating-linear-gradient(180deg, transparent 0 8.8%, rgba(255, 45, 178, 0.5) 8.8% 9.15%),
+    linear-gradient(180deg, transparent 0 53%, rgba(0, 238, 255, 0.06) 53% 100%);
+  background-position: 0 43%, 0 42%, 0 54%, 0 54%, 0 0;
+  background-size: 100% 28%, 100% 28%, 100% 46%, 100% 46%, 100% 100%;
+  background-repeat: no-repeat;
+  -webkit-mask-image: linear-gradient(180deg, #000 0 48%, rgba(0, 0, 0, 0.88) 56%, #000 100%);
+  mask-image: linear-gradient(180deg, #000 0 48%, rgba(0, 0, 0, 0.88) 56%, #000 100%);
+  opacity: 0.96;
+}
+.av-world--synthwave .av-room {
+  border: 1px solid rgba(0, 238, 255, 0.42);
+  border-radius: 4px;
+  background:
+    linear-gradient(135deg, rgba(255, 45, 178, 0.13), rgba(0, 238, 255, 0.06)),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 18px);
+  box-shadow: inset 0 0 18px rgba(255, 45, 178, 0.08), 0 0 18px rgba(0, 238, 255, 0.08);
+}
+.av-world--synthwave .av-room::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1px solid rgba(255, 45, 178, 0.28);
+  pointer-events: none;
+}
+.av-world--synthwave .av-room--standup { background-color: rgba(255, 45, 178, 0.12); }
+.av-world--synthwave .av-room--focus { background-color: rgba(0, 238, 255, 0.1); }
+.av-world--synthwave .av-room--design { background-color: rgba(255, 218, 80, 0.08); }
+.av-world--synthwave .av-room--code { background-color: rgba(16, 14, 64, 0.34); }
+.av-world--synthwave .av-room--qa { background-color: rgba(0, 238, 255, 0.08); }
+.av-world--synthwave .av-room--ops { background-color: rgba(255, 45, 178, 0.1); }
+.av-world--synthwave .av-room__label {
+  border: 1px solid rgba(0, 238, 255, 0.5);
+  border-radius: 3px;
+  background: rgba(7, 5, 17, 0.82);
+  color: #fff078;
+  text-shadow: 0 0 7px rgba(255, 240, 120, 0.65);
+  box-shadow: 0 0 12px rgba(0, 238, 255, 0.14);
+}
+.av-world--synthwave .av-object {
+  border: 1px solid rgba(0, 238, 255, 0.48);
+  border-radius: 4px;
+  background: rgba(8, 5, 20, 0.78);
+  box-shadow: 0 0 16px rgba(255, 45, 178, 0.17), inset 0 0 14px rgba(0, 238, 255, 0.08);
+}
+.av-world--synthwave .av-object--road {
+  z-index: 2;
+  border: 0;
+  border-radius: 0 0 24px 24px;
+  background:
+    linear-gradient(90deg, transparent 47%, rgba(255, 240, 120, 0.8) 47% 53%, transparent 53%),
+    linear-gradient(90deg, rgba(0, 238, 255, 0.55) 0 3%, transparent 3% 97%, rgba(255, 45, 178, 0.7) 97% 100%),
+    linear-gradient(180deg, rgba(11, 9, 26, 0.1), rgba(3, 4, 11, 0.92));
+  clip-path: polygon(40% 0, 60% 0, 100% 100%, 0 100%);
+  box-shadow: 0 0 28px rgba(0, 238, 255, 0.28);
+}
+.av-world--synthwave .av-object--palm {
+  border: 0;
+  background:
+    linear-gradient(84deg, transparent 0 44%, #05030b 44% 56%, transparent 56%),
+    linear-gradient(180deg, transparent 0 18%, rgba(255, 45, 178, 0.42) 18% 100%);
+  box-shadow: none;
+}
+.av-world--synthwave .av-object--palm::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -4%;
+  width: 150%;
+  height: 44%;
+  transform: translateX(-50%);
+  background:
+    linear-gradient(25deg, transparent 0 44%, #05030b 44% 58%, transparent 58%),
+    linear-gradient(-25deg, transparent 0 44%, #05030b 44% 58%, transparent 58%),
+    linear-gradient(80deg, transparent 0 47%, #05030b 47% 57%, transparent 57%),
+    linear-gradient(-80deg, transparent 0 47%, #05030b 47% 57%, transparent 57%);
+  filter: drop-shadow(0 0 6px rgba(255, 45, 178, 0.8));
+}
+.av-world--synthwave .av-object--arcade {
+  background:
+    radial-gradient(circle at 28% 72%, #ff2db2 0 6%, transparent 7%),
+    radial-gradient(circle at 70% 72%, #00eeff 0 6%, transparent 7%),
+    linear-gradient(180deg, #ff2db2 0 11%, transparent 11%),
+    linear-gradient(180deg, #1b1030 0 46%, #05030b 46% 100%);
+  border-color: rgba(255, 45, 178, 0.75);
+}
+.av-world--synthwave .av-object--arcade::after {
+  content: '';
+  position: absolute;
+  inset: 22% 16% 42%;
+  border: 1px solid rgba(0, 238, 255, 0.72);
+  background: linear-gradient(135deg, rgba(0, 238, 255, 0.22), rgba(255, 45, 178, 0.16));
+  box-shadow: 0 0 10px rgba(0, 238, 255, 0.4);
+}
+.av-world--synthwave .av-object--cassette {
+  background:
+    radial-gradient(circle at 32% 50%, #05030b 0 13%, #00eeff 14% 16%, transparent 17%),
+    radial-gradient(circle at 68% 50%, #05030b 0 13%, #ff2db2 14% 16%, transparent 17%),
+    linear-gradient(180deg, #2e2147, #090615);
+  border-color: rgba(255, 240, 120, 0.62);
+}
+.av-world--synthwave .av-object--cassette::after {
+  content: '';
+  position: absolute;
+  inset: 15% 18%;
+  border: 1px solid rgba(255, 240, 120, 0.5);
+  border-radius: 3px;
+}
+.av-world--synthwave .av-object--neon-sign {
+  background:
+    linear-gradient(90deg, transparent 0 8%, #ff2db2 8% 12%, transparent 12% 18%, #00eeff 18% 22%, transparent 22% 29%, #fff078 29% 33%, transparent 33%),
+    linear-gradient(180deg, rgba(5, 3, 11, 0.92), rgba(18, 9, 36, 0.88));
+  border-color: rgba(255, 45, 178, 0.72);
+  box-shadow: 0 0 18px rgba(255, 45, 178, 0.34);
+}
+.av-world--synthwave .av-object--sports-car {
+  border-radius: 16px 28px 6px 6px;
+  background:
+    radial-gradient(circle at 17% 86%, #03040b 0 10%, #00eeff 11% 15%, transparent 16%),
+    radial-gradient(circle at 82% 86%, #03040b 0 10%, #ff2db2 11% 15%, transparent 16%),
+    linear-gradient(140deg, transparent 0 18%, rgba(255, 255, 255, 0.72) 18% 29%, transparent 30%),
+    linear-gradient(180deg, #ff2db2 0 52%, #7b1c67 52% 100%);
+  border-color: rgba(255, 45, 178, 0.9);
+  box-shadow: 0 0 22px rgba(255, 45, 178, 0.4), 0 10px 18px rgba(0, 0, 0, 0.34);
+}
+.av-world--synthwave .av-object--speaker {
+  background:
+    radial-gradient(circle at 50% 28%, #05030b 0 18%, #00eeff 19% 22%, transparent 23%),
+    radial-gradient(circle at 50% 72%, #05030b 0 21%, #ff2db2 22% 25%, transparent 26%),
+    linear-gradient(180deg, #151126, #05030b);
+}
+.av-world--synthwave .av-object--equalizer {
+  background:
+    linear-gradient(90deg, transparent 8%, #00eeff 8% 13%, transparent 13% 23%, #ff2db2 23% 28%, transparent 28% 38%, #fff078 38% 43%, transparent 43% 55%, #00eeff 55% 60%, transparent 60% 72%, #ff2db2 72% 77%, transparent 77%),
+    linear-gradient(180deg, rgba(8, 5, 20, 0.88), rgba(5, 3, 11, 0.96));
+  border-color: rgba(0, 238, 255, 0.7);
+}
+.av-world--synthwave .av-object--holo-ring {
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at center, transparent 0 35%, rgba(0, 238, 255, 0.7) 36% 43%, transparent 44% 100%),
+    linear-gradient(180deg, rgba(255, 45, 178, 0.16), rgba(0, 238, 255, 0.1));
+  box-shadow: 0 0 24px rgba(0, 238, 255, 0.45);
+  animation: av-synth-pulse 2.4s ease-in-out infinite;
+}
+.av-world--synthwave .av-object--tower {
+  background:
+    repeating-linear-gradient(180deg, #00eeff 0 4px, transparent 4px 13px),
+    linear-gradient(180deg, #151126, #05030b);
+  border-color: rgba(0, 238, 255, 0.7);
+}
+.av-world--synthwave .av-object--wire-pyramid {
+  border: 0;
+  background:
+    linear-gradient(63deg, transparent 48%, #00eeff 48% 52%, transparent 52%),
+    linear-gradient(-63deg, transparent 48%, #ff2db2 48% 52%, transparent 52%),
+    linear-gradient(180deg, transparent 76%, rgba(255, 240, 120, 0.72) 76% 81%, transparent 81%);
+  box-shadow: none;
+  filter: drop-shadow(0 0 8px rgba(0, 238, 255, 0.55));
+}
+.av-world--synthwave .av-desk {
+  background:
+    linear-gradient(90deg, transparent 0 8%, rgba(0, 238, 255, 0.5) 8% 12%, transparent 12% 88%, rgba(255, 45, 178, 0.5) 88% 92%, transparent 92%),
+    linear-gradient(180deg, rgba(0, 238, 255, 0.14), rgba(5, 3, 11, 0.72));
+  border-color: rgba(0, 238, 255, 0.56);
+  box-shadow: 0 0 18px rgba(0, 238, 255, 0.18);
+}
+.av-world--synthwave .av-desk__screen {
+  background: #00eeff;
+  box-shadow: 0 0 16px rgba(0, 238, 255, 0.85);
+}
+.av-world--synthwave .av-desk__label { color: rgba(255, 240, 120, 0.8); }
+.av-world--synthwave .av-proximity {
+  border-color: rgba(255, 240, 120, 0.9);
+  background: radial-gradient(ellipse at center, rgba(255, 45, 178, 0.16), transparent 68%);
+  box-shadow: 0 0 30px rgba(255, 45, 178, 0.28);
+}
+.av-world--synthwave .av-sprite,
+.av-world--synthwave .av-flat {
+  filter: drop-shadow(0 0 7px rgba(0, 238, 255, 0.3)) drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.32));
+}
+
+@keyframes av-synth-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.76; }
+  50% { transform: scale(1.08); opacity: 1; }
+}

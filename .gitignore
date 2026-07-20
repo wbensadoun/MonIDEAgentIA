@@ -17,3 +17,7 @@ yarn-error.log*
 # Environment variables
 .env
 /client/.env
+
+# Local tool run artifacts / local-only settings
+/.codex-run
+.claude/settings.local.json

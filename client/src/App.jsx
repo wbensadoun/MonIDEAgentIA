@@ -17,6 +17,7 @@ import {
   SUGGESTED_OLLAMA_MODELS,
   normalizeOllamaModelLabel
 } from './utils/ollamaModels';
+import { findInstalledInstructVariant } from './utils/ollamaRuntime';
 import {
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_GEMINI_MODEL,
@@ -591,6 +592,10 @@ const AppContent = () => {
   const recommendedOllamaModel = useMemo(() => (
     ollamaFamily && recommendedOllamaSize ? `${ollamaFamily}:${recommendedOllamaSize}` : ''
   ), [ollamaFamily, recommendedOllamaSize]);
+
+  const recommendedOllamaChatModel = useMemo(() => (
+    findInstalledInstructVariant(resolvedOllamaModel, ollamaModels)
+  ), [ollamaModels, resolvedOllamaModel]);
 
   const availableOllamaModels = useMemo(() => {
     // Source principale: tailles dynamiques de la famille recente (jamais ":latest").
@@ -2255,6 +2260,7 @@ const AppContent = () => {
         resolvedOllamaTester={resolvedOllamaTester}
         availableOllamaModels={availableOllamaModels}
         recommendedOllamaModel={recommendedOllamaModel}
+        recommendedOllamaChatModel={recommendedOllamaChatModel}
         onOllamaSettingChange={handleOllamaSettingChange}
         ollamaTopbarLabel={ollamaTopbarLabel}
         ollamaStatusLabel={ollamaStatusLabel}
@@ -2313,6 +2319,10 @@ const AppContent = () => {
         workspacePanelProps={workspacePanelProps}
         isTerminalOpen={isTerminalOpen}
         onToggleTerminal={() => setIsTerminalOpen(prev => !prev)}
+        onToggleLeftPanel={toggleLeftPanel}
+        onToggleRightPanel={toggleRightPanel}
+        onOpenSearch={() => setSearchOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <StatusBar

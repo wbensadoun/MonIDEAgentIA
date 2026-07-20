@@ -228,6 +228,17 @@ try {
     },
     getOllamaCompletion: (history, currentCode, allProjectFiles, options) =>
       ipcRenderer.invoke('get-ollama-completion', history, currentCode, allProjectFiles, options),
+    cancelOllamaRequest: (requestId) => ipcRenderer.invoke('cancel-ollama-request', requestId),
+    onOllamaToken: (callback) => registerChannelListener('ollama-token', callback),
+    onOllamaStatus: (callback) => registerChannelListener('ollama-status', callback),
+    onOllamaDone: (callback) => registerChannelListener('ollama-done', callback),
+    onOllamaError: (callback) => registerChannelListener('ollama-error', callback),
+    removeOllamaListeners: () => {
+      removeRegisteredChannelListeners('ollama-token');
+      removeRegisteredChannelListeners('ollama-status');
+      removeRegisteredChannelListeners('ollama-done');
+      removeRegisteredChannelListeners('ollama-error');
+    },
 
     // Inline Completion (Ctrl+K / Ghost Text)
     getInlineCompletion: (prompt, code, options) =>

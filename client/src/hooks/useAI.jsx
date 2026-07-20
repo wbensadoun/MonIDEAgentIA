@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   generateCaptainFinalPrompt,
   generateDynamicTeamAgentPrompt
@@ -13,6 +13,7 @@ import {
   normalizeMultiAgentRoles
 } from '../utils/multiAgentConfig';
 import { buildTeamPlan, formatTeamPlanForPrompt } from '../utils/teamSelector';
+import { isSimpleOllamaChatPrompt, resolveSimpleOllamaMaxTokens } from '../utils/ollamaRuntime';
 import {
   decoratePromptForMode,
   isLocalOnlyProvider,
@@ -21,6 +22,10 @@ import {
 } from '../utils/agentModes';
 
 const MAX_MULTI_AI_EVENTS = 16;
+
+const createOllamaRequestId = () => (
+  `ollama-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+);
 
 const normalizeMultiStepStatus = (status) => {
   if (status === 'done' || status === 'completed') return 'completed';
@@ -246,6 +251,7 @@ export const useAI = (
   const [abortController, setAbortController] = useState(null);
   const [pendingImages, setPendingImages] = useState([]);
   const [pendingMessage, setPendingMessage] = useState(null); // { text, images }
+  const activeOllamaRequestIdRef = useRef(null);
   const [contextEstimate, setContextEstimate] = useState({
     provider: aiProvider,
     promptChars: 0,
@@ -294,6 +300,10 @@ export const useAI = (
     if (abortController) {
       abortController.abort();
       setAbortController(null);
+    }
+    if (activeOllamaRequestIdRef.current && window.electronAPI?.cancelOllamaRequest) {
+      window.electronAPI.cancelOllamaRequest(activeOllamaRequestIdRef.current).catch(() => {});
+      activeOllamaRequestIdRef.current = null;
     }
     setIsLoading(false);
     resetMultiAIState();
@@ -439,6 +449,10 @@ export const useAI = (
     const effectiveAIProvider = resolveProviderForExecutionMode(aiProvider, executionMode);
     const localOnlyRun = isLocalOnlyProvider(effectiveAIProvider);
     const canProcessFilesForMode = shouldProcessFileModifications(executionMode, runPreset);
+    const ollamaRequestId = effectiveAIProvider === 'ollama' ? createOllamaRequestId() : null;
+    if (ollamaRequestId) {
+      activeOllamaRequestIdRef.current = ollamaRequestId;
+    }
 
     setIsLoading(true);
     setPreviousCode(code);
@@ -461,6 +475,7 @@ export const useAI = (
 
     try {
       let trimmedPrompt = effectivePrompt.trim();
+      const lightweightOllamaChat = effectiveAIProvider === 'ollama' && isSimpleOllamaChatPrompt(trimmedPrompt);
       let explicitContextFilesContent = '';
       const explicitContextFilesMap = {};
       let explicitContextPaths = [];
@@ -500,7 +515,7 @@ export const useAI = (
         ? `${trimmedPrompt}\n\nVoici le contenu des fichiers explicitement mentionnés :\n${explicitContextFilesContent}`
         : trimmedPrompt;
 
-      if (window.electronAPI?.brainGraphSelect) {
+      if (!lightweightOllamaChat && window.electronAPI?.brainGraphSelect) {
         try {
           const brainRes = await window.electronAPI.brainGraphSelect(currentProjectPath, trimmedPrompt, {
             activeFile,
@@ -514,7 +529,9 @@ export const useAI = (
         }
       }
 
-      promptToSend = decoratePromptForMode(promptToSend, executionMode, runPreset);
+      promptToSend = lightweightOllamaChat
+        ? trimmedPrompt
+        : decoratePromptForMode(promptToSend, executionMode, runPreset);
 
       const normalizedContextMode =
         contextMode === 'mentions' || contextMode === 'none' ? contextMode : 'auto';
@@ -1193,6 +1210,9 @@ export const useAI = (
         } else if (effectiveAIProvider === 'ollama') {
           const ollamaOptions = {
             model: ollamaModel || DEFAULT_OLLAMA_MODEL,
+            requestId: ollamaRequestId,
+            maxTokens: resolveSimpleOllamaMaxTokens(executionMode, localAISettings, trimmedPrompt),
+            lightweightChat: lightweightOllamaChat,
             projectPath: currentProjectPath,
             agent: activeAgent,
             skill: activeSkill,
@@ -1238,7 +1258,10 @@ export const useAI = (
         } else {
           const errorText = response?.error || 'Erreur inconnue';
           const hint = response?.retryable ? ' (temporaire, reessayez)' : '';
-          showMessage(`Erreur IA: ${errorText}${hint}`, response?.retryable ? 6500 : 5000);
+          if (!response?.cancelled) {
+            setAiConversationHistory(prev => [...prev, { role: 'system', text: `Erreur IA: ${errorText}${hint}` }]);
+            showMessage(`Erreur IA: ${errorText}${hint}`, response?.retryable ? 6500 : 5000);
+          }
         }
       }
     } catch (error) {
@@ -1246,6 +1269,7 @@ export const useAI = (
       if (error.name === 'AbortError') {
         showMessage("Génération arrêtée par l'utilisateur", 2000);
       } else {
+        setAiConversationHistory(prev => [...prev, { role: 'system', text: `Erreur IA: ${error.message}` }]);
         showMessage(`Erreur IA: ${error.message}`, 5000);
       }
       setMultiAIState(prev => ({
@@ -1264,6 +1288,9 @@ export const useAI = (
     } finally {
       if (typeof offOllamaMultiStepListener === 'function') {
         offOllamaMultiStepListener();
+      }
+      if (ollamaRequestId && activeOllamaRequestIdRef.current === ollamaRequestId) {
+        activeOllamaRequestIdRef.current = null;
       }
       setIsLoading(false);
       setAbortController(null);

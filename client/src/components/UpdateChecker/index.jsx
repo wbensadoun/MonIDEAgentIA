@@ -377,7 +377,7 @@ const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
     badgeLabel = '⚠ Ollama';
     badgeClassName += ' is-error';
   } else if (missingCount === 0) {
-    badgeLabel = 'Ollama OK';
+    badgeLabel = 'Ollama API OK';
   } else {
     badgeClassName += ' is-pulsing';
   }
@@ -394,7 +394,7 @@ const UpdateChecker = ({ isElectronApiAvailable, showMessage }) => {
             refreshModels();
           }
         }}
-        title="Verifier Ollama et installer les modeles locaux manquants"
+        title="Verifier que l'API Ollama repond et installer les modeles locaux manquants"
       >
         <span>{badgeLabel}</span>
         {isChecking && <span className="update-checker-spinner" aria-hidden="true"></span>}
