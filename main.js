@@ -20,12 +20,15 @@ const {
   getN8nCatalogEntries,
   fetchTrustedN8nWorkflow,
   executeCommandForAI,
+  runSingleCompletionProvider,
 } = require('./electron/services/ai.service');
 // --- Modules refactorisés ---
 const {
   assertSafePath, toPositiveInt,
   trustProjectPath, ensureTrustedProjectPath,
+  resolveOptionalTrustedProjectPath,
 } = require('./electron/core/security');
+const { listAgents, listSkills } = require('./electron/services/agent.service');
 const {
   ensureEditPermission,
 } = require('./electron/services/settings.service');
@@ -38,6 +41,7 @@ const { registerSnapshotHandlers } = require('./electron/ipc/snapshotHandlers');
 const { registerAgentHandlers } = require('./electron/ipc/agentHandlers');
 const { registerOllamaHandlers } = require('./electron/ipc/ollamaHandlers');
 const { registerAIHandlers } = require('./electron/ipc/aiHandlers');
+const { registerRouterHandlers } = require('./electron/ipc/routerHandlers');
 
 const isDev =
   process.env.NODE_ENV === 'development' ||
@@ -151,3 +155,12 @@ registerAgentHandlers(() => mainWindow);
 registerOllamaHandlers(() => mainWindow);
 registerAIHandlers({ getMainWindow: () => mainWindow, executeCommandForAI });
 registerSkillHandlers();
+registerRouterHandlers({
+  ipcMain,
+  getMainWindow: () => mainWindow,
+  listAgents,
+  listSkills,
+  runSingleCompletionProvider,
+  ensureTrustedProjectPath,
+  resolveOptionalTrustedProjectPath
+});

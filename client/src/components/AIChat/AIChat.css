@@ -1324,3 +1324,88 @@
   font-size: 0.62rem;
   color: var(--text-2, rgba(255,255,255,0.3));
 }
+
+/* ── Intelligent Router : Auto agent selector ───────────────── */
+.ai-auto-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-auto-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.ai-auto-select {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.ai-auto-select:focus {
+  border-color: rgba(0, 245, 212, 0.35);
+}
+
+.ai-auto-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ai-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  padding: 2px 0;
+  transition: color 0.15s;
+}
+
+.ai-advanced-toggle:hover {
+  color: var(--accent);
+}
+
+/* ── Intelligent Router : decision badge ────────────────────── */
+.ai-decision-badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid rgba(0, 245, 212, 0.2);
+  border-radius: 6px;
+  background: var(--accent-soft, rgba(0, 245, 212, 0.08));
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.ai-decision-badge strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.ai-decision-sep {
+  color: var(--text-muted);
+  opacity: 0.5;
+}

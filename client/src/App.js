@@ -168,6 +168,10 @@ const AppContent = () => {
     setCollectiveDepth,
     localPrivate,
     setLocalPrivate,
+    autoRoute,
+    setAutoRoute,
+    routerDecision,
+    setRouterDecision,
     multiAgentRunOptions
   } = useRunConfiguration();
 
@@ -253,7 +257,10 @@ const AppContent = () => {
     contextMaxFiles,
     executionMode,
     runPreset,
-    multiAgentRunOptions
+    multiAgentRunOptions,
+    autoRoute,
+    setRouterDecision,
+    availableAgents
   );
 
   const {
@@ -462,6 +469,9 @@ const AppContent = () => {
     onCollectiveDepthChange: setCollectiveDepth,
     localPrivate,
     onLocalPrivateChange: setLocalPrivate,
+    autoRoute,
+    onAutoRouteChange: setAutoRoute,
+    routerDecision,
     teamPlanPreview,
     thinkingMode,
     onThinkingModeChange: setThinkingMode,

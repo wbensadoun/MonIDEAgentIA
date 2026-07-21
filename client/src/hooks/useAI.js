@@ -33,6 +33,14 @@ import { runDynamicMultiAgentFlow } from '../utils/dynamicTeamExecution';
 import { runOllamaMultiCompletionFlow } from '../utils/ollamaMultiFlow';
 import { applyCollectiveDepth, resolveCollectiveProvider } from '../utils/collectiveMode';
 import { buildTeamPlan } from '../utils/teamSelector';
+import {
+  classifyPromptLayer1,
+  mapRouterModeToExecutionMode,
+  mapComplexityToDepth,
+  matchAgentByName,
+  matchSkillByName,
+  createFallbackRouterDecision
+} from '../utils/routerDecision';
 
 export const useAI = (
   currentProjectPath,
@@ -55,7 +63,10 @@ export const useAI = (
   contextMaxFiles = 120,
   executionMode = 'agent',
   runPreset = 'default',
-  multiAgentOptions = {}
+  multiAgentOptions = {},
+  autoRoute = false,
+  setRouterDecision = () => {},
+  availableAgents = []
 ) => {
   const [isLoading, setIsLoading] = useState(false);
   const {
@@ -186,12 +197,80 @@ export const useAI = (
       return;
     }
 
-    const isCollective = executionMode === 'multi-agent';
-    const effectiveAIProvider = isCollective && multiAgentOptions?.localPrivate
+    // ── Intelligent Router ────────────────────────────────────────────────
+    // Shadow ("eff*") vars default to the manual selection so that when
+    // autoRoute is false every downstream computation is byte-identical to
+    // before. When autoRoute is on, a trivial prompt is handled by the local
+    // Layer-1 heuristic (no LLM call); otherwise the backend `route-request`
+    // handler decides mode / depth / agent / skills / model.
+    let effExecutionMode = executionMode;
+    let effAgent = activeAgent;
+    let effSkill = activeSkill;
+    let effDepth = multiAgentOptions?.depth;
+    let effLocalPrivate = multiAgentOptions?.localPrivate;
+    let routerModelOverride = null;
+
+    if (autoRoute) {
+      const layer1 = classifyPromptLayer1(effectivePrompt);
+      if (layer1?.trivial) {
+        effExecutionMode = 'agent';
+        effDepth = 'fast';
+        setRouterDecision({
+          mode: 'single_agent',
+          agent: null,
+          skills: [],
+          complexity: 'light',
+          model: null,
+          source: 'layer1'
+        });
+      } else {
+        try {
+          const getRouterApiKey = createProviderApiKeyResolver({
+            claudeApiKey,
+            kimiApiKey,
+            geminiApiKey
+          });
+          const routed = await window.electronAPI.routeRequest(
+            currentProjectPath,
+            effectivePrompt,
+            { provider: aiProvider, apiKey: getRouterApiKey(aiProvider) }
+          );
+          if (routed && routed.decision) {
+            const { decision } = routed;
+            const execution = routed.execution || {};
+            effExecutionMode = execution.executionMode || mapRouterModeToExecutionMode(decision.mode);
+            effDepth = execution.depth || mapComplexityToDepth(decision.complexity);
+            effLocalPrivate = execution.localPrivate ?? multiAgentOptions?.localPrivate ?? null;
+            const matchedAgent = decision.agent ? matchAgentByName(availableAgents, decision.agent) : null;
+            if (matchedAgent) effAgent = matchedAgent;
+            const firstSkillName = Array.isArray(decision.skills) ? decision.skills[0] : null;
+            const matchedSkill = firstSkillName ? matchSkillByName(skills, firstSkillName) : null;
+            if (matchedSkill) effSkill = matchedSkill;
+            routerModelOverride = routed.model?.resolved || null;
+            setRouterDecision({
+              ...decision,
+              model: routed.model || null,
+              source: routed.source || 'llm'
+            });
+          } else {
+            effExecutionMode = 'agent';
+            effDepth = 'fast';
+            setRouterDecision(createFallbackRouterDecision());
+          }
+        } catch {
+          effExecutionMode = 'agent';
+          effDepth = 'fast';
+          setRouterDecision(createFallbackRouterDecision());
+        }
+      }
+    }
+
+    const isCollective = effExecutionMode === 'multi-agent';
+    const effectiveAIProvider = isCollective && effLocalPrivate
       ? resolveCollectiveProvider(true)
-      : resolveProviderForExecutionMode(aiProvider, executionMode);
+      : resolveProviderForExecutionMode(aiProvider, effExecutionMode);
     const localOnlyRun = isLocalOnlyProvider(effectiveAIProvider);
-    const canProcessFilesForMode = shouldProcessFileModifications(executionMode, runPreset);
+    const canProcessFilesForMode = shouldProcessFileModifications(effExecutionMode, runPreset);
 
     setIsLoading(true);
     setPreviousCode(code);
@@ -225,14 +304,14 @@ export const useAI = (
         projectScanPreset,
         projectScanIncludeSecrets,
         projectScanLargeFileStrategy,
-        executionMode,
+        executionMode: effExecutionMode,
         runPreset,
         showMessage
       });
       updateContextEstimate(effectiveAIProvider, promptToSend, allProjectFiles);
       const sharedAgentContextOptions = buildSharedAgentContextOptions({
         localOnlyRun,
-        executionMode,
+        executionMode: effExecutionMode,
         runPreset,
         deepContextEnabled
       });
@@ -249,8 +328,8 @@ export const useAI = (
         normalizedMultiAgentRoles,
         getProviderApiKey,
         currentProjectPath,
-        activeAgent,
-        activeSkill,
+        activeAgent: effAgent,
+        activeSkill: effSkill,
         skills,
         ollamaModel,
         deepContextEnabled,
@@ -265,7 +344,7 @@ export const useAI = (
           allProjectFiles,
           normalizedMultiAgentRoles,
           localAISettings,
-          multiAgentOptions,
+          multiAgentOptions: { ...multiAgentOptions, depth: effDepth, localPrivate: effLocalPrivate },
           setMultiAIState,
           setAiConversationHistory,
           showMessage,
@@ -289,8 +368,8 @@ export const useAI = (
             ollamaModelCoder,
             ollamaModelTester,
             currentProjectPath,
-            activeAgent,
-            activeSkill,
+            activeAgent: effAgent,
+            activeSkill: effSkill,
             skills,
             sharedAgentContextOptions,
             aiConversationHistory,
@@ -301,6 +380,21 @@ export const useAI = (
             setMultiAIState
           });
         } else {
+          // Router may resolve a specific model for the active provider; when
+          // autoRoute is off, routerModelOverride is null and this object is
+          // identical to the manual `models` map.
+          const modelsForRun = {
+            geminiModel,
+            claudeModel,
+            kimiModel,
+            ollamaModel
+          };
+          if (routerModelOverride) {
+            if (effectiveAIProvider === 'gemini') modelsForRun.geminiModel = routerModelOverride;
+            else if (effectiveAIProvider === 'claude') modelsForRun.claudeModel = routerModelOverride;
+            else if (effectiveAIProvider === 'kimi') modelsForRun.kimiModel = routerModelOverride;
+            else if (effectiveAIProvider === 'ollama') modelsForRun.ollamaModel = routerModelOverride;
+          }
           response = await callSingleAIProvider({
             effectiveAIProvider,
             updatedHistory,
@@ -312,15 +406,10 @@ export const useAI = (
             thinkingMode,
             deepContextEnabled,
             currentProjectPath,
-            activeAgent,
-            activeSkill,
+            activeAgent: effAgent,
+            activeSkill: effSkill,
             sharedAgentContextOptions,
-            models: {
-              geminiModel,
-              claudeModel,
-              kimiModel,
-              ollamaModel
-            },
+            models: modelsForRun,
             apiKeys: {
               geminiApiKey,
               claudeApiKey,
@@ -401,6 +490,9 @@ export const useAI = (
     multiAgentRoles,
     localAISettings,
     multiAgentOptions,
+    autoRoute,
+    setRouterDecision,
+    availableAgents,
     activeFile,
     activeAgent,
     activeSkill,
