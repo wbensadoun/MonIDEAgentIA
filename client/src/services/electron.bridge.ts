@@ -113,6 +113,34 @@ export interface ElectronAPI {
   listSkills: (projectPath: string) => Promise<{ success: boolean; skills?: unknown[]; error?: string }>;
   getSkill: (name: string, scope: string, projectPath: string) => Promise<{ success: boolean; skill?: unknown; error?: string }>;
 
+  // Intelligent Router — returns success:true even on failure (safe fallback decision).
+  routeRequest: (
+    projectPath: string | null,
+    userPrompt: string,
+    options?: {
+      provider?: string;
+      apiKey?: string;
+      hardwareProfile?: { vramGb?: number; totalGb?: number } | null;
+      settings?: Record<string, unknown> | null;
+    }
+  ) => Promise<{
+    success: true;
+    decision: {
+      mode: 'single_agent' | 'orchestrator' | 'multi_agent';
+      agent: string | null;
+      skills: string[];
+      complexity: 'light' | 'premium';
+    };
+    execution: {
+      executionMode: 'agent' | 'multi-agent';
+      depth: 'fast' | 'deep';
+      localPrivate: boolean | null;
+    };
+    model: { provider: string; tier: 'light' | 'premium'; resolved: string; source: 'live' | 'registry' | 'static' };
+    source: 'llm' | 'fallback';
+    timingMs: number;
+  }>;
+
   // System
   getSystemAIProfile: (options?: { consent?: boolean }) => Promise<SystemAIProfile>;
   getSystemInfo: () => Promise<{ platform: string; arch: string; version: string }>;
