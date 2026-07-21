@@ -185,7 +185,7 @@ const useCommandCenter = ({
       label: 'Mode IA Multi-Agent',
       action: () => {
         setExecutionMode('multi-agent');
-        handleAiProviderChange(aiProvider === 'ollama' || aiProvider === 'ollama-multi' ? 'ollama-multi' : 'multi');
+        handleAiProviderChange('multi');
       }
     },
     {

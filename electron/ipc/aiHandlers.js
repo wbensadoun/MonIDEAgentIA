@@ -4,7 +4,7 @@ const { ipcMain: electronIpcMain, dialog } = require('electron');
 const { listGeminiModels, getGeminiCompletion } = require('../services/ai-providers/gemini.provider');
 const { getClaudeCompletion } = require('../services/ai-providers/claude.provider');
 const { getKimiCompletion } = require('../services/ai-providers/kimi.provider');
-const { getOllamaCompletion, getOllamaMultiCompletion } = require('../services/ai-providers/ollama.provider');
+const { getOllamaCompletion } = require('../services/ai-providers/ollama.provider');
 const {
   executeCommandForAI: defaultExecuteCommandForAI,
   runSingleCompletionProvider
@@ -80,21 +80,6 @@ const registerAIHandlers = ({
     provider: 'ollama',
     getMainWindow,
     executeCommandForAI
-  });
-
-  ipcMain.handle('get-ollama-multi-completion', async (_event, history, currentCode, allProjectFiles = null, options = {}) => {
-    try {
-      return await getOllamaMultiCompletion({
-        history,
-        currentCode,
-        allProjectFiles,
-        options,
-        getMainWindow,
-        executeCommandForAI
-      });
-    } catch (error) {
-      return { success: false, error: error?.message || String(error), provider: 'ollama', multiAgent: true };
-    }
   });
 
   ipcMain.handle('get-inline-completion', async (_event, prompt, code, options = {}) => {

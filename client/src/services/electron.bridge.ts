@@ -134,7 +134,6 @@ export interface ElectronAPI {
     execution: {
       executionMode: 'agent' | 'multi-agent';
       depth: 'fast' | 'deep';
-      localPrivate: boolean | null;
     };
     model: { provider: string; tier: 'light' | 'premium'; resolved: string; source: 'live' | 'registry' | 'static' };
     source: 'llm' | 'fallback';

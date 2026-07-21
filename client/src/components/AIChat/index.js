@@ -123,8 +123,6 @@ const formatMultiDuration = (startedAt, finishedAt) => {
 const CollectivePanel = ({
   collectiveDepth,
   onCollectiveDepthChange,
-  localPrivate,
-  onLocalPrivateChange,
   teamPlanPreview,
   isLoading,
   multiAgentFormationKey,
@@ -156,17 +154,6 @@ const CollectivePanel = ({
             </button>
           ))}
         </div>
-
-        {/* ── Toggle Local privé ──────────────────────────── */}
-        <label className="collective-private-toggle" title="Tout passe par Ollama local (coût $0)">
-          <input
-            type="checkbox"
-            checked={localPrivate}
-            onChange={(e) => onLocalPrivateChange?.(e.target.checked)}
-            disabled={isLoading}
-          />
-          <span>Local privé</span>
-        </label>
       </div>
 
       {/* ── Aperçu équipe ────────────────────────────────── */}
@@ -261,8 +248,6 @@ const AIChat = ({
   onDisabledAgentKeysChange,
   collectiveDepth = 'deep',
   onCollectiveDepthChange,
-  localPrivate = false,
-  onLocalPrivateChange,
   autoRoute = false,
   onAutoRouteChange,
   routerDecision = null,
@@ -635,8 +620,7 @@ const AIChat = ({
     : multiRunStatus === 'error'
       ? 'Equipe en erreur'
       : 'Dernier run conserve';
-  const multiRunTitle = multiAIState?.runLabel
-    || (multiAIState?.mode === 'ollama-multi' ? 'Swarm Ollama' : 'Equipe IA');
+  const multiRunTitle = multiAIState?.runLabel || 'Equipe IA';
   const multiRunDuration = formatMultiDuration(multiAIState?.startedAt, multiAIState?.finishedAt);
   const currentWorkflowAnimStep = WORKFLOW_STREAM_STEPS[workflowAnimStep] || WORKFLOW_STREAM_STEPS[0];
   const disabledAgentSet = useMemo(() => new Set(Array.isArray(disabledAgentKeys) ? disabledAgentKeys : []), [disabledAgentKeys]);
@@ -942,12 +926,8 @@ const AIChat = ({
     if (typeof onExecutionModeChange === 'function') {
       onExecutionModeChange(modeId);
     }
-    if (modeId === 'multi-agent' && typeof onProviderChange === 'function') {
-      if (aiProvider === 'ollama' || aiProvider === 'ollama-multi') {
-        onProviderChange('ollama-multi');
-      } else if (aiProvider !== 'multi') {
-        onProviderChange('multi');
-      }
+    if (modeId === 'multi-agent' && typeof onProviderChange === 'function' && aiProvider !== 'multi') {
+      onProviderChange('multi');
     }
   };
 
@@ -1166,8 +1146,6 @@ const AIChat = ({
           <CollectivePanel
             collectiveDepth={collectiveDepth}
             onCollectiveDepthChange={onCollectiveDepthChange}
-            localPrivate={localPrivate}
-            onLocalPrivateChange={onLocalPrivateChange}
             teamPlanPreview={teamPlanPreview}
             isLoading={isLoading}
             multiAgentFormationKey={multiAgentFormationKey}
@@ -1287,7 +1265,7 @@ const AIChat = ({
           <div className="ai-swarm-header" style={{ cursor: 'default' }}>
             <div>
               <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2 }}>
-                {multiAIState?.mode === 'ollama-multi' ? 'Swarm Ollama' : 'Equipe multi-agent'}
+                Equipe multi-agent
               </div>
               <div className="ai-swarm-title">{multiRunTitle}
                 <span style={{ fontSize: 9, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6 }}>
@@ -1402,7 +1380,7 @@ const AIChat = ({
       )}
 
       {/* ===== STREAMING (non-multi) ===== */}
-      {isLoading && !multiAIState?.isActive && aiProvider !== 'multi' && aiProvider !== 'ollama-multi' && streamingText && (
+      {isLoading && !multiAIState?.isActive && aiProvider !== 'multi' && streamingText && (
         <div style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           {liveFiles.length > 0 && (
             <div style={{ padding: '8px 14px 0' }}>

@@ -52,7 +52,6 @@ const PROVIDER_CAPABILITIES = {
 
 export const normalizeCapabilityProvider = (provider) => {
   const value = String(provider || '').trim().toLowerCase();
-  if (value === 'ollama-multi') return 'ollama';
   if (value === 'multi') return 'multi';
   return PROVIDER_CAPABILITIES[value] ? value : '';
 };

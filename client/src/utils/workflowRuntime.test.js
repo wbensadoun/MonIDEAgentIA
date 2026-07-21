@@ -8,7 +8,7 @@ describe('workflowRuntime', () => {
     expect(normalizeWorkflowProvider('claude')).toBe('claude');
     expect(normalizeWorkflowProvider('kimi')).toBe('kimi');
     expect(normalizeWorkflowProvider('ollama')).toBe('ollama');
-    expect(normalizeWorkflowProvider('ollama-multi')).toBe('ollama');
+    expect(normalizeWorkflowProvider('multi')).toBe('');
   });
 
   test('buildWorkflowAIInvocation routes to the selected provider', () => {

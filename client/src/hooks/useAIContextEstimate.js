@@ -14,7 +14,7 @@ const estimateRequestCost = (providerName, estimatedTokens) => {
     if (provider === 'claude') return 3.0;
     if (provider === 'kimi') return 0.6;
     if (provider === 'multi') return 1.6;
-    if (provider === 'ollama' || provider === 'ollama-multi') return 0;
+    if (provider === 'ollama') return 0;
     return 1.25;
   })();
   return (Math.max(0, Number(estimatedTokens) || 0) / 1000000) * inputRatePerMTokens;

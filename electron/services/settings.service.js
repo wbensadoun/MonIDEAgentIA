@@ -95,9 +95,6 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   claudeModel: DEFAULT_CLAUDE_MODEL,
   kimiModel: DEFAULT_KIMI_MODEL,
   ollamaModel: CANONICAL_QWEN_OLLAMA_MODEL,
-  ollamaModelArchitect: CANONICAL_QWEN_OLLAMA_MODEL,
-  ollamaModelCoder: CANONICAL_QWEN_OLLAMA_MODEL,
-  ollamaModelTester: CANONICAL_QWEN_OLLAMA_MODEL,
   multiAgentRoles: normalizeMultiAgentRoles(),
   devPort: '3004',
   allowDangerousActions: false,
@@ -178,9 +175,6 @@ const normalizeSettings = (raw) => {
   normalized.kimiModel = String(normalized.kimiModel || DEFAULT_KIMI_MODEL).trim() || DEFAULT_KIMI_MODEL;
 
   normalized.ollamaModel = normalizePreferredOllamaModelName(normalized.ollamaModel, DEFAULT_APP_SETTINGS.ollamaModel);
-  normalized.ollamaModelArchitect = normalizePreferredOllamaModelName(normalized.ollamaModelArchitect, normalized.ollamaModel);
-  normalized.ollamaModelCoder = normalizePreferredOllamaModelName(normalized.ollamaModelCoder, normalized.ollamaModel);
-  normalized.ollamaModelTester = normalizePreferredOllamaModelName(normalized.ollamaModelTester, normalized.ollamaModel);
   normalized.multiAgentRoles = normalizeMultiAgentRoles(normalized.multiAgentRoles);
 
   const preset = String(normalized.aiContextPreset || 'safe');

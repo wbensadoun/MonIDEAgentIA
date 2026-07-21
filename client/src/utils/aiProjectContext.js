@@ -102,11 +102,11 @@ const buildProjectScanOptions = ({
     }
   };
 
-  const presetKey = deepContextEnabled || effectiveAIProvider === 'multi' || effectiveAIProvider === 'ollama-multi'
+  const presetKey = deepContextEnabled || effectiveAIProvider === 'multi'
     ? projectScanPreset
     : 'safe';
   const baseOptions = scanPresets[presetKey] || scanPresets.safe;
-  const isLocalProvider = effectiveAIProvider === 'ollama' || effectiveAIProvider === 'ollama-multi';
+  const isLocalProvider = effectiveAIProvider === 'ollama';
   const scanOptions = {
     ...baseOptions,
     includeSecrets: projectScanIncludeSecrets,

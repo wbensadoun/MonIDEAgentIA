@@ -6,7 +6,7 @@
  * On se place dans le répertoire du projet principal pour accéder à node_modules.
  */
 
-import { COLLECTIVE_DEPTHS, applyCollectiveDepth, resolveCollectiveProvider } from './collectiveMode.js';
+import { COLLECTIVE_DEPTHS, applyCollectiveDepth } from './collectiveMode.js';
 
 // ── Mini runner ──────────────────────────────────────────────────────────────
 let passed = 0;
@@ -185,20 +185,7 @@ test('fast → le plan original n\'est pas muté', () => {
   assertEqual(plan.budget.maxTokens, 8192);
 });
 
-// ── Tests resolveCollectiveProvider ──────────────────────────────────────────
-console.log('\n── resolveCollectiveProvider ──');
 
-test('localPrivate=true → ollama-multi', () => {
-  assertEqual(resolveCollectiveProvider(true), 'ollama-multi');
-});
-
-test('localPrivate=false → multi', () => {
-  assertEqual(resolveCollectiveProvider(false), 'multi');
-});
-
-test('sans argument → multi', () => {
-  assertEqual(resolveCollectiveProvider(), 'multi');
-});
 
 // ── Résumé ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(45)}`);

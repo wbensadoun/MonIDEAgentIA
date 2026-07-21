@@ -6,17 +6,15 @@ describe('aiProviderRouting', () => {
     expect(normalizeSingleAIProvider('claude')).toBe('claude');
     expect(normalizeSingleAIProvider('kimi')).toBe('kimi');
     expect(normalizeSingleAIProvider('ollama')).toBe('ollama');
-    expect(normalizeSingleAIProvider('ollama-multi')).toBe('ollama');
     expect(normalizeSingleAIProvider('multi')).toBe('');
     expect(normalizeSingleAIProvider('custom')).toBe('');
   });
 
-  test('routes ollama-multi single actions to the coder Ollama model', () => {
+  test('routes ollama single actions to the selected Ollama model', () => {
     const request = buildSingleAIInvocation({
-      aiProvider: 'ollama-multi',
+      aiProvider: 'ollama',
       models: {
-        ollamaModel: 'qwen2.5-coder:7b',
-        ollamaModelCoder: 'deepseek-coder:6.7b'
+        ollamaModel: 'qwen2.5-coder:7b'
       },
       projectPath: 'C:/demo'
     });
@@ -24,9 +22,9 @@ describe('aiProviderRouting', () => {
     expect(request.disabled).toBe(false);
     expect(request.provider).toBe('ollama');
     expect(request.methodName).toBe('getOllamaCompletion');
-    expect(request.model).toBe('deepseek-coder:6.7b');
+    expect(request.model).toBe('qwen2.5-coder:7b');
     expect(request.options.provider).toBe('ollama');
-    expect(request.options.sourceProvider).toBe('ollama-multi');
+    expect(request.options.sourceProvider).toBe('ollama');
   });
 
   test('does not silently choose gemini for multi-agent mode', () => {

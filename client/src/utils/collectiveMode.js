@@ -4,7 +4,6 @@
  * Couche de présentation "Collective" au-dessus de buildTeamPlan.
  * - COLLECTIVE_DEPTHS : constante UI (Rapide / Profond)
  * - applyCollectiveDepth(teamPlan, depth) : filtre pur, sans modifier le moteur
- * - resolveCollectiveProvider(localPrivate) : provider effectif selon confidentialité
  */
 
 /** Agents conservés en mode Rapide (minimum viable pour livrer du code) */
@@ -81,14 +80,3 @@ export const applyCollectiveDepth = (teamPlan, depth = 'deep') => {
     budget
   };
 };
-
-/**
- * Résout le provider effectif selon le mode de confidentialité.
- * ollama-multi = local-only (coût $0), multi = cloud mixte.
- *
- * @param {boolean} localPrivate
- * @returns {'ollama-multi'|'multi'}
- */
-export const resolveCollectiveProvider = (localPrivate) => (
-  localPrivate ? 'ollama-multi' : 'multi'
-);

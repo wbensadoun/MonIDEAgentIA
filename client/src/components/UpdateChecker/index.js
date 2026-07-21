@@ -5,31 +5,15 @@ import { DEFAULT_OLLAMA_MODEL, normalizeOllamaModelLabel } from '../../utils/oll
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 const MODEL_FIELDS = [
-  { key: 'ollamaModel', label: 'Simple' },
-  { key: 'ollamaModelArchitect', label: 'Architecte' },
-  { key: 'ollamaModelCoder', label: 'Codeur' },
-  { key: 'ollamaModelTester', label: 'Relecteur' }
+  { key: 'ollamaModel', label: 'Ollama' }
 ];
 
 const normalizeModelName = (value) => String(value || '').trim();
 
 const buildConfiguredModels = (settings = {}) => {
   const primaryModel = normalizeOllamaModelLabel(settings.ollamaModel, DEFAULT_OLLAMA_MODEL);
-  const modelsMap = new Map();
-
-  MODEL_FIELDS.forEach(({ key, label }) => {
-    const model = key === 'ollamaModel'
-      ? primaryModel
-      : normalizeOllamaModelLabel(settings[key], primaryModel);
-
-    if (!model) return;
-
-    const current = modelsMap.get(model) || { model, roles: [] };
-    current.roles.push(label);
-    modelsMap.set(model, current);
-  });
-
-  return Array.from(modelsMap.values());
+  if (!primaryModel) return [];
+  return [{ model: primaryModel, roles: ['Ollama'] }];
 };
 
 const getPullStateKind = (status) => {
