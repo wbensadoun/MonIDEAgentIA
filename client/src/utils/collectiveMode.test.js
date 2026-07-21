@@ -6,36 +6,13 @@
  * On se place dans le répertoire du projet principal pour accéder à node_modules.
  */
 
-const { createRequire } = require('module');
-const path = require('path');
-const fs = require('fs');
-
-// ── Shim ESM-in-CJS : on transpile via @babel/core (dépôt principal) ──
-const MAIN_NODE_MODULES = 'C:/Users/Utilisateur1/GeminiAgentProject/MonIDEAgentIA/client/node_modules';
-const babel = require(`${MAIN_NODE_MODULES}/@babel/core`);
-const presetPath = `${MAIN_NODE_MODULES}/babel-preset-react-app/index.js`;
-
-function loadESM(relPath) {
-  const absPath = path.resolve(__dirname, relPath);
-  const src = fs.readFileSync(absPath, 'utf-8');
-  const result = babel.transformSync(src, {
-    filename: absPath,
-    presets: [presetPath],
-    sourceType: 'module'
-  });
-  const mod = { exports: {} };
-  // eslint-disable-next-line no-new-func
-  new Function('module', 'exports', 'require', result.code)(mod, mod.exports, require);
-  return mod.exports;
-}
-
-process.env.NODE_ENV = 'development';
-const { COLLECTIVE_DEPTHS, applyCollectiveDepth, resolveCollectiveProvider } = loadESM('./collectiveMode.js');
+import { COLLECTIVE_DEPTHS, applyCollectiveDepth, resolveCollectiveProvider } from './collectiveMode.js';
 
 // ── Mini runner ──────────────────────────────────────────────────────────────
 let passed = 0;
 let failed = 0;
 
+/*
 function test(name, fn) {
   try {
     fn();
@@ -47,6 +24,7 @@ function test(name, fn) {
     failed++;
   }
 }
+*/
 
 function assert(condition, msg) {
   if (!condition) throw new Error(msg || 'assertion failed');

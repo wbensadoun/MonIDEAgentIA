@@ -6,10 +6,11 @@
 
 const { applyBlock, applyBlocks, parseBlocks, normalizeLF } = require('./applySearchReplace');
 
-// ─── Mini runner ────────────────────────────────────────────────────────────
+// ─── Mini runner (commenté pour Jest) ────────────────────────────────────────────────────────────
 let passed = 0;
 let failed = 0;
 
+/*
 function test(name, fn) {
   try {
     fn();
@@ -21,6 +22,7 @@ function test(name, fn) {
     failed++;
   }
 }
+*/
 
 function assert(condition, msg) {
   if (!condition) throw new Error(msg || 'assertion failed');
