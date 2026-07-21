@@ -238,24 +238,6 @@ try {
     getGhostCompletion: (prefix, suffix, options) =>
       ipcRenderer.invoke('get-ghost-completion', prefix, suffix, options),
 
-    // Multi-Ollama (3 agents)
-    getOllamaMultiCompletion: (history, currentCode, allProjectFiles, options) =>
-      ipcRenderer.invoke('get-ollama-multi-completion', history, currentCode, allProjectFiles, options),
-    onOllamaMultiStep: (callback) => {
-      return registerChannelListener('ai-multi-ollama-step', callback);
-    },
-
-    // Streaming tokens for Multi-Ollama agents
-    onOllamaMultiToken: (callback) => {
-      return registerChannelListener('ollama-multi-token', callback);
-    },
-
-    // Unsubscribe all ollama streaming listeners (call on unmount)
-    removeOllamaMultiListeners: () => {
-      removeRegisteredChannelListeners('ai-multi-ollama-step');
-      removeRegisteredChannelListeners('ollama-multi-token');
-    },
-
     // AI Terminal events (emitted by main process during agent ReAct loop)
     onAITerminalAction: (callback) => {
       return registerChannelListener('ai-terminal-action', callback);

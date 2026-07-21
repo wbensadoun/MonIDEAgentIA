@@ -76,7 +76,6 @@ const PROVIDER_META = {
   gemini:       { icon: '🔷', label: 'Gemini',        color: '#4285f4' },
   kimi:         { icon: '🌙', label: 'Kimi K2.5',     color: '#a78bfa' },
   ollama:       { icon: '🦙', label: 'Ollama',         color: '#f59e0b' },
-  'ollama-multi':{ icon: '🦙', label: 'Ollama Multi',  color: '#f59e0b' },
   multi:        { icon: '🤖', label: 'Multi-IA',       color: '#00f5d4' },
   claude:       { icon: '🟠', label: 'Claude',         color: '#fb923c' },
 };

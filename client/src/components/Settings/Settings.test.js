@@ -6,6 +6,7 @@ const baseSettings = {
   geminiModel: 'gemini-3-flash-preview',
   claudeModel: 'claude-sonnet-4-6',
   kimiModel: 'moonshotai/Kimi-K2.7',
+  permissionMode: 'edit_terminal',
   multiAgentRoles: {
     selector: { provider: 'gemini', model: 'gemini-3.1-pro-preview' },
     frontend: { provider: 'kimi', model: 'moonshotai/Kimi-K2.5' },
@@ -38,11 +39,19 @@ const renderSettings = () => {
 test('saves custom remote models and applies provider model to matching roles only', async () => {
   renderSettings();
 
+  // Click on "Modèles cloud" tab
+  fireEvent.click(screen.getByText('Modèles cloud'));
+
   await waitFor(() => {
-    expect(screen.getByDisplayValue('moonshotai/Kimi-K2.7')).toBeInTheDocument();
+    // try to just find it
+    const els = screen.queryAllByDisplayValue('moonshotai/Kimi-K2.7');
+    expect(els.length).toBeGreaterThan(0);
   });
 
   fireEvent.click(screen.getByText('Appliquer aux roles Kimi / Together'));
+
+  // Switch to Multi-agents tab to see the updated roles
+  fireEvent.click(screen.getByText('Multi-agents'));
 
   await waitFor(() => {
     expect(screen.getAllByDisplayValue('moonshotai/Kimi-K2.7').length).toBeGreaterThan(1);
@@ -66,6 +75,9 @@ test('saves custom remote models and applies provider model to matching roles on
 
 test('saves read-only permission mode from settings', async () => {
   renderSettings();
+
+  // Click on "Sécurité" tab
+  fireEvent.click(screen.getByText('Sécurité'));
 
   const permissionSelect = await screen.findByDisplayValue('Edition + terminal');
 

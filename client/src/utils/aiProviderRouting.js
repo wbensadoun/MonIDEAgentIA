@@ -16,11 +16,9 @@ export const AI_PROVIDER_METHODS = {
 
 const SIMPLE_PROVIDERS = new Set(Object.keys(AI_PROVIDER_METHODS));
 
-export const normalizeSingleAIProvider = (value, options = {}) => {
-  const { allowOllamaMulti = true } = options;
+export const normalizeSingleAIProvider = (value) => {
   const provider = String(value || '').trim().toLowerCase();
   if (SIMPLE_PROVIDERS.has(provider)) return provider;
-  if (allowOllamaMulti && provider === 'ollama-multi') return 'ollama';
   return '';
 };
 
@@ -34,9 +32,7 @@ export const getModelForProvider = (provider, models = {}, sourceProvider = prov
   }
 
   if (provider === 'ollama') {
-    const preferred = sourceProvider === 'ollama-multi'
-      ? (models.ollamaModelCoder || models.resolvedOllamaCoder || models.ollamaModel)
-      : (models.ollamaModel || models.resolvedOllamaModel);
+    const preferred = models.ollamaModel || models.resolvedOllamaModel;
     return normalizeOllamaModelLabel(preferred, DEFAULT_OLLAMA_MODEL);
   }
 

@@ -17,8 +17,8 @@ describe('agentModes', () => {
     expect(shouldProcessFileModifications('agent')).toBe(true);
   });
 
-  test('multi-agent mode routes Ollama to Multi-Ollama and cloud to Multi-IA', () => {
-    expect(resolveProviderForExecutionMode('ollama', 'multi-agent')).toBe('ollama-multi');
+  test('multi-agent mode always routes to unified multi router', () => {
+    expect(resolveProviderForExecutionMode('ollama', 'multi-agent')).toBe('multi');
     expect(resolveProviderForExecutionMode('gemini', 'multi-agent')).toBe('multi');
   });
 });

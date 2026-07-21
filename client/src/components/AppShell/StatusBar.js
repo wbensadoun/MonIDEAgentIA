@@ -20,10 +20,10 @@ const StatusBar = ({
   const doneCount = steps.filter((s) => s?.status === 'done' || s?.status === 'completed').length;
   const multiLabel = multiAIState?.mode
     ? multiAIState.error
-      ? `${multiAIState.mode === 'ollama-multi' ? 'Swarm' : 'Équipe'} erreur`
+      ? 'Équipe erreur'
       : multiAIState.isActive
-        ? `${multiAIState.mode === 'ollama-multi' ? 'Swarm' : 'Équipe'} ${doneCount}/${steps.length || 0}`
-        : `${multiAIState.mode === 'ollama-multi' ? 'Swarm' : 'Équipe'} ${doneCount}/${steps.length || 0} OK`
+        ? `Équipe ${doneCount}/${steps.length || 0}`
+        : `Équipe ${doneCount}/${steps.length || 0} OK`
     : '';
 
   const permLabel = permissionMode === 'read_only' ? 'Lecture seule' : permissionMode === 'edit' ? 'Édition' : 'Édition + terminal';
@@ -94,7 +94,7 @@ const StatusBar = ({
       </div>
 
       {/* Modèle Ollama */}
-      {(aiProvider === 'ollama' || aiProvider === 'ollama-multi') && ollamaStatusLabel && (
+      {aiProvider === 'ollama' && ollamaStatusLabel && (
         <div className="statusbar-item">
           <span className="statusbar-label">Modèle</span>
           <span className="statusbar-value">{ollamaStatusLabel}</span>

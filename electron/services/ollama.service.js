@@ -26,30 +26,6 @@ const FALLBACK_OLLAMA_MODEL_CANDIDATES = [
   'qwen3:30b',
   'qwen3:32b'
 ];
-const FALLBACK_OLLAMA_ARCHITECT_MODEL_CANDIDATES = [
-  DEFAULT_OLLAMA_MODEL,
-  'qwen3:14b',
-  'qwen3:32b',
-  'qwen3:8b',
-  'qwen2.5-coder:14b',
-  'qwen3-coder:30b'
-];
-const FALLBACK_OLLAMA_CODER_MODEL_CANDIDATES = [
-  DEFAULT_OLLAMA_MODEL,
-  'qwen2.5-coder:14b',
-  'qwen3-coder:30b',
-  'qwen3:14b',
-  'qwen3:32b',
-  'qwen3:8b'
-];
-const FALLBACK_OLLAMA_TESTER_MODEL_CANDIDATES = [
-  DEFAULT_OLLAMA_MODEL,
-  'qwen3:8b',
-  'qwen3:14b',
-  'qwen2.5-coder:14b',
-  'qwen3-coder:30b',
-  'qwen3:32b'
-];
 
 // ─── Private state ───────────────────────────────────────────────────────────
 
@@ -441,10 +417,7 @@ const checkOllamaUpdates = async (modelNames = []) => {
   if (configuredModels.length === 0) {
     const settings = await readSettingsSafe();
     configuredModels = extractConfiguredOllamaModels([
-      settings.ollamaModel,
-      settings.ollamaModelArchitect,
-      settings.ollamaModelCoder,
-      settings.ollamaModelTester
+      settings.ollamaModel
     ]);
   }
   if (configuredModels.length === 0) return { success: true, models: [] };
@@ -532,9 +505,6 @@ module.exports = {
   OLLAMA_STREAM_INACTIVITY_TIMEOUT_MS,
   OLLAMA_DOWNLOAD_URL,
   FALLBACK_OLLAMA_MODEL_CANDIDATES,
-  FALLBACK_OLLAMA_ARCHITECT_MODEL_CANDIDATES,
-  FALLBACK_OLLAMA_CODER_MODEL_CANDIDATES,
-  FALLBACK_OLLAMA_TESTER_MODEL_CANDIDATES,
   // Utilities (re-exported for main.js AI handlers)
   normalizeOllamaModelName,
   computeOllamaThink,

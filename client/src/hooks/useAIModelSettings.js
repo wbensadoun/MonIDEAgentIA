@@ -43,9 +43,6 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     kimiApiKey: ''
   });
   const [ollamaModel, setOllamaModel] = useState(DEFAULT_OLLAMA_MODEL);
-  const [ollamaModelArchitect, setOllamaModelArchitect] = useState(DEFAULT_OLLAMA_MODEL);
-  const [ollamaModelCoder, setOllamaModelCoder] = useState(DEFAULT_OLLAMA_MODEL);
-  const [ollamaModelTester, setOllamaModelTester] = useState(DEFAULT_OLLAMA_MODEL);
   const [ollamaModels, setOllamaModels] = useState([]);
   const [ollamaFamily, setOllamaFamily] = useState('');
   const [ollamaSizes, setOllamaSizes] = useState([]);
@@ -54,9 +51,6 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   const resolvedOllamaModel = normalizeOllamaModelLabel(ollamaModel);
-  const resolvedOllamaArchitect = normalizeOllamaModelLabel(ollamaModelArchitect, resolvedOllamaModel);
-  const resolvedOllamaCoder = normalizeOllamaModelLabel(ollamaModelCoder, resolvedOllamaModel);
-  const resolvedOllamaTester = normalizeOllamaModelLabel(ollamaModelTester, resolvedOllamaModel);
 
   const applySettings = useCallback((settings) => {
     if (!settings || typeof settings !== 'object') return;
@@ -78,9 +72,6 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
       kimiApiKey: String(settings.kimiApiKey || '').trim()
     });
     setOllamaModel(normalizeOllamaModelLabel(settings.ollamaModel));
-    setOllamaModelArchitect(normalizeOllamaModelLabel(settings.ollamaModelArchitect, settings.ollamaModel));
-    setOllamaModelCoder(normalizeOllamaModelLabel(settings.ollamaModelCoder, settings.ollamaModel));
-    setOllamaModelTester(normalizeOllamaModelLabel(settings.ollamaModelTester, settings.ollamaModel));
 
     if (typeof settings.thinkingMode === 'boolean') {
       setThinkingMode(settings.thinkingMode);
@@ -143,7 +134,7 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
 
   useEffect(() => {
     if (!isElectronApiAvailable || !window.electronAPI?.listOllamaModels) return undefined;
-    if (aiProvider !== 'ollama' && aiProvider !== 'ollama-multi') return undefined;
+    if (aiProvider !== 'ollama') return undefined;
 
     let mounted = true;
     const loadOllamaModels = async () => {
@@ -172,7 +163,7 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
 
   useEffect(() => {
     if (!isElectronApiAvailable || !window.electronAPI?.resolveOllamaFamily) return undefined;
-    if (aiProvider !== 'ollama' && aiProvider !== 'ollama-multi') return undefined;
+    if (aiProvider !== 'ollama') return undefined;
 
     let mounted = true;
     const loadCatalog = async (force = false) => {
@@ -241,12 +232,6 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     const normalizedValue = normalizeOllamaModelLabel(value);
     if (field === 'ollamaModel') {
       setOllamaModel(normalizedValue);
-    } else if (field === 'ollamaModelArchitect') {
-      setOllamaModelArchitect(normalizedValue);
-    } else if (field === 'ollamaModelCoder') {
-      setOllamaModelCoder(normalizedValue);
-    } else if (field === 'ollamaModelTester') {
-      setOllamaModelTester(normalizedValue);
     }
 
     await saveSettingsPatch({ [field]: normalizedValue }, `Modele Ollama: ${normalizedValue}`);
@@ -257,43 +242,16 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
       return `🦙 ${resolvedOllamaModel}`;
     }
 
-    if (aiProvider === 'ollama-multi') {
-      if (
-        resolvedOllamaArchitect === resolvedOllamaCoder &&
-        resolvedOllamaArchitect === resolvedOllamaTester
-      ) {
-        return `🦙 Multi ${resolvedOllamaArchitect}`;
-      }
-
-      return `🦙 A:${resolvedOllamaArchitect} C:${resolvedOllamaCoder} T:${resolvedOllamaTester}`;
-    }
-
     return '';
-  }, [
-    aiProvider,
-    resolvedOllamaArchitect,
-    resolvedOllamaCoder,
-    resolvedOllamaModel,
-    resolvedOllamaTester
-  ]);
+  }, [aiProvider, resolvedOllamaModel]);
 
   const ollamaStatusLabel = useMemo(() => {
     if (aiProvider === 'ollama') {
       return resolvedOllamaModel;
     }
 
-    if (aiProvider === 'ollama-multi') {
-      return `arch=${resolvedOllamaArchitect} | coder=${resolvedOllamaCoder} | test=${resolvedOllamaTester}`;
-    }
-
     return '';
-  }, [
-    aiProvider,
-    resolvedOllamaArchitect,
-    resolvedOllamaCoder,
-    resolvedOllamaModel,
-    resolvedOllamaTester
-  ]);
+  }, [aiProvider, resolvedOllamaModel]);
 
   const recommendedOllamaModel = useMemo(() => (
     ollamaFamily && recommendedOllamaSize ? `${ollamaFamily}:${recommendedOllamaSize}` : ''
@@ -314,16 +272,10 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
       ...dynamicModels,
       ...installedModels,
       ...fallback,
-      normalizeOllamaModelLabel(ollamaModel),
-      normalizeOllamaModelLabel(ollamaModelArchitect, ollamaModel),
-      normalizeOllamaModelLabel(ollamaModelCoder, ollamaModel),
-      normalizeOllamaModelLabel(ollamaModelTester, ollamaModel)
+      normalizeOllamaModelLabel(ollamaModel)
     ].filter(Boolean)));
   }, [
     ollamaModel,
-    ollamaModelArchitect,
-    ollamaModelCoder,
-    ollamaModelTester,
     ollamaModels,
     ollamaFamily,
     ollamaSizes
@@ -389,16 +341,13 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     claudeModel,
     kimiModel,
     ollamaModel: resolvedOllamaModel,
-    ollamaModelCoder: resolvedOllamaCoder,
     resolvedOllamaModel,
-    resolvedOllamaCoder,
     ...providerApiKeys
   }), [
     claudeModel,
     geminiModel,
     kimiModel,
     providerApiKeys,
-    resolvedOllamaCoder,
     resolvedOllamaModel
   ]);
 
@@ -420,9 +369,6 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     claudeModel,
     kimiModel,
     resolvedOllamaModel,
-    resolvedOllamaArchitect,
-    resolvedOllamaCoder,
-    resolvedOllamaTester,
     recommendedOllamaModel,
     availableOllamaModels,
     activeModelValue,

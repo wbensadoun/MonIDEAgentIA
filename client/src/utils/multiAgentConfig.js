@@ -226,9 +226,7 @@ const LEGACY_ROLE_KEY_MAP = {
   backend: 'apiData',
   // 'architect' previously mapped to 'security' which was wrong — it's the captain equivalent
   architect: 'captain',
-  // 'coder' (ollama-multi) → frontend implementation agent
   coder: 'frontend',
-  // 'tester' / 'reviewer' (ollama-multi) → QA Validator
   tester: 'qa',
   scrum: 'qa'
 };

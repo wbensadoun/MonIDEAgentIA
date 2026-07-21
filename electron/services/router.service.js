@@ -9,6 +9,15 @@
 // fonction routeToDecision est enveloppee dans un try/catch qui renvoie TOUJOURS une
 // decision de repli sure (success:true) — zero regression, jamais de throw au renderer.
 // La cle API n'est JAMAIS journalisee ni renvoyee.
+//
+// ARCHITECTURE DU ROUTEUR INTELLIGENT :
+//  - L1 (Trivial) : heuristique locale ultra-rapide (< 100 ms) qui force
+//    single_agent + light complexity. Aucun appel reseau.
+//  - L2 (Complexe) : si L1 est indécis, appel d'un modèle léger (température 0.1)
+//    pour décider entre single_agent/orchestrator/multi_agent et light/premium.
+//  - Chaque agent du Roster multi-agents conserve son propre provider/modèle
+//    configuré dans les Settings. Le routeur ne force jamais une redirection
+//    globale vers un provider unique.
 // ---------------------------------------------------------------------------
 
 const os = require('os');
@@ -255,11 +264,11 @@ const validateRouterDecision = (raw, agentNameSet, skillNameSet) => {
 // CONVERGENCE des concepts d'execution a partir de la decision :
 //  - executionMode : single_agent -> 'agent' ; orchestrator/multi_agent -> 'multi-agent'
 //  - depth         : complexity 'light' -> 'fast' ; 'premium' -> 'deep'
-//  - localPrivate  : provider ollama -> true (suggestion) ; sinon null (laisse le reglage UI gagner)
-const buildExecution = (decision, provider) => ({
+// Le routeur ne renvoie plus de drapeau localPrivate : le Roster multi-agents
+// gère lui-même le provider de chaque agent (Ollama local ou cloud).
+const buildExecution = (decision) => ({
   executionMode: decision.mode === 'single_agent' ? 'agent' : 'multi-agent',
-  depth: decision.complexity === 'light' ? 'fast' : 'deep',
-  localPrivate: provider === 'ollama' ? true : null
+  depth: decision.complexity === 'light' ? 'fast' : 'deep'
 });
 
 // ---------------------------------------------------------------------------
@@ -313,7 +322,7 @@ const routeToDecision = async ({
       return {
         success: true,
         decision,
-        execution: buildExecution(decision, normalizedProvider),
+        execution: buildExecution(decision),
         model: { provider: normalizedProvider, tier: 'light', resolved: fallbackModel.resolved, source: fallbackModel.source },
         source: 'fallback',
         timingMs: Date.now() - startedAt
@@ -348,7 +357,7 @@ const routeToDecision = async ({
     return {
       success: true,
       decision,
-      execution: buildExecution(decision, normalizedProvider),
+      execution: buildExecution(decision),
       model: {
         provider: normalizedProvider,
         tier: decision.complexity,
@@ -365,7 +374,7 @@ const routeToDecision = async ({
     return {
       success: true,
       decision,
-      execution: buildExecution(decision, normalizedProvider),
+      execution: buildExecution(decision),
       model: {
         provider: normalizedProvider,
         tier: 'light',

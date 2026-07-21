@@ -77,7 +77,6 @@ const getProviderLabel = (provider) => {
   if (provider === 'kimi') return 'Kimi / Together';
   if (provider === 'multi') return 'Multi-IA';
   if (provider === 'ollama') return 'Ollama';
-  if (provider === 'ollama-multi') return 'Multi-Ollama';
   return 'Gemini';
 };
 
@@ -106,9 +105,6 @@ const AppTopbar = ({
   isLoading,
   multiAIState,
   resolvedOllamaModel,
-  resolvedOllamaArchitect,
-  resolvedOllamaCoder,
-  resolvedOllamaTester,
   availableOllamaModels,
   recommendedOllamaModel,
   onOllamaSettingChange,
@@ -133,7 +129,7 @@ const AppTopbar = ({
   const canEditRemoteModel = isRemoteProvider(aiProvider);
 
   useEffect(() => {
-    if (!isExpertMode && showAdvanced && aiProvider === 'ollama-multi') {
+    if (!isExpertMode && showAdvanced && aiProvider === 'ollama') {
       setShowAdvanced(false);
     }
   }, [aiProvider, isExpertMode, showAdvanced]);
@@ -159,7 +155,7 @@ const AppTopbar = ({
     const steps = Array.isArray(multiAIState.steps) ? multiAIState.steps : [];
     if (!multiAIState.isActive && steps.length === 0 && !multiAIState.error) return '';
     const done = steps.filter((s) => s?.status === 'done' || s?.status === 'completed').length;
-    const label = multiAIState.mode === 'ollama-multi' ? 'Swarm' : 'Équipe';
+    const label = 'Équipe';
     if (multiAIState.error) return `${label} erreur`;
     if (multiAIState.isActive) return `${label}: ${multiAIState.currentPhase || 'en cours'} · ${done}/${steps.length || 0}`;
     return `${label}: ${done}/${steps.length || 0} terminé`;
@@ -231,7 +227,6 @@ const AppTopbar = ({
             <option value="kimi">Kimi / Together</option>
             <option value="multi">Multi-IA</option>
             <option value="ollama">Ollama</option>
-            <option value="ollama-multi">Multi-Ollama</option>
           </select>
 
           {canEditRemoteModel && activeModelValue && (
@@ -412,50 +407,23 @@ const AppTopbar = ({
             Contexte profond
           </label>
 
-          {(aiProvider === 'ollama' || aiProvider === 'ollama-multi') && (
+          {aiProvider === 'ollama' && (
             <>
               <span className="topbar-advanced-label" style={{ marginLeft: 8 }}>Ollama</span>
 
-              {aiProvider === 'ollama' && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-dim)' }}>
-                  <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>Modèle</span>
-                  <select
-                    value={resolvedOllamaModel}
-                    onChange={(e) => onOllamaSettingChange('ollamaModel', e.target.value)}
-                    className="topbar-select"
-                    disabled={!isElectronApiAvailable}
-                  >
-                    {availableOllamaModels.map((m) => (
-                      <option key={m} value={m}>{m === recommendedOllamaModel ? `${m} (recommandée)` : m}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {aiProvider === 'ollama-multi' && (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  {[
-                    { key: 'ollamaModelArchitect', val: resolvedOllamaArchitect, label: 'Arch' },
-                    { key: 'ollamaModelCoder', val: resolvedOllamaCoder, label: 'Code' },
-                    { key: 'ollamaModelTester', val: resolvedOllamaTester, label: 'Test' },
-                  ].map(({ key, val, label }) => (
-                    <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-dim)' }}>
-                      <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>{label}</span>
-                      <select
-                        value={val}
-                        onChange={(e) => onOllamaSettingChange(key, e.target.value)}
-                        className="topbar-select"
-                        disabled={!isElectronApiAvailable}
-                      >
-                        {availableOllamaModels.map((m) => (
-                          <option key={m} value={m}>{m === recommendedOllamaModel ? `${m} (recommandée)` : m}</option>
-                        ))}
-                      </select>
-                    </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-dim)' }}>
+                <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>Modèle</span>
+                <select
+                  value={resolvedOllamaModel}
+                  onChange={(e) => onOllamaSettingChange('ollamaModel', e.target.value)}
+                  className="topbar-select"
+                  disabled={!isElectronApiAvailable}
+                >
+                  {availableOllamaModels.map((m) => (
+                    <option key={m} value={m}>{m === recommendedOllamaModel ? `${m} (recommandée)` : m}</option>
                   ))}
-                  <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>{ollamaTopbarLabel}</span>
-                </div>
-              )}
+                </select>
+              </label>
             </>
           )}
         </div>

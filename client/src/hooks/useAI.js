@@ -30,8 +30,7 @@ import {
   runMultiAgentRole as callMultiAgentRole
 } from '../utils/aiAgentRuntime';
 import { runDynamicMultiAgentFlow } from '../utils/dynamicTeamExecution';
-import { runOllamaMultiCompletionFlow } from '../utils/ollamaMultiFlow';
-import { applyCollectiveDepth, resolveCollectiveProvider } from '../utils/collectiveMode';
+import { applyCollectiveDepth } from '../utils/collectiveMode';
 import { buildTeamPlan } from '../utils/teamSelector';
 import {
   classifyPromptLayer1,
@@ -83,9 +82,6 @@ export const useAI = (
     claudeModel,
     kimiModel,
     ollamaModel,
-    ollamaModelArchitect,
-    ollamaModelCoder,
-    ollamaModelTester,
     multiAgentRoles,
     localAI: localAISettings
   } = apiKeys;
@@ -207,7 +203,6 @@ export const useAI = (
     let effAgent = activeAgent;
     let effSkill = activeSkill;
     let effDepth = multiAgentOptions?.depth;
-    let effLocalPrivate = multiAgentOptions?.localPrivate;
     let routerModelOverride = null;
 
     if (autoRoute) {
@@ -240,7 +235,6 @@ export const useAI = (
             const execution = routed.execution || {};
             effExecutionMode = execution.executionMode || mapRouterModeToExecutionMode(decision.mode);
             effDepth = execution.depth || mapComplexityToDepth(decision.complexity);
-            effLocalPrivate = execution.localPrivate ?? multiAgentOptions?.localPrivate ?? null;
             const matchedAgent = decision.agent ? matchAgentByName(availableAgents, decision.agent) : null;
             if (matchedAgent) effAgent = matchedAgent;
             const firstSkillName = Array.isArray(decision.skills) ? decision.skills[0] : null;
@@ -266,9 +260,7 @@ export const useAI = (
     }
 
     const isCollective = effExecutionMode === 'multi-agent';
-    const effectiveAIProvider = isCollective && effLocalPrivate
-      ? resolveCollectiveProvider(true)
-      : resolveProviderForExecutionMode(aiProvider, effExecutionMode);
+    const effectiveAIProvider = resolveProviderForExecutionMode(aiProvider, effExecutionMode);
     const localOnlyRun = isLocalOnlyProvider(effectiveAIProvider);
     const canProcessFilesForMode = shouldProcessFileModifications(effExecutionMode, runPreset);
 
@@ -344,7 +336,7 @@ export const useAI = (
           allProjectFiles,
           normalizedMultiAgentRoles,
           localAISettings,
-          multiAgentOptions: { ...multiAgentOptions, depth: effDepth, localPrivate: effLocalPrivate },
+          multiAgentOptions: { ...multiAgentOptions, depth: effDepth },
           setMultiAIState,
           setAiConversationHistory,
           showMessage,
@@ -359,76 +351,66 @@ export const useAI = (
           updatedHistory
         });
       } else {
-        // Mode simple (Gemini ou Kimi seul)
-        let response;
-        if (effectiveAIProvider === 'ollama-multi') {
-          response = await runOllamaMultiCompletionFlow({
-            ollamaModel,
-            ollamaModelArchitect,
-            ollamaModelCoder,
-            ollamaModelTester,
-            currentProjectPath,
-            activeAgent: effAgent,
-            activeSkill: effSkill,
-            skills,
-            sharedAgentContextOptions,
-            aiConversationHistory,
-            newMessage,
-            promptToSend,
-            code,
-            allProjectFiles,
-            setMultiAIState
-          });
-        } else {
-          // Router may resolve a specific model for the active provider; when
-          // autoRoute is off, routerModelOverride is null and this object is
-          // identical to the manual `models` map.
-          const modelsForRun = {
-            geminiModel,
-            claudeModel,
-            kimiModel,
-            ollamaModel
-          };
-          if (routerModelOverride) {
-            if (effectiveAIProvider === 'gemini') modelsForRun.geminiModel = routerModelOverride;
-            else if (effectiveAIProvider === 'claude') modelsForRun.claudeModel = routerModelOverride;
-            else if (effectiveAIProvider === 'kimi') modelsForRun.kimiModel = routerModelOverride;
-            else if (effectiveAIProvider === 'ollama') modelsForRun.ollamaModel = routerModelOverride;
-          }
-          response = await callSingleAIProvider({
-            effectiveAIProvider,
-            updatedHistory,
-            aiConversationHistory,
-            newMessage,
-            promptToSend,
-            code,
-            allProjectFiles,
-            thinkingMode,
-            deepContextEnabled,
-            currentProjectPath,
-            activeAgent: effAgent,
-            activeSkill: effSkill,
-            sharedAgentContextOptions,
-            models: modelsForRun,
-            apiKeys: {
-              geminiApiKey,
-              claudeApiKey,
-              kimiApiKey
-            }
-          });
+        // Mode simple : un seul provider, peu importe lequel
+        const modelsForRun = {
+          geminiModel,
+          claudeModel,
+          kimiModel,
+          ollamaModel
+        };
+        if (routerModelOverride) {
+          if (effectiveAIProvider === 'gemini') modelsForRun.geminiModel = routerModelOverride;
+          else if (effectiveAIProvider === 'claude') modelsForRun.claudeModel = routerModelOverride;
+          else if (effectiveAIProvider === 'kimi') modelsForRun.kimiModel = routerModelOverride;
+          else if (effectiveAIProvider === 'ollama') modelsForRun.ollamaModel = routerModelOverride;
         }
+        const response = await callSingleAIProvider({
+          effectiveAIProvider,
+          updatedHistory,
+          aiConversationHistory,
+          newMessage,
+          promptToSend,
+          code,
+          allProjectFiles,
+          thinkingMode,
+          deepContextEnabled,
+          currentProjectPath,
+          activeAgent: effAgent,
+          activeSkill: effSkill,
+          sharedAgentContextOptions,
+          models: modelsForRun,
+          apiKeys: {
+            geminiApiKey,
+            claudeApiKey,
+            kimiApiKey
+          }
+        });
 
         if (response.success) {
           const fullAiText = response.text;
           setAiConversationHistory(prev => [...prev, { role: 'model', text: fullAiText }]);
-          if (canProcessFilesForMode) {
+
+          // Détection de présence de blocs de modification
+          const proposedChangesDetected = /\*\*FICHIER:\s*|FILE:\s*|<<<<\s*SEARCH/gi.test(fullAiText);
+
+          if (proposedChangesDetected) {
+            // TOUJOURS parser et afficher les propositions (même en Plan/Ask)
             await processAIFileModifications(fullAiText, {
               prompt: promptToSend,
               provider: effectiveAIProvider,
               model: response.model || geminiModel || kimiModel || claudeModel || ollamaModel,
               summary: 'Reponse IA'
             });
+
+            // Notification interactive si mode lecture seule
+            if (!canProcessFilesForMode) {
+              showMessage(
+                "💡 Des modifications ont été proposées ! Passez en mode 'Agent' pour passer en revue le diff et appliquer les changements.",
+                8000
+              );
+            }
           }
+
           await autoSaveConversation(updatedHistory.concat([{ role: 'model', text: fullAiText }]));
         } else {
           const errorText = response?.error || 'Erreur inconnue';
@@ -484,9 +466,6 @@ export const useAI = (
     claudeModel,
     kimiModel,
     ollamaModel,
-    ollamaModelArchitect,
-    ollamaModelCoder,
-    ollamaModelTester,
     multiAgentRoles,
     localAISettings,
     multiAgentOptions,
@@ -564,7 +543,7 @@ export const useAI = (
     } catch {
       return null;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [executionMode, prompt, multiAgentRoles, localAISettings, multiAgentOptions]);
 
   return {

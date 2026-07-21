@@ -6,7 +6,6 @@ const useRunConfiguration = () => {
   const [multiAgentFormationKey, setMultiAgentFormationKey] = useState('product-ui');
   const [disabledAgentKeys, setDisabledAgentKeys] = useState([]);
   const [collectiveDepth, setCollectiveDepth] = useState('deep');
-  const [localPrivate, setLocalPrivate] = useState(false);
   // Intelligent Router: on by default (product spec). `routerDecision` is the
   // last decision the router produced, rendered by AIDecisionBadge.
   const [autoRoute, setAutoRoute] = useState(true);
@@ -15,9 +14,8 @@ const useRunConfiguration = () => {
   const multiAgentRunOptions = useMemo(() => ({
     formationKey: multiAgentFormationKey,
     disabledAgentKeys,
-    depth: collectiveDepth,
-    localPrivate
-  }), [disabledAgentKeys, multiAgentFormationKey, collectiveDepth, localPrivate]);
+    depth: collectiveDepth
+  }), [disabledAgentKeys, multiAgentFormationKey, collectiveDepth]);
 
   return {
     executionMode,
@@ -30,8 +28,6 @@ const useRunConfiguration = () => {
     setDisabledAgentKeys,
     collectiveDepth,
     setCollectiveDepth,
-    localPrivate,
-    setLocalPrivate,
     autoRoute,
     setAutoRoute,
     routerDecision,

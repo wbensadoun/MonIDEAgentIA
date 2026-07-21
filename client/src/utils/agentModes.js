@@ -118,13 +118,14 @@ export const shouldProcessFileModifications = (executionMode, runPreset = 'defau
 
 export const isLocalOnlyProvider = (provider) => {
   const normalized = String(provider || '').trim().toLowerCase();
-  return normalized === 'ollama' || normalized === 'ollama-multi';
+  return normalized === 'ollama';
 };
 
 export const resolveProviderForExecutionMode = (aiProvider, executionMode) => {
   const provider = String(aiProvider || 'gemini').trim().toLowerCase();
   const mode = normalizeExecutionMode(executionMode);
-  if (mode !== 'multi-agent') return provider;
-  if (provider === 'ollama' || provider === 'ollama-multi') return 'ollama-multi';
-  return 'multi';
+  // En mode multi-agent, on appelle TOUJOURS le routeur unifié 'multi'
+  // qui déléguera chaque agent à son provider configuré dans le Roster.
+  if (mode === 'multi-agent') return 'multi';
+  return provider;
 };

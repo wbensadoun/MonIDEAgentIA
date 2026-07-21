@@ -9,9 +9,6 @@ const buildApiKeysFromSettings = (settings = {}) => ({
   claudeModel: settings.claudeModel || '',
   kimiModel: settings.kimiModel || '',
   ollamaModel: settings.ollamaModel || '',
-  ollamaModelArchitect: settings.ollamaModelArchitect || '',
-  ollamaModelCoder: settings.ollamaModelCoder || '',
-  ollamaModelTester: settings.ollamaModelTester || '',
   multiAgentRoles: normalizeMultiAgentRoles(settings.multiAgentRoles),
   localAI: {
     optimizationMode: settings.localAIOptimizationMode || 'safe',
@@ -32,9 +29,6 @@ export const useAISettingsSync = (isElectronApiAvailable) => {
     claudeModel: '',
     kimiModel: '',
     ollamaModel: '',
-    ollamaModelArchitect: '',
-    ollamaModelCoder: '',
-    ollamaModelTester: '',
     multiAgentRoles: normalizeMultiAgentRoles(),
     localAI: {
       optimizationMode: 'safe',

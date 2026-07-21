@@ -38,9 +38,6 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
     claudeModel: DEFAULT_CLAUDE_MODEL,
     kimiModel: DEFAULT_KIMI_MODEL,
     ollamaModel: DEFAULT_OLLAMA_MODEL,
-    ollamaModelArchitect: DEFAULT_OLLAMA_MODEL,
-    ollamaModelCoder: DEFAULT_OLLAMA_MODEL,
-    ollamaModelTester: DEFAULT_OLLAMA_MODEL,
     multiAgentRoles: normalizeMultiAgentRoles(),
     devPort: '3004',
     allowDangerousActions: false,
@@ -187,9 +184,6 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
         claudeModel: normalizeRemoteModelName(settings.claudeModel, DEFAULT_CLAUDE_MODEL),
         kimiModel: normalizeRemoteModelName(settings.kimiModel, DEFAULT_KIMI_MODEL),
         ollamaModel: normalizeOllamaModelLabel(settings.ollamaModel),
-        ollamaModelArchitect: normalizeOllamaModelLabel(settings.ollamaModelArchitect, settings.ollamaModel),
-        ollamaModelCoder: normalizeOllamaModelLabel(settings.ollamaModelCoder, settings.ollamaModel),
-        ollamaModelTester: normalizeOllamaModelLabel(settings.ollamaModelTester, settings.ollamaModel),
         multiAgentRoles: normalizeMultiAgentRoles(settings.multiAgentRoles),
         localAIMaxConcurrentLocal: Math.max(1, Math.min(4, Number(settings.localAIMaxConcurrentLocal || 1))),
         localAIMaxConcurrentCloud: Math.max(1, Math.min(6, Number(settings.localAIMaxConcurrentCloud || 3))),
@@ -214,9 +208,6 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
     setSettings((prev) => {
       if (field === 'ollamaModel') {
         return { ...prev, [field]: normalizeOllamaModelLabel(value) };
-      }
-      if (field === 'ollamaModelArchitect' || field === 'ollamaModelCoder' || field === 'ollamaModelTester') {
-        return { ...prev, [field]: normalizeOllamaModelLabel(value, prev.ollamaModel) };
       }
       if (field === 'geminiModel' || field === 'claudeModel' || field === 'kimiModel') {
         return { ...prev, [field]: value };
@@ -303,9 +294,6 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
   const availableOllamaModels = Array.from(new Set([
     ...SUGGESTED_OLLAMA_MODELS,
     settings.ollamaModel,
-    settings.ollamaModelArchitect,
-    settings.ollamaModelCoder,
-    settings.ollamaModelTester,
     ...ollamaModels
   ].map((m) => String(m || '').trim()).filter((m) => m && !/:latest$/i.test(m))));
 
@@ -384,7 +372,6 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
               <option value="kimi">Kimi</option>
               <option value="multi">Multi-IA</option>
               <option value="ollama">Ollama</option>
-              <option value="ollama-multi">Multi-Ollama</option>
             </select>
           </div>
           </>)}
@@ -519,7 +506,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
               <option value="manual">Manuel expert</option>
             </select>
             <div className="settings-hint">
-              Safe ne lit pas la configuration PC et limite Ollama a un agent local. Auto lit CPU/RAM/GPU uniquement apres accord explicite.
+              Safe ne lit pas la configuration PC et limite Ollama a un agent local. Auto lit CPU/RAM/GPU uniquement apres accord explicite. Le mode multi-agent utilise le roster pour choisir le provider de chaque agent.
             </div>
 
             {settings.localAIOptimizationMode === 'auto' && (
@@ -601,15 +588,14 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
           </div>
 
           <div className="settings-section">
-            <label className="settings-label">Modeles Ollama</label>
+            <label className="settings-label">Modele Ollama</label>
             <div className="settings-hint">
-              Utilises pour Ollama simple, Multi-Ollama et les agents du roster qui choisissent Ollama.
+              Utilise pour Ollama simple et les agents du roster qui choisissent Ollama.
             </div>
             <div className="settings-hint">
               Tailles proposees dynamiquement selon la famille Qwen la plus recente (8b, 14b, 30b, 32b...). La taille adaptee a votre machine est marquee (recommandee) dans la barre du haut. Aucun alias latest. Installer via `ollama pull` si absent localement.
             </div>
 
-            <label className="settings-label">Modele Ollama simple</label>
             <select
               value={settings.ollamaModel || DEFAULT_OLLAMA_MODEL}
               onChange={(e) => handleChange('ollamaModel', e.target.value)}
@@ -622,39 +608,6 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
               )}
               {availableOllamaModels.map((modelName) => (
                 <option key={`ollama-${modelName}`} value={modelName}>{modelName}</option>
-              ))}
-            </select>
-
-            <label className="settings-label">Architecte (Multi-Ollama)</label>
-            <select
-              value={settings.ollamaModelArchitect || settings.ollamaModel || DEFAULT_OLLAMA_MODEL}
-              onChange={(e) => handleChange('ollamaModelArchitect', e.target.value)}
-              className="settings-input"
-            >
-              {availableOllamaModels.map((modelName) => (
-                <option key={`arch-${modelName}`} value={modelName}>{modelName}</option>
-              ))}
-            </select>
-
-            <label className="settings-label">Codeur (Multi-Ollama)</label>
-            <select
-              value={settings.ollamaModelCoder || settings.ollamaModel || DEFAULT_OLLAMA_MODEL}
-              onChange={(e) => handleChange('ollamaModelCoder', e.target.value)}
-              className="settings-input"
-            >
-              {availableOllamaModels.map((modelName) => (
-                <option key={`coder-${modelName}`} value={modelName}>{modelName}</option>
-              ))}
-            </select>
-
-            <label className="settings-label">Relecteur (Multi-Ollama)</label>
-            <select
-              value={settings.ollamaModelTester || settings.ollamaModel || DEFAULT_OLLAMA_MODEL}
-              onChange={(e) => handleChange('ollamaModelTester', e.target.value)}
-              className="settings-input"
-            >
-              {availableOllamaModels.map((modelName) => (
-                <option key={`tester-${modelName}`} value={modelName}>{modelName}</option>
               ))}
             </select>
           </div>

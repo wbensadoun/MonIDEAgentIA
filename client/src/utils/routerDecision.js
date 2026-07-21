@@ -10,7 +10,6 @@
 //   decision.complexity  : 'light' | 'premium'
 //   execution.executionMode : 'agent' | 'multi-agent'
 //   execution.depth         : 'fast' | 'deep'
-//   execution.localPrivate  : boolean | null
 
 const ROUTER_MODE_TO_EXECUTION_MODE = {
   single_agent: 'agent',

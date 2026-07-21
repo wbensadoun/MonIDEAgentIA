@@ -1,0 +1,81 @@
+import type { ThemeId, ThemeMeta } from '../types';
+
+export const THEMES: Record<ThemeId, ThemeMeta> = {
+  town: {
+    id: 'town',
+    name: 'Monster Town',
+    tagline: 'Village JRPG original, routes et agents pixel',
+    movement: 'grid',
+    cols: 16,
+    rows: 11,
+    accent: '#3f8f68',
+    pixel: true,
+    badge: 'Town',
+  },
+  cyberpunk: {
+    id: 'cyberpunk',
+    name: 'Cyber Deck',
+    tagline: 'Ville neon, data bar et drones',
+    movement: 'free',
+    cols: 16,
+    rows: 11,
+    accent: '#c026d3',
+    pixel: false,
+    badge: 'Cyberpunk',
+  },
+  isometric: {
+    id: 'isometric',
+    name: 'Agent HQ',
+    tagline: 'Bâtiment isométrique, salles par métier',
+    movement: 'free',
+    cols: 16,
+    rows: 11,
+    accent: '#3b82f6',
+    pixel: false,
+    badge: 'Isométrique',
+  },
+  campus: {
+    id: 'campus',
+    name: 'RPG Guild',
+    tagline: 'Guilde fantasy, quetes et equipement',
+    movement: 'grid',
+    cols: 16,
+    rows: 11,
+    accent: '#d6a13f',
+    pixel: true,
+    badge: 'RPG',
+  },
+  synthwave: {
+    id: 'synthwave',
+    name: 'Retro Grid',
+    tagline: 'Synthwave 80s, horizon néon & soleil',
+    movement: 'free',
+    cols: 16,
+    rows: 11,
+    accent: '#fb7185',
+    pixel: false,
+    badge: 'Synthwave',
+  },
+  tamers: {
+    id: 'tamers',
+    name: 'Monster Tamers',
+    tagline: 'Créatures originales, overworld pixel, aventure',
+    movement: 'grid',
+    cols: 16,
+    rows: 11,
+    accent: '#f59e0b',
+    pixel: true,
+    badge: 'Tamers',
+  },
+};
+
+export const THEME_ORDER: ThemeId[] = [
+  'town',
+  'cyberpunk',
+  'isometric',
+  'campus',
+  'synthwave',
+  'tamers',
+];
+
+export const DEFAULT_THEME: ThemeId = 'town';
