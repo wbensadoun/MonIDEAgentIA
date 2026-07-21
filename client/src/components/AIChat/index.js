@@ -6,6 +6,7 @@ import { EXECUTION_MODES, RUN_PRESETS } from '../../utils/agentModes';
 import { MULTI_AGENT_FORMATIONS, MULTI_AGENT_ROLE_DEFINITIONS } from '../../utils/multiAgentConfig';
 import { COLLECTIVE_DEPTHS } from '../../utils/collectiveMode';
 import CollectiveTeamPreview from './CollectiveTeamPreview';
+import AIDecisionBadge from './AIDecisionBadge';
 
 const WORKFLOW_STREAM_REGEX = /\*\*WORKFLOW:/i;
 const DIFF_STREAM_REGEX = /<<<<\s*SEARCH/i;
@@ -262,6 +263,12 @@ const AIChat = ({
   onCollectiveDepthChange,
   localPrivate = false,
   onLocalPrivateChange,
+  autoRoute = false,
+  onAutoRouteChange,
+  routerDecision = null,
+  agents = [],
+  activeAgent = null,
+  onActiveAgentChange,
   teamPlanPreview = null,
   pendingImages = [],
   onRemovePendingImage,
@@ -282,6 +289,7 @@ const AIChat = ({
   const conversationHistoryRef = useRef(null);
   const promptInputRef = useRef(null);
   const [showConversations, setShowConversations] = useState(false);
+  const [showManualControls, setShowManualControls] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showWorkflowSuggestions, setShowWorkflowSuggestions] = useState(false);
   const [workflowFilter, setWorkflowFilter] = useState('');
@@ -907,6 +915,29 @@ const AIChat = ({
     setShowConversations(false);
   };
 
+  // Auto agent selector: "Auto" hands control to the intelligent router,
+  // picking a real agent switches to manual mode with that agent selected.
+  const AUTO_OPTION = '__auto__';
+  const NONE_OPTION = '__none__';
+  const agentOptionValue = (agent) => (agent ? `${agent.scope || ''}:${agent.name}` : NONE_OPTION);
+  const agentSelectValue = autoRoute ? AUTO_OPTION : agentOptionValue(activeAgent);
+
+  const handleAgentSelectChange = (event) => {
+    const value = event.target.value;
+    if (value === AUTO_OPTION) {
+      if (typeof onAutoRouteChange === 'function') onAutoRouteChange(true);
+      if (typeof onActiveAgentChange === 'function') onActiveAgentChange(null);
+      return;
+    }
+    if (typeof onAutoRouteChange === 'function') onAutoRouteChange(false);
+    if (value === NONE_OPTION) {
+      if (typeof onActiveAgentChange === 'function') onActiveAgentChange(null);
+      return;
+    }
+    const picked = (agents || []).find((agent) => agentOptionValue(agent) === value) || null;
+    if (typeof onActiveAgentChange === 'function') onActiveAgentChange(picked);
+  };
+
   const setExecutionMode = (modeId) => {
     if (typeof onExecutionModeChange === 'function') {
       onExecutionModeChange(modeId);
@@ -1070,33 +1101,67 @@ const AIChat = ({
       </div>
 
       <div className="ai-mode-panel">
-        <div className="ai-mode-row">
-          {EXECUTION_MODES.map((mode) => (
-            <button
-              type="button"
-              key={mode.id}
-              className={`ai-mode-btn ${executionMode === mode.id ? 'is-active' : ''}`}
-              onClick={() => setExecutionMode(mode.id)}
-              title={mode.description}
-              disabled={isLoading}
-            >
-              {mode.label}
-            </button>
-          ))}
+        {/* ── Auto agent selector (Intelligent Router) ─────────────── */}
+        <div className="ai-auto-row">
+          <span className="ai-auto-label">Agent</span>
+          <select
+            className="ai-auto-select"
+            value={agentSelectValue}
+            onChange={handleAgentSelectChange}
+            disabled={isLoading}
+            title="Auto : le routeur intelligent choisit le mode, l'agent et les skills"
+          >
+            <option value={AUTO_OPTION}>Auto (Sélection intelligente)</option>
+            {!autoRoute && !activeAgent && <option value={NONE_OPTION}>Aucun agent</option>}
+            {(agents || []).map((agent) => (
+              <option key={agentOptionValue(agent)} value={agentOptionValue(agent)}>
+                {agent.name}{agent.scope ? ` (${agent.scope})` : ''}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="ai-preset-row">
-          {RUN_PRESETS.map((preset) => (
-            <button
-              type="button"
-              key={preset.id}
-              className={`ai-preset-btn ${runPreset === preset.id ? 'is-active' : ''}`}
-              onClick={() => setPreset(preset.id)}
-              disabled={isLoading}
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
+
+        {autoRoute && (
+          <button
+            type="button"
+            className="ai-advanced-toggle"
+            onClick={() => setShowManualControls((v) => !v)}
+          >
+            {showManualControls ? '▾' : '▸'} Avancé
+          </button>
+        )}
+
+        {(!autoRoute || showManualControls) && (
+          <>
+            <div className="ai-mode-row">
+              {EXECUTION_MODES.map((mode) => (
+                <button
+                  type="button"
+                  key={mode.id}
+                  className={`ai-mode-btn ${executionMode === mode.id ? 'is-active' : ''}`}
+                  onClick={() => setExecutionMode(mode.id)}
+                  title={mode.description}
+                  disabled={isLoading}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+            <div className="ai-preset-row">
+              {RUN_PRESETS.map((preset) => (
+                <button
+                  type="button"
+                  key={preset.id}
+                  className={`ai-preset-btn ${runPreset === preset.id ? 'is-active' : ''}`}
+                  onClick={() => setPreset(preset.id)}
+                  disabled={isLoading}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         {executionMode === 'multi-agent' && (
           <CollectivePanel
             collectiveDepth={collectiveDepth}
@@ -1560,6 +1625,9 @@ const AIChat = ({
             </button>
           ))}
         </div>
+
+        {/* Intelligent Router decision (auto mode only) */}
+        {autoRoute && <AIDecisionBadge decision={routerDecision} />}
       </div>
 
       {/* ===== SEND / STOP BUTTON ===== */}

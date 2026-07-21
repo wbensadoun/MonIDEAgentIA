@@ -186,6 +186,9 @@ try {
     installSkillFromUrl: (url, scope, projectPath, options) => ipcRenderer.invoke('install-skill-from-url', url, scope, projectPath, options),
     installAllSkills: (catalogEntries) => ipcRenderer.invoke('install-all-skills', catalogEntries),
 
+    // Intelligent Router API
+    routeRequest: (projectPath, userPrompt, options) => ipcRenderer.invoke('route-request', projectPath, userPrompt, options),
+
     // VoltAgent catalogs & packs
     getVoltAgentCatalog: (catalogId) => ipcRenderer.invoke('get-voltagent-catalog', catalogId),
     syncVoltAgentSubagents: (options) => ipcRenderer.invoke('sync-voltagent-subagents', options),
