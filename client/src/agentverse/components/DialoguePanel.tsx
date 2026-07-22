@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Agent, AgentRoleKey } from '../types';
 import { AgentAvatar } from './AgentAvatar';
+import { STATUS_LABEL } from '../constants';
 
 interface DialoguePanelProps {
   agent: Agent | null;
@@ -16,14 +17,6 @@ const QUICK_PROMPTS: Record<AgentRoleKey, string[]> = {
   backend: ["Crée l'endpoint de partage", "Sécurise l'authentification"],
   qa: ['Écris les tests du partage', 'Liste les cas limites'],
   devops: ['Configure la CI de preview', 'Prépare un plan de rollback'],
-};
-
-const STATUS_BADGE: Record<Agent['status'], string> = {
-  idle: 'Disponible',
-  walking: 'En déplacement',
-  working: 'Au travail…',
-  talking: 'À l’écoute',
-  blocked: 'Bloqué',
 };
 
 /**
@@ -70,7 +63,7 @@ export function DialoguePanel({ agent, pixel, onSend, onClose }: DialoguePanelPr
           </span>
         )}
         <span className={`av-dialogue__status av-dialogue__status--${agent.status}`}>
-          {STATUS_BADGE[agent.status]}
+          {STATUS_LABEL[agent.status]}
         </span>
         <button type="button" className="av-dialogue__close" onClick={onClose} aria-label="Fermer">
           ✕

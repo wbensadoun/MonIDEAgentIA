@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, Suspense } from 'react';
 import FileExplorer from '../FileExplorer';
 import WorkspacePanel from '../WorkspacePanel';
 import CodeEditor from '../CodeEditor';
@@ -9,6 +9,9 @@ import VisualWorkflowEditor from '../VisualWorkflowEditor';
 import AIChat from '../AIChat';
 import AIChangesPanel from '../AIChangesPanel';
 import BrainGraphPanel from '../BrainGraphPanel';
+
+// Lazy-load AgentVerse to avoid eager Phaser import (which breaks tests due to jsdom canvas)
+const LazyAgentVerse = React.lazy(() => import('../../agentverse/index'));
 
 /* Icônes tabs centre */
 const IconCode = () => (
@@ -47,6 +50,14 @@ const IconBrain = () => (
     <path d="M14.5 9.8 13 13.2" />
     <path d="M10 16h-2a4 4 0 0 1-4-4" />
     <path d="M14 16h2a4 4 0 0 0 4-4" />
+  </svg>
+);
+const IconAgents = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
+    <circle cx="9" cy="8" r="3" />
+    <path d="M3 20a6 6 0 0 1 12 0" />
+    <path d="M16 3.5a3 3 0 0 1 0 5.5" />
+    <path d="M18.5 14a6 6 0 0 1 2.5 5" />
   </svg>
 );
 const IconMaximize = () => (
@@ -240,6 +251,7 @@ const WorkspaceLayout = ({
             { id: 'ai-changes', label: 'AI Changes', Icon: IconAudit },
             { id: 'brain', label: 'Brain', Icon: IconBrain },
             { id: 'workflows', label: 'Flux', Icon: IconFlow },
+            { id: 'agents', label: 'Agents', Icon: IconAgents },
           ].map(({ id, label, Icon }) => (
             <button
               key={id}
@@ -270,6 +282,11 @@ const WorkspaceLayout = ({
           {centerView === 'git' && <GitPanel {...gitPanelProps} />}
           {centerView === 'ai-changes' && <AIChangesPanel {...aiChangesPanelProps} />}
           {centerView === 'brain' && <BrainGraphPanel {...brainGraphProps} />}
+          {centerView === 'agents' && (
+            <Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Chargement de AgentVerse...</div>}>
+              <LazyAgentVerse onViewChanges={() => onCenterViewChange('ai-changes')} />
+            </Suspense>
+          )}
           <div style={{ display: centerView === 'workflows' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
             <VisualWorkflowEditor {...workflowProps} />
           </div>

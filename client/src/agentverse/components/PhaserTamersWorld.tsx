@@ -13,6 +13,12 @@ import React, { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
 import type { Agent, AgentRoleKey, AvatarPalette, Facing, ThemeMeta } from '../types';
 
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 interface PhaserTamersWorldProps {
   agents: Agent[];
   theme: ThemeMeta;
@@ -101,10 +107,12 @@ class TamersScene extends Phaser.Scene {
   private onSelect?: (id: string) => void;
   private onDeselect?: () => void;
   private dayNight?: Phaser.GameObjects.Rectangle;
+  private reduced = false;
 
   constructor() { super({ key: 'agentverse-tamers' }); }
 
   create(): void {
+    this.reduced = prefersReducedMotion();
     this.cameras.main.setBackgroundColor('#2d4a1e');
     this.generateTileTextures();
     this.paintTiles();
@@ -126,16 +134,16 @@ class TamersScene extends Phaser.Scene {
   update(time: number): void {
     this.bundles.forEach((b) => {
       if (b.lastAgent.status === 'working' && b.lastAgent.progress < 0) {
-        b.barFill.width = 10 + ((Math.sin(time / 200) + 1) / 2) * 24;
+        b.barFill.width = this.reduced ? 26 : 10 + ((Math.sin(time / 200) + 1) / 2) * 24;
       }
-      if (b.lastAgent.status === 'talking') {
+      if (b.lastAgent.status === 'talking' && !this.reduced) {
         b.sprite.y = -1 + Math.sin(time / 180) * 1.6;
       } else {
         b.sprite.y = 0;
       }
     });
 
-    if (this.dayNight) {
+    if (this.dayNight && !this.reduced) {
       const period = 150000;
       const phase = (time % period) / period;
       const night = (1 - Math.cos(phase * Math.PI * 2)) / 2;
@@ -232,8 +240,8 @@ class TamersScene extends Phaser.Scene {
         const key = t === 'water' ? 'tile-water-0' : t === 'flower' ? 'tile-flower-0' : `tile-${t}`;
         const s = this.add.sprite(x * TILE + 16, y * TILE + 16, key);
         s.setDepth(y * 0.01);
-        if (t === 'water') s.play('water-anim');
-        if (t === 'flower') s.play('flower-anim');
+        if (t === 'water' && !this.reduced) s.play('water-anim');
+        if (t === 'flower' && !this.reduced) s.play('flower-anim');
       }
     }
   }
@@ -266,18 +274,20 @@ class TamersScene extends Phaser.Scene {
 
     // Lamps animated
     ([[5.9, 4.6], [7.4, 6.3], [10.9, 2.9], [13.8, 5.9]] as [number, number][])
-      .forEach(([x, y]) => this.addProp('prop-lamp', x, y, 'lamp-anim'));
+      .forEach(([x, y]) => this.addProp('prop-lamp', x, y, this.reduced ? undefined : 'lamp-anim'));
 
     // Stations per agent
     ([[3.2, 3.9], [7.2, 3.9], [12.2, 3.9], [3.2, 7.9], [7.2, 7.9], [12.2, 7.9]] as [number, number][])
       .forEach(([x, y]) => this.addProp('prop-station', x, y));
 
     // Sparkles
-    ([[4.9, 2.8], [10.3, 3.4], [13.0, 5.5], [7.9, 8.1]] as [number, number][])
-      .forEach(([x, y], i) => {
-        const s = this.add.sprite(x * TILE, y * TILE, 'prop-sparkle-0').play('sparkle-anim');
-        s.setDepth(90 + i); s.setAlpha(0.72);
-      });
+    if (!this.reduced) {
+      ([[4.9, 2.8], [10.3, 3.4], [13.0, 5.5], [7.9, 8.1]] as [number, number][])
+        .forEach(([x, y], i) => {
+          const s = this.add.sprite(x * TILE, y * TILE, 'prop-sparkle-0').play('sparkle-anim');
+          s.setDepth(90 + i); s.setAlpha(0.72);
+        });
+    }
 
     this.generatePropTextures();
   }

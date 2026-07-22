@@ -1,6 +1,6 @@
 # Guide : Mode Auto-Routeur Intelligent
 
-## Les 3 intentions principales
+## Les 4 modes d'exécution
 
 ### 💬 Ask (Discussion)
 
@@ -22,6 +22,16 @@
 - Vous approuvez ou rejetez avant application.
 - Idéal pour : développement actif, refactoring, bug fix.
 
+### 🤝 Collective (Équipe multi-agents manuelle)
+
+- 4ᵉ mode, distinct des trois précédents : au lieu de laisser l'Auto-Routeur décider seul de déclencher une équipe (Swarm), vous configurez et lancez vous-même une équipe multi-agents (« Collective »).
+- Vous choisissez la **profondeur** de l'équipe (Rapide ou Profond), la **formation** (le roster/template d'agents à utiliser) et pouvez activer/désactiver certains rôles de l'équipe individuellement.
+- Idéal pour : garder la main sur la composition de l'équipe IA plutôt que de subir la décision automatique du routeur, par exemple pour forcer une équipe légère ou, à l'inverse, mobiliser volontairement plusieurs agents sur une tâche que le routeur aurait jugée simple.
+
+**Accès :** ce mode est manuel, il apparaît donc uniquement quand vous reprenez le contrôle sur le choix du mode :
+- soit en désactivant l'Auto-Routeur (sélecteur d'agent sur autre chose que « Auto »), le bouton `Collective` apparaît alors directement à côté de `Ask` / `Plan` / `Agent` ;
+- soit en laissant l'Auto-Routeur activé et en dépliant le panneau **« ▸ Avancé »**, qui affiche les mêmes boutons de mode manuels sans désactiver l'Auto-Routeur.
+
 ## Auto-Routeur (⚡ Mode Intelligent)
 
 Quand l'Auto-Routeur est **activé** :
@@ -38,7 +48,7 @@ Avantages :
 
 Quand l'Auto-Routeur est **désactivé** :
 
-- Vous choisissez manuellement le mode (Ask, Plan, Agent).
+- Vous choisissez manuellement le mode (Ask, Plan, Agent, Collective).
 - Vous restez maître du contrôle total.
 
 ## Providers disponibles

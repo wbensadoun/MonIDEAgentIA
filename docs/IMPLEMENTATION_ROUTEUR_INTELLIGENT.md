@@ -8,69 +8,69 @@
 ## 📦 Phase 1 : Suppression & Nettoyage
 
 ### 1.1 Suppression complète de la feature `ollama-multi`
-- [ ] Supprimer les fichiers :
+- [x] Supprimer les fichiers :
   - `client/src/utils/ollamaMultiFlow.js`
   - `client/src/utils/ollamaMultiFlow.test.js`
   - `electron/services/ai-providers/ollama.provider.js` (ou fusionner avec un provider générique unifié)
   - Tout code IPC backend relatif à `get-ollama-multi-completion`
 
 ### 1.2 Suppression de l'option `localPrivate` (Mode de Confidentialité Global)
-- [ ] Supprimer de `client/src/utils/collectiveMode.js` :
+- [x] Supprimer de `client/src/utils/collectiveMode.js` :
   - La fonction `resolveCollectiveProvider(localPrivate)`
   - Les commentaires et tests mentionnant `localPrivate`
   - L'export `resolveCollectiveProvider`
 
-- [ ] Supprimer de `client/src/hooks/useAI.js` :
+- [x] Supprimer de `client/src/hooks/useAI.js` :
   - La variable `effLocalPrivate` et sa résolution
   - Le paramètre `localPrivate` du hook `useAI`
   - La logique : `isCollective && effLocalPrivate ? resolveCollectiveProvider(true) : ...`
 
-- [ ] Supprimer de `client/src/hooks/useRunConfiguration.js` :
+- [x] Supprimer de `client/src/hooks/useRunConfiguration.js` :
   - L'état `localPrivate` et son setter
   - Le retour dans `multiAgentOptions`
 
-- [ ] Supprimer de l'IHM (`client/src/components/AIChat/index.js`) :
+- [x] Supprimer de l'IHM (`client/src/components/AIChat/index.js`) :
   - Le checkbox "Mode Privé Local"
 
-- [ ] Supprimer de `client/src/services/electron.bridge.ts` :
+- [x] Supprimer de `client/src/services/electron.bridge.ts` :
   - Le champ `localPrivate?: boolean | null;` de l'interface `MultiAgentOptions`
 
 ### 1.3 Suppression de l'option `Multi-Ollama` de la Topbar
-- [ ] Dans `client/src/components/AppShell/AppTopbar.js` :
+- [x] Dans `client/src/components/AppShell/AppTopbar.js` :
   - Retirer `<option value="ollama-multi">Multi-Ollama</option>` du select des providers
 
-- [ ] Dans `client/src/components/Settings/index.js` :
+- [x] Dans `client/src/components/Settings/index.js` :
   - Retirer `<option value="ollama-multi">Multi-Ollama</option>` du select "Provider IA par défaut"
 
-- [ ] Dans `client/src/components/LoadingAnimations/index.js` :
+- [x] Dans `client/src/components/LoadingAnimations/index.js` :
   - Retirer l'entrée `'ollama-multi': { icon: '🦙', label: 'Ollama Multi', color: '#f59e0b' }`
 
-- [ ] Dans tous les fichiers mentionnant `ollama-multi` (via grep) :
+- [x] Dans tous les fichiers mentionnant `ollama-multi` (via grep) :
   - Nettoyer les références résiduelles
 
 ### 1.4 Suppression des modèles spécifiques `ollamaModelArchitect`, `ollamaModelCoder`, `ollamaModelTester`
-- [ ] Dans `client/src/components/Settings/index.js` :
+- [x] Dans `client/src/components/Settings/index.js` :
   - Retirer tous les champs de saisie pour `ollamaModelArchitect`, `ollamaModelCoder`, `ollamaModelTester`
 
-- [ ] Dans `client/src/hooks/useAIModelSettings.js` :
+- [x] Dans `client/src/hooks/useAIModelSettings.js` :
   - Retirer les états `ollamaModelArchitect`, `ollamaModelCoder`, `ollamaModelTester`
   - Retirer `resolvedOllamaArchitect`, `resolvedOllamaCoder`, `resolvedOllamaTester`
   - Retirer la normalisation et synchronisation de ces champs
 
-- [ ] Dans `client/src/hooks/useAISettingsSync.js` :
+- [x] Dans `client/src/hooks/useAISettingsSync.js` :
   - Retirer les champs de synchronisation pour ces modèles d'agent
 
-- [ ] Dans `client/src/hooks/useAI.js` :
+- [x] Dans `client/src/hooks/useAI.js` :
   - Retirer les paramètres `ollamaModelArchitect`, `ollamaModelCoder`, `ollamaModelTester` du hook
   - Retirer leur passage à `runOllamaMultiCompletionFlow` (qui lui-même sera supprimé)
 
-- [ ] Dans `client/src/components/AppShell/AppTopbar.js` :
+- [x] Dans `client/src/components/AppShell/AppTopbar.js` :
   - Retirer l'affichage des labels `Arch`, `Code`, `Test` pour Ollama Multi
 
-- [ ] Dans `client/src/components/UpdateChecker/index.js` :
+- [x] Dans `client/src/components/UpdateChecker/index.js` :
   - Retirer les entrées pour ces modèles d'agent
 
-- [ ] Dans `electron/services/settings.service.js` :
+- [x] Dans `electron/services/settings.service.js` :
   - Retirer les valeurs par défaut de ces champs
 
 ---
@@ -89,12 +89,14 @@
 [ Ask ] [ Plan ] [ Agent ]  +  Provider (gemini/claude/kimi/ollama)  +  [ 🤖 Auto-Route ]
 ```
 
-- [ ] Dans `client/src/components/AIChat/index.js` :
+- [x] Dans `client/src/components/AIChat/index.js` :
   - Retirer le mode `multi-agent` du rendu des boutons `EXECUTION_MODES`
   - Le bouton **"Collective"** ne doit plus être exposé manuellement
   - Ajouter un **toggle `Auto-Route`** bien visible (avec icône 🤖 ou ⚡) qui active/désactive le routeur intelligent
 
-- [ ] **Clarifier visuellement** :
+  > Note (2026-07-22) : le bouton "Collective" reste accessible manuellement lorsque l'Auto-Route est désactivé (ou via le panneau "Avancé"), plutôt que d'être totalement retiré — décision documentée dans `docs/USER_GUIDE_ROUTER.md` comme 4ᵉ mode manuel. L'objectif "ne doit plus être exposé par défaut / masqué derrière Auto-Route" est atteint ; le retrait total ne l'est pas au sens littéral.
+
+- [x] **Clarifier visuellement** :
   - `Ask` → Icône 💬 (Discussion)
   - `Plan` → Icône 📋 (Planification)
   - `Agent` → Icône 🔧 (Action/Écriture)
@@ -133,7 +135,7 @@
 └─────────────────────────────────────────────────┘
 ```
 
-- [ ] Ajouter un nouveau Tab "Routeur" dans Settings avec 3 sections :
+- [x] Ajouter un nouveau Tab "Routeur" dans Settings avec 3 sections :
   1. **Activation du routeur** (Radio : Manuel vs Auto)
   2. **Configuration du modèle de classification** (Provider + Clé API optionnelle)
   3. **Seuil de complexité** (Slider pour ajuster le point de basculement L1↔L2)
@@ -173,9 +175,9 @@
 └─────────────────────────────────────────────────┘
 ```
 
-- [ ] Clarifier en haut du tab que ce roster s'applique UNIQUEMENT aux exécutions multi-agent (manuelles ou décidées par le routeur)
-- [ ] Retirer toute mention de "Mode Privé Local" ou "localPrivate"
-- [ ] Utiliser le langage simple : chaque rôle a un provider (qui peut être local Ollama ou cloud), point.
+- [x] Clarifier en haut du tab que ce roster s'applique UNIQUEMENT aux exécutions multi-agent (manuelles ou décidées par le routeur)
+- [x] Retirer toute mention de "Mode Privé Local" ou "localPrivate"
+- [x] Utiliser le langage simple : chaque rôle a un provider (qui peut être local Ollama ou cloud), point.
 
 ---
 
@@ -394,10 +396,10 @@ return useMemo(() => ({
 
 ### 4.1 Retirer le handler IPC `get-ollama-multi-completion`
 
-- [ ] Dans `electron/ipc/aiHandlers.js` :
+- [x] Dans `electron/ipc/aiHandlers.js` :
   - Retirer le handler `ipcMain.handle('get-ollama-multi-completion', ...)`
 
-- [ ] Dans `preload.js` :
+- [x] Dans `preload.js` :
   - Retirer `getOllamaMultiCompletion: (...) => ipcRenderer.invoke(...)`
 
 ### 4.2 Retirer le service `electron/services/ai.service.js`
@@ -408,7 +410,7 @@ Chercher les fonctions obsolètes :
 
 ### 4.3 Documenter le Routeur Intelligent dans le Backend
 
-- [ ] Dans `electron/services/router.service.js` :
+- [x] Dans `electron/services/router.service.js` :
   - Ajouter un commentaire exhaustif expliquant que :
     * **L1 (Trivial)** : Le routeur force `single_agent` + `light` complexity
     * **L2 (Complexe)** : Le routeur propose `multi_agent` + `premium` complexity si nécessaire
@@ -430,8 +432,8 @@ Chercher les fonctions obsolètes :
 └────────────────────────────────────────┘
 ```
 
-- [ ] Ajouter un badge visuel lumineux ou une icône quand `autoRoute === true`
-- [ ] Tooltip explicatif : "Le routeur intelligent analyse votre demande et choisit le mode optimal (simple ou équipe multi-agent)"
+- [x] Ajouter un badge visuel lumineux ou une icône quand `autoRoute === true`
+- [x] Tooltip explicatif : "Le routeur intelligent analyse votre demande et choisit le mode optimal (simple ou équipe multi-agent)"
 
 ### 5.2 Notifications Smart dans le Chat
 
@@ -456,14 +458,14 @@ Le routeur a activé le mode Équipe Multi-Agent (formation: Product/UI, profond
 
 ### 5.3 Tooltip & Help Text Clarifiés
 
-- [ ] Sur le bouton `Auto-Route` :
+- [x] Sur le bouton `Auto-Route` :
   ```
   Quand activé: le routeur analyse votre demande et choisit 
   automatiquement entre 1 agent (rapide) ou une équipe (approfondi).
   Quand désactivé: vous contrôlez manuellement le mode et le provider.
   ```
 
-- [ ] Dans le Settings, Tab "Routeur Intelligent" :
+- [x] Dans le Settings, Tab "Routeur Intelligent" :
   ```
   Manuel : Vous choisissez directement le mode (Ask, Plan, Agent) 
   et le provider (Gemini, Ollama, etc.)
@@ -481,18 +483,18 @@ Le routeur a activé le mode Équipe Multi-Agent (formation: Product/UI, profond
 
 ### 6.1 Tests à Mettre à Jour / Supprimer
 
-- [ ] `client/src/utils/agentModes.test.js` :
+- [x] `client/src/utils/agentModes.test.js` :
   - Supprimer ou adapter les tests mentionnant `ollama-multi`
   - Ajouter des tests pour `resolveProviderForExecutionMode('ollama', 'multi-agent')` → doit retourner `'multi'`
 
-- [ ] `client/src/utils/ollamaMultiFlow.test.js` :
+- [x] `client/src/utils/ollamaMultiFlow.test.js` :
   - **SUPPRIMER ENTIÈREMENT** (ce fichier disparaît)
 
-- [ ] `client/src/utils/collectiveMode.test.js` :
+- [x] `client/src/utils/collectiveMode.test.js` :
   - Supprimer le test `test('localPrivate=true → ollama-multi', ...)`
   - Garder les tests pour `applyCollectiveDepth`
 
-- [ ] `client/src/hooks/useAI.test.js` (si existe) :
+- [x] `client/src/hooks/useAI.test.js` (si existe) :
   - Adapter les mocks pour ne pas passer `ollamaModelArchitect`, etc.
 
 ### 6.2 Tests de Comportement E2E
@@ -607,34 +609,37 @@ Quand l'Auto-Routeur est **désactivé** :
 
 ## 📋 Phase 8 : Checklist de Déploiement
 
-- [ ] **Code Cleanup**
-  - [ ] Supprimer tous les fichiers obsolètes
-  - [ ] Exécuter les tests, corriger les erreurs
-  - [ ] Vérifier les imports orphelins (grep `ollamaMultiFlow`, `resolveCollectiveProvider`, etc.)
+- [x] **Code Cleanup**
+  - [x] Supprimer tous les fichiers obsolètes
+  - [x] Exécuter les tests, corriger les erreurs (23/23 suites, 113/113 tests au 2026-07-22)
+  - [x] Vérifier les imports orphelins (grep `ollamaMultiFlow`, `resolveCollectiveProvider`, etc.)
 
-- [ ] **Configuration**
-  - [ ] Initialiser les nouvelles clés Settings pour le routeur
-  - [ ] Migrer les utilisateurs existants (conserver leur configuration, ajouter les defaults du routeur)
+- [x] **Configuration**
+  - [x] Initialiser les nouvelles clés Settings pour le routeur (`routerAutoRoute`, `routerClassifierProvider`, `routerClassifierModel`, `routerComplexityThreshold` dans `settings.service.js`)
+  - [x] Migrer les utilisateurs existants (conserver leur configuration, ajouter les defaults du routeur)
 
 - [ ] **UI/UX Validation**
   - [ ] S'assurer que la Topbar affiche 3 boutons (Ask, Plan, Agent) + Provider + Auto-Route toggle
-  - [ ] Vérifier le Settings Tab "Routeur Intelligent"
-  - [ ] Tester les notifications interactives
+    > Note (2026-07-22) : la Topbar affiche bien Provider + le badge Auto-Route, mais les boutons Ask/Plan/Agent restent dans le panneau `AIChat` (par choix d'implémentation), pas dans la Topbar elle-même — déviation assumée de la maquette, à visualiser avant validation finale.
+  - [x] Vérifier le Settings Tab "Routeur Intelligent"
+  - [x] Tester les notifications interactives (couvert par `client/src/hooks/useAI.test.js`)
 
 - [ ] **Tests E2E**
   - [ ] Mode Manual : chaque intention fonctionne
   - [ ] Mode Auto : L1 trivial, L2 complexe
   - [ ] Providers : Ollama seul, Multi-agents avec Roster
+    > Aucune infrastructure E2E (Cypress/Playwright) n'existe dans ce dépôt — prérequis non couvert par ce refactor, hors scope automatisé.
 
-- [ ] **Documentation**
-  - [ ] Mettre à jour les README
-  - [ ] Rédiger les guides pour les utilisateurs et développeurs
-  - [ ] Faire un changelog clair
+- [x] **Documentation**
+  - [x] Mettre à jour les README
+  - [x] Rédiger les guides pour les utilisateurs et développeurs
+  - [x] Faire un changelog clair (`CHANGELOG.md` créé à la racine)
 
 - [ ] **Release**
   - [ ] Tag version (ex: v2.0.0 - Routeur Intelligent)
   - [ ] Annonce à la communauté
   - [ ] Guide de migration pour les utilisateurs
+    > Actions humaines/process hors scope d'implémentation automatisée.
 
 ---
 

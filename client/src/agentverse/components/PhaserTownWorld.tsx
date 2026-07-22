@@ -13,6 +13,12 @@ import React, { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
 import type { Agent, Facing, ThemeMeta } from '../types';
 
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 interface PhaserTownWorldProps {
   agents: Agent[];
   theme: ThemeMeta;
@@ -158,6 +164,7 @@ class TownScene extends Phaser.Scene {
   private onSelect?: (id: string) => void;
   private onDeselect?: () => void;
   private dayNight?: Phaser.GameObjects.Rectangle;
+  private reduced = false;
 
   constructor() { super({ key: 'agentverse-town-kenney' }); }
 
@@ -168,6 +175,7 @@ class TownScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.reduced = prefersReducedMotion();
     this.cameras.main.setBackgroundColor('#4a9e3c');
 
     this.buildTilemap();
@@ -191,15 +199,15 @@ class TownScene extends Phaser.Scene {
   update(time: number): void {
     this.bundles.forEach((b) => {
       if (b.lastAgent.status === 'working' && b.lastAgent.progress < 0) {
-        b.barFill.width = 10 + ((Math.sin(time / 200) + 1) / 2) * 24;
+        b.barFill.width = this.reduced ? 24 : 10 + ((Math.sin(time / 200) + 1) / 2) * 24;
       }
-      b.sprite.y = b.lastAgent.status === 'talking'
+      b.sprite.y = (!this.reduced && b.lastAgent.status === 'talking')
         ? -1 + Math.sin(time / 200) * 1.5
         : 0;
     });
 
     // ── Ambient day/night drift (gentle, full cycle ~150s, starts at day) ──
-    if (this.dayNight) {
+    if (this.dayNight && !this.reduced) {
       const period = 150000;
       const phase = (time % period) / period;             // 0..1
       const night = (1 - Math.cos(phase * Math.PI * 2)) / 2; // 0 (day) → 1 (night) → 0
@@ -355,35 +363,37 @@ class TownScene extends Phaser.Scene {
     fenceG.setDepth(2);
 
     // ── Water shimmer sparkles (animated) ──
-    const sparkles: Phaser.GameObjects.Graphics[] = [];
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < 2; c++) {
-        const sg = this.add.graphics();
-        sg.setDepth(3);
-        sparkles.push(sg);
-        const baseX = c * TILE + Math.random() * TILE;
-        const baseY = r * TILE + Math.random() * TILE;
-        (sg as unknown as { _bx: number; _by: number })._bx = baseX;
-        (sg as unknown as { _bx: number; _by: number })._by = baseY;
+    if (!this.reduced) {
+      const sparkles: Phaser.GameObjects.Graphics[] = [];
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < 2; c++) {
+          const sg = this.add.graphics();
+          sg.setDepth(3);
+          sparkles.push(sg);
+          const baseX = c * TILE + Math.random() * TILE;
+          const baseY = r * TILE + Math.random() * TILE;
+          (sg as unknown as { _bx: number; _by: number })._bx = baseX;
+          (sg as unknown as { _bx: number; _by: number })._by = baseY;
+        }
       }
+      let sparkleTime = 0;
+      this.time.addEvent({
+        delay: 400,
+        loop: true,
+        callback: () => {
+          sparkleTime += 0.4;
+          sparkles.forEach((sg, i) => {
+            const data = sg as unknown as { _bx: number; _by: number };
+            sg.clear();
+            const phase = (sparkleTime + i * 0.6) % (Math.PI * 2);
+            if (Math.sin(phase) > 0.5) {
+              sg.fillStyle(0xffffff, 0.5 + Math.sin(phase) * 0.3);
+              sg.fillRect(data._bx - 2, data._by - 2, 4, 2);
+            }
+          });
+        },
+      });
     }
-    let sparkleTime = 0;
-    this.time.addEvent({
-      delay: 400,
-      loop: true,
-      callback: () => {
-        sparkleTime += 0.4;
-        sparkles.forEach((sg, i) => {
-          const data = sg as unknown as { _bx: number; _by: number };
-          sg.clear();
-          const phase = (sparkleTime + i * 0.6) % (Math.PI * 2);
-          if (Math.sin(phase) > 0.5) {
-            sg.fillStyle(0xffffff, 0.5 + Math.sin(phase) * 0.3);
-            sg.fillRect(data._bx - 2, data._by - 2, 4, 2);
-          }
-        });
-      },
-    });
   }
 
   private paintZoneLabels(): void {
@@ -454,7 +464,7 @@ class TownScene extends Phaser.Scene {
     });
   }
 
-  // Character sprite drawing (same quality as PhaserPixelWorld but Kenney-palette-inspired)
+  // Character sprite drawing (Kenney-palette-inspired pixel avatar)
   private drawAgentPixels(
     ctx: CanvasRenderingContext2D, agent: Agent,
     facing: Facing, frame: number,

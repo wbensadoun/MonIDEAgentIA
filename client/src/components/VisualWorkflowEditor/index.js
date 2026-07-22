@@ -963,7 +963,7 @@ const VisualWorkflowEditor = ({
             projectPath: currentProjectPath,
             maxTokens: 2048,
             temperature: 0.1,
-            disabledReason: 'Generation IA indisponible en mode Multi-IA: choisis Gemini, Claude, Kimi, Ollama ou Multi-Ollama.'
+            disabledReason: 'Generation IA indisponible en mode Multi-IA: choisis Gemini, Claude, Kimi ou Ollama.'
         });
 
         if (request.disabled) {

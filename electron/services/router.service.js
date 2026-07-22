@@ -184,6 +184,107 @@ const truncateText = (text, max, suffix = '…') => {
   return raw.slice(0, max) + suffix;
 };
 
+// ---------------------------------------------------------------------------
+// Settings utilisateur du Routeur Intelligent (onglet Settings > "Routeur
+// Intelligent", voir client/src/components/Settings/index.js et les defauts
+// dans settings.service.js) :
+//  - `routerClassifierProvider` / `routerClassifierModel` choisissent le provider/
+//    modele utilise pour l'appel de classification L2, independamment du provider
+//    d'execution. `null`/absent -> repli sur le provider d'execution courant +
+//    resolveModelForTier('light') (comportement historique inchange).
+//  - `routerComplexityThreshold` (nombre flottant [0,1], defaut 0.5 — identique au
+//    defaut de settings.service.js) regle la frontiere locale L1->L2 : plus il est
+//    bas, plus l'heuristique locale (L1) tranche seule sans appel reseau ; plus il
+//    est haut, plus les cas ambigus sont envoyes au classifieur L2 (cf. le hint de
+//    l'onglet Settings). Valeur absente/invalide -> repli sur 0.5.
+// Toutes ces cles sont OPTIONNELLES et n'importe quelle valeur absente/invalide
+// retombe strictement sur le comportement par defaut documente ci-dessus.
+// ---------------------------------------------------------------------------
+
+// Repli par defaut du seuil L1->L2, identique au defaut de settings.service.js.
+const ROUTER_COMPLEXITY_THRESHOLD_FALLBACK = 0.5;
+
+// Au-dela de ce nombre de mots (sans indice d'action), le score de complexite locale
+// atteint son maximum (1) — calibrage volontairement bas pour rester conservateur :
+// un prompt de plus de 8 mots n'est jamais considere "surement trivial" par defaut.
+const ROUTER_COMPLEXITY_WORD_SCALE = 8;
+
+// Indices qu'une VRAIE demande d'action/code est en jeu : meme tres courte, une telle
+// demande ne doit jamais etre traitee comme triviale par l'heuristique locale (miroir
+// volontaire du pattern ACTION_HINT de client/src/utils/routerDecision.js#classifyPromptLayer1
+// pour rester coherent avec la couche L1 deja existante cote renderer).
+const ROUTER_ACTION_HINT_PATTERN = /```|\bcode\b|\bbug\b|\berror\b|\berreur\b|\bfix\b|\brefactor\b|\btest\b|\bimpl[ée]ment|\bcr[ée]e|\bcreate\b|\badd\b|\bajoute|\bg[ée]n[èe]re|\bfunction\b|\bclass\b|\bcomponent\b|\bcompos|\bapi\b|\bfichier\b|\bfile\b/i;
+
+// Nombre de mots du prompt utilisateur (heuristique L1 locale, aucun appel reseau).
+const countPromptWords = (text) => String(text || '').trim().split(/\s+/).filter(Boolean).length;
+
+// Score de complexite locale [0 = trivial, 1 = complexe], purement local (<100ms, aucun
+// appel reseau). Base sur la longueur du prompt ; plancher a 0.5 des qu'un indice d'action
+// (code/bug/fix/...) est detecte, pour ne jamais classer une vraie demande comme triviale.
+const estimatePromptComplexity = (prompt) => {
+  const text = String(prompt || '').trim();
+  if (!text) return 0;
+  const lengthScore = Math.min(1, countPromptWords(text) / ROUTER_COMPLEXITY_WORD_SCALE);
+  return ROUTER_ACTION_HINT_PATTERN.test(text) ? Math.max(0.5, lengthScore) : lengthScore;
+};
+
+// Resout le seuil L1->L2 configure par l'utilisateur (Settings > Routeur Intelligent),
+// clampe a [0,1], repli sur ROUTER_COMPLEXITY_THRESHOLD_FALLBACK si absent/invalide.
+const resolveComplexityThreshold = (settings) => {
+  const raw = Number(settings?.routerComplexityThreshold);
+  if (!Number.isFinite(raw)) return ROUTER_COMPLEXITY_THRESHOLD_FALLBACK;
+  return Math.min(1, Math.max(0, raw));
+};
+
+// Decide si le prompt peut etre tranche localement par L1 (aucun appel reseau) ou doit
+// escalader vers L2. Seuil bas -> L1 tranche plus souvent ; seuil haut -> plus de cas
+// escaladent vers L2 (cf. hint de l'onglet Settings > Routeur Intelligent).
+const isPromptTrivialForL1 = (userPrompt, settings) => {
+  const threshold = resolveComplexityThreshold(settings);
+  const complexity = estimatePromptComplexity(userPrompt);
+  return complexity <= (1 - threshold);
+};
+
+// Cles Settings contenant la cle API de chaque provider cloud (miroir de
+// ROUTER_CLASSIFIER_API_KEY_FIELDS dans client/src/components/Settings/index.js).
+// Ollama n'a pas besoin de cle API.
+const CLASSIFIER_API_KEY_FIELD_BY_PROVIDER = Object.freeze({
+  gemini: 'geminiApiKey',
+  claude: 'claudeApiKey',
+  kimi: 'kimiApiKey'
+});
+
+// Resout le provider + modele a utiliser pour l'appel de classification L2.
+// Repli sur le provider d'execution courant + resolveModelForTier('light') des que
+// `routerClassifierProvider`/`routerClassifierModel` sont absents/invalides (comportement
+// historique inchange). Ne leve jamais.
+const resolveClassifierTarget = async (settings, normalizedProvider, ctx) => {
+  const configuredProvider = settings?.routerClassifierProvider
+    ? normalizeAIProviderName(settings.routerClassifierProvider)
+    : null;
+  const classifierProvider = configuredProvider || normalizedProvider;
+
+  const configuredModel = settings?.routerClassifierModel ? String(settings.routerClassifierModel).trim() : '';
+  if (configuredModel) {
+    return { provider: classifierProvider, resolved: configuredModel, source: 'settings' };
+  }
+
+  const resolved = await resolveModelForTier(classifierProvider, 'light', ctx);
+  return { provider: classifierProvider, resolved: resolved.resolved, source: resolved.source };
+};
+
+// Resout la cle API a utiliser pour l'appel de classification L2. Si le classifieur
+// utilise un provider different du provider d'execution, on prefere la cle dediee a ce
+// provider (persistee dans Settings > Cles API — voir ROUTER_CLASSIFIER_API_KEY_FIELDS
+// cote UI) ; a defaut, repli sur la cle transmise pour l'execution courante (correct
+// quand le classifieur reutilise le meme provider, ou par securite si aucune cle dediee
+// n'est configuree).
+const resolveClassifierApiKey = (settings, classifierProvider, fallbackApiKey) => {
+  const field = CLASSIFIER_API_KEY_FIELD_BY_PROVIDER[classifierProvider];
+  const dedicatedKey = field ? settings?.[field] : null;
+  return dedicatedKey || fallbackApiKey;
+};
+
 // Prompt systeme de classification (FR). La demande utilisateur est passee dans le
 // tour utilisateur (voir routeToDecision), pas ici. Ce prompt n'injecte que le contexte
 // (agents + skills reels) et le schema JSON strict.
@@ -329,15 +430,38 @@ const routeToDecision = async ({
       };
     }
 
+    // 2bis) L1 (Trivial) : heuristique locale (longueur + indices d'action), frontiere
+    //       configurable via `routerComplexityThreshold` (Settings > Routeur Intelligent,
+    //       repli 0.5). Aucun appel reseau ici : si le prompt est juge trivial, repli
+    //       direct sur la decision sure, tier 'light'.
+    if (isPromptTrivialForL1(userPrompt, ctx.settings)) {
+      const fallbackModel = await resolveModelForTier(normalizedProvider, 'light', ctx);
+      const decision = { ...ROUTER_SAFE_FALLBACK_DECISION };
+      return {
+        success: true,
+        decision,
+        execution: buildExecution(decision),
+        model: { provider: normalizedProvider, tier: 'light', resolved: fallbackModel.resolved, source: fallbackModel.source },
+        source: 'fallback',
+        timingMs: Date.now() - startedAt
+      };
+    }
+
     // 3) Le classifieur (routeur) tourne toujours en tier 'light', quelle que soit la
     //    complexite finale decidee pour la reponse elle-meme. Reutilise runSingleCompletionProvider.
-    const routerModel = await resolveModelForTier(normalizedProvider, 'light', ctx);
+    //    Provider/modele du classifieur configurables via Settings > Routeur Intelligent
+    //    (routerClassifierProvider/routerClassifierModel) ; repli sur le provider d'execution
+    //    courant + resolveModelForTier('light') si non configures (comportement historique).
+    //    La cle API suit le meme provider (cle dediee si le classifieur differe du provider
+    //    d'execution, sinon repli sur la cle transmise pour l'execution courante).
+    const classifierTarget = await resolveClassifierTarget(ctx.settings, normalizedProvider, ctx);
+    const classifierApiKey = resolveClassifierApiKey(ctx.settings, classifierTarget.provider, apiKey);
     const systemInstruction = buildRouterSystemPrompt(agents, skills);
     const completion = await runSingleCompletionProvider({
-      provider: normalizedProvider,
+      provider: classifierTarget.provider,
       systemInstruction,
       userPrompt: truncateText(String(userPrompt || '').trim(), ROUTER_USER_PROMPT_MAX, '\n[...TRONQUE...]'),
-      options: { apiKey, model: routerModel.resolved, temperature: 0.1 },
+      options: { apiKey: classifierApiKey, model: classifierTarget.resolved, temperature: 0.1 },
       maxTokens: ROUTER_CLASSIFICATION_MAX_TOKENS
     });
 
@@ -390,9 +514,16 @@ const routeToDecision = async ({
 module.exports = {
   routeToDecision,
   resolveModelForTier,
+  resolveComplexityThreshold,
+  resolveClassifierTarget,
+  resolveClassifierApiKey,
+  estimatePromptComplexity,
+  isPromptTrivialForL1,
   buildRouterSystemPrompt,
   parseRouterClassificationResponse,
   validateRouterDecision,
   PROVIDER_TIER_PROFILES,
+  CLASSIFIER_API_KEY_FIELD_BY_PROVIDER,
+  ROUTER_COMPLEXITY_THRESHOLD_FALLBACK,
   DEFAULT_CLAUDE_LIGHT_MODEL
 };

@@ -120,6 +120,12 @@ export interface ThemeMeta {
   pixel: boolean;
   /** Short marketing label for the theme switcher. */
   badge: string;
+  /** Optional walkable bounding box in grid cells (inclusive). Set on grid
+   *  themes that contain non-walkable tiles (town/tamers water) so wandering
+   *  agents never target them. Grid steps move monotonically per axis toward
+   *  the target, so a path between two in-box points also stays in-box — no
+   *  per-step collision test is needed. */
+  walkable?: { x0: number; y0: number; x1: number; y1: number };
 }
 
 /** Aggregate KPIs shown in the topbar (à la "AGENT_OS"). */

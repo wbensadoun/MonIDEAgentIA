@@ -251,6 +251,15 @@ const AIChat = ({
   autoRoute = false,
   onAutoRouteChange,
   routerDecision = null,
+  // Reserved for the upcoming "Routeur Intelligent" Settings tab (L2 classifier
+  // provider/model override + L1/L2 complexity threshold). Not rendered here yet;
+  // threaded through so callers can already pass them once that tab exists.
+  // eslint-disable-next-line no-unused-vars
+  routerClassifierProvider = null,
+  // eslint-disable-next-line no-unused-vars
+  routerClassifierModel = null,
+  // eslint-disable-next-line no-unused-vars
+  routerComplexityThreshold = 0.5,
   agents = [],
   activeAgent = null,
   onActiveAgentChange,
@@ -288,7 +297,6 @@ const AIChat = ({
 
   const [terminalActions, setTerminalActions] = useState([]); // AI terminal ReAct cards
   const [streamingText, setStreamingText] = useState('');       // live streaming output
-  const [streamingAgent, setStreamingAgent] = useState('');     // which agent is streaming
   const [streamingMode, setStreamingMode] = useState('text');   // text | workflow | code | diff
   const [workflowAnimStep, setWorkflowAnimStep] = useState(0);
   const streamingRef = useRef(null);
@@ -323,46 +331,10 @@ const AIChat = ({
     };
   }, [isElectronApiAvailable]);
 
-  // Register Ollama multi-agent streaming tokens
-  useEffect(() => {
-    if (!isElectronApiAvailable || !window.electronAPI?.onOllamaMultiToken) return;
-    const offToken = window.electronAPI.onOllamaMultiToken((data) => {
-      if (!data) return;
-      if (data.agent) setStreamingAgent(data.agent);
-
-      if (data.done) {
-        if (streamingFlushRafRef.current !== null) {
-          window.cancelAnimationFrame(streamingFlushRafRef.current);
-          flushStreamingBuffer();
-        }
-        return;
-      }
-
-      if (typeof data.token === 'string' && data.token.length > 0) {
-        streamingBufferRef.current += data.token;
-        if (streamingFlushRafRef.current === null) {
-          streamingFlushRafRef.current = window.requestAnimationFrame(flushStreamingBuffer);
-        }
-      }
-    });
-
-    return () => {
-      if (typeof offToken === 'function') offToken();
-      if (streamingFlushRafRef.current !== null) {
-        window.cancelAnimationFrame(streamingFlushRafRef.current);
-        streamingFlushRafRef.current = null;
-      }
-      streamingBufferRef.current = '';
-    };
-  }, [isElectronApiAvailable, flushStreamingBuffer]);
-
   useEffect(() => {
     if (!isElectronApiAvailable || !window.electronAPI?.onAIGenerationToken) return;
     const offToken = window.electronAPI.onAIGenerationToken((data) => {
       if (!data) return;
-      if (data.provider === 'kimi') {
-        setStreamingAgent('Kimi');
-      }
 
       if (data.done) {
         if (streamingFlushRafRef.current !== null) {
@@ -390,7 +362,6 @@ const AIChat = ({
     if (isLoading) {
       setTerminalActions([]);
       setStreamingText('');
-      setStreamingAgent('');
       setStreamingMode('text');
       setWorkflowAnimStep(0);
       streamingBufferRef.current = '';
@@ -652,10 +623,9 @@ const AIChat = ({
     onStreamingDraftChange({
       filePath: streamingFileDraft.filePath,
       language: streamingFileDraft.language || '',
-      code: streamingFileDraft.code || streamingText,
-      agent: streamingAgent || ''
+      code: streamingFileDraft.code || streamingText
     });
-  }, [isLoading, onStreamingDraftChange, streamingAgent, streamingFileDraft, streamingMode, streamingText]);
+  }, [isLoading, onStreamingDraftChange, streamingFileDraft, streamingMode, streamingText]);
 
   const renderStreamingBox = () => {
     if (!streamingText) return null;
@@ -1083,13 +1053,17 @@ const AIChat = ({
       <div className="ai-mode-panel">
         {/* ── Auto agent selector (Intelligent Router) ─────────────── */}
         <div className="ai-auto-row">
-          <span className="ai-auto-label">Agent</span>
+          <span className="ai-auto-label">
+            <span className="ai-auto-icon" aria-hidden="true">⚡</span> Agent
+          </span>
           <select
             className="ai-auto-select"
             value={agentSelectValue}
             onChange={handleAgentSelectChange}
             disabled={isLoading}
-            title="Auto : le routeur intelligent choisit le mode, l'agent et les skills"
+            title={autoRoute
+              ? "Quand activé : le routeur intelligent analyse votre demande et choisit automatiquement le mode et l'agent optimal."
+              : "Quand désactivé : vous contrôlez manuellement le mode et l'agent."}
           >
             <option value={AUTO_OPTION}>Auto (Sélection intelligente)</option>
             {!autoRoute && !activeAgent && <option value={NONE_OPTION}>Aucun agent</option>}
@@ -1114,7 +1088,7 @@ const AIChat = ({
         {(!autoRoute || showManualControls) && (
           <>
             <div className="ai-mode-row">
-              {EXECUTION_MODES.map((mode) => (
+              {EXECUTION_MODES.filter((mode) => mode.id !== 'multi-agent' || !autoRoute).map((mode) => (
                 <button
                   type="button"
                   key={mode.id}
@@ -1123,7 +1097,7 @@ const AIChat = ({
                   title={mode.description}
                   disabled={isLoading}
                 >
-                  {mode.label}
+                  {mode.icon} {mode.label}
                 </button>
               ))}
             </div>
@@ -1358,7 +1332,7 @@ const AIChat = ({
             <>
             <AIWorkingIndicator
               provider={aiProvider}
-              statusText={multiAIState.currentPhase ? `${streamingAgent || multiAIState.currentPhase} en cours...` : 'Multi-IA en cours...'}
+              statusText={multiAIState.currentPhase ? `${multiAIState.currentPhase} en cours...` : 'Multi-IA en cours...'}
             />
             <LiveFilesPanel files={liveFiles} commands={terminalActions} />
             </>

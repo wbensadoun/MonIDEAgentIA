@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Agent } from '../types';
 import { AgentAvatar } from './AgentAvatar';
+import { STATUS_LABEL } from '../constants';
 
 interface AgentStatusPanelProps {
   agents: Agent[];
@@ -10,14 +11,6 @@ interface AgentStatusPanelProps {
   pixel: boolean;
   onSelect: (id: string) => void;
 }
-
-const STATUS_LABEL: Record<Agent['status'], string> = {
-  idle: 'Disponible',
-  walking: 'En déplacement',
-  working: 'Au travail',
-  talking: 'En discussion',
-  blocked: 'Bloqué',
-};
 
 /** Team roster with live status; click a row to open the dialogue. */
 export function AgentStatusPanel({ agents, tasksByAgent, selectedId, nearbyIds, pixel, onSelect }: AgentStatusPanelProps) {

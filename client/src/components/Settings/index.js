@@ -27,7 +27,30 @@ const REMOTE_PROVIDER_MODEL_FIELDS = [
   { provider: 'kimi', field: 'kimiModel', label: 'Kimi / Together', fallback: DEFAULT_KIMI_MODEL }
 ];
 
-const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme, onThemeChange }) => {
+// Routeur Intelligent: le classifieur L2 reutilise les cles API deja saisies dans
+// l'onglet Cles API & Avance (aucune nouvelle cle dediee) — Ollama n'en a pas besoin.
+const ROUTER_CLASSIFIER_API_KEY_FIELDS = {
+  gemini: { field: 'geminiApiKey', label: 'Gemini API Key' },
+  claude: { field: 'claudeApiKey', label: 'Claude API Key' },
+  kimi: { field: 'kimiApiKey', label: 'Kimi / Together API Key' }
+};
+
+const Settings = ({
+  isOpen,
+  onClose,
+  isElectronApiAvailable,
+  showMessage,
+  theme,
+  onThemeChange,
+  autoRoute = true,
+  onAutoRouteChange,
+  routerClassifierProvider = null,
+  onRouterClassifierProviderChange,
+  routerClassifierModel = null,
+  onRouterClassifierModelChange,
+  routerComplexityThreshold = 0.5,
+  onRouterComplexityThresholdChange
+}) => {
   const [settings, setSettings] = useState({
     geminiApiKey: '',
     kimiApiKey: '',
@@ -319,6 +342,7 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
     { id: 'general',  icon: '🎨', label: 'Général' },
     { id: 'models',   icon: '☁️', label: 'Modèles cloud' },
     { id: 'multi',    icon: '🤖', label: 'Multi-agents' },
+    { id: 'router',   icon: '⚙️', label: 'Routeur Intelligent' },
     { id: 'ollama',   icon: '🦙', label: 'Ollama local' },
     { id: 'security', icon: '🔒', label: 'Sécurité' },
     { id: 'context',  icon: '📂', label: 'Contexte & Qualité' },
@@ -451,6 +475,9 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
           </datalist>
 
           <div className="settings-section">
+            <div className="settings-hint">
+              Ce roster s&apos;applique uniquement quand le mode d&apos;execution = « Agent » (manuel) ou quand le routeur (Auto) decide de former une equipe (Swarm).
+            </div>
             <label className="settings-label">Multi-IA: roster du selectionneur</label>
             <div className="settings-hint">
               Le selectionneur compose une formation selon la demande. Ces reglages fixent le provider et le modele disponibles pour chaque specialiste.
@@ -489,6 +516,117 @@ const Settings = ({ isOpen, onClose, isElectronApiAvailable, showMessage, theme,
                   </div>
                 );
               })}
+            </div>
+          </div>
+          </>)}
+
+          {activeTab === 'router' && (<>
+          <datalist id="router-classifier-model-suggestions">
+            {availableMultiAgentModels.map((modelName) => (
+              <option key={`router-classifier-model-${modelName}`} value={modelName} />
+            ))}
+          </datalist>
+
+          <div className="settings-section">
+            <label className="settings-label">Activation</label>
+            <div className="settings-hint">
+              Manuel : vous choisissez vous-meme le mode d&apos;execution (Ask / Plan / Agent) pour chaque demande.
+              Auto : le routeur intelligent decide a votre place.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.78rem', color: 'var(--text-1)' }}>
+                <input
+                  type="radio"
+                  name="router-activation-mode"
+                  checked={!autoRoute}
+                  onChange={() => onAutoRouteChange && onAutoRouteChange(false)}
+                />
+                <span>Manuel</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.78rem', color: 'var(--text-1)' }}>
+                <input
+                  type="radio"
+                  name="router-activation-mode"
+                  checked={!!autoRoute}
+                  onChange={() => onAutoRouteChange && onAutoRouteChange(true)}
+                />
+                <span>Auto</span>
+              </label>
+            </div>
+            <div className="settings-hint">
+              L1 (heuristique locale instantanee, &lt;100ms, sans appel reseau) tranche les cas triviaux ; L2 (appel a un modele leger, temperature 0.1) tranche les cas ambigus entre agent simple et equipe multi-agent.
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <label className="settings-label">Modele de classification</label>
+            <div className="settings-hint">
+              Modele leger utilise par le routeur (niveau L2) pour trancher les cas ambigus. Independant des modeles utilises pour repondre a la demande. Laissez sur « Provider actif du chat » pour reutiliser automatiquement le provider en cours.
+            </div>
+            <div className="settings-agent-controls">
+              <select
+                value={routerClassifierProvider || ''}
+                onChange={(e) => onRouterClassifierProviderChange && onRouterClassifierProviderChange(e.target.value || null)}
+                className="settings-input"
+              >
+                <option value="">Provider actif du chat (par defaut)</option>
+                {AI_PROVIDER_OPTIONS.map((providerOption) => (
+                  <option key={`router-classifier-${providerOption.value}`} value={providerOption.value}>
+                    {providerOption.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                list="router-classifier-model-suggestions"
+                value={routerClassifierModel || ''}
+                onChange={(e) => onRouterClassifierModelChange && onRouterClassifierModelChange(e.target.value || null)}
+                placeholder={routerClassifierProvider ? getDefaultModelForProvider(routerClassifierProvider) : 'Modele leger par defaut'}
+                className="settings-input"
+              />
+            </div>
+            {ROUTER_CLASSIFIER_API_KEY_FIELDS[routerClassifierProvider] && (
+              <div className="settings-key">
+                <label className="settings-key-label">
+                  {ROUTER_CLASSIFIER_API_KEY_FIELDS[routerClassifierProvider].label}
+                </label>
+                <input
+                  type={showApiKeys ? 'text' : 'password'}
+                  value={settings[ROUTER_CLASSIFIER_API_KEY_FIELDS[routerClassifierProvider].field] || ''}
+                  onChange={(e) => handleChange(
+                    ROUTER_CLASSIFIER_API_KEY_FIELDS[routerClassifierProvider].field,
+                    e.target.value
+                  )}
+                  placeholder="Cle API"
+                  className="settings-input"
+                />
+                <div className="settings-hint">
+                  Reutilise la cle deja saisie dans l&apos;onglet Cles API &amp; Avance.
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="settings-section">
+            <label className="settings-label">Seuil de complexite (frontiere L1/L2)</label>
+            <div className="settings-hint">
+              Plus le curseur est bas, plus l&apos;heuristique locale (L1) tranche seule sans appel reseau. Plus il est haut, plus les cas ambigus sont envoyes au modele de classification (L2).
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="settings-hint" style={{ margin: 0 }}>Simple</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={Math.round((routerComplexityThreshold ?? 0.5) * 100)}
+                onChange={(e) => onRouterComplexityThresholdChange && onRouterComplexityThresholdChange(Number(e.target.value) / 100)}
+                style={{ flex: 1 }}
+              />
+              <span className="settings-hint" style={{ margin: 0 }}>Complexe</span>
+              <span className="settings-hint" style={{ margin: 0, minWidth: 30, textAlign: 'right' }}>
+                {Math.round((routerComplexityThreshold ?? 0.5) * 100)}
+              </span>
             </div>
           </div>
           </>)}

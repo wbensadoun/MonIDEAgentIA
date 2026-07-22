@@ -41,7 +41,7 @@ function readTheme(): ThemeId {
 }
 
 /**
- * Root of the multi-agent RPG interface. One engine, five sellable skins.
+ * Root of the multi-agent RPG interface. One engine, six sellable skins.
  * Self-contained (mock data) but ready to plug into a real agent backend.
  */
 export default function AgentVerse({ client, onViewChanges }: AgentVerseProps) {

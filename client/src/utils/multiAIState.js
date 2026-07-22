@@ -85,37 +85,6 @@ export const buildDynamicTeamSteps = (teamPlan, statusByKey = {}) => (
   }))
 );
 
-export const buildOllamaMultiSteps = (models = {}, statusByKey = {}) => {
-  const baseSteps = [
-    {
-      key: 'architect',
-      label: '🏗️ Architecte',
-      provider: 'Ollama',
-      model: models.architect || null,
-      detail: 'Pose le plan technique et choisit la strategie.'
-    },
-    {
-      key: 'coder',
-      label: '💻 Codeur',
-      provider: 'Ollama',
-      model: models.coder || null,
-      detail: 'Produit le patch, les fichiers et les workflows.'
-    },
-    {
-      key: 'tester',
-      label: '🔍 Relecteur',
-      provider: 'Ollama',
-      model: models.tester || null,
-      detail: 'Verifie le patch, lance les checks et boucle si besoin.'
-    }
-  ];
-
-  return baseSteps.map((step) => ({
-    ...step,
-    status: normalizeMultiStepStatus(statusByKey[step.key])
-  }));
-};
-
 export const updateMultiStepsFromEvent = (steps, { label, status, detail, models } = {}) => {
   const safeSteps = Array.isArray(steps) ? steps : [];
   const roleKey = resolveMultiRoleKeyFromLabel(label);

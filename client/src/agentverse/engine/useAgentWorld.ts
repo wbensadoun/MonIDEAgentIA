@@ -89,6 +89,7 @@ export function useAgentWorld(theme: ThemeMeta, client: AgentClient): AgentWorld
   const selectedRef = useRef<string | null>(null);
   const themeRef = useRef<ThemeMeta>(theme);
   const clientRef = useRef<AgentClient>(client);
+  const delegationTimeouts = useRef<Set<number>>(new Set());
 
   themeRef.current = theme;
   clientRef.current = client;
@@ -130,11 +131,22 @@ export function useAgentWorld(theme: ThemeMeta, client: AgentClient): AgentWorld
             beginWorkRef.current(target, sub, { logUser: false });
             target.bubble = { id: uid('b'), text: `Sur «${truncate(objective, 22)}» 👍`, kind: 'react', until: now + 3000 };
           },
+          schedule: (fn, delay) => {
+            const id = window.setTimeout(() => {
+              delegationTimeouts.current.delete(id);
+              fn();
+            }, delay);
+            delegationTimeouts.current.add(id);
+          },
         });
       }
       publish();
     }, TICK_MS);
-    return () => window.clearInterval(loop);
+    return () => {
+      window.clearInterval(loop);
+      delegationTimeouts.current.forEach((id) => window.clearTimeout(id));
+      delegationTimeouts.current.clear();
+    };
   }, [getMeta, publish]);
 
   // Snap to whole tiles when entering the grid-based town theme.
@@ -309,6 +321,7 @@ function subTaskFor(roleKey: AgentRoleKey, objective: string): string {
 interface TickHooks {
   agents: Agent[];
   delegate: (subTask: string, roleKey: AgentRoleKey, objective: string) => void;
+  schedule: (fn: () => void, delay: number) => void;
 }
 
 /** Advance a single agent one tick. Mutates `agent` (and `tasks` on finalize). */
@@ -372,7 +385,7 @@ function tickAgent(
     if (work.delegateTo && work.objective) {
       const objective = work.objective;
       work.delegateTo.forEach((roleKey, i) => {
-        window.setTimeout(() => {
+        hooks.schedule(() => {
           hooks.delegate(subTaskFor(roleKey, objective), roleKey, objective);
         }, 500 + i * 900);
       });

@@ -123,6 +123,7 @@ const AppTopbar = ({
   onThemeChange,
   isTerminalOpen,
   onToggleTerminal,
+  autoRoute,
 }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [modelDraft, setModelDraft] = useState(activeModelValue || '');
@@ -288,6 +289,15 @@ const AppTopbar = ({
               ● {multiAISummary}
             </span>
           )}
+
+          {/* Badge Auto-Route (routeur intelligent) */}
+          <span
+            className={`topbar-autoroute-badge ${autoRoute ? 'is-active' : 'is-muted'}`}
+            title="Le routeur intelligent analyse votre demande et choisit le mode optimal (simple ou équipe multi-agent)"
+          >
+            <span aria-hidden="true">{autoRoute ? '⚡' : '🧭'}</span>
+            {autoRoute ? 'Auto-Route' : 'Manuel'}
+          </span>
         </div>
 
         {/* Actions droite */}

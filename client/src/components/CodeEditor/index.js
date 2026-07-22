@@ -54,7 +54,7 @@ const CodeEditor = ({
     aiProvider,
     models: aiModels,
     projectPath: currentProjectPath,
-    disabledReason: 'Completion IA indisponible en mode Multi-IA: choisis un provider simple ou Multi-Ollama.'
+    disabledReason: 'Completion IA indisponible en mode Multi-IA: choisis un provider simple.'
   }), [aiModels, aiProvider, currentProjectPath]);
 
   useEffect(() => {

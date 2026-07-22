@@ -101,5 +101,3 @@ export function createAgents(): Agent[] {
     chat: [],
   }));
 }
-
-export const AGENT_COUNT = SEEDS.length;

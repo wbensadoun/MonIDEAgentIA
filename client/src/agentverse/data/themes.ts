@@ -11,6 +11,7 @@ export const THEMES: Record<ThemeId, ThemeMeta> = {
     accent: '#3f8f68',
     pixel: true,
     badge: 'Town',
+    walkable: { x0: 2, y0: 0, x1: 15, y1: 10 },
   },
   cyberpunk: {
     id: 'cyberpunk',
@@ -66,6 +67,7 @@ export const THEMES: Record<ThemeId, ThemeMeta> = {
     accent: '#f59e0b',
     pixel: true,
     badge: 'Tamers',
+    walkable: { x0: 3, y0: 0, x1: 15, y1: 10 },
   },
 };
 

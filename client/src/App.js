@@ -48,9 +48,6 @@ const AppContent = () => {
     completeOnboarding,
     isReadOnlyMode,
     resolvedOllamaModel,
-    resolvedOllamaArchitect,
-    resolvedOllamaCoder,
-    resolvedOllamaTester,
     recommendedOllamaModel,
     availableOllamaModels,
     activeModelValue,
@@ -170,6 +167,12 @@ const AppContent = () => {
     setAutoRoute,
     routerDecision,
     setRouterDecision,
+    routerClassifierProvider,
+    setRouterClassifierProvider,
+    routerClassifierModel,
+    setRouterClassifierModel,
+    routerComplexityThreshold,
+    setRouterComplexityThreshold,
     multiAgentRunOptions
   } = useRunConfiguration();
 
@@ -258,7 +261,10 @@ const AppContent = () => {
     multiAgentRunOptions,
     autoRoute,
     setRouterDecision,
-    availableAgents
+    availableAgents,
+    routerClassifierProvider,
+    routerClassifierModel,
+    routerComplexityThreshold
   );
 
   const {
@@ -468,6 +474,12 @@ const AppContent = () => {
     autoRoute,
     onAutoRouteChange: setAutoRoute,
     routerDecision,
+    routerClassifierProvider,
+    onRouterClassifierProviderChange: setRouterClassifierProvider,
+    routerClassifierModel,
+    onRouterClassifierModelChange: setRouterClassifierModel,
+    routerComplexityThreshold,
+    onRouterComplexityThresholdChange: setRouterComplexityThreshold,
     teamPlanPreview,
     thinkingMode,
     onThinkingModeChange: setThinkingMode,
@@ -509,9 +521,6 @@ const AppContent = () => {
     projectFileList,
     onStreamingDraftChange: handleStreamingDraftChange,
     resolvedOllamaModel,
-    resolvedOllamaArchitect,
-    resolvedOllamaCoder,
-    resolvedOllamaTester,
     availableOllamaModels,
     onOllamaSettingChange: handleOllamaSettingChange,
     isExpertMode
@@ -548,10 +557,8 @@ const AppContent = () => {
           isElectronApiAvailable={isElectronApiAvailable}
           isLoading={isLoading}
           multiAIState={multiAIState}
+          autoRoute={autoRoute}
           resolvedOllamaModel={resolvedOllamaModel}
-          resolvedOllamaArchitect={resolvedOllamaArchitect}
-          resolvedOllamaCoder={resolvedOllamaCoder}
-          resolvedOllamaTester={resolvedOllamaTester}
           availableOllamaModels={availableOllamaModels}
           recommendedOllamaModel={recommendedOllamaModel}
           onOllamaSettingChange={handleOllamaSettingChange}
@@ -655,6 +662,14 @@ const AppContent = () => {
             showMessage={showMessage}
             theme={theme}
             onThemeChange={setTheme}
+            autoRoute={autoRoute}
+            onAutoRouteChange={setAutoRoute}
+            routerClassifierProvider={routerClassifierProvider}
+            onRouterClassifierProviderChange={setRouterClassifierProvider}
+            routerClassifierModel={routerClassifierModel}
+            onRouterClassifierModelChange={setRouterClassifierModel}
+            routerComplexityThreshold={routerComplexityThreshold}
+            onRouterComplexityThresholdChange={setRouterComplexityThreshold}
           />
         </FeatureErrorBoundary>
       )}

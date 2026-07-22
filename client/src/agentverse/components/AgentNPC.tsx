@@ -2,6 +2,7 @@ import React from 'react';
 import type { Agent, ThemeMeta } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { SpeechBubble } from './SpeechBubble';
+import { STATUS_LABEL } from '../constants';
 
 interface AgentNPCProps {
   agent: Agent;
@@ -11,14 +12,6 @@ interface AgentNPCProps {
   selected: boolean;
   onSelect: (id: string) => void;
 }
-
-const STATUS_LABEL: Record<Agent['status'], string> = {
-  idle: 'Disponible',
-  walking: 'En déplacement',
-  working: 'Au travail',
-  talking: 'En discussion',
-  blocked: 'Bloqué',
-};
 
 /**
  * A single agent placed in the world. Owns its on-screen position (derived from

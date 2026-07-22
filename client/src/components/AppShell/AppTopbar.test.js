@@ -33,9 +33,6 @@ const renderTopbar = (props = {}) => {
     isLoading: false,
     multiAIState: null,
     resolvedOllamaModel: 'qwen3:latest',
-    resolvedOllamaArchitect: 'qwen3:latest',
-    resolvedOllamaCoder: 'qwen3:latest',
-    resolvedOllamaTester: 'qwen3:latest',
     availableOllamaModels: ['qwen3:latest'],
     onOllamaSettingChange: jest.fn(),
     ollamaTopbarLabel: '',
@@ -79,4 +76,24 @@ test('remote model input resets draft on escape', () => {
   fireEvent.keyDown(input, { key: 'Escape' });
 
   expect(input).toHaveValue('moonshotai/Kimi-K2.5');
+});
+
+const AUTO_ROUTE_TOOLTIP = 'Le routeur intelligent analyse votre demande et choisit le mode optimal (simple ou équipe multi-agent)';
+
+test('Auto-Route badge shows active state and tooltip when autoRoute is true', () => {
+  renderTopbar({ autoRoute: true });
+  const badge = screen.getByTitle(AUTO_ROUTE_TOOLTIP);
+
+  expect(badge).toHaveTextContent('Auto-Route');
+  expect(badge.className).toContain('is-active');
+  expect(badge.className).not.toContain('is-muted');
+});
+
+test('Auto-Route badge shows muted state when autoRoute is false', () => {
+  renderTopbar({ autoRoute: false });
+  const badge = screen.getByTitle(AUTO_ROUTE_TOOLTIP);
+
+  expect(badge).toHaveTextContent('Manuel');
+  expect(badge.className).toContain('is-muted');
+  expect(badge.className).not.toContain('is-active');
 });

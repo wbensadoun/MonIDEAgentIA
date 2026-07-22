@@ -558,10 +558,18 @@
 @keyframes av-typing { 0%,60%,100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .av-npc { transition: none; }
-  .av-sprite, .av-flat,
-  .av-npc--working .av-npc__sprite::before,
-  .av-npc.is-selected .av-npc__sprite::after { animation: none; }
+  /* Neutralise every looping/decorative animation & transition inside the
+     module: av-indet, av-blink, av-fade, av-typing, av-gba-arrow, av-proximity,
+     av-bob, av-ring, av-pulse (AgentVerse.css) and av-portal, av-synth-pulse
+     (themes.css — those elements live under .av-root). */
+  .av-root *,
+  .av-root *::before,
+  .av-root *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Responsive: collapse rail on narrow desktop widths */

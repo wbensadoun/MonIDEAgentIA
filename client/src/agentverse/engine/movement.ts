@@ -12,21 +12,23 @@ export function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-export function distance(a: Vec2, b: Vec2): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
 export function samePos(a: Vec2, b: Vec2): boolean {
   return Math.round(a.x) === Math.round(b.x) && Math.round(a.y) === Math.round(b.y);
 }
 
 /**
  * Pick a wander destination near `home`, kept one tile away from the borders so
- * agents never clip the world edge in any theme.
+ * agents never clip the world edge in any theme. On grid themes with water or
+ * obstacles, honours the optional walkable box to avoid those zones.
  */
 export function wanderTarget(home: Vec2, theme: ThemeMeta, radius = 2): Vec2 {
-  const x = clamp(home.x + randInt(-radius, radius), 1, theme.cols - 2);
-  const y = clamp(home.y + randInt(-radius, radius), 1, theme.rows - 2);
+  const w = theme.walkable;
+  const minX = w ? Math.max(1, w.x0) : 1;
+  const maxX = w ? Math.min(theme.cols - 2, w.x1) : theme.cols - 2;
+  const minY = w ? Math.max(1, w.y0) : 1;
+  const maxY = w ? Math.min(theme.rows - 2, w.y1) : theme.rows - 2;
+  const x = clamp(home.x + randInt(-radius, radius), minX, maxX);
+  const y = clamp(home.y + randInt(-radius, radius), minY, maxY);
   return { x, y };
 }
 

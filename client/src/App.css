@@ -415,6 +415,34 @@ select option:checked {
   cursor: text;
 }
 
+/* Badge Auto-Route (routeur intelligent) */
+.topbar-autoroute-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+.topbar-autoroute-badge.is-active {
+  background: var(--accent-soft, rgba(0, 245, 212, 0.08));
+  border-color: rgba(0, 245, 212, 0.2);
+  color: var(--accent);
+}
+
+.topbar-autoroute-badge.is-muted {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
 /* Chip thème actif */
 .topbar-theme-chip {
   display: flex;

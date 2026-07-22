@@ -2,6 +2,7 @@ export const EXECUTION_MODES = [
   {
     id: 'ask',
     label: 'Ask',
+    icon: '💬',
     description: 'Lecture, explication et recherche. Aucun fichier propose.',
     canProposeFiles: false,
     canUseTerminal: false,
@@ -10,6 +11,7 @@ export const EXECUTION_MODES = [
   {
     id: 'plan',
     label: 'Plan',
+    icon: '📋',
     description: 'Exploration et plan validable. Aucune ecriture.',
     canProposeFiles: false,
     canUseTerminal: false,
@@ -18,6 +20,7 @@ export const EXECUTION_MODES = [
   {
     id: 'agent',
     label: 'Agent',
+    icon: '🔧',
     description: 'Mono-agent avec diff, permissions et rollback.',
     canProposeFiles: true,
     canUseTerminal: true,
@@ -26,6 +29,7 @@ export const EXECUTION_MODES = [
   {
     id: 'multi-agent',
     label: 'Collective',
+    icon: '🤝',
     description: 'Equipe IA adaptative : Rapide ou Profond, cloud ou local prive.',
     canProposeFiles: true,
     canUseTerminal: true,

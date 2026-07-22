@@ -65,7 +65,10 @@ export const useAI = (
   multiAgentOptions = {},
   autoRoute = false,
   setRouterDecision = () => {},
-  availableAgents = []
+  availableAgents = [],
+  routerClassifierProvider = null,
+  routerClassifierModel = null,
+  routerComplexityThreshold = null
 ) => {
   const [isLoading, setIsLoading] = useState(false);
   const {
@@ -228,7 +231,18 @@ export const useAI = (
           const routed = await window.electronAPI.routeRequest(
             currentProjectPath,
             effectivePrompt,
-            { provider: aiProvider, apiKey: getRouterApiKey(aiProvider) }
+            {
+              provider: aiProvider,
+              apiKey: getRouterApiKey(aiProvider),
+              settings: {
+                routerClassifierProvider,
+                routerClassifierModel,
+                routerComplexityThreshold,
+                geminiApiKey,
+                claudeApiKey,
+                kimiApiKey
+              }
+            }
           );
           if (routed && routed.decision) {
             const { decision } = routed;

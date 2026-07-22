@@ -38,11 +38,14 @@ L'interface transforme ces valeurs en variables d'exécution (`effExecutionMode`
 
 ## Configuration utilisateur
 
-Settings → Routeur Intelligent permet de :
+> Statut actuel : il n'existe pas encore d'onglet Settings dédié au routeur. Ce qui suit décrit uniquement ce qui est réellement implémenté aujourd'hui.
 
-- Activer/désactiver le routeur (Auto-Route).
-- Choisir le modèle de classification.
-- Ajuster le seuil de complexité.
+- Le routeur est piloté par un simple booléen `autoRoute` (état local dans `useRunConfiguration.js`, activé par défaut).
+- Il est exposé via le sélecteur d'agent dans AIChat (`client/src/components/AIChat/index.js`) : l'option **Auto (Sélection intelligente)** en haut de la liste active `autoRoute`, choisir un agent précis le désactive.
+- Il n'y a pas de choix du modèle de classification par l'utilisateur.
+- Il n'y a pas de seuil de complexité ajustable.
+
+Si un onglet Settings → « Routeur Intelligent » avec choix du modèle de classification et seuil ajustable est implémenté par la suite, cette section devra être mise à jour pour refléter l'UI réelle (id d'onglet, noms de champs, valeur de seuil par défaut).
 
 ## Roster multi-agents
 

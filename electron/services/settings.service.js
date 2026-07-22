@@ -96,6 +96,13 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   kimiModel: DEFAULT_KIMI_MODEL,
   ollamaModel: CANONICAL_QWEN_OLLAMA_MODEL,
   multiAgentRoles: normalizeMultiAgentRoles(),
+  // Routeur Intelligent : voir docs/ARCHITECTURE_ROUTEUR_INTELLIGENT.md.
+  // routerClassifierProvider/Model a `null` = repli sur le provider/modele par
+  // defaut de l'app (defaultProvider) plutot qu'un provider fige.
+  routerAutoRoute: true,
+  routerClassifierProvider: null,
+  routerClassifierModel: null,
+  routerComplexityThreshold: 0.5,
   devPort: '3004',
   allowDangerousActions: false,
   aiContextPreset: 'safe',
@@ -176,6 +183,32 @@ const normalizeSettings = (raw) => {
 
   normalized.ollamaModel = normalizePreferredOllamaModelName(normalized.ollamaModel, DEFAULT_APP_SETTINGS.ollamaModel);
   normalized.multiAgentRoles = normalizeMultiAgentRoles(normalized.multiAgentRoles);
+
+  // Migration : fusionne les valeurs par defaut du Routeur Intelligent pour les
+  // utilisateurs mettant a jour depuis une version anterieure au routeur. Meme
+  // principe que la migration d'alias Ollama ci-dessus : on ne lit que la valeur
+  // deja persistee et on ne substitue le defaut que si elle est manquante/undefined,
+  // sans jamais ecraser un reglage explicite (y compris `false` ou `0`).
+  normalized.routerAutoRoute = normalized.routerAutoRoute === undefined
+    ? DEFAULT_APP_SETTINGS.routerAutoRoute
+    : normalized.routerAutoRoute !== false;
+
+  normalized.routerClassifierProvider = normalized.routerClassifierProvider === undefined
+    ? DEFAULT_APP_SETTINGS.routerClassifierProvider
+    : (normalized.routerClassifierProvider
+      ? normalizeAIProviderName(normalized.routerClassifierProvider, null)
+      : null);
+
+  normalized.routerClassifierModel = normalized.routerClassifierModel === undefined
+    ? DEFAULT_APP_SETTINGS.routerClassifierModel
+    : (String(normalized.routerClassifierModel || '').trim() || null);
+
+  const routerComplexityThreshold = normalized.routerComplexityThreshold === undefined
+    ? DEFAULT_APP_SETTINGS.routerComplexityThreshold
+    : Number(normalized.routerComplexityThreshold);
+  normalized.routerComplexityThreshold = Number.isFinite(routerComplexityThreshold)
+    ? Math.min(1, Math.max(0, routerComplexityThreshold))
+    : DEFAULT_APP_SETTINGS.routerComplexityThreshold;
 
   const preset = String(normalized.aiContextPreset || 'safe');
   normalized.aiContextPreset = preset === 'full' || preset === 'god' ? preset : 'safe';

@@ -29,6 +29,12 @@ Un IDE desktop intelligent avec agent IA intgr (Google Gemini) pour dvelopper pl
 - Cration de nouveaux fichiers
 - Sauvegarde des conversations
 
+### 🧭 Routeur Intelligent
+- Trois modes d'exécution : Ask 💬 (discussion), Plan 📋 (planification) et Agent 🔧 (action, avec diffs à approuver)
+- Toggle Auto-Route ⚡ : l'IDE choisit lui-même le mode et le nombre d'agents
+- Décision en 2 niveaux : L1 = heuristique locale instantanée pour les demandes triviales ; L2 = classification par un modèle léger pour les cas ambigus, qui tranche entre un agent unique et une équipe multi-agents
+- Guide complet : [docs/USER_GUIDE_ROUTER.md](docs/USER_GUIDE_ROUTER.md)
+
 ##  Installation
 
 ```bash
@@ -113,7 +119,7 @@ ollama list
 ollama pull qwen3:latest
 ```
 
-2. Dans l'app, ouvrir `Settings` puis choisir `Provider IA par defaut = Ollama` ou `Multi-Ollama`, et selectionner un modele Qwen.
+2. Dans l'app, ouvrir `Settings` puis choisir `Provider IA par defaut = Ollama`, et selectionner un modele Qwen.
 
 3. Configurer `.env` (Meta WhatsApp Cloud API):
 ```env
