@@ -883,6 +883,7 @@ select option:checked {
 }
 
 .center-body {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -892,11 +893,24 @@ select option:checked {
 
 /* D3 — always-mounted center-tab panes (code/preview/brain/workflows),
    overlaid and cross-faded instead of remounted on every tab switch, so
-   Monaco/iframe/graph/React-Flow state and viewport survive. */
+   Monaco/iframe/graph/React-Flow state and viewport survive.
+   Positioned absolute + opacity-toggled (never display:none) so its size
+   never collapses to 0 — display:none/block cycling here previously fired
+   every child's internal ResizeObserver (Monaco, React Flow, BrainGraph)
+   in the same frame, tripping the browser's "ResizeObserver loop" warning. */
 .center-view-stack {
-  position: relative;
-  flex: 1;
+  position: absolute;
+  inset: 0;
   min-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.center-view-stack.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .center-view-pane {

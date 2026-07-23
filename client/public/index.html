@@ -19,6 +19,21 @@
   </head>
   <body>
     <noscript>Vous devez activer JavaScript pour utiliser cette application.</noscript>
+    <script>
+      // "ResizeObserver loop completed with undelivered notifications." is a
+      // benign browser warning (multiple observers — Phaser's internal scale
+      // manager, Monaco, React Flow — resizing in the same frame). It carries
+      // no stack trace and breaks nothing, but CRA's dev error overlay
+      // (react-error-overlay, bundled ahead of app code) treats any window
+      // 'error' event as a crash. This listener must be registered here,
+      // before bundle.js loads, so it runs BEFORE the overlay's own listener
+      // and can stop the event from reaching it.
+      window.addEventListener('error', function (e) {
+        if (e.message === 'ResizeObserver loop completed with undelivered notifications.') {
+          e.stopImmediatePropagation();
+        }
+      });
+    </script>
     <div id="root"></div>
   </body>
 </html>

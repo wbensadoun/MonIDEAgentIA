@@ -257,8 +257,7 @@ const WorkspaceLayout = ({
               state (Monaco, iframe preview, graph layout, React Flow viewport) —
               cross-faded via CSS instead of remounted on every switch. See D3. */}
           <div
-            className="center-view-stack"
-            style={{ display: ['code', 'preview', 'brain', 'workflows'].includes(centerView) ? 'block' : 'none' }}
+            className={`center-view-stack ${['code', 'preview', 'brain', 'workflows'].includes(centerView) ? 'is-visible' : ''}`}
           >
             <div className={`center-view-pane ${centerView === 'code' ? 'is-active' : ''}`} aria-hidden={centerView !== 'code'}>
               <CodeEditor {...editorProps} />

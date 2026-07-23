@@ -4,6 +4,10 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
+// ResizeObserver loop warning is suppressed in public/index.html — that
+// listener must run before webpack-dev-server's error overlay script, which
+// is injected ahead of this bundle, so it can't live here.
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
