@@ -38,7 +38,9 @@ const ChatLayout = ({
           overflow: 'hidden'
         }}
       >
-        <AIChat {...aiChatProps} />
+        <div className="chat-fullscreen-inner">
+          <AIChat {...aiChatProps} />
+        </div>
       </main>
     </div>
   );

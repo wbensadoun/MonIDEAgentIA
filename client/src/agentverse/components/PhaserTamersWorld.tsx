@@ -929,21 +929,53 @@ export function PhaserTamersWorld({ agents, theme: _theme, selectedId, onSelect,
   const hostRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<TamersScene | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
+  // Hold latest props for first sync after RAF creation (React.StrictMode guard)
+  const propsRef = useRef({ agents, selectedId, onSelect, onDeselect });
+  propsRef.current = { agents, selectedId, onSelect, onDeselect };
 
   useEffect(() => {
-    if (!hostRef.current || gameRef.current) return undefined;
-    const scene = new TamersScene();
-    sceneRef.current = scene;
-    const game = new Phaser.Game({
-      type: Phaser.AUTO, parent: hostRef.current,
-      width: WORLD_W, height: WORLD_H,
-      backgroundColor: '#2d4a1e', pixelArt: true, roundPixels: true,
-      audio: { noAudio: true },
-      scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-      scene,
+    if (!hostRef.current) return undefined;
+    let raf = requestAnimationFrame(() => {
+      raf = 0;
+      if (gameRef.current || !hostRef.current) return;
+      const scene = new TamersScene();
+      sceneRef.current = scene;
+      gameRef.current = new Phaser.Game({
+        type: Phaser.AUTO, parent: hostRef.current,
+        width: WORLD_W, height: WORLD_H,
+        backgroundColor: '#2d4a1e', pixelArt: true, roundPixels: true,
+        audio: { noAudio: true },
+        scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+        scene,
+      });
+      // First sync with current props (scene.create() callback already happened, syncing pending will no-op)
+      const p = propsRef.current;
+      scene.sync(p.agents, p.selectedId, p.onSelect, p.onDeselect);
     });
-    gameRef.current = game;
-    return () => { game.destroy(true); gameRef.current = null; sceneRef.current = null; };
+    return () => {
+      if (raf) cancelAnimationFrame(raf);     // StrictMode cleanup: creation cancelled before happening
+      if (gameRef.current) {
+        gameRef.current.destroy(true);
+        gameRef.current = null;
+        sceneRef.current = null;
+      }
+    };
+  }, []);
+
+  // Garde le canvas FIT aligné quand le CONTENEUR (pas la fenêtre) change de
+  // taille : bascule de vue, collapse sidebar, montage lazy, fondu d'entrée.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return undefined;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        gameRef.current?.scale.refresh();
+      });
+    });
+    ro.observe(host);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, []);
 
   useEffect(() => {

@@ -169,15 +169,35 @@ class TownScene extends Phaser.Scene {
   constructor() { super({ key: 'agentverse-town-kenney' }); }
 
   preload(): void {
-    this.load.spritesheet('kenney', 'assets/town/kenney_overworld.png', {
-      frameWidth: 32, frameHeight: 32, spacing: 2,
-    });
+    // Note: kenney atlas is now procedurally generated in create() — no asset file needed
+  }
+
+  private ensureKenneyAtlas(): void {
+    if (this.textures.exists('kenney')) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = 1936; canvas.height = 1052;        // 57*34-2 x 31*34-2
+    const ctx = canvas.getContext('2d'); if (!ctx) return;
+    const cell = (col: number, row: number, rgb: string) => {
+      ctx.fillStyle = rgb;
+      ctx.fillRect(col * 34, row * 34, 32, 32);       // step = TILE(32)+spacing(2)
+    };
+    // Paint only tiles referenced by GROUND + DETAIL layer IDs
+    // Row 0: water + grass + path + flowers
+    cell(0, 0, 'rgb(99,197,207)');   // WATER id 1
+    cell(1, 0, 'rgb(99,197,207)');   // WATER2 id 2
+    cell(2, 0, 'rgb(133,183,140)');  // GRASS id 3
+    cell(16, 0, 'rgb(170,128,86)');  // PATH id 17
+    cell(49, 6, 'rgb(140,200,90)');  // FLOWER1 id 392
+    cell(50, 6, 'rgb(140,200,90)');  // FLOWER2 id 393
+    cell(51, 6, 'rgb(140,200,90)');  // FLOWER3 id 394
+    this.textures.addCanvas('kenney', canvas);
   }
 
   create(): void {
     this.reduced = prefersReducedMotion();
     this.cameras.main.setBackgroundColor('#4a9e3c');
 
+    this.ensureKenneyAtlas();
     this.buildTilemap();
     this.paintDecoration();
     this.paintZoneLabels();
@@ -702,29 +722,57 @@ export function PhaserTownWorld({ agents, theme, selectedId, onSelect, onDeselec
   const hostRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<TownScene | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
+  // Hold latest props for first sync after RAF creation (React.StrictMode guard)
+  const propsRef = useRef({ agents, selectedId, onSelect, onDeselect });
+  propsRef.current = { agents, selectedId, onSelect, onDeselect };
 
   useEffect(() => {
-    if (!hostRef.current || gameRef.current) return undefined;
-    const scene = new TownScene();
-    sceneRef.current = scene;
-    const game = new Phaser.Game({
-      type: Phaser.AUTO,
-      parent: hostRef.current,
-      width: WORLD_W,
-      height: WORLD_H,
-      backgroundColor: '#4a9e3c',
-      pixelArt: true,
-      roundPixels: true,
-      audio: { noAudio: true },   // no sound needed — avoids AudioContext errors on destroy
-      scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-      scene,
+    if (!hostRef.current) return undefined;
+    let raf = requestAnimationFrame(() => {
+      raf = 0;
+      if (gameRef.current || !hostRef.current) return;
+      const scene = new TownScene();
+      sceneRef.current = scene;
+      gameRef.current = new Phaser.Game({
+        type: Phaser.AUTO,
+        parent: hostRef.current,
+        width: WORLD_W,
+        height: WORLD_H,
+        backgroundColor: '#4a9e3c',
+        pixelArt: true,
+        roundPixels: true,
+        audio: { noAudio: true },   // no sound needed — avoids AudioContext errors on destroy
+        scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+        scene,
+      });
+      // First sync with current props (scene.create() callback already happened, syncing pending will no-op)
+      const p = propsRef.current;
+      scene.sync(p.agents, p.selectedId, p.onSelect, p.onDeselect);
     });
-    gameRef.current = game;
     return () => {
-      game.destroy(true);
-      gameRef.current = null;
-      sceneRef.current = null;
+      if (raf) cancelAnimationFrame(raf);     // StrictMode cleanup: creation cancelled before happening
+      if (gameRef.current) {
+        gameRef.current.destroy(true);
+        gameRef.current = null;
+        sceneRef.current = null;
+      }
     };
+  }, []);
+
+  // Garde le canvas FIT aligné quand le CONTENEUR (pas la fenêtre) change de
+  // taille : bascule de vue, collapse sidebar, montage lazy, fondu d'entrée.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return undefined;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        gameRef.current?.scale.refresh();
+      });
+    });
+    ro.observe(host);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, []);
 
   useEffect(() => {

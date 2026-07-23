@@ -522,6 +522,38 @@ select option:checked {
   color: var(--text-muted);
 }
 
+/* ── Topbar responsive — évite l'overflow sous ~1680px ── */
+@media (max-width: 1680px) {
+  /* Menu-bar non fonctionnel (Fichier/Édition/Vue/Run/Aide) : masqué en premier */
+  .topbar-menubar { display: none; }
+  /* Laisser les chips d'identité rétrécir au lieu d'imposer leur largeur */
+  .topbar-project-chip { max-width: 120px; }
+  .topbar-file-chip    { max-width: 110px; }
+  /* L'input modèle distant mange 180px → on le comprime */
+  .topbar-select[type="text"] { min-width: 110px; }
+}
+
+@media (max-width: 1280px) {
+  /* Boutons d'action en icône seule */
+  .topbar-actions .topbar-btn-label { display: none; }
+  .topbar-ai-section { gap: 3px; padding: 0 3px; }
+  .topbar-autoroute-badge { display: none; }
+  .topbar-select[type="text"] { min-width: 88px; }
+}
+
+@media (max-width: 1024px) {
+  .topbar-project-chip { display: none; }
+  .app-view-switcher__btn > span { display: none; } /* switcher en icônes */
+  /* Libérer espace pour Settings/Workflow: masquer input modèle distant + bouton Options */
+  .topbar-ai-section .topbar-select[type="text"] { display: none; }
+  .topbar-ai-section .topbar-icon-btn { display: none; }
+}
+
+@media (max-width: 860px) {
+  /* Dernier recours: épingler les actions Settings/Workflow, cacher tout le sélecteur IA */
+  .topbar-ai-section { display: none; }
+}
+
 /* Chip thème actif */
 .topbar-theme-chip {
   display: flex;
@@ -632,6 +664,11 @@ select option:checked {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes view-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ============================
    WORKSPACE (3 colonnes)
    ============================ */
@@ -640,6 +677,7 @@ select option:checked {
   display: flex;
   min-height: 0;
   overflow: hidden;
+  animation: view-fade-in 240ms ease both;
 }
 
 /* Sidebar gauche */
@@ -713,6 +751,7 @@ select option:checked {
   min-height: 0;
   background: var(--bg);
   overflow: hidden;
+  animation: view-fade-in 240ms ease both;
 }
 
 .chat-fullscreen-inner {
@@ -1570,4 +1609,14 @@ select option:checked {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+}
+
+/* ============================
+   ACCESSIBILITY: Reduced Motion
+   ============================ */
+@media (prefers-reduced-motion: reduce) {
+  .workspace,
+  .chat-fullscreen {
+    animation: none;
+  }
 }

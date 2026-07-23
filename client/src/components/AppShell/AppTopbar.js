@@ -316,7 +316,7 @@ const AppTopbar = ({
             style={{ padding: '0 8px', gap: 4, width: 'auto', fontSize: 11, display: viewMode !== 'ide' ? 'none' : undefined }}
           >
             <IconTerminal />
-            <span>Terminal</span>
+            <span className="topbar-btn-label">Terminal</span>
           </button>
 
           {/* Thème switcher */}
@@ -373,7 +373,7 @@ const AppTopbar = ({
             style={{ padding: '0 8px', width: 'auto', fontSize: 11, gap: 4, display: viewMode !== 'ide' ? 'none' : undefined }}
           >
             <span style={{ fontSize: 10 }}>●</span>
-            {isExpertMode ? 'Avancé' : 'Simple'}
+            <span className="topbar-btn-label">{isExpertMode ? 'Avancé' : 'Simple'}</span>
           </button>
 
           {/* Workflows */}
@@ -396,7 +396,7 @@ const AppTopbar = ({
             style={{ padding: '0 8px', gap: 4, width: 'auto', fontSize: 11 }}
           >
             <IconSettings />
-            <span>Settings</span>
+            <span className="topbar-btn-label">Settings</span>
           </button>
         </div>
       </div>
