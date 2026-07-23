@@ -968,26 +968,8 @@ export function PhaserTamersWorld({ agents, theme: _theme, selectedId, onSelect,
     };
   }, []);
 
-  // Garde le canvas FIT aligné quand le CONTENEUR (pas la fenêtre) change de
-  // taille : bascule de vue, collapse sidebar, montage lazy, fondu d'entrée.
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return undefined;
-    let raf = 0;
-    let lastRefresh = 0;
-    const ro = new ResizeObserver(() => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        const now = Date.now();
-        if (now - lastRefresh >= 100) {
-          lastRefresh = now;
-          gameRef.current?.scale.refresh();
-        }
-      });
-    });
-    ro.observe(host);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
-  }, []);
+  // Phaser FIT mode handles container resize automatically — ResizeObserver
+  // observer was triggering a loop. Let Phaser's internal scale manager handle it.
 
   useEffect(() => {
     sceneRef.current?.sync(agents, selectedId, onSelect, onDeselect);
