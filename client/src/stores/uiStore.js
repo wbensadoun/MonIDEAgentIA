@@ -23,6 +23,9 @@ const useUIStore = create((set) => ({
   centerView: 'chat',
   setCenterView: (view) => set({ centerView: view }),
 
+  viewMode: 'ide',
+  setViewMode: (v) => set({ viewMode: v }),
+
   isTerminalOpen: false,
   setIsTerminalOpen: (open) => set({ isTerminalOpen: open }),
   toggleTerminal: () => set((state) => ({ isTerminalOpen: !state.isTerminalOpen })),

@@ -51,6 +51,8 @@ const renderTopbar = (props = {}) => {
     onThemeChange: jest.fn(),
     isTerminalOpen: false,
     onToggleTerminal: jest.fn(),
+    viewMode: 'ide',
+    onViewModeChange: jest.fn(),
     ...props
   };
 

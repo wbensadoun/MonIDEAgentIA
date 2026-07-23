@@ -314,6 +314,85 @@ select option:checked {
   text-overflow: ellipsis;
 }
 
+/* Sélecteur de mode d'affichage (IDE / Chat / Agents) */
+.app-view-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.app-view-switcher__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.app-view-switcher__btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.app-view-switcher__btn.is-active {
+  color: var(--text-main);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.app-view-switcher__btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Compatibility alias for backward compatibility */
+.view-switcher-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.view-switcher-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.view-switcher-btn.is-active {
+  color: var(--text-main);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.view-switcher-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
 /* Menu-bar style (Fichier | Edition | Vue | Run | Aide) */
 .topbar-menubar {
   display: flex;
@@ -623,6 +702,39 @@ select option:checked {
   min-width: 0;
   min-height: 0;
   background: var(--bg);
+}
+
+/* Full-screen layouts for Chat and Agents views */
+.chat-fullscreen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.chat-fullscreen-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+  min-height: 0;
+  padding: 0 20px;
+}
+
+/* Main content for AgentVerse full-page layout */
+.agents-fullscreen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+  overflow: hidden;
 }
 
 /* Sidebar droite (AI Chat) */

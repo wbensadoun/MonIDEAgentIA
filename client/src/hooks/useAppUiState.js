@@ -27,6 +27,13 @@ const useAppUiState = ({
   const [centerView, setCenterView] = useState('code');
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [runtimeDevPort, setRuntimeDevPort] = useState('');
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      return localStorage.getItem('futurIA_viewMode') || 'ide';
+    } catch {
+      return 'ide';
+    }
+  });
 
   useEffect(() => {
     try {
@@ -44,6 +51,14 @@ const useAppUiState = ({
       // ignore
     }
   }, [isExpertMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('futurIA_viewMode', viewMode);
+    } catch {
+      // ignore
+    }
+  }, [viewMode]);
 
   useEffect(() => {
     if (!isElectronApiAvailable) return undefined;
@@ -89,6 +104,7 @@ const useAppUiState = ({
   useEffect(() => { useUIStore.getState().setCenterView(centerView); }, [centerView]);
   useEffect(() => { useUIStore.getState().setSettingsOpen(settingsOpen); }, [settingsOpen]);
   useEffect(() => { useUIStore.getState().setIsTerminalOpen(isTerminalOpen); }, [isTerminalOpen]);
+  useEffect(() => { useUIStore.getState().setViewMode(viewMode); }, [viewMode]);
 
   return {
     theme,
@@ -111,6 +127,8 @@ const useAppUiState = ({
     toggleTerminal,
     runtimeDevPort,
     setRuntimeDevPort,
+    viewMode,
+    setViewMode,
     previewUrl: `http://localhost:${previewPort}`,
     handleTogglePreview,
     handlePreviewRefresh

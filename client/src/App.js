@@ -21,6 +21,8 @@ import useWorkspaceSyncEffects from './hooks/useWorkspaceSyncEffects';
 import WorkflowManager from './components/WorkflowManager';
 import AppTopbar from './components/AppShell/AppTopbar';
 import WorkspaceLayout from './components/AppShell/WorkspaceLayout';
+import ChatLayout from './components/AppShell/ChatLayout';
+import AgentsLayout from './components/AppShell/AgentsLayout';
 import StatusBar from './components/AppShell/StatusBar';
 import OnboardingModal from './components/AppShell/OnboardingModal';
 import CommandCenterOverlays from './components/AppShell/CommandCenterOverlays';
@@ -79,6 +81,8 @@ const AppContent = () => {
     setIsTerminalOpen,
     toggleTerminal,
     setRuntimeDevPort,
+    viewMode,
+    setViewMode,
     previewUrl,
     handleTogglePreview,
     handlePreviewRefresh
@@ -578,54 +582,89 @@ const AppContent = () => {
           onThemeChange={setTheme}
           isTerminalOpen={isTerminalOpen}
           onToggleTerminal={toggleTerminal}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
         />
       </FeatureErrorBoundary>
 
       <FeatureErrorBoundary feature="workspace">
-      <WorkspaceLayout
-        layoutRef={layoutRef}
-        leftWidth={leftWidth}
-        rightWidth={rightWidth}
-        middleWidth={middleWidth}
-        isLeftCollapsed={isLeftCollapsed}
-        isRightCollapsed={isRightCollapsed}
-        dragging={dragging}
-        onDragStart={handleDragStart}
-        projectItems={projectItems}
-        currentProjectPath={currentProjectPath}
-        activeFile={activeFile}
-        expandedFolders={expandedFolders}
-        newItemName={newItemName}
-        isElectronApiAvailable={isElectronApiAvailable}
-        onOpenFolder={handleOpenFolder}
-        onCreateItem={handleExplorerCreateItem}
-        onRenameItem={handleExplorerRenameItem}
-        onMoveItem={handleExplorerMoveItem}
-        onDeleteItem={handleExplorerDeleteItem}
-        onToggleFolder={toggleFolderExpansion}
-        onFileClick={openFile}
-        onNewItemNameChange={setNewItemName}
-        isReadOnlyMode={isReadOnlyMode}
-        centerView={centerView}
-        onCenterViewChange={setCenterView}
-        isFocusMode={isFocusMode}
-        onToggleFocusMode={toggleFocusMode}
-        editorProps={editorProps}
-        previewProps={previewPanelProps}
-        terminalProps={terminalPanelProps}
-        gitPanelProps={gitPanelProps}
-        aiChangesPanelProps={aiChangesPanelProps}
-        brainGraphProps={brainGraphPanelProps}
-        workflowProps={workflowPanelProps}
-        aiChatProps={aiChatProps}
-        workspacePanelProps={workspacePanelProps}
-        isTerminalOpen={isTerminalOpen}
-        onToggleTerminal={toggleTerminal}
-      />
+        {viewMode === 'ide' && (
+          <WorkspaceLayout
+            layoutRef={layoutRef}
+            leftWidth={leftWidth}
+            rightWidth={rightWidth}
+            middleWidth={middleWidth}
+            isLeftCollapsed={isLeftCollapsed}
+            isRightCollapsed={isRightCollapsed}
+            dragging={dragging}
+            onDragStart={handleDragStart}
+            projectItems={projectItems}
+            currentProjectPath={currentProjectPath}
+            activeFile={activeFile}
+            expandedFolders={expandedFolders}
+            newItemName={newItemName}
+            isElectronApiAvailable={isElectronApiAvailable}
+            onOpenFolder={handleOpenFolder}
+            onCreateItem={handleExplorerCreateItem}
+            onRenameItem={handleExplorerRenameItem}
+            onMoveItem={handleExplorerMoveItem}
+            onDeleteItem={handleExplorerDeleteItem}
+            onToggleFolder={toggleFolderExpansion}
+            onFileClick={openFile}
+            onNewItemNameChange={setNewItemName}
+            isReadOnlyMode={isReadOnlyMode}
+            centerView={centerView}
+            onCenterViewChange={setCenterView}
+            isFocusMode={isFocusMode}
+            onToggleFocusMode={toggleFocusMode}
+            editorProps={editorProps}
+            previewProps={previewPanelProps}
+            terminalProps={terminalPanelProps}
+            gitPanelProps={gitPanelProps}
+            aiChangesPanelProps={aiChangesPanelProps}
+            brainGraphProps={brainGraphPanelProps}
+            workflowProps={workflowPanelProps}
+            aiChatProps={aiChatProps}
+            workspacePanelProps={workspacePanelProps}
+            isTerminalOpen={isTerminalOpen}
+            onToggleTerminal={toggleTerminal}
+          />
+        )}
+        {viewMode === 'chat' && (
+          <ChatLayout
+            workspacePanelProps={workspacePanelProps}
+            aiChatProps={aiChatProps}
+          />
+        )}
+        {viewMode === 'agents' && (
+          <AgentsLayout
+            workspacePanelProps={workspacePanelProps}
+            onViewChanges={() => {
+              setCenterView('ai-changes');
+              setViewMode('ide');
+            }}
+            projectItems={projectItems}
+            currentProjectPath={currentProjectPath}
+            activeFile={activeFile}
+            expandedFolders={expandedFolders}
+            newItemName={newItemName}
+            isElectronApiAvailable={isElectronApiAvailable}
+            onOpenFolder={handleOpenFolder}
+            onCreateItem={handleExplorerCreateItem}
+            onRenameItem={handleExplorerRenameItem}
+            onMoveItem={handleExplorerMoveItem}
+            onDeleteItem={handleExplorerDeleteItem}
+            onToggleFolder={toggleFolderExpansion}
+            onFileClick={openFile}
+            onNewItemNameChange={setNewItemName}
+            isReadOnlyMode={isReadOnlyMode}
+          />
+        )}
       </FeatureErrorBoundary>
 
       <FeatureErrorBoundary feature="statusbar">
       <StatusBar
+        viewMode={viewMode}
         centerView={centerView}
         previewStatus={previewStatus}
         isStreamingCodePreview={isStreamingCodePreview}

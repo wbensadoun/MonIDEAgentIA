@@ -43,3 +43,48 @@ test('loads read-only permission mode from settings without forcing terminal acc
     expect(screen.getAllByText('Lecture seule').length).toBeGreaterThan(0);
   });
 });
+
+test('toggles between IDE and Chat views via AppViewSwitcher', async () => {
+  window.electronAPI = {
+    loadSettings: jest.fn().mockResolvedValue({
+      success: true,
+      settings: {
+        permissionMode: 'read_only',
+        defaultProvider: 'gemini',
+        onboardingCompleted: true
+      }
+    })
+  };
+
+  render(<App />);
+
+  // Initially should show IDE view
+  await waitFor(() => {
+    const brandElement = screen.getByText(/FuturIA/i);
+    expect(brandElement).toBeInTheDocument();
+  });
+
+  // Find AppViewSwitcher buttons (IDE, Chat, Agents) — more specific query
+  const allButtons = screen.getAllByRole('button');
+  const viewButtons = allButtons.filter(btn =>
+    btn.textContent.trim() === 'IDE' ||
+    btn.textContent.trim() === 'Chat' ||
+    btn.textContent.trim() === 'Agents'
+  );
+
+  // Expect three view-mode buttons
+  expect(viewButtons.length).toBe(3);
+
+  // Find the Chat button specifically
+  const chatButton = viewButtons.find(btn => btn.textContent.trim() === 'Chat');
+  expect(chatButton).toBeDefined();
+
+  if (chatButton) {
+    fireEvent.click(chatButton);
+
+    // Verify Chat button is now active
+    await waitFor(() => {
+      expect(chatButton.classList.contains('is-active')).toBe(true);
+    });
+  }
+});

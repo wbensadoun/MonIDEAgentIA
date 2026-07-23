@@ -4,6 +4,42 @@ Toutes les évolutions notables de ce projet sont documentées dans ce fichier.
 
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
+## [1.9.0] — Barre de navigation 3 modes (IDE / Chat / Agents)
+
+Vue générale de l'interface unifiée en trois modes principaux : IDE (éditeur de
+code multi-panneaux), Chat (interface IA conversationnelle full-screen), et Agents
+(monde RPG immersif AgentVerse). Chaque mode conserve son état (fichiers ouverts,
+historique chat) lors du basculement.
+
+### Added
+
+- **AppViewSwitcher** (`client/src/components/AppShell/AppViewSwitcher.js`) :
+  boutons de basculement 3 modes (IDE / Chat / Agents) dans la topbar. État
+  persisté via `useAppUiState` (localStorage).
+- **Chat Layout** (`client/src/components/AppShell/ChatLayout.js`) : full-screen
+  conversationnel avec WorkspacePanel (projets) + AIChat, sans explorateur de
+  fichiers ni terminal.
+- **Agents Layout** (`client/src/components/AppShell/AgentsLayout.js`) :
+  AgentVerse plein écran avec sidebar légère (projets uniquement), callback
+  `onViewChanges` pour retour automatique vers IDE → AI Changes au clic sur
+  "Voir les changements" d'une tâche complétée.
+- **StatusBar amélioré** : affichage du mode courant (ide / chat / agents) et du
+  panneau actif (centerView) uniquement en mode IDE pour éviter la confusion.
+
+### Changed
+
+- **WorkspaceLayout.js** : suppression de l'onglet 'Agents' du centre (les
+  agents ne sont plus accessibles via un onglet centerView, mais via le mode
+  Agents plein écran).
+- **App.js** : rendu conditionnel en trois branches `viewMode` (ide / chat /
+  agents) ; passage de `viewMode` à StatusBar.
+
+### Removed
+
+- Import/utilisation inutile de `LazyAgentVerse` dans WorkspaceLayout (d'où sa
+  présence antérieure dans les tabs du centre).
+- Icône `IconAgents` de WorkspaceLayout (n'est plus nécessaire).
+
 ## [1.8.0] — Routeur Intelligent
 
 Refactor majeur : remplacement de la sélection manuelle de mode d'exécution

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import UpdateChecker from '../UpdateChecker';
 import ThemeSwitcher from './ThemeSwitcher';
+import AppViewSwitcher from './AppViewSwitcher';
 import { normalizeRemoteModelName } from '../../utils/remoteModels';
 
 /* ---- Icônes SVG inline ---- */
@@ -124,6 +125,8 @@ const AppTopbar = ({
   isTerminalOpen,
   onToggleTerminal,
   autoRoute,
+  viewMode = 'ide',
+  onViewModeChange = () => {},
 }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [modelDraft, setModelDraft] = useState(activeModelValue || '');
@@ -181,6 +184,9 @@ const AppTopbar = ({
           <span className={`topbar-project-dot ${currentProjectPath ? 'is-open' : ''}`} />
           <span className="topbar-project-name">{projectName}</span>
         </div>
+
+        {/* Sélecteur de mode d'affichage (IDE / Chat / Agents) */}
+        <AppViewSwitcher viewMode={viewMode} onViewModeChange={onViewModeChange} />
 
         {/* Fichier actif */}
         {displayedActiveFile && (
@@ -307,7 +313,7 @@ const AppTopbar = ({
             className={`topbar-icon-btn ${isTerminalOpen ? 'is-active' : ''}`}
             title={isTerminalOpen ? 'Masquer le terminal' : 'Afficher le terminal'}
             onClick={onToggleTerminal}
-            style={{ padding: '0 8px', gap: 4, width: 'auto', fontSize: 11 }}
+            style={{ padding: '0 8px', gap: 4, width: 'auto', fontSize: 11, display: viewMode !== 'ide' ? 'none' : undefined }}
           >
             <IconTerminal />
             <span>Terminal</span>
@@ -334,6 +340,7 @@ const AppTopbar = ({
             className={`topbar-icon-btn ${previewStatus === 'running' ? 'is-active' : ''}`}
             onClick={onTogglePreview}
             title={previewStatus === 'running' ? 'Arrêter le preview' : 'Lancer le preview'}
+            style={{ display: viewMode !== 'ide' ? 'none' : undefined }}
           >
             {previewStatus === 'running' ? <IconStop /> : <IconPlay />}
           </button>
@@ -343,6 +350,7 @@ const AppTopbar = ({
             className={`topbar-icon-btn ${isLeftCollapsed ? 'is-active' : ''}`}
             onClick={onToggleLeftPanel}
             title={isLeftCollapsed ? 'Afficher l\'explorateur' : 'Masquer l\'explorateur'}
+            style={{ display: viewMode !== 'ide' ? 'none' : undefined }}
           >
             <IconSidebar />
           </button>
@@ -352,6 +360,7 @@ const AppTopbar = ({
             className={`topbar-icon-btn ${isRightCollapsed ? 'is-active' : ''}`}
             onClick={onToggleRightPanel}
             title={isRightCollapsed ? 'Afficher le chat IA' : 'Masquer le chat IA'}
+            style={{ display: viewMode !== 'ide' ? 'none' : undefined }}
           >
             <IconChat />
           </button>
@@ -361,7 +370,7 @@ const AppTopbar = ({
             className={`topbar-icon-btn ${isExpertMode ? 'is-active' : ''}`}
             onClick={onToggleExpertMode}
             title={isExpertMode ? 'Mode IA avancé actif' : 'Activer le mode IA avancé'}
-            style={{ padding: '0 8px', width: 'auto', fontSize: 11, gap: 4 }}
+            style={{ padding: '0 8px', width: 'auto', fontSize: 11, gap: 4, display: viewMode !== 'ide' ? 'none' : undefined }}
           >
             <span style={{ fontSize: 10 }}>●</span>
             {isExpertMode ? 'Avancé' : 'Simple'}

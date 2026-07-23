@@ -1,6 +1,7 @@
 import React from 'react';
 
 const StatusBar = ({
+  viewMode,
   centerView,
   previewStatus,
   isStreamingCodePreview,
@@ -43,8 +44,14 @@ const StatusBar = ({
 
       {/* Vue active */}
       <div className="statusbar-item">
-        <span className="statusbar-label">Vue</span>
-        <span className="statusbar-value">{centerView}</span>
+        <span className="statusbar-label">Mode</span>
+        <span className="statusbar-value">{viewMode}</span>
+        {viewMode === 'ide' && (
+          <>
+            <span className="statusbar-label" style={{ marginLeft: '8px' }}>Panneau</span>
+            <span className="statusbar-value">{centerView}</span>
+          </>
+        )}
       </div>
 
       {/* Preview */}
