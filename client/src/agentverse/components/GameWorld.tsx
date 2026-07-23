@@ -257,17 +257,11 @@ export function GameWorld({ agents, theme, selectedId, onSelect, onDeselect }: G
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
-  // Re-runs on theme change so the observer re-attaches when the DOM world
-  // mounts after the Phaser (town) world — otherwise `size` stays 0 and the
-  // `ready` gate hides every object/NPC.
+  // Measure on mount and theme change. Single measurement avoids ResizeObserver loop.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
-    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
-    measure();
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(el);
-    return () => ro.disconnect();
+    setSize({ w: el.clientWidth, h: el.clientHeight });
   }, [theme.id]);
 
   const cellW = size.w > 0 ? size.w / theme.cols : 0;
