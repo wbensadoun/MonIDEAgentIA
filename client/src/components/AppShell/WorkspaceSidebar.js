@@ -47,11 +47,13 @@ const WorkspaceSidebar = ({
       className="ide-sidebar-left"
       style={{ width: width || '20%', ...style }}
     >
-      <div className="sidebar-tabs">
+      <div className="sidebar-tabs" role="tablist">
         <button
           type="button"
           className={`sidebar-tab ${sidebarTab === 'files' ? 'is-active' : ''}`}
           onClick={() => setSidebarTab('files')}
+          role="tab"
+          aria-selected={sidebarTab === 'files'}
         >
           Fichiers
         </button>
@@ -59,6 +61,8 @@ const WorkspaceSidebar = ({
           type="button"
           className={`sidebar-tab ${sidebarTab === 'projects' ? 'is-active' : ''}`}
           onClick={() => setSidebarTab('projects')}
+          role="tab"
+          aria-selected={sidebarTab === 'projects'}
         >
           Projets
         </button>

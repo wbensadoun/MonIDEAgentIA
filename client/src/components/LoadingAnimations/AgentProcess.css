@@ -7,11 +7,11 @@
   flex-direction: column;
   gap: 0;
   border-radius: 14px;
-  border: 1px solid rgba(0, 245, 212, 0.2);
-  background: linear-gradient(135deg, rgba(4, 16, 24, 0.98), rgba(2, 10, 18, 0.99));
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--surface) 96%, transparent), color-mix(in srgb, var(--surface-2) 98%, transparent));
   overflow: hidden;
   box-shadow:
-    0 0 0 1px rgba(0, 245, 212, 0.06) inset,
+    0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent) inset,
     0 8px 32px rgba(0, 0, 0, 0.5);
   margin: 4px 0;
 }
@@ -24,8 +24,8 @@
   flex-direction: column;
   gap: 10px;
   border-radius: 12px;
-  border: 1px solid rgba(0, 245, 212, 0.18);
-  background: linear-gradient(135deg, rgba(4, 16, 24, 0.96), rgba(2, 10, 18, 0.98));
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--surface) 94%, transparent), color-mix(in srgb, var(--surface-2) 96%, transparent));
   padding: 10px 12px;
   margin: 6px 0;
 }
@@ -41,7 +41,7 @@
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(0, 245, 212, 0.75);
+  color: var(--accent);
   margin-bottom: 2px;
 }
 
@@ -52,12 +52,12 @@
   padding: 4px 6px;
   border-radius: 7px;
   font-size: 0.74rem;
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in srgb, var(--text-main) 3%, transparent);
   transition: background 0.2s ease;
 }
 
 .apf-row.is-writing {
-  background: rgba(0, 245, 212, 0.06);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 .apf-icon {
@@ -67,12 +67,12 @@
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  color: #00f5d4;
+  color: var(--accent);
   font-size: 0.7rem;
 }
 
 .apf-row.is-done .apf-icon {
-  color: #34d399;
+  color: var(--success);
 }
 
 .apf-path {
@@ -81,30 +81,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--text-main);
   font-family: var(--font-mono, monospace);
 }
 
 .apf-cmd {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-dim);
 }
 
 .apf-status {
   flex-shrink: 0;
   font-size: 0.6rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
 }
 
 .apf-row.is-writing .apf-status {
-  color: rgba(0, 245, 212, 0.7);
+  color: color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .apf-spinner {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  border: 2px solid rgba(0, 245, 212, 0.25);
-  border-top-color: #00f5d4;
+  border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
   animation: apf-spin 0.7s linear infinite;
 }
 
@@ -119,7 +119,7 @@
   justify-content: space-between;
   gap: 10px;
   padding: 10px 14px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border);
 }
 
 .ap-topbar-left {
@@ -146,20 +146,20 @@
   position: relative;
   z-index: 2;
   animation: ap-brain-pulse 2s ease-in-out infinite;
-  filter: drop-shadow(0 0 8px rgba(0, 245, 212, 0.6));
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 60%, transparent));
 }
 
 .ap-brain-ring {
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  border: 1.5px solid rgba(0, 245, 212, 0.4);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 40%, transparent);
   animation: ap-ring-expand 2s ease-out infinite;
 }
 
 @keyframes ap-brain-pulse {
-  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 6px rgba(0,245,212,0.5)); }
-  50%       { transform: scale(1.1); filter: drop-shadow(0 0 14px rgba(0,245,212,0.85)); }
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 50%, transparent)); }
+  50%       { transform: scale(1.1); filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 85%, transparent)); }
 }
 
 @keyframes ap-ring-expand {
@@ -187,21 +187,21 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #00f5d4;
-  box-shadow: 0 0 8px rgba(0, 245, 212, 0.8);
+  background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 80%, transparent);
   flex-shrink: 0;
   animation: ap-dot-blink 1.6s ease-in-out infinite;
 }
 
 @keyframes ap-dot-blink {
-  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(0,245,212,0.6); }
-  50%       { opacity: 0.55; box-shadow: 0 0 12px rgba(0,245,212,0.9); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent); }
+  50%       { opacity: 0.55; box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 90%, transparent); }
 }
 
 .ap-status-text {
   font-size: 0.78rem;
   font-weight: 600;
-  color: #e2e8f0;
+  color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -220,6 +220,9 @@
   flex-wrap: wrap;
 }
 
+/* Per-provider brand chip (OpenAI/Anthropic/etc.) — --provider-color is a
+   fixed brand hue set inline per provider, intentionally independent of the
+   active app theme, so it is not routed through --accent. */
 .ap-provider-chip {
   font-size: 0.65rem;
   font-weight: 600;
@@ -234,20 +237,20 @@
 .ap-timer {
   font-size: 0.64rem;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  color: rgba(0, 245, 212, 0.6);
+  color: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 .ap-tokens {
   font-size: 0.62rem;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  color: rgba(167, 139, 250, 0.7);
+  color: color-mix(in srgb, var(--accent-2) 70%, transparent);
   padding: 1px 6px;
   border-radius: 999px;
-  background: rgba(167, 139, 250, 0.08);
-  border: 1px solid rgba(167, 139, 250, 0.2);
+  background: color-mix(in srgb, var(--accent-2) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 20%, transparent);
 }
 
-/* Animated dots */
+/* Animated dots — three-hue accent triptych, themed per palette */
 .ap-dots {
   display: flex;
   gap: 4px;
@@ -259,12 +262,12 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #00f5d4;
+  background: var(--accent);
   animation: ap-dot-bounce 1.4s ease-in-out infinite;
 }
 
-.ap-dot:nth-child(2) { animation-delay: 0.18s; background: #a78bfa; }
-.ap-dot:nth-child(3) { animation-delay: 0.36s; background: #60a5fa; }
+.ap-dot:nth-child(2) { animation-delay: 0.18s; background: var(--accent-2); }
+.ap-dot:nth-child(3) { animation-delay: 0.36s; background: var(--accent-3); }
 
 @keyframes ap-dot-bounce {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.6; }
@@ -278,7 +281,7 @@
   gap: 0;
   padding: 8px 14px;
   overflow-x: auto;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border);
   scrollbar-width: none;
 }
 
@@ -303,30 +306,30 @@
   align-items: center;
   justify-content: center;
   font-size: 10px;
-  border: 1.5px solid rgba(100, 116, 139, 0.5);
-  background: rgba(15, 23, 42, 0.8);
-  color: #94a3b8;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
   transition: all 0.3s ease;
 }
 
 .ap-step.is-done .ap-step-icon {
-  background: linear-gradient(135deg, #10b981, #059669);
-  border-color: #10b981;
+  background: linear-gradient(135deg, var(--success), color-mix(in srgb, var(--success) 80%, black));
+  border-color: var(--success);
   color: #fff;
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--success) 40%, transparent);
 }
 
 .ap-step.is-active .ap-step-icon {
-  background: rgba(0, 245, 212, 0.15);
-  border-color: #00f5d4;
-  color: #00f5d4;
-  box-shadow: 0 0 12px rgba(0, 245, 212, 0.4);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 40%, transparent);
   animation: ap-step-pulse 1.8s ease-in-out infinite;
 }
 
 @keyframes ap-step-pulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(0,245,212,0.4); }
-  50%       { box-shadow: 0 0 18px rgba(0,245,212,0.7); }
+  0%, 100% { box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 40%, transparent); }
+  50%       { box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 70%, transparent); }
 }
 
 .ap-step.is-pending .ap-step-icon {
@@ -336,8 +339,8 @@
 .ap-step-spinner {
   width: 10px;
   height: 10px;
-  border: 1.5px solid rgba(0, 245, 212, 0.3);
-  border-top-color: #00f5d4;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: ap-spin 0.8s linear infinite;
 }
@@ -354,21 +357,21 @@
 .ap-step-label {
   font-size: 0.6rem;
   font-weight: 600;
-  color: #cbd5e1;
+  color: var(--text-main);
   line-height: 1.2;
   word-break: break-word;
 }
 
-.ap-step.is-pending .ap-step-label { color: #475569; }
-.ap-step.is-done .ap-step-label    { color: #6ee7b7; }
-.ap-step.is-active .ap-step-label  { color: #00f5d4; }
+.ap-step.is-pending .ap-step-label { color: var(--text-muted); }
+.ap-step.is-done .ap-step-label    { color: color-mix(in srgb, var(--success) 70%, white); }
+.ap-step.is-active .ap-step-label  { color: var(--accent); }
 
 .ap-step-provider {
   font-size: 0.52rem;
-  color: #64748b;
+  color: var(--text-muted);
   padding: 0 4px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.04);
+  background: color-mix(in srgb, var(--text-main) 4%, transparent);
 }
 
 /* Connectors between steps */
@@ -376,13 +379,13 @@
   flex: 1;
   height: 1.5px;
   min-width: 12px;
-  background: rgba(100, 116, 139, 0.25);
+  background: var(--border);
   margin-bottom: 20px; /* align with icon center */
   transition: background 0.4s ease;
 }
 
 .ap-connector.is-done {
-  background: linear-gradient(90deg, #10b981, rgba(0, 245, 212, 0.5));
+  background: linear-gradient(90deg, var(--success), color-mix(in srgb, var(--accent) 50%, transparent));
 }
 
 /* ── Live log ─────────────────────────────────────────────── */
@@ -414,18 +417,18 @@
 }
 
 .ap-log-line:last-child .ap-log-text {
-  color: #e2e8f0;
+  color: var(--text-main);
 }
 
 .ap-log-ts {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.6rem;
-  color: rgba(0, 245, 212, 0.45);
+  color: color-mix(in srgb, var(--accent) 45%, transparent);
   flex-shrink: 0;
 }
 
 .ap-log-text {
-  color: #94a3b8;
+  color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -434,13 +437,13 @@
 /* ── Progress bar ─────────────────────────────────────────── */
 .ap-progress {
   height: 2px;
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--text-main) 4%, transparent);
   overflow: hidden;
 }
 
 .ap-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #00c49a, #00f5d4, #a78bfa, #00f5d4, #00c49a);
+  background: linear-gradient(90deg, var(--accent-3), var(--accent), var(--accent-2), var(--accent), var(--accent-3));
   background-size: 300% 100%;
   animation: ap-progress-slide 2s linear infinite;
 }

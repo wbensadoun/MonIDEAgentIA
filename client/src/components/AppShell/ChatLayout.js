@@ -18,7 +18,7 @@ const ChatLayout = ({
   aiChatProps
 }) => {
   return (
-    <div style={{ display: 'flex', width: '100%', height: '100%' }}>
+    <div className="workspace">
       {/* Left Sidebar: Projects/Workspace Panel */}
       <WorkspaceSidebar
         sidebarVisibility="projectsOnly"
@@ -27,17 +27,7 @@ const ChatLayout = ({
       />
 
       {/* Right Main: Full-screen Chat */}
-      <main
-        className="chat-fullscreen"
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          minWidth: 0,
-          height: '100%',
-          overflow: 'hidden'
-        }}
-      >
+      <main className="chat-fullscreen">
         <div className="chat-fullscreen-inner">
           <AIChat {...aiChatProps} />
         </div>

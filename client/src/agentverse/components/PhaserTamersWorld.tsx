@@ -113,6 +113,12 @@ class TamersScene extends Phaser.Scene {
 
   create(): void {
     this.reduced = prefersReducedMotion();
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+      const onReducedMotionChange = (e: MediaQueryListEvent) => { this.reduced = e.matches; };
+      mq.addEventListener('change', onReducedMotionChange);
+      this.events.once('shutdown', () => mq.removeEventListener('change', onReducedMotionChange));
+    }
     this.cameras.main.setBackgroundColor('#2d4a1e');
     this.generateTileTextures();
     this.paintTiles();

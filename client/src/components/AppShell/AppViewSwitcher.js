@@ -40,6 +40,8 @@ const AppViewSwitcher = ({ viewMode = 'ide', onViewModeChange = () => {} }) => {
           className={`app-view-switcher__btn ${viewMode === id ? 'is-active' : ''}`}
           onClick={() => onViewModeChange(id)}
           title={`Basculer vers ${label}`}
+          aria-pressed={viewMode === id}
+          aria-label={`Basculer vers ${label}`}
         >
           <Icon />
           <span>{label}</span>

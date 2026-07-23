@@ -552,7 +552,7 @@ const AIChat = ({
     });
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -676,11 +676,6 @@ const AIChat = ({
         {streamingMode === 'diff' && (
           <div className="ai-stream-anim ai-stream-diff">
             <div className="ai-stream-anim-title">Edition structuree en cours...</div>
-            <div className="ai-diff-file">
-              <span className="diff-line diff-line-1" />
-              <span className="diff-line diff-line-2" />
-              <span className="diff-line diff-line-3" />
-            </div>
             <pre className="ai-stream-raw-preview">{filterUserVisibleText(streamingText)}</pre>
             <div className="ai-stream-anim-subtitle">Syntaxe detectee: {'<<<< SEARCH ... >>>> REPLACE'}</div>
           </div>
@@ -1096,6 +1091,7 @@ const AIChat = ({
                   onClick={() => setExecutionMode(mode.id)}
                   title={mode.description}
                   disabled={isLoading}
+                  aria-pressed={executionMode === mode.id}
                 >
                   {mode.icon} {mode.label}
                 </button>
@@ -1134,35 +1130,37 @@ const AIChat = ({
 
       {/* ===== CONVERSATIONS DROPDOWN ===== */}
       {showConversations && (
-        <div className="ai-chat-dropdown" style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', maxHeight: 200, overflowY: 'auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Conversations</span>
-            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{conversations.length}</span>
-          </div>
-          <div style={{ padding: '4px 14px' }}>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Rechercher..."
-              style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 8px', color: 'var(--text-main)', fontSize: 11, outline: 'none' }}
-            />
-          </div>
-          <div>
-            {isConversationLoading && <div style={{ padding: '8px 14px', fontSize: 10, color: 'var(--text-muted)' }}>Chargement...</div>}
-            {!isConversationLoading && filteredConversations.length === 0 && <div style={{ padding: '8px 14px', fontSize: 10, color: 'var(--text-muted)' }}>Aucune</div>}
-            {!isConversationLoading && filteredConversations.map((conv) => (
-              <div
-                key={conv.fileName}
-                onClick={() => handleSelectConversation(conv.fileName)}
-                className={`ai-history-item ${conv.fileName === activeConversationFile ? 'is-active' : ''}`}
-              >
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conv.title}</span>
-                <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>
-                  {new Date(conv.createdAt).toLocaleDateString('fr-FR', { month: 'numeric', day: 'numeric' })}
-                </span>
-              </div>
-            ))}
+        <div className="ai-suggest-overlay">
+          <div className="ai-chat-dropdown" style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', maxHeight: 200, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Conversations</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{conversations.length}</span>
+            </div>
+            <div style={{ padding: '4px 14px' }}>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Rechercher..."
+                style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 8px', color: 'var(--text-main)', fontSize: 11, outline: 'none' }}
+              />
+            </div>
+            <div>
+              {isConversationLoading && <div style={{ padding: '8px 14px', fontSize: 10, color: 'var(--text-muted)' }}>Chargement...</div>}
+              {!isConversationLoading && filteredConversations.length === 0 && <div style={{ padding: '8px 14px', fontSize: 10, color: 'var(--text-muted)' }}>Aucune</div>}
+              {!isConversationLoading && filteredConversations.map((conv) => (
+                <div
+                  key={conv.fileName}
+                  onClick={() => handleSelectConversation(conv.fileName)}
+                  className={`ai-history-item ${conv.fileName === activeConversationFile ? 'is-active' : ''}`}
+                >
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conv.title}</span>
+                  <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>
+                    {new Date(conv.createdAt).toLocaleDateString('fr-FR', { month: 'numeric', day: 'numeric' })}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -1259,7 +1257,7 @@ const AIChat = ({
           {/* Progress bar */}
           {safeMultiSteps.length > 0 && (
             <div className="ai-swarm-progress">
-              <div className="ai-swarm-progress-bar" style={{ width: `${safeMultiSteps.length > 0 ? (completedMultiCount / safeMultiSteps.length) * 100 : 0}%` }} />
+              <div className="ai-swarm-progress-bar" style={{ '--swarm-progress': safeMultiSteps.length > 0 ? completedMultiCount / safeMultiSteps.length : 0 }} />
             </div>
           )}
 
@@ -1384,7 +1382,7 @@ const AIChat = ({
           const meta = getRoleMeta(msg);
           const isUser = msg.role === 'user';
           return (
-            <div key={index} className="ai-message">
+            <div key={msg.id || `msg-${index}`} className="ai-message">
               <div className="ai-message-meta">
                 <div className={`ai-message-avatar ${isUser ? 'user' : 'bot'}`}>
                   {isUser ? (
@@ -1506,7 +1504,7 @@ const AIChat = ({
             className="ai-input-textarea"
             value={prompt}
             onChange={(e) => handlePromptChange(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder="Votre requête... (Tapez @ pour mentionner un fichier, / pour workflows)"
             rows={3}
@@ -1523,44 +1521,48 @@ const AIChat = ({
 
         {/* Workflow suggestions */}
         {showWorkflowSuggestions && filteredWorkflows.length > 0 && (
-          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto' }}>
-            <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Workflows disponibles</div>
-            {filteredWorkflows.map((workflow) => (
-              <button
-                key={`${workflow.scope}-${workflow.name}`}
-                onClick={() => handleSelectWorkflow(workflow)}
-                style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '5px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
-              >
-                <div>
-                  <span style={{ color: 'var(--accent)', fontWeight: 600 }}>/{workflow.name}</span>
-                  {workflow.description && <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>{workflow.description}</span>}
-                </div>
-                <span style={{ fontSize: 9, color: 'var(--text-muted)', padding: '1px 5px', background: 'var(--surface)', borderRadius: 3 }}>{workflow.scope}</span>
-              </button>
-            ))}
+          <div className="ai-suggest-overlay">
+            <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
+              <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Workflows disponibles</div>
+              {filteredWorkflows.map((workflow) => (
+                <button
+                  key={`${workflow.scope}-${workflow.name}`}
+                  onClick={() => handleSelectWorkflow(workflow)}
+                  style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '5px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
+                >
+                  <div>
+                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>/{workflow.name}</span>
+                    {workflow.description && <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>{workflow.description}</span>}
+                  </div>
+                  <span style={{ fontSize: 9, color: 'var(--text-muted)', padding: '1px 5px', background: 'var(--surface)', borderRadius: 3 }}>{workflow.scope}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
         {/* Context file suggestions */}
         {showContextSuggestions && (
-          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto' }}>
-            <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Fichiers du projet</div>
-            {filteredContextFiles.length === 0 && (
-              <div style={{ padding: '8px 10px', fontSize: 10, color: 'var(--text-muted)' }}>Aucun fichier pour {contextFilter}</div>
-            )}
-            {filteredContextFiles.map((filePath) => {
-              const fileName = filePath.split(/[\\/]/).pop() || filePath;
-              return (
-                <button
-                  key={filePath}
-                  onClick={() => handleSelectContextFile(filePath)}
-                  style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
-                >
-                  <span style={{ color: 'var(--accent)' }}>@{fileName}</span>
-                  <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{filePath}</span>
-                </button>
-              );
-            })}
+          <div className="ai-suggest-overlay">
+            <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
+              <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Fichiers du projet</div>
+              {filteredContextFiles.length === 0 && (
+                <div style={{ padding: '8px 10px', fontSize: 10, color: 'var(--text-muted)' }}>Aucun fichier pour {contextFilter}</div>
+              )}
+              {filteredContextFiles.map((filePath) => {
+                const fileName = filePath.split(/[\\/]/).pop() || filePath;
+                return (
+                  <button
+                    key={filePath}
+                    onClick={() => handleSelectContextFile(filePath)}
+                    style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    <span style={{ color: 'var(--accent)' }}>@{fileName}</span>
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{filePath}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 

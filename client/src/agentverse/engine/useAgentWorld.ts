@@ -107,8 +107,41 @@ export function useAgentWorld(theme: ThemeMeta, client: AgentClient): AgentWorld
     return meta;
   }, []);
 
+  // Snapshot of the last *published* agent objects, keyed by id. Lets `publish`
+  // reuse the previous object reference for agents whose visible state hasn't
+  // actually changed since the last tick, instead of forcing a fresh copy of
+  // every agent every 360ms — which would defeat React.memo(AgentNPC) and
+  // re-run its style/layout writes ~2.8×/s even for agents standing still.
+  const publishedRef = useRef<Map<string, Agent>>(new Map());
+
   const publish = useCallback(() => {
-    setAgents(agentsRef.current.map((a) => ({ ...a, bubble: a.bubble ? { ...a.bubble } : null })));
+    const prevPublished = publishedRef.current;
+    const nextPublished = new Map<string, Agent>();
+
+    const nextAgents = agentsRef.current.map((a) => {
+      const prev = prevPublished.get(a.id);
+      const bubbleChanged = (prev?.bubble?.id ?? null) !== (a.bubble?.id ?? null);
+      const changed = !prev
+        || prev.pos.x !== a.pos.x
+        || prev.pos.y !== a.pos.y
+        || prev.facing !== a.facing
+        || prev.status !== a.status
+        || prev.progress !== a.progress
+        || prev.chat !== a.chat
+        || bubbleChanged;
+
+      if (!changed) {
+        nextPublished.set(a.id, prev);
+        return prev;
+      }
+
+      const next: Agent = { ...a, bubble: a.bubble ? { ...a.bubble } : null };
+      nextPublished.set(a.id, next);
+      return next;
+    });
+
+    publishedRef.current = nextPublished;
+    setAgents(nextAgents);
     setTasks(tasksRef.current.slice());
   }, []);
 

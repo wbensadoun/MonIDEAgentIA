@@ -175,6 +175,27 @@ const useWorkspaceSessionLayout = ({
     setStartWidths({ left: leftWidth, right: rightWidth });
   }, [leftWidth, rightWidth]);
 
+  /** Keyboard-accessible equivalent of a mouse drag: nudge a panel by `deltaPercent`. */
+  const resizeStep = useCallback((type, deltaPercent) => {
+    const minLeft = 15;
+    const minRight = 18;
+    const minMiddle = 42;
+
+    if (type === 'left') {
+      let newLeft = clamp(leftWidth + deltaPercent, minLeft, 100 - minMiddle - rightWidth);
+      const middle = 100 - newLeft - rightWidth;
+      if (middle < minMiddle) newLeft = 100 - minMiddle - rightWidth;
+      setLeftWidth(newLeft);
+      setLeftBackup(newLeft);
+    } else if (type === 'right') {
+      let newRight = clamp(rightWidth - deltaPercent, minRight, 100 - minMiddle - leftWidth);
+      const middle = 100 - leftWidth - newRight;
+      if (middle < minMiddle) newRight = 100 - minMiddle - leftWidth;
+      setRightWidth(newRight);
+      setRightBackup(newRight);
+    }
+  }, [leftWidth, rightWidth]);
+
   const collapseLeft = useCallback(() => {
     setLeftBackup(leftWidth || leftBackup);
     setLeftWidth(0);
@@ -237,6 +258,7 @@ const useWorkspaceSessionLayout = ({
     isFocusMode,
     dragging,
     handleDragStart,
+    resizeStep,
     toggleLeftPanel,
     toggleRightPanel,
     toggleFocusMode

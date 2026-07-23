@@ -83,6 +83,7 @@ const WorkspaceLayout = ({
   isRightCollapsed,
   dragging,
   onDragStart,
+  onResizeStep,
   projectItems,
   currentProjectPath,
   activeFile,
@@ -141,6 +142,7 @@ const WorkspaceLayout = ({
     };
 
     const onMouseMove = (ev) => {
+      if (ev.buttons === 0) { onMouseUp(); return; } // filet: bouton relâché hors document
       if (!termDragRef.current) return;
       const delta = termDragRef.current.startY - ev.clientY;
       const maxH = centerRef.current
@@ -201,13 +203,22 @@ const WorkspaceLayout = ({
         <div
           className={`panel-resizer ${dragging === 'left' ? 'panel-resizer-active' : ''}`}
           onMouseDown={(e) => onDragStart(e, 'left')}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Redimensionner le panneau de gauche"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (!onResizeStep) return;
+            if (e.key === 'ArrowLeft') { e.preventDefault(); onResizeStep('left', -2); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); onResizeStep('left', 2); }
+          }}
         />
       )}
 
       {/* Panneau central */}
       <main ref={centerRef} className="ide-center" style={{ width: `${middleWidth}%` }}>
         {/* Tabs (sans Terminal) */}
-        <div className="center-tabs">
+        <div className="center-tabs" role="tablist">
           {[
             { id: 'code', label: 'Code', Icon: IconCode },
             { id: 'preview', label: 'Aperçu', Icon: IconEye },
@@ -220,6 +231,8 @@ const WorkspaceLayout = ({
               key={id}
               onClick={() => onCenterViewChange(id)}
               className={`center-tab ${centerView === id ? 'is-active' : ''}`}
+              role="tab"
+              aria-selected={centerView === id}
             >
               <Icon />
               {label}
@@ -240,14 +253,29 @@ const WorkspaceLayout = ({
 
         {/* Corps principal */}
         <div className="center-body" style={isTerminalOpen && isTerminalMaximized ? { flex: '0 0 0', overflow: 'hidden' } : undefined}>
-          {centerView === 'code' && <CodeEditor {...editorProps} />}
-          {centerView === 'preview' && <LivePreview {...previewProps} />}
+          {/* Always-mounted panes for views with costly init or precious ephemeral
+              state (Monaco, iframe preview, graph layout, React Flow viewport) —
+              cross-faded via CSS instead of remounted on every switch. See D3. */}
+          <div
+            className="center-view-stack"
+            style={{ display: ['code', 'preview', 'brain', 'workflows'].includes(centerView) ? 'block' : 'none' }}
+          >
+            <div className={`center-view-pane ${centerView === 'code' ? 'is-active' : ''}`} aria-hidden={centerView !== 'code'}>
+              <CodeEditor {...editorProps} />
+            </div>
+            <div className={`center-view-pane ${centerView === 'preview' ? 'is-active' : ''}`} aria-hidden={centerView !== 'preview'}>
+              <LivePreview {...previewProps} />
+            </div>
+            <div className={`center-view-pane ${centerView === 'brain' ? 'is-active' : ''}`} aria-hidden={centerView !== 'brain'}>
+              <BrainGraphPanel {...brainGraphProps} />
+            </div>
+            <div className={`center-view-pane ${centerView === 'workflows' ? 'is-active' : ''}`} aria-hidden={centerView !== 'workflows'}>
+              <VisualWorkflowEditor {...workflowProps} />
+            </div>
+          </div>
+          {/* Cheap/stateless views — plain conditional mount is fine here. */}
           {centerView === 'git' && <GitPanel {...gitPanelProps} />}
           {centerView === 'ai-changes' && <AIChangesPanel {...aiChangesPanelProps} />}
-          {centerView === 'brain' && <BrainGraphPanel {...brainGraphProps} />}
-          <div style={{ display: centerView === 'workflows' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
-            <VisualWorkflowEditor {...workflowProps} />
-          </div>
         </div>
 
         {/* Bottom Terminal Panel */}
@@ -261,6 +289,22 @@ const WorkspaceLayout = ({
               <div
                 className={`bottom-terminal-resizer ${termDragRef.current ? 'is-dragging' : ''}`}
                 onMouseDown={handleTermDragStart}
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Redimensionner le terminal"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setTerminalHeight((h) => Math.min(
+                      centerRef.current ? centerRef.current.clientHeight * MAX_TERMINAL_HEIGHT_RATIO : 600,
+                      h + 20,
+                    ));
+                  } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setTerminalHeight((h) => Math.max(MIN_TERMINAL_HEIGHT, h - 20));
+                  }
+                }}
               />
             )}
 
@@ -295,6 +339,15 @@ const WorkspaceLayout = ({
         <div
           className={`panel-resizer ${dragging === 'right' ? 'panel-resizer-active' : ''}`}
           onMouseDown={(e) => onDragStart(e, 'right')}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Redimensionner le panneau de droite"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (!onResizeStep) return;
+            if (e.key === 'ArrowLeft') { e.preventDefault(); onResizeStep('right', -2); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); onResizeStep('right', 2); }
+          }}
         />
       )}
 

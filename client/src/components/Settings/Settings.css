@@ -281,10 +281,6 @@
     grid-template-columns: 1fr;
   }
 }
-.settings-select {
-  color-scheme: dark;
-}
-
 .settings-select option,
 .settings-select optgroup {
   background: #111827;

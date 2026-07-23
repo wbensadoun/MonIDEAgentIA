@@ -38,7 +38,7 @@ function AgentNPCBase({ agent, theme, cellW, cellH, selected, onSelect }: AgentN
         `av-npc--${agent.roleKey}`,
         selected ? 'is-selected' : '',
       ].join(' ').trim()}
-      style={{ left, top, zIndex: 10 + Math.round(agent.pos.y) }}
+      style={{ '--npc-x': `${left}px`, '--npc-y': `${top}px`, zIndex: 10 + Math.round(agent.pos.y) } as React.CSSProperties}
       onClick={() => onSelect(agent.id)}
       onKeyDown={handleKey}
       role="button"
@@ -69,7 +69,7 @@ function AgentNPCBase({ agent, theme, cellW, cellH, selected, onSelect }: AgentN
             </span>
           ) : (
             <span className="av-npc__work" aria-hidden>
-              <span className="av-npc__work-fill" style={{ width: `${Math.round(agent.progress * 100)}%` }} />
+              <span className="av-npc__work-fill" style={{ '--work-progress': agent.progress } as React.CSSProperties} />
             </span>
           )
         )}

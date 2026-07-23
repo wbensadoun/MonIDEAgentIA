@@ -44,10 +44,20 @@ const ThemeSwitcher = ({ theme, onThemeChange }) => {
         setOpen(false);
       }
     };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        btnRef.current?.focus();
+      }
+    };
     if (open) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
     }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [open]);
 
   const handleOpen = () => {
@@ -70,6 +80,8 @@ const ThemeSwitcher = ({ theme, onThemeChange }) => {
         className="topbar-theme-chip"
         onClick={handleOpen}
         title="Changer de thème"
+        aria-haspopup="listbox"
+        aria-expanded={open}
       >
         <span className="topbar-theme-swatch" />
         <span>{current.name}</span>

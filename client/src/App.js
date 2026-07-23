@@ -134,6 +134,7 @@ const AppContent = () => {
     isFocusMode,
     dragging,
     handleDragStart,
+    resizeStep,
     toggleLeftPanel,
     toggleRightPanel,
     toggleFocusMode
@@ -598,6 +599,7 @@ const AppContent = () => {
             isRightCollapsed={isRightCollapsed}
             dragging={dragging}
             onDragStart={handleDragStart}
+            onResizeStep={resizeStep}
             projectItems={projectItems}
             currentProjectPath={currentProjectPath}
             activeFile={activeFile}

@@ -4,9 +4,9 @@
   flex-direction: column;
   gap: 0.75rem;
   padding: 1rem;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--surface-2);
   border-radius: 0.75rem;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .step {
@@ -19,11 +19,11 @@
 }
 
 .step-completed {
-  background: rgba(16, 185, 129, 0.1);
+  background: var(--success-soft);
 }
 
 .step-active {
-  background: rgba(59, 130, 246, 0.2);
+  background: var(--accent-hover);
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
@@ -32,8 +32,8 @@
 }
 
 .step-error {
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.22);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 22%, transparent);
 }
 
 .step-indicator {
@@ -48,21 +48,21 @@
 }
 
 .step-completed .step-indicator {
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, var(--success), color-mix(in srgb, var(--success) 80%, black));
   color: white;
 }
 
 .step-active .step-indicator {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, black));
 }
 
 .step-pending .step-indicator {
-  background: rgba(107, 114, 128, 0.5);
-  color: #9ca3af;
+  background: color-mix(in srgb, var(--text-muted) 50%, transparent);
+  color: var(--text-dim);
 }
 
 .step-error .step-indicator {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
+  background: linear-gradient(135deg, var(--danger), color-mix(in srgb, var(--danger) 80%, black));
   color: white;
 }
 
@@ -89,12 +89,12 @@
 .step-label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #e5e7eb;
+  color: var(--text-main);
 }
 
 .step-provider {
   font-size: 0.75rem;
-  color: #9ca3af;
+  color: var(--text-dim);
 }
 
 /* Loading Pulse */
@@ -106,8 +106,8 @@
   justify-content: center;
   padding: 2rem;
   border-radius: 1rem;
-  background: linear-gradient(135deg, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.2));
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface-2) 92%, transparent));
+  border: 1px solid var(--border);
 }
 
 .pulse-ring {
@@ -115,7 +115,7 @@
   width: 4rem;
   height: 4rem;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--from-color, #3b82f6), var(--to-color, #2563eb));
+  background: linear-gradient(135deg, var(--from-color, var(--accent)), var(--to-color, color-mix(in srgb, var(--accent) 80%, black)));
   opacity: 0.3;
   animation: pulse-ring 2s ease-out infinite;
 }
@@ -128,7 +128,7 @@
   width: 3rem;
   height: 3rem;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--from-color, #3b82f6), var(--to-color, #2563eb));
+  background: linear-gradient(135deg, var(--from-color, var(--accent)), var(--to-color, color-mix(in srgb, var(--accent) 80%, black)));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -138,7 +138,7 @@
 .pulse-text {
   margin-top: 1rem;
   font-size: 0.875rem;
-  color: #e5e7eb;
+  color: var(--text-main);
   animation: pulse-text 1.5s ease-in-out infinite;
 }
 
@@ -158,7 +158,7 @@
 }
 
 .checkmark-circle {
-  stroke: #10b981;
+  stroke: var(--success);
   stroke-width: 3;
   stroke-dasharray: 166;
   stroke-dashoffset: 166;
@@ -166,7 +166,7 @@
 }
 
 .checkmark-check {
-  stroke: #10b981;
+  stroke: var(--success);
   stroke-width: 3;
   stroke-dasharray: 48;
   stroke-dashoffset: 48;
@@ -176,7 +176,7 @@
 .success-message {
   margin-top: 1rem;
   font-size: 1rem;
-  color: #10b981;
+  color: var(--success);
   font-weight: 500;
 }
 
@@ -187,21 +187,21 @@
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--danger-soft);
   border-radius: 1rem;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
   animation: shake 0.5s ease-in-out;
 }
 
 .error-icon {
-  color: #ef4444;
+  color: var(--danger);
   animation: pulse-error 2s ease-in-out infinite;
 }
 
 .error-message {
   margin-top: 0.75rem;
   font-size: 0.875rem;
-  color: #e5e7eb;
+  color: var(--text-main);
   text-align: center;
 }
 
@@ -221,32 +221,32 @@
 }
 
 .error-btn.retry {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, black));
   color: white;
   border: none;
 }
 
 .error-btn.retry:hover {
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 80%, black), color-mix(in srgb, var(--accent) 60%, black));
 }
 
 .error-btn.dismiss {
   background: transparent;
-  color: #9ca3af;
-  border: 1px solid #4b5563;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
 }
 
 .error-btn.dismiss:hover {
-  color: #e5e7eb;
-  border-color: #6b7280;
+  color: var(--text-main);
+  border-color: var(--text-muted);
 }
 
 /* Voting Animation */
 .voting-animation {
   padding: 1rem;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--surface-2);
   border-radius: 0.75rem;
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 30%, transparent);
 }
 
 .voting-header {
@@ -259,12 +259,12 @@
 .voting-title {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #e5e7eb;
+  color: var(--text-main);
 }
 
 .voting-progress {
   font-size: 0.75rem;
-  color: #8b5cf6;
+  color: var(--accent-2);
   font-weight: bold;
 }
 
@@ -276,13 +276,13 @@
 
 .voting-bar {
   flex: 1;
-  background: rgba(107, 114, 128, 0.3);
+  background: color-mix(in srgb, var(--text-muted) 30%, transparent);
   border-radius: 0.125rem;
   transition: background-color 0.3s ease, transform 0.3s ease, opacity 0.3s ease;
 }
 
 .voting-bar.voted {
-  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  background: linear-gradient(90deg, var(--accent-2), color-mix(in srgb, var(--accent-2) 70%, white));
   animation: bar-fill 0.5s ease-out;
 }
 
@@ -291,11 +291,11 @@
 
   0%,
   100% {
-    box-shadow: 0 0 5px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--accent) 30%, transparent);
   }
 
   50% {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+    box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 60%, transparent);
   }
 }
 
@@ -411,11 +411,11 @@
   align-items: center;
   gap: 10px;
   padding: 14px 18px;
-  background: linear-gradient(135deg, rgba(0, 20, 40, 0.85), rgba(0, 10, 30, 0.9));
-  border: 1px solid rgba(0, 245, 212, 0.25);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface-2) 94%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
   border-radius: 14px;
   margin: 6px 12px;
-  box-shadow: 0 0 18px rgba(0, 245, 212, 0.06);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .ai-working-top {
@@ -428,7 +428,7 @@
 .ai-working-icon {
   font-size: 22px;
   animation: ai-icon-pulse 2s ease-in-out infinite;
-  filter: drop-shadow(0 0 6px rgba(0, 245, 212, 0.5));
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 50%, transparent));
 }
 
 .ai-working-right {
@@ -441,7 +441,7 @@
 .ai-working-phrase {
   font-size: 12px;
   font-weight: 600;
-  color: #00f5d4;
+  color: var(--accent);
   letter-spacing: 0.03em;
   animation: phrase-fade 0.4s ease-in-out;
 }
@@ -455,9 +455,9 @@
 
 .ai-working-provider {
   font-size: 10px;
-  color: #7f91aa;
-  background: rgba(0, 245, 212, 0.08);
-  border: 1px solid rgba(0, 245, 212, 0.15);
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
   border-radius: 20px;
   padding: 1px 7px;
   font-weight: 500;
@@ -465,11 +465,11 @@
 
 .ai-working-timer {
   font-size: 10px;
-  color: rgba(0, 245, 212, 0.55);
+  color: color-mix(in srgb, var(--accent) 65%, var(--text-dim));
   font-family: 'Fira Code', monospace;
 }
 
-/* Bouncing dots */
+/* Bouncing dots — three-hue accent triptych, themed per palette */
 .ai-dots {
   display: flex;
   gap: 5px;
@@ -480,18 +480,18 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #00f5d4;
+  background: var(--accent);
   animation: dot-bounce 1.4s ease-in-out infinite;
 }
 
 .ai-dot:nth-child(2) {
   animation-delay: 0.2s;
-  background: #a78bfa;
+  background: var(--accent-2);
 }
 
 .ai-dot:nth-child(3) {
   animation-delay: 0.4s;
-  background: #60a5fa;
+  background: var(--accent-3);
 }
 
 /* Code typewriter styles are defined once below to avoid collisions */
@@ -516,12 +516,12 @@
   0%,
   100% {
     transform: scale(1);
-    filter: drop-shadow(0 0 4px rgba(0, 245, 212, 0.4));
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 40%, transparent));
   }
 
   50% {
     transform: scale(1.12);
-    filter: drop-shadow(0 0 12px rgba(0, 245, 212, 0.8));
+    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 80%, transparent));
   }
 }
 
@@ -539,6 +539,9 @@
 
 /* ═══════════════════════════════════════════════════════
    Code Typewriter — fast block reveal with scanline
+   Intentionally a fixed dark code palette (like
+   SyntaxHighlightedCode.css) rather than theme tokens —
+   code blocks keep a consistent dark chrome across themes.
    ═══════════════════════════════════════════════════════ */
 .code-typewriter {
   background: #050e0a;
