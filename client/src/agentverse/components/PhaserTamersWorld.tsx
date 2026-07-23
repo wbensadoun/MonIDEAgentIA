@@ -974,10 +974,15 @@ export function PhaserTamersWorld({ agents, theme: _theme, selectedId, onSelect,
     const host = hostRef.current;
     if (!host) return undefined;
     let raf = 0;
+    let lastRefresh = 0;
     const ro = new ResizeObserver(() => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        gameRef.current?.scale.refresh();
+        const now = Date.now();
+        if (now - lastRefresh >= 100) {
+          lastRefresh = now;
+          gameRef.current?.scale.refresh();
+        }
       });
     });
     ro.observe(host);

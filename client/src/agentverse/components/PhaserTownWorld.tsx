@@ -771,10 +771,15 @@ export function PhaserTownWorld({ agents, theme, selectedId, onSelect, onDeselec
     const host = hostRef.current;
     if (!host) return undefined;
     let raf = 0;
+    let lastRefresh = 0;
     const ro = new ResizeObserver(() => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        gameRef.current?.scale.refresh();
+        const now = Date.now();
+        if (now - lastRefresh >= 100) {
+          lastRefresh = now;
+          gameRef.current?.scale.refresh();
+        }
       });
     });
     ro.observe(host);
