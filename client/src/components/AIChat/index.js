@@ -1359,7 +1359,8 @@ const AIChat = ({
               type="button"
               onClick={isLoading ? handleStop : handleSend}
               className={`ai-send-btn-compact ${isLoading ? 'is-stop' : ''}`}
-              disabled={!currentProjectPath || !isElectronApiAvailable}
+              disabled={!isElectronApiAvailable}
+              title={!currentProjectPath ? "Ouvrez un dossier de projet pour discuter avec l'IA" : undefined}
               aria-label={isLoading ? "Arrêter la génération" : "Envoyer à l'IA"}
             >
               {isLoading ? 'Arrêter' : 'Envoyer'}
