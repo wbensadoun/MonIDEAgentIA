@@ -61,13 +61,18 @@ export const DEFAULT_MODES: ExecutionModeOption[] = [
   { id: 'agent', label: 'Agent', icon: '🔧', description: 'Diff, permissions et rollback.' }
 ];
 
+// 'restricted' ("Lecture seule") a été retiré de cette liste : le niveau
+// d'autonomie n'est affiché qu'en mode Agent (voir index.js:1348, exécution
+// conditionnelle de AutonomyPill), et Agent propose toujours des écritures
+// (diff/terminal) — "Lecture seule" y est une contradiction logique. Ce
+// besoin est déjà couvert par le mode Ask (lecture seule par construction,
+// cf. DEFAULT_MODES ci-dessus), pas par un niveau d'autonomie en plus.
 export const AUTONOMY_LEVELS: Array<{
   id: AutonomyLevel;
   label: string;
   helper: string;
   tone: 'success' | 'warning' | 'danger';
 }> = [
-  { id: 'restricted', label: 'Lecture seule', helper: 'Aucune modification appliquée sans revue manuelle.', tone: 'success' },
   { id: 'normal', label: 'Supervisé', helper: 'Diff proposé, application après confirmation.', tone: 'warning' },
   { id: 'permissive', label: 'Autonome', helper: 'Applique et exécute le terminal sans confirmation.', tone: 'danger' }
 ];

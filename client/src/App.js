@@ -544,7 +544,8 @@ const AppContent = () => {
     activeModelValue,
     availableActiveModels,
     onActiveModelChange: handleActiveModelChange,
-    isExpertMode
+    isExpertMode,
+    onOpenAgentManager: () => setViewMode('agents')
   };
 
   return (

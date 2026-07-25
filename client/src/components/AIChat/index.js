@@ -115,6 +115,7 @@ const AgentModePill = ({
   activeAgent,
   onActiveAgentChange,
   agents,
+  onOpenAgentManager,
   disabled
 }) => {
   const [open, setOpen] = useState(false);
@@ -131,6 +132,11 @@ const AgentModePill = ({
   const selectAgent = (agent) => {
     if (typeof onActiveAgentChange === 'function') onActiveAgentChange(agent);
     if (typeof onExecutionModeChange === 'function') onExecutionModeChange('agent');
+    setOpen(false);
+  };
+
+  const openAgentManager = () => {
+    if (typeof onOpenAgentManager === 'function') onOpenAgentManager();
     setOpen(false);
   };
 
@@ -177,6 +183,20 @@ const AgentModePill = ({
                   <span aria-hidden="true">👤</span> {agent.name}
                 </button>
               ))}
+            </>
+          )}
+          {typeof onOpenAgentManager === 'function' && (
+            <>
+              <div className="ai-pill-menu-separator" />
+              <button
+                type="button"
+                role="menuitem"
+                className="ai-pill-menu-item ai-pill-menu-item--muted"
+                onClick={openAgentManager}
+                title="Créer, modifier ou supprimer des agents personnalisés"
+              >
+                Configurer les agents...
+              </button>
             </>
           )}
         </div>
@@ -358,6 +378,7 @@ const AIChat = ({
   agents = [],
   activeAgent = null,
   onActiveAgentChange,
+  onOpenAgentManager,
   // ModelPill: activeModelValue/availableActiveModels/onActiveModelChange are
   // already the unified per-provider accessors computed in useAIModelSettings
   // (App.js) — they resolve to the Ollama model/list/setter automatically
@@ -1301,6 +1322,7 @@ const AIChat = ({
               activeAgent={activeAgent}
               onActiveAgentChange={onActiveAgentChange}
               agents={agents}
+              onOpenAgentManager={onOpenAgentManager}
               disabled={isLoading}
             />
 
@@ -1318,11 +1340,18 @@ const AIChat = ({
               disabled={isLoading}
             />
 
-            <AutonomyPill
-              autonomyLevel={autonomyLevel}
-              onAutonomyLevelChange={handleAutonomyLevelChange}
-              disabled={isLoading}
-            />
+            {/* Permission Level n'a de sens qu'en mode Agent (Ask/Plan sont
+                lecture seule par construction — aucune confirmation d'écriture
+                à configurer). activeAgent force toujours executionMode à
+                'agent' (voir selectAgent), donc ce seul test couvre aussi
+                le cas persona custom sélectionnée. */}
+            {executionMode === 'agent' && (
+              <AutonomyPill
+                autonomyLevel={autonomyLevel}
+                onAutonomyLevelChange={handleAutonomyLevelChange}
+                disabled={isLoading}
+              />
+            )}
 
             <div className="ai-input-bar-spacer" />
 

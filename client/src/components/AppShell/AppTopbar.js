@@ -1,27 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import UpdateChecker from '../UpdateChecker';
-import ThemeSwitcher from './ThemeSwitcher';
-import { normalizeRemoteModelName } from '../../utils/remoteModels';
-import { IconBot, IconFolder, IconPlay, IconStop, IconSidebar, IconChat, IconWorkflow, IconSettings, IconTerminal, IconLightning, IconCompass } from '../ComponentLibrary/icons';
-import { Toolbar, ToolbarGroup, ToolbarSeparator, IconButton, Pill } from '../ComponentLibrary/Toolbar';
-
-const getProviderLabel = (provider) => {
-  if (provider === 'claude') return 'Claude';
-  if (provider === 'kimi') return 'Kimi / Together';
-  if (provider === 'multi') return 'Multi-IA';
-  if (provider === 'ollama') return 'Ollama';
-  return 'Gemini';
-};
-
-const isRemoteProvider = (provider) => (
-  provider === 'gemini' || provider === 'claude' || provider === 'kimi'
-);
-
-// Texte affiché en permanence au survol — pas un simple title HTML qui
-// n'apparaît qu'après un délai. Le pairing "Auto-Route / Manuel" seul
-// n'a d'analogue ni dans VS Code ni dans les outils courants ; ce texte
-// explique ce que fait le bouton avant même de cliquer dessus.
-const AUTO_ROUTE_TOOLTIP = 'Le routeur intelligent analyse votre demande et choisit le mode optimal (simple ou équipe multi-agent)';
+import React from 'react';
+import { IconBot, IconFolder, IconPlay, IconStop, IconSidebar, IconChat, IconTerminal } from '../ComponentLibrary/icons';
+import { Toolbar, ToolbarGroup, ToolbarSeparator, IconButton } from '../ComponentLibrary/Toolbar';
 
 const AppTopbar = ({
   projectName,
@@ -31,11 +10,6 @@ const AppTopbar = ({
   gitDiffPreview,
   isExpertMode,
   onToggleExpertMode,
-  aiProvider,
-  onAiProviderChange,
-  activeModelValue,
-  availableActiveModels,
-  onActiveModelChange,
   _thinkingMode,
   _onThinkingModeChange,
   _deepContextEnabled,
@@ -48,7 +22,6 @@ const AppTopbar = ({
   _recommendedOllamaModel,
   _onOllamaSettingChange,
   _ollamaTopbarLabel,
-  showMessage,
   onOpenFolder,
   previewStatus,
   onTogglePreview,
@@ -56,45 +29,10 @@ const AppTopbar = ({
   isLeftCollapsed,
   onToggleRightPanel,
   isRightCollapsed,
-  onOpenWorkflowManager,
-  onOpenSettings,
-  theme,
-  onThemeChange,
   isTerminalOpen,
   onToggleTerminal,
-  autoRoute,
-  onAutoRouteChange,
   viewMode = 'ide',
 }) => {
-  // Popover pour le fournisseur IA uniquement — le modèle est maintenant un
-  // champ toujours visible (voir plus bas), pas un second popover à
-  // découvrir en cliquant sur un pill.
-  const [providerPopoverOpen, setProviderPopoverOpen] = useState(false);
-  const [modelDraft, setModelDraft] = useState(activeModelValue || '');
-  const canEditRemoteModel = isRemoteProvider(aiProvider);
-
-  useEffect(() => {
-    if (!isExpertMode && providerPopoverOpen && aiProvider === 'ollama') {
-      setProviderPopoverOpen(false);
-    }
-  }, [aiProvider, isExpertMode, providerPopoverOpen]);
-
-  useEffect(() => {
-    setModelDraft(activeModelValue || '');
-  }, [activeModelValue, aiProvider]);
-
-  const commitRemoteModelDraft = () => {
-    const normalized = normalizeRemoteModelName(modelDraft);
-    if (!normalized) {
-      setModelDraft(activeModelValue || '');
-      return;
-    }
-    setModelDraft(normalized);
-    if (normalized !== activeModelValue && typeof onActiveModelChange === 'function') {
-      onActiveModelChange(normalized);
-    }
-  };
-
   return (
     <header style={{ display: 'flex', flexDirection: 'column' }}>
       {/* Barre principale 40px — identité + breadcrumb projet/fichier
@@ -140,101 +78,11 @@ const AppTopbar = ({
 
         <div className="topbar-spacer" />
 
-        {/* Fournisseur IA — pill dédié, indépendant du modèle. */}
-        <div className="topbar-pill-anchor">
-          <Pill
-            variant="default"
-            isActive={providerPopoverOpen}
-            label={getProviderLabel(aiProvider)}
-            clickable={isElectronApiAvailable}
-            onClick={() => setProviderPopoverOpen((prev) => !prev)}
-            title="Choisir le fournisseur IA (Gemini, Claude, Kimi, Ollama)"
-          />
-          {providerPopoverOpen && (
-            <div className="topbar-model-popover">
-              <div className="topbar-popover-section">
-                <span className="topbar-popover-label">Fournisseur</span>
-                <div className="topbar-popover-options">
-                  {['gemini', 'claude', 'kimi', 'ollama'].map((provider) => (
-                    <button
-                      key={provider}
-                      type="button"
-                      className={`topbar-popover-option ${provider === aiProvider ? 'is-active' : ''}`}
-                      onClick={() => { onAiProviderChange(provider); setProviderPopoverOpen(false); }}
-                      disabled={!isElectronApiAvailable}
-                    >
-                      {getProviderLabel(provider)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Modèle — sélecteur direct, toujours visible (au lieu d'un
-            second popover derrière un pill). Pour les fournisseurs distants
-            (Gemini/Claude/Kimi) c'est un champ texte libre ; pour Ollama,
-            une liste des modèles locaux détectés. */}
-        {activeModelValue && (
-          canEditRemoteModel ? (
-            <>
-              <input
-                type="text"
-                list="topbar-model-suggestions"
-                value={modelDraft}
-                onChange={(e) => setModelDraft(e.target.value)}
-                onBlur={commitRemoteModelDraft}
-                onKeyDown={(e) => {
-                  const key = String(e?.key || '').toLowerCase();
-                  if (key === 'enter') {
-                    e.preventDefault();
-                    commitRemoteModelDraft();
-                  } else if (key === 'escape') {
-                    e.preventDefault();
-                    setModelDraft(activeModelValue || '');
-                  }
-                }}
-                className="topbar-select"
-                disabled={!isElectronApiAvailable}
-                placeholder={activeModelValue}
-                title={`Modele ${getProviderLabel(aiProvider)}`}
-              />
-              <datalist id="topbar-model-suggestions">
-                {(Array.isArray(availableActiveModels) ? availableActiveModels : []).map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
-            </>
-          ) : (
-            Array.isArray(availableActiveModels) && availableActiveModels.length > 0 && (
-              <select
-                className="topbar-select"
-                value={activeModelValue}
-                onChange={(e) => onActiveModelChange(e.target.value)}
-                disabled={!isElectronApiAvailable}
-                title={`Modele ${getProviderLabel(aiProvider)}`}
-              >
-                {availableActiveModels.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            )
-          )
-        )}
-
-        {/* Auto-Route badge — tooltip permanent (voir AUTO_ROUTE_TOOLTIP)
-            expliquant ce que fait le bouton, pas juste son état. */}
-        <button
-          type="button"
-          className={`topbar-autoroute-badge ${autoRoute ? 'is-active' : 'is-muted'}`}
-          onClick={typeof onAutoRouteChange === 'function' ? () => onAutoRouteChange(!autoRoute) : undefined}
-          disabled={!isElectronApiAvailable}
-          title={AUTO_ROUTE_TOOLTIP}
-        >
-          {autoRoute ? <IconLightning size={13} /> : <IconCompass size={13} />}
-          <span>{autoRoute ? 'Auto-Route' : 'Manuel'}</span>
-        </button>
+        {/* Fournisseur + modèle : affichés uniquement dans le panneau de
+            chat (AIChat/index.js — ProviderPill/ModelPill), pas ici. Avant,
+            ce même choix apparaissait deux fois (topbar ET chat) — l'un des
+            deux devait disparaître ; celui du chat est plus proche de
+            l'usage réel (on choisit le modèle juste avant d'envoyer). */}
 
         {/* Actions droite — structured with Toolbar */}
         <Toolbar className="topbar-actions">
@@ -250,12 +98,6 @@ const AppTopbar = ({
               />
             </ToolbarGroup>
           )}
-
-          {/* Theme Switcher */}
-          <ThemeSwitcher theme={theme} onThemeChange={onThemeChange} />
-
-          {/* Separator */}
-          <ToolbarSeparator />
 
           {/* Project group: Folder, Preview, Expert mode (visible in IDE only) */}
           {viewMode === 'ide' && (
@@ -280,22 +122,6 @@ const AppTopbar = ({
               />
             </ToolbarGroup>
           )}
-
-          {/* Meta group: Workflows, Updates, Settings */}
-          <ToolbarGroup label="Métadonnées">
-            <IconButton
-              icon={<IconWorkflow size={16} />}
-              title="Gestionnaire de workflows"
-              onClick={onOpenWorkflowManager}
-            />
-            <UpdateChecker isElectronApiAvailable={isElectronApiAvailable} showMessage={showMessage} />
-            <IconButton
-              icon={<IconSettings size={16} />}
-              label="Settings"
-              title="Paramètres"
-              onClick={onOpenSettings}
-            />
-          </ToolbarGroup>
 
           {/* Panels group — isolated at the far right edge, always in the
               same place, so their position spatially maps to what they
