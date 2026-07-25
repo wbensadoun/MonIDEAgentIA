@@ -44,6 +44,7 @@ try {
     // Nouvelle API pour ouvrir un dialogue de sélection de dossier
     openFolderDialog: () => ipcRenderer.invoke('open-folder-dialog'),
     authorizeProjectPath: (projectPath) => ipcRenderer.invoke('authorize-project-path', projectPath),
+    createDefaultProject: () => ipcRenderer.invoke('create-default-project'),
 
     // Événements menu (émis par le processus main)
     onMenuOpenFolder: (callback) => {

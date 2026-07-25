@@ -1,6 +1,8 @@
 'use strict';
 
-const { ipcMain, dialog } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const { app, ipcMain, dialog } = require('electron');
 const {
   trustProjectPath,
   requestProjectPathApproval,
@@ -17,6 +19,22 @@ const registerProjectHandlers = ({ getMainWindow }) => {
 
     const trustedPath = trustProjectPath(filePaths[0]);
     return { success: true, path: trustedPath };
+  });
+
+  // Espace de travail scratch créé/réutilisé quand l'utilisateur envoie un
+  // message sans avoir ouvert de dossier — évite de bloquer le chat sur un
+  // dialogue natif pour une simple question. Toujours le même dossier
+  // (pas d'horodatage) : les sessions "sans projet" successives réutilisent
+  // le même espace au lieu d'accumuler des dossiers vides.
+  ipcMain.handle('create-default-project', async () => {
+    try {
+      const defaultRoot = path.join(app.getPath('documents'), 'MonIDEAgentIA', 'Sans-titre');
+      fs.mkdirSync(defaultRoot, { recursive: true });
+      const trustedPath = trustProjectPath(defaultRoot);
+      return { success: true, path: trustedPath };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   });
 
   ipcMain.handle('authorize-project-path', async (_event, projectPath) => {

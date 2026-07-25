@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import useProjectStore from '../stores/projectStore';
 import {
   generateCaptainFinalPrompt,
   generateDynamicTeamAgentPrompt
@@ -186,13 +187,39 @@ export const useAI = (
       showMessage("⏳ Message mis en attente...", 3000);
       return;
     }
-    if (!currentProjectPath) {
-      showMessage("⚠️ Veuillez d'abord ouvrir un dossier de projet (Ctrl+O ou menu File > Open Folder)", 5000);
-      return;
-    }
     if (!isElectronApiAvailable) {
       showMessage("Erreur: Electron non disponible.", 10000);
       return;
+    }
+    // Espace projet utilisé pour le reste de cet appel. Distinct du prop
+    // `currentProjectPath` (qui reste la dépendance de useCallback ci-dessous)
+    // car en cas d'auto-création ci-dessous, le store ne se propagera au
+    // prop qu'au prochain rendu — cette exécution doit utiliser le nouveau
+    // chemin immédiatement sans réassigner le paramètre du hook (voir
+    // react-hooks/exhaustive-deps).
+    let effectiveProjectPath = currentProjectPath;
+    if (!effectiveProjectPath) {
+      // Aucun dossier ouvert : au lieu de bloquer l'envoi (comportement
+      // précédent), on crée/réutilise un espace de travail scratch pour que
+      // "juste discuter" ne force pas un dialogue "Ouvrir un dossier" avant
+      // le premier message.
+      if (!window.electronAPI?.createDefaultProject) {
+        showMessage("⚠️ Veuillez d'abord ouvrir un dossier de projet (Ctrl+O ou menu File > Open Folder)", 5000);
+        return;
+      }
+      try {
+        const response = await window.electronAPI.createDefaultProject();
+        if (!response?.success || !response.path) {
+          showMessage(`⚠️ Impossible de créer un espace de travail: ${response?.error || 'erreur inconnue'}`, 5000);
+          return;
+        }
+        effectiveProjectPath = response.path;
+        useProjectStore.getState().setCurrentProjectPath(effectiveProjectPath);
+        showMessage(`Espace de travail créé: "${effectiveProjectPath}"`, 3000);
+      } catch (error) {
+        showMessage(`⚠️ Erreur création espace de travail: ${error.message}`, 5000);
+        return;
+      }
     }
 
     // ── Intelligent Router ────────────────────────────────────────────────
@@ -228,7 +255,7 @@ export const useAI = (
             geminiApiKey
           });
           const routed = await window.electronAPI.routeRequest(
-            currentProjectPath,
+            effectiveProjectPath,
             effectivePrompt,
             {
               provider: aiProvider,
@@ -299,7 +326,7 @@ export const useAI = (
         allProjectFiles
       } = await prepareAIProjectContext({
         effectivePrompt,
-        currentProjectPath,
+        currentProjectPath: effectiveProjectPath,
         activeFile,
         effectiveAIProvider,
         deepContextEnabled,
@@ -329,7 +356,7 @@ export const useAI = (
         projectFiles: allProjectFiles,
         normalizedMultiAgentRoles,
         getProviderApiKey,
-        currentProjectPath,
+        currentProjectPath: effectiveProjectPath,
         activeAgent: effAgent,
         activeSkill: effSkill,
         skills,
@@ -384,7 +411,7 @@ export const useAI = (
           allProjectFiles,
           thinkingMode,
           deepContextEnabled,
-          currentProjectPath,
+          currentProjectPath: effectiveProjectPath,
           activeAgent: effAgent,
           activeSkill: effSkill,
           sharedAgentContextOptions,
