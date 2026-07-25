@@ -32,21 +32,24 @@ const AppViewSwitcher = ({ viewMode = 'ide', onViewModeChange = () => {} }) => {
     { id: 'agents', label: 'Agents', icon: IconAgents },
   ];
 
+  const currentView = views.find(v => v.id === viewMode);
+  const CurrentIcon = currentView?.icon || IconCode;
+
   return (
     <div className="app-view-switcher">
-      {views.map(({ id, label, icon: Icon }) => (
-        <button
-          key={id}
-          className={`app-view-switcher__btn ${viewMode === id ? 'is-active' : ''}`}
-          onClick={() => onViewModeChange(id)}
-          title={`Basculer vers ${label}`}
-          aria-pressed={viewMode === id}
-          aria-label={`Basculer vers ${label}`}
-        >
-          <Icon />
-          <span>{label}</span>
-        </button>
-      ))}
+      <select
+        value={viewMode}
+        onChange={(e) => onViewModeChange(e.target.value)}
+        className="app-view-switcher__select"
+        title="Choisir la vue"
+      >
+        {views.map(({ id, label }) => (
+          <option key={id} value={id}>{label}</option>
+        ))}
+      </select>
+      <span className="app-view-switcher__icon">
+        <CurrentIcon />
+      </span>
     </div>
   );
 };
