@@ -269,6 +269,47 @@ export const IconCheck: React.FC<IconProps> = (props) => (
   </SvgIcon>
 );
 
+export const IconSave: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+    <polyline points="17 21 17 13 7 13 7 21" />
+    <polyline points="7 3 7 8 15 8" />
+  </SvgIcon>
+);
+
+export const IconTrash: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <line x1="10" y1="11" x2="10" y2="17" />
+    <line x1="14" y1="11" x2="14" y2="17" />
+  </SvgIcon>
+);
+
+export const IconUpload: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
+  </SvgIcon>
+);
+
+export const IconDownload: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </SvgIcon>
+);
+
+export const IconPackage: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M21 8v8a2 2 0 0 1-1 1.73l-6 3.46a2 2 0 0 1-2 0l-6-3.46A2 2 0 0 1 5 16V8a2 2 0 0 1 1-1.73l6-3.46a2 2 0 0 1 2 0l6 3.46A2 2 0 0 1 21 8z" />
+    <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+    <line x1="12" y1="22.08" x2="12" y2="12" />
+  </SvgIcon>
+);
+
 /**
  * Export all icons as a namespace for easier consumption:
  * import { Icons } from './icons';
@@ -304,6 +345,11 @@ export const Icons = {
   ChevronUp: IconChevronUp,
   Plus: IconPlus,
   Check: IconCheck,
+  Save: IconSave,
+  Trash: IconTrash,
+  Upload: IconUpload,
+  Download: IconDownload,
+  Package: IconPackage,
 };
 
 export default Icons;

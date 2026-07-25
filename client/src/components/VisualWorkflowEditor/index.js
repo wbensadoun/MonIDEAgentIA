@@ -13,6 +13,10 @@ import 'reactflow/dist/style.css';
 import './VisualWorkflow.css';
 import useWorkflowRunner from '../../hooks/useWorkflowRunner';
 import { buildSingleAIInvocation, normalizeSingleAIProvider } from '../../utils/aiProviderRouting';
+import {
+    IconLightning, IconPlay, IconStop, IconSave, IconFolder,
+    IconPackage, IconBot, IconTrash, IconUpload, IconDownload, IconX, IconAudit
+} from '../ComponentLibrary/icons';
 
 /* ═══════════════════════════════════════════
    Catalogue de nœuds disponibles
@@ -1092,7 +1096,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
             {/* ── Toolbar ── */}
             <div className="vw-toolbar">
                 <div className="vw-toolbar-left">
-                    <span className="vw-toolbar-title">⚡ Flux Visuel</span>
+                    <span className="vw-toolbar-title"><IconLightning size={15} /> Flux Visuel</span>
                     <input
                         className="vw-workflow-name"
                         value={workflowName}
@@ -1109,30 +1113,39 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                             className="vw-btn vw-btn-run"
                             onClick={() => { setShowLog(true); runWorkflow(nodes, edges); }}
                             disabled={nodes.length === 0}
+                            title="Exécuter le workflow"
                         >
-                            ▶️ Exécuter
+                            <IconPlay size={14} /> Exécuter
                         </button>
                     ) : (
-                        <button className="vw-btn vw-btn-danger" onClick={stopWorkflow}>
-                            ⏹ Arrêter
+                        <button className="vw-btn vw-btn-danger" onClick={stopWorkflow} title="Arrêter">
+                            <IconStop size={14} /> Arrêter
                         </button>
                     )}
-                    <button className="vw-btn vw-btn-success" onClick={saveWorkflow}>
-                        💾 Sauver
+                    <button className="vw-btn vw-btn-success" onClick={saveWorkflow} title="Sauvegarder">
+                        <IconSave size={14} /> Sauver
                     </button>
-                    <button className="vw-btn" onClick={() => togglePanel('saved')}>
-                        📂 Ouvrir {savedWorkflows.length > 0 && <span className="vw-badge">{savedWorkflows.length}</span>}
+                    <button className="vw-btn" onClick={() => togglePanel('saved')} title="Ouvrir un workflow sauvegardé">
+                        <IconFolder size={14} /> Ouvrir {savedWorkflows.length > 0 && <span className="vw-badge">{savedWorkflows.length}</span>}
                     </button>
-                    <button className="vw-btn vw-btn-catalog" onClick={() => togglePanel('catalog')}>
-                        📦 n8n
+                    <button className="vw-btn vw-btn-catalog" onClick={() => togglePanel('catalog')} title="Catalogue de workflows n8n">
+                        <IconPackage size={14} /> n8n
                     </button>
-                    <button className={`vw-btn vw-btn-ai ${activePanel === 'ai' ? 'active' : ''}`} onClick={() => togglePanel('ai')}>
-                        🤖 IA
+                    <button className={`vw-btn vw-btn-ai ${activePanel === 'ai' ? 'active' : ''}`} onClick={() => togglePanel('ai')} title="Générer un workflow avec l'IA">
+                        <IconBot size={14} /> IA
                     </button>
-                    <button className="vw-btn" onClick={deleteSelected}>🗑</button>
-                    <button className="vw-btn" onClick={exportWorkflow}>📤</button>
-                    <button className="vw-btn" onClick={triggerImport}>📥</button>
-                    <button className="vw-btn vw-btn-danger" onClick={clearAll}>✖</button>
+                    <button className="vw-btn" onClick={deleteSelected} title="Supprimer la sélection">
+                        <IconTrash size={14} />
+                    </button>
+                    <button className="vw-btn" onClick={exportWorkflow} title="Exporter en JSON">
+                        <IconUpload size={14} />
+                    </button>
+                    <button className="vw-btn" onClick={triggerImport} title="Importer un fichier JSON">
+                        <IconDownload size={14} />
+                    </button>
+                    <button className="vw-btn vw-btn-danger" onClick={clearAll} title="Tout effacer">
+                        <IconX size={14} />
+                    </button>
                 </div>
             </div>
 
@@ -1156,21 +1169,21 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                 )}
                 {nodes.length === 0 && !activePanel ? (
                     <div className="vw-empty">
-                        <div className="vw-empty-icon">⚡</div>
+                        <div className="vw-empty-icon"><IconLightning size={28} /></div>
                         <div className="vw-empty-text">
                             Cliquez sur <strong>+ Nœud</strong> pour créer votre flux,
-                            ou importez depuis le <strong>catalogue n8n 📦</strong>.
+                            ou importez depuis le <strong>catalogue n8n</strong>.
                         </div>
                         <div className="vw-empty-actions">
                             <button className="vw-btn vw-btn-primary" onClick={() => togglePanel('add')}>
                                 + Commencer
                             </button>
                             <button className="vw-btn vw-btn-catalog" onClick={() => togglePanel('catalog')}>
-                                📦 Explorer n8n
+                                <IconPackage size={14} /> Explorer n8n
                             </button>
                             {savedWorkflows.length > 0 && (
                                 <button className="vw-btn" onClick={() => togglePanel('saved')}>
-                                    📂 Mes Workflows ({savedWorkflows.length})
+                                    <IconFolder size={14} /> Mes Workflows ({savedWorkflows.length})
                                 </button>
                             )}
                         </div>
@@ -1211,7 +1224,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                     <div className="vw-add-panel">
                         <div className="vw-add-header">
                             <span className="vw-add-title">Ajouter un nœud</span>
-                            <button className="vw-add-close" onClick={() => setActivePanel(null)}>✕</button>
+                            <button className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
                         </div>
                         {Object.entries(catalogByCategory).map(([category, items]) => (
                             <div key={category}>
@@ -1238,11 +1251,11 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                 {activePanel === 'saved' && (
                     <div className="vw-add-panel">
                         <div className="vw-add-header">
-                            <span className="vw-add-title">📂 Mes Workflows</span>
-                            <button className="vw-add-close" onClick={() => setActivePanel(null)}>✕</button>
+                            <span className="vw-add-title"><IconFolder size={14} /> Mes Workflows</span>
+                            <button className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
                         </div>
                         {savedWorkflows.length === 0 ? (
-                            <div className="vw-catalog-empty">Aucun workflow sauvegardé.<br />Utilisez 💾 Sauver pour enregistrer.</div>
+                            <div className="vw-catalog-empty">Aucun workflow sauvegardé. Utilisez &quot;Sauver&quot; pour enregistrer.</div>
                         ) : (
                             savedWorkflows.map((wf, idx) => (
                                 <div
@@ -1253,7 +1266,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                                         className="vw-add-item"
                                         onClick={() => loadSavedWorkflow(wf.filename)}
                                     >
-                                        <span className="vw-add-item-icon">⚡</span>
+                                        <span className="vw-add-item-icon"><IconLightning size={14} /></span>
                                         <div className="vw-add-item-info">
                                             <span className="vw-add-item-name">{wf.name}</span>
                                             <span className="vw-add-item-desc">
@@ -1267,7 +1280,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                                         onClick={(e) => { e.stopPropagation(); deleteSavedWorkflow(wf.filename); }}
                                         title="Supprimer"
                                     >
-                                        🗑
+                                        <IconTrash size={14} />
                                     </button>
                                 </div>
                             ))
@@ -1279,13 +1292,13 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                 {activePanel === 'catalog' && (
                     <div className="vw-add-panel vw-catalog-panel">
                         <div className="vw-add-header">
-                            <span className="vw-add-title">📦 Catalogue n8n</span>
-                            <button className="vw-add-close" onClick={() => setActivePanel(null)}>✕</button>
+                            <span className="vw-add-title"><IconPackage size={14} /> Catalogue n8n</span>
+                            <button className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
                         </div>
                         <div className="vw-catalog-search">
                             <input
                                 className="vw-node-input"
-                                placeholder="🔍 Rechercher un workflow n8n..."
+                                placeholder="Rechercher un workflow n8n..."
                                 value={catalogSearch}
                                 onChange={e => setCatalogSearch(e.target.value)}
                             />
@@ -1303,7 +1316,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                                         className="vw-add-item"
                                         onClick={() => importN8nWorkflow(item)}
                                     >
-                                        <span className="vw-add-item-icon">📋</span>
+                                        <span className="vw-add-item-icon"><IconPackage size={14} /></span>
                                         <div className="vw-add-item-info">
                                             <span className="vw-add-item-name">{item.name}</span>
                                             <span className="vw-add-item-desc">{(item.size / 1024).toFixed(1)} KB</span>
@@ -1319,8 +1332,8 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                 {activePanel === 'ai' && (
                     <div className="vw-add-panel vw-ai-panel">
                         <div className="vw-add-header">
-                            <span className="vw-add-title">🤖 Générer par IA</span>
-                            <button className="vw-add-close" onClick={() => setActivePanel(null)}>✕</button>
+                            <span className="vw-add-title"><IconBot size={14} /> Générer par IA</span>
+                            <button className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
                         </div>
                         <div className="vw-ai-body">
                             <textarea
@@ -1336,10 +1349,10 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                                 onClick={generateWithAI}
                                 disabled={!aiPrompt.trim() || aiGenerating}
                             >
-                                {aiGenerating ? '⏳ Génération...' : '🤖 Générer le workflow'}
+                                {aiGenerating ? 'Génération...' : <><IconBot size={14} /> Générer le workflow</>}
                             </button>
                             <div className="vw-ai-hints">
-                                <span className="vw-ai-hint-title">💡 Exemples :</span>
+                                <span className="vw-ai-hint-title">Exemples :</span>
                                 <button className="vw-ai-hint" onClick={() => setAiPrompt('Un workflow CI/CD: npm install, npm test, si OK npm build, puis notification de succès')}>CI/CD Pipeline</button>
                                 <button className="vw-ai-hint" onClick={() => setAiPrompt('Analyser le code du projet avec l\'IA, générer un rapport, et l\'enregistrer dans un fichier')}>Analyse IA du code</button>
                                 <button className="vw-ai-hint" onClick={() => setAiPrompt('Surveiller un dossier, quand un fichier arrive, le lire, le traiter avec l\'IA, et notifier')}>Traitement de fichiers</button>
@@ -1354,12 +1367,12 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                 <div className="vw-log-panel">
                     <div className="vw-log-header">
                         <span className="vw-log-title">
-                            📋 Journal d&apos;exécution
+                            <IconAudit size={13} /> Journal d&apos;exécution
                             {isRunning && <span className="vw-log-running"> ● En cours</span>}
                         </span>
                         <div className="vw-log-actions">
-                            <button className="vw-add-close" onClick={clearLog}>🗑</button>
-                            <button className="vw-add-close" onClick={() => setShowLog(false)}>✕</button>
+                            <button className="vw-add-close" onClick={clearLog} title="Vider le journal"><IconTrash size={14} /></button>
+                            <button className="vw-add-close" onClick={() => setShowLog(false)} title="Fermer"><IconX size={14} /></button>
                         </div>
                     </div>
                     <div className="vw-log-body">

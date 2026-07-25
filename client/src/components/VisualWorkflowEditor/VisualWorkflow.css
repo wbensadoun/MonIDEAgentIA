@@ -32,6 +32,9 @@
 }
 
 .vw-toolbar-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-size: 0.72rem;
     font-weight: 700;
     text-transform: uppercase;
@@ -40,7 +43,14 @@
     margin-right: 8px;
 }
 
+.vw-toolbar-title svg {
+    flex-shrink: 0;
+}
+
 .vw-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-size: 0.7rem;
     padding: 5px 10px;
     border-radius: 8px;
@@ -50,6 +60,10 @@
     cursor: pointer;
     transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
     white-space: nowrap;
+}
+
+.vw-btn svg {
+    flex-shrink: 0;
 }
 
 .vw-btn:hover {
@@ -347,6 +361,9 @@
 }
 
 .vw-add-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-size: 0.72rem;
     font-weight: 700;
     text-transform: uppercase;
@@ -355,6 +372,9 @@
 }
 
 .vw-add-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: none;
     border: none;
     color: var(--text-2);
@@ -732,6 +752,10 @@
 }
 
 .vw-ai-generate-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     width: 100%;
     padding: 8px 16px;
     border: none;
