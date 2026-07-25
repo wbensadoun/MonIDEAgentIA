@@ -128,6 +128,24 @@ export const IconCompass: React.FC<IconProps> = (props) => (
   </SvgIcon>
 );
 
+export const IconSearch: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <circle cx="11" cy="11" r="7" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </SvgIcon>
+);
+
+export const IconAgents: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M12 2a2 2 0 0 1 2 2v2h-4V4a2 2 0 0 1 2-2z" />
+    <rect x="4" y="6" width="16" height="12" rx="2" />
+    <circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" />
+    <path d="M9 16h6" />
+    <path d="M2 10v4M22 10v4" />
+  </SvgIcon>
+);
+
 /* ============================================================
    CENTER TABS ICONS (WorkspaceLayout)
    ============================================================ */
@@ -268,6 +286,8 @@ export const Icons = {
   Terminal: IconTerminal,
   Lightning: IconLightning,
   Compass: IconCompass,
+  Search: IconSearch,
+  Agents: IconAgents,
   Code: IconCode,
   Eye: IconEye,
   Git: IconGit,

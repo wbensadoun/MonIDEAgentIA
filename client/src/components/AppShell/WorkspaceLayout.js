@@ -56,6 +56,7 @@ const WorkspaceLayout = ({
   workspacePanelProps,
   isTerminalOpen,
   onToggleTerminal,
+  activeSidebarSection = 'explorer',
 }) => {
   const [terminalHeight, setTerminalHeight] = useState(() => {
     try {
@@ -121,6 +122,7 @@ const WorkspaceLayout = ({
         <WorkspaceSidebar
           sidebarVisibility="full"
           style={{ width: `${leftWidth}%` }}
+          activeSection={activeSidebarSection}
           projectItems={projectItems}
           currentProjectPath={currentProjectPath}
           activeFile={activeFile}
@@ -138,6 +140,7 @@ const WorkspaceLayout = ({
           onNewItemNameChange={onNewItemNameChange}
           isReadOnlyMode={isReadOnlyMode}
           workspacePanelProps={workspacePanelProps}
+          gitPanelProps={gitPanelProps}
         />
       )}
 

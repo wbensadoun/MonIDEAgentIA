@@ -20,6 +20,7 @@ import useExplorerItemActions from './hooks/useExplorerItemActions';
 import useWorkspaceSyncEffects from './hooks/useWorkspaceSyncEffects';
 import WorkflowManager from './components/WorkflowManager';
 import AppTopbar from './components/AppShell/AppTopbar';
+import ActivityBar from './components/AppShell/ActivityBar';
 import WorkspaceLayout from './components/AppShell/WorkspaceLayout';
 import ChatLayout from './components/AppShell/ChatLayout';
 import AgentsLayout from './components/AppShell/AgentsLayout';
@@ -33,6 +34,9 @@ const AppContent = () => {
   const currentProjectPath = useProjectStore(state => state.currentProjectPath);
   const setCurrentProjectPath = useProjectStore(state => state.setCurrentProjectPath);
   const [newItemName, setNewItemName] = useState('');
+  // Which content the left sidebar shows in 'ide' viewMode — driven by the
+  // ActivityBar rail (Explorer / Search / Source Control).
+  const [activeSidebarSection, setActiveSidebarSection] = useState('explorer');
 
   const { isAvailable: isElectronApiAvailable, message, showMessage } = useElectronAPI();
   const {
@@ -601,7 +605,17 @@ const AppContent = () => {
         />
       </FeatureErrorBoundary>
 
-      <FeatureErrorBoundary feature="workspace">
+      <div className="app-body">
+        <ActivityBar
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          activeSidebarSection={activeSidebarSection}
+          onSidebarSectionChange={setActiveSidebarSection}
+          isLeftCollapsed={isLeftCollapsed}
+          onExpandLeftPanel={() => { if (isLeftCollapsed) toggleLeftPanel(); }}
+          onOpenSettings={openSettings}
+        />
+        <FeatureErrorBoundary feature="workspace">
         {viewMode === 'ide' && (
           <WorkspaceLayout
             layoutRef={layoutRef}
@@ -644,6 +658,7 @@ const AppContent = () => {
             workspacePanelProps={workspacePanelProps}
             isTerminalOpen={isTerminalOpen}
             onToggleTerminal={toggleTerminal}
+            activeSidebarSection={activeSidebarSection}
           />
         )}
         {viewMode === 'chat' && (
@@ -676,7 +691,8 @@ const AppContent = () => {
             isReadOnlyMode={isReadOnlyMode}
           />
         )}
-      </FeatureErrorBoundary>
+        </FeatureErrorBoundary>
+      </div>
 
       <FeatureErrorBoundary feature="statusbar">
       <StatusBar

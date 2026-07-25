@@ -1,0 +1,77 @@
+/* ============================================================
+   ActivityBar — fixed 48px vertical icon rail (VS Code-style)
+   Consumes tokens.css exclusively — no hardcoded colors.
+   ============================================================ */
+
+.activity-bar {
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-2) 0;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  height: 100%;
+}
+
+.activity-bar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.activity-bar-spacer {
+  flex: 1;
+}
+
+.activity-bar-btn {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.activity-bar-btn:hover {
+  color: var(--text-main);
+  background: var(--surface-2);
+}
+
+.activity-bar-btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.activity-bar-btn.is-active {
+  color: var(--text-main);
+  background: var(--surface-2);
+}
+
+/* Left accent bar mirroring VS Code's active-view indicator */
+.activity-bar-btn.is-active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
+.activity-bar-btn svg {
+  width: 20px;
+  height: 20px;
+}

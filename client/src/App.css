@@ -107,6 +107,22 @@ select option:checked {
   flex-shrink: 0;
 }
 
+/* Row containing the fixed ActivityBar + the active viewMode's content
+   (WorkspaceLayout / ChatLayout / AgentsLayout). ActivityBar lives here,
+   outside any of the three, so it stays visible across all view modes —
+   the persistent icon rail VS Code always shows regardless of which
+   editor/panel is active. */
+.app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* FeatureErrorBoundary is a pass-through (no DOM wrapper) — .workspace,
+   .chat-fullscreen and .agents-fullscreen already declare flex:1 and
+   min-height:0 and become direct flex children of .app-body here. */
+
 .topbar-shell {
   height: 40px;
   min-height: 40px;
@@ -370,7 +386,6 @@ select option:checked {
   padding: 3px 6px;
   font-size: var(--text-xs);
   font-family: var(--font-sans);
-  outline: none;
   cursor: pointer;
   transition: border-color 0.15s;
 }
@@ -378,6 +393,14 @@ select option:checked {
 .topbar-select:hover,
 .topbar-select:focus {
   border-color: var(--accent);
+}
+
+/* Was `outline: none` with no replacement (WCAG 2.4.7 gap flagged in
+   tokens.css's own header comment) — keyboard users now get a visible
+   ring instead of losing focus indication entirely. */
+.topbar-select:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
 }
 
 .topbar-select option {
@@ -646,17 +669,73 @@ select option:checked {
   overflow: hidden;
 }
 
-/* Onglets sidebar gauche (Fichiers / Projets) */
-.sidebar-tabs {
+/* Section header — chevron + icon + label + count badge. Reusable pattern
+   for every left-sidebar section (Explorer / Search / Source Control),
+   replacing the old flat 'Fichiers'/'Projets' text-tab pair. */
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.sidebar-section-header:hover {
+  color: var(--text-main);
+}
+
+.sidebar-section-chevron {
+  flex-shrink: 0;
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.sidebar-section-chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.sidebar-section-title {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-section-badge {
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Secondary Fichiers/Projets switch, nested inside the Explorer section
+   (previously the two top-level flat tabs — now subordinate to it). */
+.sidebar-subnav {
   display: flex;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
   flex-shrink: 0;
 }
 
-.sidebar-tab {
+.sidebar-subnav-btn {
   flex: 1;
-  padding: 9px 0;
+  padding: 7px 0;
   text-align: center;
   font-size: var(--text-xs);
   font-weight: 600;
@@ -670,11 +749,11 @@ select option:checked {
   transition: color 0.15s, border-color 0.15s;
 }
 
-.sidebar-tab:hover {
+.sidebar-subnav-btn:hover {
   color: var(--text-main);
 }
 
-.sidebar-tab.is-active {
+.sidebar-subnav-btn.is-active {
   color: var(--text-main);
   border-bottom-color: var(--accent);
 }
@@ -685,6 +764,92 @@ select option:checked {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+}
+
+/* Search section — minimal filename search over the loaded project tree */
+.sidebar-search {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  padding: var(--space-3);
+  gap: var(--space-2);
+}
+
+.sidebar-search-input {
+  width: 100%;
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-main);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+}
+
+.sidebar-search-input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.sidebar-search-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.sidebar-search-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-search-empty {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  padding: var(--space-2) 0;
+}
+
+.sidebar-search-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 5px var(--space-2);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.sidebar-search-result:hover {
+  background: var(--surface-2);
+}
+
+.sidebar-search-result.is-active {
+  background: var(--accent-soft);
+}
+
+.sidebar-search-result-name {
+  font-size: var(--text-sm);
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.sidebar-search-result-path {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 /* Panneau centre */
@@ -739,19 +904,65 @@ select option:checked {
   overflow: hidden;
 }
 
-/* Resizer entre colonnes */
+/* Resizer entre colonnes — hit-area élargie (8-10px) avec un liseré visible
+   au repos (1-2px, var(--border)) plus un repère à 3 points, pour que le
+   panneau se lise comme redimensionnable sans nécessiter un hover pour le
+   découvrir (parité avec le sash de VS Code). */
 .panel-resizer {
-  width: 4px;
+  position: relative;
+  width: 10px;
   flex-shrink: 0;
   cursor: col-resize;
   background: transparent;
-  transition: background 0.15s;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.panel-resizer:hover,
-.panel-resizer-active {
+.panel-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border);
+  transition: background var(--duration-fast) var(--ease-standard),
+              width var(--duration-fast) var(--ease-standard);
+}
+
+.panel-resizer::after {
+  content: '';
+  width: 3px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: transparent;
+  box-shadow:
+    0 -6px 0 var(--text-muted),
+    0 0 0 var(--text-muted),
+    0 6px 0 var(--text-muted);
+  opacity: 0.4;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.panel-resizer:hover::before,
+.panel-resizer-active::before {
+  width: 2px;
   background: var(--accent);
+}
+
+.panel-resizer:hover::after,
+.panel-resizer-active::after {
+  opacity: 1;
+}
+
+.panel-resizer-active::after {
+  box-shadow:
+    0 -6px 0 var(--accent),
+    0 0 0 var(--accent),
+    0 6px 0 var(--accent);
 }
 
 /* ============================
