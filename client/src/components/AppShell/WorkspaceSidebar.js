@@ -18,6 +18,7 @@ const WorkspaceSidebar = ({
   onRenameItem,
   onMoveItem,
   onDeleteItem,
+  onImportOsFiles,
   onToggleFolder,
   onFileClick,
   onNewItemNameChange,
@@ -81,6 +82,7 @@ const WorkspaceSidebar = ({
             onRenameItem={onRenameItem}
             onMoveItem={onMoveItem}
             onDeleteItem={onDeleteItem}
+            onImportOsFiles={onImportOsFiles}
             onToggleFolder={onToggleFolder}
             onFileClick={onFileClick}
             onNewItemNameChange={onNewItemNameChange}

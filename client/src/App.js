@@ -59,7 +59,8 @@ const AppContent = () => {
     aiModelSelection,
     handleAiProviderChange,
     handleOllamaSettingChange,
-    handleActiveModelChange
+    handleActiveModelChange,
+    handlePermissionModeChange
   } = useAIModelSettings({ isElectronApiAvailable, showMessage });
   const {
     theme,
@@ -99,6 +100,7 @@ const AppContent = () => {
     setCode,
     openFiles,
     setOpenFiles,
+    dirtyFiles,
     revealRequest,
     aiDraftPreview,
     gitDiffPreview,
@@ -160,14 +162,6 @@ const AppContent = () => {
   const {
     executionMode,
     setExecutionMode,
-    runPreset,
-    setRunPreset,
-    multiAgentFormationKey,
-    setMultiAgentFormationKey,
-    disabledAgentKeys,
-    setDisabledAgentKeys,
-    collectiveDepth,
-    setCollectiveDepth,
     autoRoute,
     setAutoRoute,
     routerDecision,
@@ -187,6 +181,7 @@ const AppContent = () => {
     loadProjectItems,
     toggleFolderExpansion,
     createNewItem,
+    importFileContent,
     renameItem,
     moveItem,
     deleteItem,
@@ -206,6 +201,31 @@ const AppContent = () => {
     syncNavigatorReferences,
     removeNavigatorReferences
   });
+
+  const handleExplorerImportOsFiles = React.useCallback(async (files, targetDirPath = '') => {
+    if (!isElectronApiAvailable) {
+      showMessage('Import depuis le systeme indisponible hors Electron.', 4000);
+      return;
+    }
+    if (!Array.isArray(files) || files.length === 0) return;
+
+    let successCount = 0;
+    for (const file of files) {
+      try {
+        const content = await file.text();
+        const destPath = targetDirPath ? `${targetDirPath}/${file.name}` : file.name;
+        const result = await importFileContent(destPath, content);
+        if (result?.success) successCount += 1;
+      } catch (error) {
+        showMessage(`Import "${file.name}": ${error.message}`, 4000);
+      }
+    }
+
+    if (successCount > 0) {
+      await loadProjectItems();
+      showMessage(`${successCount} fichier(s) importe(s).`, 2500);
+    }
+  }, [isElectronApiAvailable, importFileContent, loadProjectItems, showMessage]);
 
   const {
     prompt,
@@ -240,8 +260,7 @@ const AppContent = () => {
     stopGeneration,
     pendingImages,
     setPendingImages,
-    pendingMessage,
-    teamPlanPreview
+    pendingMessage
   } = useAI(
     currentProjectPath,
     code,
@@ -262,7 +281,6 @@ const AppContent = () => {
     contextMode,
     contextMaxFiles,
     executionMode,
-    runPreset,
     multiAgentRunOptions,
     autoRoute,
     setRouterDecision,
@@ -351,8 +369,6 @@ const AppContent = () => {
     toggleFocusMode,
     setIsTerminalOpen,
     setExecutionMode,
-    handleAiProviderChange,
-    aiProvider,
     previewStatus,
     handleTogglePreview,
     setWorkflowManagerOpen,
@@ -367,6 +383,7 @@ const AppContent = () => {
   const isEditorDiffMode = Boolean(gitDiffPreview) || isDiffMode;
   const editorProps = {
     openFiles,
+    dirtyFiles,
     activeFile: displayedActiveFile,
     code: displayedCode,
     previousCode: displayedPreviousCode,
@@ -468,14 +485,6 @@ const AppContent = () => {
     onProviderChange: handleAiProviderChange,
     executionMode,
     onExecutionModeChange: setExecutionMode,
-    runPreset,
-    onRunPresetChange: setRunPreset,
-    multiAgentFormationKey,
-    onMultiAgentFormationChange: setMultiAgentFormationKey,
-    disabledAgentKeys,
-    onDisabledAgentKeysChange: setDisabledAgentKeys,
-    collectiveDepth,
-    onCollectiveDepthChange: setCollectiveDepth,
     autoRoute,
     onAutoRouteChange: setAutoRoute,
     routerDecision,
@@ -485,7 +494,6 @@ const AppContent = () => {
     onRouterClassifierModelChange: setRouterClassifierModel,
     routerComplexityThreshold,
     onRouterComplexityThresholdChange: setRouterComplexityThreshold,
-    teamPlanPreview,
     thinkingMode,
     onThinkingModeChange: setThinkingMode,
     deepContextEnabled,
@@ -523,11 +531,15 @@ const AppContent = () => {
     pendingSnapshotId,
     contextEstimate,
     permissionMode,
+    onPermissionModeChange: handlePermissionModeChange,
     projectFileList,
     onStreamingDraftChange: handleStreamingDraftChange,
     resolvedOllamaModel,
     availableOllamaModels,
     onOllamaSettingChange: handleOllamaSettingChange,
+    activeModelValue,
+    availableActiveModels,
+    onActiveModelChange: handleActiveModelChange,
     isExpertMode
   };
 
@@ -563,6 +575,7 @@ const AppContent = () => {
           isLoading={isLoading}
           multiAIState={multiAIState}
           autoRoute={autoRoute}
+          onAutoRouteChange={setAutoRoute}
           resolvedOllamaModel={resolvedOllamaModel}
           availableOllamaModels={availableOllamaModels}
           recommendedOllamaModel={recommendedOllamaModel}
@@ -611,6 +624,7 @@ const AppContent = () => {
             onRenameItem={handleExplorerRenameItem}
             onMoveItem={handleExplorerMoveItem}
             onDeleteItem={handleExplorerDeleteItem}
+            onImportOsFiles={handleExplorerImportOsFiles}
             onToggleFolder={toggleFolderExpansion}
             onFileClick={openFile}
             onNewItemNameChange={setNewItemName}

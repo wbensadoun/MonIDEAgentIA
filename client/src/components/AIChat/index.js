@@ -1,12 +1,10 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import './AIChat.css';
-import { AIWorkingIndicator, LiveFilesPanel } from '../LoadingAnimations';
+import { LiveFilesPanel } from '../LoadingAnimations';
 import SyntaxHighlightedCode from './SyntaxHighlightedCode';
-import { EXECUTION_MODES, RUN_PRESETS } from '../../utils/agentModes';
-import { MULTI_AGENT_FORMATIONS, MULTI_AGENT_ROLE_DEFINITIONS } from '../../utils/multiAgentConfig';
-import { COLLECTIVE_DEPTHS } from '../../utils/collectiveMode';
-import CollectiveTeamPreview from './CollectiveTeamPreview';
+import { EXECUTION_MODES } from '../../utils/agentModes';
 import AIDecisionBadge from './AIDecisionBadge';
+import { AUTONOMY_LEVELS, toLegacyPermission } from './AutonomyControls';
 
 const WORKFLOW_STREAM_REGEX = /\*\*WORKFLOW:/i;
 const DIFF_STREAM_REGEX = /<<<<\s*SEARCH/i;
@@ -96,116 +94,220 @@ const extractStreamingWorkflowDraft = (text) => {
   };
 };
 
-const normalizeMultiStatus = (status) => {
-  if (status === 'done' || status === 'completed') return 'completed';
-  if (status === 'active' || status === 'error') return status;
-  return 'pending';
+// Inverse of AutonomyControls' toLegacyPermission() adapter — lets the
+// legacy read_only/edit_only/edit_terminal permissionMode prop (the real
+// source of truth read by useFileOperations/useAIPendingChanges) drive the
+// new restricted/normal/permissive AutonomyControls UI without introducing
+// a second, disconnected state.
+const fromLegacyPermission = (mode) => {
+  if (mode === 'read_only') return 'restricted';
+  if (mode === 'edit_only') return 'normal';
+  return 'permissive'; // edit_terminal (and default)
 };
 
-const getMultiStatusLabel = (status) => {
-  if (status === 'completed') return 'Termine';
-  if (status === 'active') return 'En cours';
-  if (status === 'error') return 'Erreur';
-  return 'En attente';
-};
-
-const formatMultiDuration = (startedAt, finishedAt) => {
-  if (!startedAt) return '';
-  const endTime = finishedAt || Date.now();
-  const deltaSeconds = Math.max(1, Math.round((endTime - startedAt) / 1000));
-  if (deltaSeconds < 60) return `${deltaSeconds}s`;
-  const minutes = Math.floor(deltaSeconds / 60);
-  const seconds = deltaSeconds % 60;
-  return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds}s`;
-};
-
-// ─── CollectivePanel ────────────────────────────────────────────────────────
-const CollectivePanel = ({
-  collectiveDepth,
-  onCollectiveDepthChange,
-  teamPlanPreview,
-  isLoading,
-  multiAgentFormationKey,
-  activeFormation,
-  onMultiAgentFormationChange,
-  formationRoles,
-  disabledAgentSet,
-  toggleDisabledAgent
+// ─── AgentModePill ──────────────────────────────────────────────────────────
+// Single fused control replacing the old separate ModePill (Ask/Plan/Agent)
+// + the "Agent" persona picker: one dropdown, top section = execution modes,
+// bottom section = custom agent personas (mirrors VS Code's Agent selector).
+const AgentModePill = ({
+  executionMode,
+  onExecutionModeChange,
+  activeAgent,
+  onActiveAgentChange,
+  agents,
+  disabled
 }) => {
-  const [showPreview, setShowPreview] = React.useState(false);
-  const [showAdvanced, setShowAdvanced] = React.useState(false);
+  const [open, setOpen] = useState(false);
+  const currentMode = EXECUTION_MODES.find((m) => m.id === executionMode) || EXECUTION_MODES[0];
+  const label = activeAgent ? activeAgent.name : (currentMode?.label || 'Agent');
+  const icon = activeAgent ? '👤' : (currentMode?.icon || '🔧');
+
+  const selectMode = (modeId) => {
+    if (typeof onExecutionModeChange === 'function') onExecutionModeChange(modeId);
+    if (typeof onActiveAgentChange === 'function') onActiveAgentChange(null);
+    setOpen(false);
+  };
+
+  const selectAgent = (agent) => {
+    if (typeof onActiveAgentChange === 'function') onActiveAgentChange(agent);
+    if (typeof onExecutionModeChange === 'function') onExecutionModeChange('agent');
+    setOpen(false);
+  };
 
   return (
-    <div className="collective-panel">
-      {/* ── Axe profondeur ──────────────────────────────────── */}
-      <div className="collective-depth-row">
-        <span className="collective-depth-label">Profondeur</span>
-        <div className="collective-depth-seg">
-          {COLLECTIVE_DEPTHS.map((d) => (
+    <div className="ai-pill-wrap">
+      <button
+        type="button"
+        className="ai-pill"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        title="Mode d'exécution / Agent"
+      >
+        <span aria-hidden="true">{icon}</span>
+        {label}
+      </button>
+      {open && (
+        <div className="ai-pill-menu" role="menu">
+          {EXECUTION_MODES.map((mode) => (
             <button
-              key={d.id}
               type="button"
-              className={`collective-depth-btn ${collectiveDepth === d.id ? 'is-active' : ''}`}
-              onClick={() => onCollectiveDepthChange?.(d.id)}
-              disabled={isLoading}
-              title={d.description}
+              role="menuitemradio"
+              aria-checked={mode.id === executionMode && !activeAgent}
+              key={mode.id}
+              className={`ai-pill-menu-item ${mode.id === executionMode && !activeAgent ? 'is-active' : ''}`}
+              onClick={() => selectMode(mode.id)}
+              title={mode.description}
             >
-              {d.label}
+              <span aria-hidden="true">{mode.icon}</span> {mode.label}
+            </button>
+          ))}
+          {(agents || []).length > 0 && (
+            <>
+              <div className="ai-pill-menu-separator" />
+              {agents.map((agent) => (
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={activeAgent?.name === agent.name}
+                  key={`${agent.scope || ''}:${agent.name}`}
+                  className={`ai-pill-menu-item ${activeAgent?.name === agent.name ? 'is-active' : ''}`}
+                  onClick={() => selectAgent(agent)}
+                  title={agent.description}
+                >
+                  <span aria-hidden="true">👤</span> {agent.name}
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── AutonomyPill ───────────────────────────────────────────────────────────
+// Compact pill showing the current autonomy level (dot + label); click opens
+// a popover to switch between Lecture seule / Supervisé / Autonome.
+const AutonomyPill = ({ autonomyLevel, onAutonomyLevelChange, disabled }) => {
+  const [open, setOpen] = useState(false);
+  const current = AUTONOMY_LEVELS.find((l) => l.id === autonomyLevel) || AUTONOMY_LEVELS[0];
+
+  return (
+    <div className="ai-pill-wrap">
+      <button
+        type="button"
+        className="ai-pill"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        title={current.helper}
+      >
+        <span className={`ai-pill-dot ai-pill-dot--${current.tone}`} aria-hidden="true" />
+        {current.label}
+      </button>
+      {open && (
+        <div className="ai-pill-menu" role="menu">
+          {AUTONOMY_LEVELS.map((level) => (
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={level.id === autonomyLevel}
+              key={level.id}
+              className={`ai-pill-menu-item ${level.id === autonomyLevel ? 'is-active' : ''}`}
+              onClick={() => { onAutonomyLevelChange(level.id); setOpen(false); }}
+              title={level.helper}
+            >
+              <span className={`ai-pill-dot ai-pill-dot--${level.tone}`} aria-hidden="true" />
+              {level.label}
             </button>
           ))}
         </div>
-      </div>
+      )}
+    </div>
+  );
+};
 
-      {/* ── Aperçu équipe ────────────────────────────────── */}
+// ─── ProviderPill / ModelPill ───────────────────────────────────────────────
+// Two independent pills instead of one combined "{Provider} · {modèle}"
+// control — a single button used to hide which provider was active behind
+// a raw model string (e.g. "gemini-3-1-pro" alone doesn't say "Gemini").
+// Each pill owns its own popover: ProviderPill only lists providers,
+// ModelPill only lists models for the currently active provider (already
+// scoped via availableActiveModels, computed per-provider in
+// useAIModelSettings/App.js).
+const PROVIDER_PILL_LABELS = { gemini: 'Gemini', claude: 'Claude', kimi: 'Kimi', ollama: 'Ollama' };
+const PROVIDER_PILL_OPTIONS = ['gemini', 'claude', 'kimi', 'ollama'];
+
+const ProviderPill = ({ aiProvider, onProviderChange, disabled }) => {
+  const [open, setOpen] = useState(false);
+  const providerLabel = PROVIDER_PILL_LABELS[aiProvider] || aiProvider || 'Gemini';
+
+  return (
+    <div className="ai-pill-wrap">
       <button
         type="button"
-        className="collective-expand-btn"
-        onClick={() => setShowPreview((v) => !v)}
+        className="ai-pill"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        title="Fournisseur IA"
       >
-        {showPreview ? '▾' : '▸'} Pourquoi cette équipe ?
+        {providerLabel}
       </button>
-      {showPreview && <CollectiveTeamPreview teamPlan={teamPlanPreview} />}
-
-      {/* ── Avancé ───────────────────────────────────────── */}
-      <button
-        type="button"
-        className="collective-expand-btn"
-        onClick={() => setShowAdvanced((v) => !v)}
-      >
-        {showAdvanced ? '▾' : '▸'} Avancé
-      </button>
-      {showAdvanced && (
-        <div className="ai-multi-config">
-          <div className="ai-multi-config-head">
-            <select
-              value={activeFormation?.key || multiAgentFormationKey}
-              onChange={(event) => onMultiAgentFormationChange?.(event.target.value)}
-              disabled={isLoading}
+      {open && (
+        <div className="ai-pill-menu" role="menu">
+          {PROVIDER_PILL_OPTIONS.map((provider) => (
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={provider === aiProvider}
+              key={provider}
+              className={`ai-pill-menu-item ${provider === aiProvider ? 'is-active' : ''}`}
+              onClick={() => { if (typeof onProviderChange === 'function') onProviderChange(provider); setOpen(false); }}
             >
-              {MULTI_AGENT_FORMATIONS.map((formation) => (
-                <option key={formation.key} value={formation.key}>{formation.title}</option>
-              ))}
-            </select>
-            <span>{activeFormation?.focus}</span>
-          </div>
-          <div className="ai-multi-role-chips">
-            {formationRoles.map((role) => {
-              const disabled = disabledAgentSet.has(role.key);
-              return (
-                <button
-                  type="button"
-                  key={role.key}
-                  className={`ai-multi-role-chip ${disabled ? 'is-disabled' : ''}`}
-                  onClick={() => toggleDisabledAgent(role.key)}
-                  disabled={isLoading || role.key === 'selector'}
-                  title={`${role.provider}/${role.model}`}
-                >
-                  <span>{role.shortLabel || role.title}</span>
-                  <small>{role.provider}</small>
-                </button>
-              );
-            })}
-          </div>
+              {PROVIDER_PILL_LABELS[provider]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ModelPill = ({
+  aiProvider,
+  activeModelValue,
+  availableActiveModels,
+  onActiveModelChange,
+  disabled
+}) => {
+  const [open, setOpen] = useState(false);
+  const models = Array.isArray(availableActiveModels) ? availableActiveModels : [];
+
+  return (
+    <div className="ai-pill-wrap">
+      <button
+        type="button"
+        className="ai-pill"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        title={`Modèle ${PROVIDER_PILL_LABELS[aiProvider] || aiProvider || ''}`}
+      >
+        {activeModelValue || 'Modèle'}
+      </button>
+      {open && models.length > 0 && (
+        <div className="ai-pill-menu" role="menu">
+          {models.map((model) => (
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={model === activeModelValue}
+              key={model}
+              className={`ai-pill-menu-item ${model === activeModelValue ? 'is-active' : ''}`}
+              onClick={() => { if (typeof onActiveModelChange === 'function') onActiveModelChange(model); setOpen(false); }}
+              title={model}
+            >
+              {model}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -240,15 +342,8 @@ const AIChat = ({
   aiProvider = 'gemini',
   executionMode = 'agent',
   onExecutionModeChange,
-  runPreset = 'default',
-  onRunPresetChange,
-  multiAgentFormationKey = 'product-ui',
-  onMultiAgentFormationChange,
-  disabledAgentKeys = [],
-  onDisabledAgentKeysChange,
-  collectiveDepth = 'deep',
-  onCollectiveDepthChange,
   autoRoute = false,
+  // eslint-disable-next-line no-unused-vars
   onAutoRouteChange,
   routerDecision = null,
   // Reserved for the upcoming "Routeur Intelligent" Settings tab (L2 classifier
@@ -263,7 +358,14 @@ const AIChat = ({
   agents = [],
   activeAgent = null,
   onActiveAgentChange,
-  teamPlanPreview = null,
+  // ModelPill: activeModelValue/availableActiveModels/onActiveModelChange are
+  // already the unified per-provider accessors computed in useAIModelSettings
+  // (App.js) — they resolve to the Ollama model/list/setter automatically
+  // when aiProvider === 'ollama', so no separate Ollama-specific props are
+  // needed here.
+  activeModelValue = '',
+  availableActiveModels = [],
+  onActiveModelChange,
   pendingImages = [],
   onRemovePendingImage,
   pendingMessage = null,
@@ -278,12 +380,13 @@ const AIChat = ({
   pendingSnapshotId = null,
   contextEstimate = null,
   permissionMode = 'edit_terminal',
+  onPermissionModeChange,
   onStreamingDraftChange
 }) => {
   const conversationHistoryRef = useRef(null);
   const promptInputRef = useRef(null);
   const [showConversations, setShowConversations] = useState(false);
-  const [showManualControls, setShowManualControls] = useState(false);
+  const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showWorkflowSuggestions, setShowWorkflowSuggestions] = useState(false);
   const [workflowFilter, setWorkflowFilter] = useState('');
@@ -566,44 +669,7 @@ const AIChat = ({
   };
 
   const canApplyPending = permissionMode !== 'read_only';
-  const safeMultiSteps = Array.isArray(multiAIState?.steps) ? multiAIState.steps : [];
-  const safeMultiEvents = Array.isArray(multiAIState?.events) ? multiAIState.events : [];
-  // eslint-disable-next-line no-unused-vars
-  const safeCurrentStepIndex = safeMultiSteps.findIndex((s) => normalizeMultiStatus(s?.status) === 'active');
-  const completedMultiCount = safeMultiSteps.filter((step) => normalizeMultiStatus(step?.status) === 'completed').length;
-  const showMultiRunPanel = Boolean(
-    multiAIState?.mode && (
-      multiAIState?.isActive ||
-      safeMultiSteps.length > 0 ||
-      safeMultiEvents.length > 0 ||
-      multiAIState?.error
-    )
-  );
-  const multiRunStatus = multiAIState?.error
-    ? 'error'
-    : multiAIState?.isActive
-      ? 'running'
-      : showMultiRunPanel
-        ? 'completed'
-        : 'idle';
-  const multiRunStatusLabel = multiRunStatus === 'running'
-    ? 'Equipe en cours'
-    : multiRunStatus === 'error'
-      ? 'Equipe en erreur'
-      : 'Dernier run conserve';
-  const multiRunTitle = multiAIState?.runLabel || 'Equipe IA';
-  const multiRunDuration = formatMultiDuration(multiAIState?.startedAt, multiAIState?.finishedAt);
   const currentWorkflowAnimStep = WORKFLOW_STREAM_STEPS[workflowAnimStep] || WORKFLOW_STREAM_STEPS[0];
-  const disabledAgentSet = useMemo(() => new Set(Array.isArray(disabledAgentKeys) ? disabledAgentKeys : []), [disabledAgentKeys]);
-  const activeFormation = useMemo(() => (
-    MULTI_AGENT_FORMATIONS.find((formation) => formation.key === multiAgentFormationKey)
-    || MULTI_AGENT_FORMATIONS[0]
-  ), [multiAgentFormationKey]);
-  const formationRoles = useMemo(() => (
-    (activeFormation?.defaultAgents || [])
-      .map((key) => MULTI_AGENT_ROLE_DEFINITIONS.find((role) => role.key === key))
-      .filter(Boolean)
-  ), [activeFormation]);
   const streamingFileDraft = useMemo(() => extractStreamingFileDraft(streamingText), [streamingText]);
   const streamingWorkflowDraft = useMemo(() => extractStreamingWorkflowDraft(streamingText), [streamingText]);
   const liveFiles = useMemo(() => extractStreamingFiles(streamingText), [streamingText]);
@@ -775,70 +841,6 @@ const AIChat = ({
       };
     }
 
-    // Agents Multi-IA historiques
-    if (msg.isChefDeProjet) {
-      return {
-        label: buildAgentBadgeLabel(msg, '🎯 Chef'),
-        badgeClass: 'chat-badge-chef-projet',
-        bubbleClass: 'chat-bubble-chef-projet',
-        alignClass: 'chat-row-ai'
-      };
-    }
-
-    if (msg.isFrontendDev) {
-      return {
-        label: buildAgentBadgeLabel(msg, '🎨 Front'),
-        badgeClass: 'chat-badge-frontend-dev',
-        bubbleClass: 'chat-bubble-frontend-dev',
-        alignClass: 'chat-row-ai'
-      };
-    }
-
-    if (msg.isBackendDev) {
-      return {
-        label: buildAgentBadgeLabel(msg, '⚙️ Back'),
-        badgeClass: 'chat-badge-backend-dev',
-        bubbleClass: 'chat-bubble-backend-dev',
-        alignClass: 'chat-row-ai'
-      };
-    }
-
-    if (msg.isArchitectEngineer || msg.isArchitect) {
-      return {
-        label: buildAgentBadgeLabel(msg, '🏗️ Archi'),
-        badgeClass: 'chat-badge-architect',
-        bubbleClass: 'chat-bubble-architect',
-        alignClass: 'chat-row-ai'
-      };
-    }
-
-    if (msg.isScrumMaster) {
-      return {
-        label: buildAgentBadgeLabel(msg, '📋 Scrum'),
-        badgeClass: 'chat-badge-scrum-master',
-        bubbleClass: 'chat-bubble-scrum-master',
-        alignClass: 'chat-row-ai'
-      };
-    }
-
-    if (msg.isReviewer) {
-      return {
-        label: 'Relecteur',
-        badgeClass: 'chat-badge-reviewer',
-        bubbleClass: 'chat-bubble-reviewer',
-        alignClass: 'chat-row-ai'
-      };
-    }
-
-    if (msg.isCoder) {
-      return {
-        label: 'Codeur',
-        badgeClass: 'chat-badge-coder',
-        bubbleClass: 'chat-bubble-coder',
-        alignClass: 'chat-row-ai'
-      };
-    }
-
     return {
       label: 'IA',
       badgeClass: 'chat-badge-model',
@@ -864,112 +866,29 @@ const AIChat = ({
     setShowConversations(false);
   };
 
-  // Auto agent selector: "Auto" hands control to the intelligent router,
-  // picking a real agent switches to manual mode with that agent selected.
-  const AUTO_OPTION = '__auto__';
-  const NONE_OPTION = '__none__';
-  const agentOptionValue = (agent) => (agent ? `${agent.scope || ''}:${agent.name}` : NONE_OPTION);
-  const agentSelectValue = autoRoute ? AUTO_OPTION : agentOptionValue(activeAgent);
-
-  const handleAgentSelectChange = (event) => {
-    const value = event.target.value;
-    if (value === AUTO_OPTION) {
-      if (typeof onAutoRouteChange === 'function') onAutoRouteChange(true);
-      if (typeof onActiveAgentChange === 'function') onActiveAgentChange(null);
-      return;
-    }
-    if (typeof onAutoRouteChange === 'function') onAutoRouteChange(false);
-    if (value === NONE_OPTION) {
-      if (typeof onActiveAgentChange === 'function') onActiveAgentChange(null);
-      return;
-    }
-    const picked = (agents || []).find((agent) => agentOptionValue(agent) === value) || null;
-    if (typeof onActiveAgentChange === 'function') onActiveAgentChange(picked);
-  };
-
+  // AgentModePill needs a plain setter (onExecutionModeChange may be undefined upstream).
   const setExecutionMode = (modeId) => {
     if (typeof onExecutionModeChange === 'function') {
       onExecutionModeChange(modeId);
     }
-    if (modeId === 'multi-agent' && typeof onProviderChange === 'function' && aiProvider !== 'multi') {
-      onProviderChange('multi');
-    }
   };
 
-  const setPreset = (presetId) => {
-    const preset = RUN_PRESETS.find((item) => item.id === presetId);
-    if (!preset) return;
-    if (typeof onRunPresetChange === 'function') {
-      onRunPresetChange(presetId);
+  // AutonomyControls speaks restricted/normal/permissive; permissionMode
+  // (the actual gate used by useFileOperations/useAIPendingChanges) speaks
+  // read_only/edit_only/edit_terminal. Adapt both ways so there is a single
+  // source of truth (permissionMode) instead of two states drifting apart.
+  const autonomyLevel = fromLegacyPermission(permissionMode);
+  const handleAutonomyLevelChange = (level) => {
+    if (typeof onPermissionModeChange === 'function') {
+      onPermissionModeChange(toLegacyPermission(level));
     }
-    if (typeof onExecutionModeChange === 'function' && preset.mode) {
-      onExecutionModeChange(preset.mode);
-    }
-  };
-
-  const toggleDisabledAgent = (roleKey) => {
-    if (!roleKey || roleKey === 'selector') return;
-    if (typeof onDisabledAgentKeysChange !== 'function') return;
-    const next = new Set(disabledAgentSet);
-    if (next.has(roleKey)) next.delete(roleKey);
-    else next.add(roleKey);
-    onDisabledAgentKeysChange(Array.from(next));
-  };
-
-  const quickActions = useMemo(() => ([
-    {
-      id: 'explain',
-      label: 'Expliquer',
-      preset: 'default',
-      mode: 'ask',
-      prompt: activeFile ? `Explique le fichier ${activeFile} et ses responsabilites.` : 'Explique le projet et sa structure.'
-    },
-    {
-      id: 'refactor',
-      label: 'Refactor',
-      preset: 'refactor',
-      mode: 'agent',
-      prompt: activeFile ? `Refactorise ${activeFile} en gardant le comportement.` : 'Propose un refactor global.'
-    },
-    {
-      id: 'tests',
-      label: 'Tests',
-      preset: 'tests',
-      mode: 'agent',
-      prompt: activeFile ? `Ecris des tests pour ${activeFile}.` : 'Ecris des tests prioritaires.'
-    },
-    {
-      id: 'docs',
-      label: 'Docs',
-      preset: 'docs',
-      mode: 'agent',
-      prompt: activeFile ? `Documente ${activeFile} (README court).` : 'Redige un README rapide.'
-    },
-    {
-      id: 'plan',
-      label: 'Plan',
-      preset: 'default',
-      mode: 'plan',
-      prompt: 'Donne un plan clair avant d agir.'
-    }
-  ]), [activeFile]);
-
-  const applyQuickPrompt = (action) => {
-    if (action?.preset) {
-      if (typeof onRunPresetChange === 'function') onRunPresetChange(action.preset);
-      if (typeof onExecutionModeChange === 'function') onExecutionModeChange(action.mode || 'agent');
-    }
-    const text = action?.prompt || '';
-    const next = prompt && prompt.trim() ? `${prompt}\n${text}` : text;
-    onPromptChange(next);
-    setShowWorkflowSuggestions(false);
-    promptInputRef.current?.focus();
   };
 
   return (
     <div className="ai-chat-root">
       {/* ===== HEADER ===== */}
       <div className="ai-chat-header">
+        <div className="ai-reading-col ai-chat-header-inner">
         <div className="ai-chat-header-top">
           <div className="ai-chat-agent-info">
             <div className="ai-chat-avatar">
@@ -1043,89 +962,7 @@ const AIChat = ({
             </div>
           )}
         </div>
-      </div>
-
-      <div className="ai-mode-panel">
-        {/* ── Auto agent selector (Intelligent Router) ─────────────── */}
-        <div className="ai-auto-row">
-          <span className="ai-auto-label">
-            <span className="ai-auto-icon" aria-hidden="true">⚡</span> Agent
-          </span>
-          <select
-            className="ai-auto-select"
-            value={agentSelectValue}
-            onChange={handleAgentSelectChange}
-            disabled={isLoading}
-            title={autoRoute
-              ? "Quand activé : le routeur intelligent analyse votre demande et choisit automatiquement le mode et l'agent optimal."
-              : "Quand désactivé : vous contrôlez manuellement le mode et l'agent."}
-          >
-            <option value={AUTO_OPTION}>Auto (Sélection intelligente)</option>
-            {!autoRoute && !activeAgent && <option value={NONE_OPTION}>Aucun agent</option>}
-            {(agents || []).map((agent) => (
-              <option key={agentOptionValue(agent)} value={agentOptionValue(agent)}>
-                {agent.name}{agent.scope ? ` (${agent.scope})` : ''}
-              </option>
-            ))}
-          </select>
         </div>
-
-        {autoRoute && (
-          <button
-            type="button"
-            className="ai-advanced-toggle"
-            onClick={() => setShowManualControls((v) => !v)}
-          >
-            {showManualControls ? '▾' : '▸'} Avancé
-          </button>
-        )}
-
-        {(!autoRoute || showManualControls) && (
-          <>
-            <div className="ai-mode-row">
-              {EXECUTION_MODES.filter((mode) => mode.id !== 'multi-agent' || !autoRoute).map((mode) => (
-                <button
-                  type="button"
-                  key={mode.id}
-                  className={`ai-mode-btn ${executionMode === mode.id ? 'is-active' : ''}`}
-                  onClick={() => setExecutionMode(mode.id)}
-                  title={mode.description}
-                  disabled={isLoading}
-                  aria-pressed={executionMode === mode.id}
-                >
-                  {mode.icon} {mode.label}
-                </button>
-              ))}
-            </div>
-            <div className="ai-preset-row">
-              {RUN_PRESETS.map((preset) => (
-                <button
-                  type="button"
-                  key={preset.id}
-                  className={`ai-preset-btn ${runPreset === preset.id ? 'is-active' : ''}`}
-                  onClick={() => setPreset(preset.id)}
-                  disabled={isLoading}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-        {executionMode === 'multi-agent' && (
-          <CollectivePanel
-            collectiveDepth={collectiveDepth}
-            onCollectiveDepthChange={onCollectiveDepthChange}
-            teamPlanPreview={teamPlanPreview}
-            isLoading={isLoading}
-            multiAgentFormationKey={multiAgentFormationKey}
-            activeFormation={activeFormation}
-            onMultiAgentFormationChange={onMultiAgentFormationChange}
-            formationRoles={formationRoles}
-            disabledAgentSet={disabledAgentSet}
-            toggleDisabledAgent={toggleDisabledAgent}
-          />
-        )}
       </div>
 
       {/* ===== CONVERSATIONS DROPDOWN ===== */}
@@ -1231,135 +1068,17 @@ const AIChat = ({
         </div>
       )}
 
-      {/* ===== SWARM / MULTI-AGENTS PANEL ===== */}
-      {showMultiRunPanel && (
-        <div className="ai-swarm-section">
-          <div className="ai-swarm-header" style={{ cursor: 'default' }}>
-            <div>
-              <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2 }}>
-                Equipe multi-agent
-              </div>
-              <div className="ai-swarm-title">{multiRunTitle}
-                <span style={{ fontSize: 9, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6 }}>
-                  {multiRunStatusLabel}
-                </span>
-              </div>
-            </div>
-            <span style={{
-              fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 3, textTransform: 'uppercase', letterSpacing: '0.08em',
-              background: multiRunStatus === 'running' ? 'var(--accent-soft)' : multiRunStatus === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
-              color: multiRunStatus === 'running' ? 'var(--accent)' : multiRunStatus === 'error' ? 'var(--danger)' : 'var(--success)',
-            }}>
-              {multiRunStatus === 'running' ? 'EN COURS' : multiRunStatus === 'error' ? 'ERREUR' : 'TERMINÉ'}
-            </span>
-          </div>
-
-          {/* Progress bar */}
-          {safeMultiSteps.length > 0 && (
-            <div className="ai-swarm-progress">
-              <div className="ai-swarm-progress-bar" style={{ '--swarm-progress': safeMultiSteps.length > 0 ? completedMultiCount / safeMultiSteps.length : 0 }} />
-            </div>
-          )}
-
-          {/* Meta */}
-          <div style={{ display: 'flex', gap: 12, padding: '2px 14px 6px', fontSize: 9, color: 'var(--text-muted)' }}>
-            <span>{completedMultiCount}/{safeMultiSteps.length || 0} rôle(s)</span>
-            {multiAIState?.currentPhase && <span>Phase: {multiAIState.currentPhase}</span>}
-            {multiRunDuration && <span>{multiRunDuration}</span>}
-            {multiAIState?.startedAt && (
-              <span>{new Date(multiAIState.startedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
-            )}
-          </div>
-
-          {/* Agent cards grid */}
-          {safeMultiSteps.length > 0 && (
-            <div className="ai-swarm-grid">
-              {safeMultiSteps.map((step, index) => {
-                const normalizedStatus = normalizeMultiStatus(step?.status);
-                return (
-                  <div key={step?.key || step?.label || index} className={`ai-agent-card${normalizedStatus === 'active' ? ' is-active' : normalizedStatus === 'completed' ? ' is-done' : ''}`}>
-                    <div className="ai-agent-card-header">
-                      <span className="ai-agent-card-name">
-                        <span className="ai-agent-card-icon">{step?.icon || (normalizedStatus === 'completed' ? '✓' : normalizedStatus === 'active' ? '⚡' : '○')}</span>
-                        {step?.label || `Role ${index + 1}`}
-                      </span>
-                      <span className="ai-agent-card-status" style={{
-                        background: normalizedStatus === 'completed' ? 'rgba(16,185,129,0.15)' : normalizedStatus === 'active' ? 'var(--accent-soft)' : normalizedStatus === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)',
-                        color: normalizedStatus === 'completed' ? 'var(--success)' : normalizedStatus === 'active' ? 'var(--accent)' : normalizedStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)',
-                      }}>{getMultiStatusLabel(normalizedStatus)}</span>
-                    </div>
-                    {(step?.provider || step?.model) && (
-                      <div className="ai-agent-card-model">
-                        {step?.provider ? `${step.provider} / ` : ''}{step?.model || 'modele auto'}
-                      </div>
-                    )}
-                    {step?.detail && <div className="ai-agent-card-info">{step.detail}</div>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-
-          {/* Journal du run */}
-          {safeMultiEvents.length > 0 && (
-            <div>
-              <div style={{ padding: '5px 14px', fontSize: 10, color: 'var(--text-dim)', borderTop: '1px solid var(--border)', cursor: 'pointer' }}>
-                ▾ Journal du run ({safeMultiEvents.length})
-              </div>
-              <div style={{ maxHeight: 80, overflowY: 'auto', padding: '4px 14px', fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-dim)', borderTop: '1px solid var(--border)' }}>
-                {safeMultiEvents.map((event, index) => {
-                  const eventStatus = normalizeMultiStatus(event?.status);
-                  return (
-                    <div key={event?.id || `${event?.label}-${event?.at || index}`} style={{ padding: '1px 0', lineHeight: 1.5 }}>
-                      <span style={{
-                        fontSize: 8, fontWeight: 700, padding: '0 4px', borderRadius: 2, marginRight: 4,
-                        color: eventStatus === 'completed' ? 'var(--success)' : eventStatus === 'active' ? 'var(--accent)' : eventStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)',
-                      }}>{getMultiStatusLabel(eventStatus)}</span>
-                      <span>{event?.label || 'Etape'}</span>
-                      {event?.detail && <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>{event.detail}</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Working indicator */}
-          {multiAIState?.isActive ? (
-            <>
-            <AIWorkingIndicator
-              provider={aiProvider}
-              statusText={multiAIState.currentPhase ? `${multiAIState.currentPhase} en cours...` : 'Multi-IA en cours...'}
-            />
-            <LiveFilesPanel files={liveFiles} commands={terminalActions} />
-            </>
-          ) : (
-            <div style={{ display: 'flex', gap: 6, padding: '4px 14px', fontSize: 10, color: 'var(--text-dim)', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600 }}>Statut</span>
-              <span style={{ color: multiAIState.error ? 'var(--danger)' : 'var(--success)' }}>
-                {multiAIState.error ? `${multiRunTitle} en erreur` : `${multiRunTitle} prêt à relire`}
-              </span>
-            </div>
-          )}
-          {renderStreamingBox()}
-          {multiAIState.error && (
-            <div style={{ padding: '4px 14px', fontSize: 10, color: 'var(--danger)' }}>
-              Erreur : {multiAIState.error}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ===== STREAMING (non-multi) ===== */}
-      {isLoading && !multiAIState?.isActive && aiProvider !== 'multi' && streamingText && (
+      {/* ===== STREAMING ===== */}
+      {isLoading && streamingText && (
         <div style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          {liveFiles.length > 0 && (
-            <div style={{ padding: '8px 14px 0' }}>
-              <LiveFilesPanel files={liveFiles} />
-            </div>
-          )}
-          {renderStreamingBox()}
+          <div className="ai-reading-col">
+            {liveFiles.length > 0 && (
+              <div style={{ padding: '8px 0 0' }}>
+                <LiveFilesPanel files={liveFiles} />
+              </div>
+            )}
+            {renderStreamingBox()}
+          </div>
         </div>
       )}
 
@@ -1368,241 +1087,280 @@ const AIChat = ({
         ref={conversationHistoryRef}
         className="ai-messages custom-scrollbar"
       >
-        {conversationHistory.length === 0 && !isLoading && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: 'var(--text-muted)', padding: 30, textAlign: 'center' }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ width: 40, height: 40, opacity: 0.15 }}>
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            <p style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>Commencez à discuter avec l&apos;IA</p>
-            <p style={{ fontSize: 10, margin: 0 }}>Contexte complet du projet pris en compte.</p>
-          </div>
-        )}
-
-        {conversationHistory.map((msg, index) => {
-          const meta = getRoleMeta(msg);
-          const isUser = msg.role === 'user';
-          return (
-            <div key={msg.id || `msg-${index}`} className="ai-message">
-              <div className="ai-message-meta">
-                <div className={`ai-message-avatar ${isUser ? 'user' : 'bot'}`}>
-                  {isUser ? (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V4H8" /><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M9 13v2" /><path d="M15 13v2" /></svg>
-                  )}
-                </div>
-                <span className="ai-message-role">{meta.label}</span>
-              </div>
-              <div className="ai-message-body">
-                <p style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {msg.text ? msg.text.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trim() : ''}
-                </p>
-              </div>
-
-              {Array.isArray(msg.images) && msg.images.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 26 }}>
-                  {msg.images.map((img, i) => (
-                    <img key={i} src={img.dataUrl} alt="Collé" style={{ width: 48, height: 48, borderRadius: 4, objectFit: 'cover', border: '1px solid var(--border)' }} />
-                  ))}
-                </div>
-              )}
+        <div className="ai-reading-col">
+          {conversationHistory.length === 0 && !isLoading && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: 'var(--text-muted)', padding: 30, textAlign: 'center' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ width: 40, height: 40, opacity: 0.15 }}>
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              <p style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>Commencez à discuter avec l&apos;IA</p>
+              <p style={{ fontSize: 10, margin: 0 }}>Contexte complet du projet pris en compte.</p>
             </div>
-          );
-        })}
+          )}
 
-        {/* AI Terminal Action Cards (ReAct Loop) */}
-        {isLoading && terminalActions.length > 0 && (
-          <div style={{ padding: '8px 14px' }}>
-            {terminalActions.map((action, i) => (
-              <div key={i} style={{
-                background: 'var(--surface-2)', border: '1px solid var(--border)',
-                borderRadius: 4, margin: '4px 0', overflow: 'hidden', fontSize: 11,
-              }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
-                  background: action.type === 'done' ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)',
-                  borderBottom: action.output ? '1px solid var(--border)' : 'none',
-                }}>
-                  <span>{action.type === 'done' ? '✓' : '⟳'}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-main)', flex: 1, fontSize: 10 }}>{action.command}</span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>#{action.iteration}</span>
+          {conversationHistory.map((msg, index) => {
+            const meta = getRoleMeta(msg);
+            const isUser = msg.role === 'user';
+            return (
+              <div key={msg.id || `msg-${index}`} className="ai-message">
+                <div className="ai-message-meta">
+                  <div className={`ai-message-avatar ${isUser ? 'user' : 'bot'}`}>
+                    {isUser ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V4H8" /><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M9 13v2" /><path d="M15 13v2" /></svg>
+                    )}
+                  </div>
+                  <span className="ai-message-role">{meta.label}</span>
                 </div>
-                {action.output && (
-                  <pre style={{
-                    margin: 0, padding: '5px 10px', fontSize: 9, color: 'var(--text-dim)',
-                    fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', maxHeight: 100, overflowY: 'auto',
-                  }}>{action.output.substring(0, 800)}{action.output.length > 800 ? '...' : ''}</pre>
+                <div className="ai-message-body">
+                  <p style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {msg.text ? msg.text.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trim() : ''}
+                  </p>
+                </div>
+
+                {Array.isArray(msg.images) && msg.images.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 26 }}>
+                    {msg.images.map((img, i) => (
+                      <img key={i} src={img.dataUrl} alt="Collé" style={{ width: 48, height: 48, borderRadius: 4, objectFit: 'cover', border: '1px solid var(--border)' }} />
+                    ))}
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
-        )}
+            );
+          })}
 
-        {isLoading && !multiAIState?.isActive && terminalActions.length > 0 && (
-          <div className="ai-message-loading">
-            <div className="ai-loading-dots"><span className="ai-loading-dot" /><span className="ai-loading-dot" /><span className="ai-loading-dot" /></div>
-            <span>Exécution... ({terminalActions.filter(a => a.type === 'done').length}/{terminalActions.length} commandes)</span>
-          </div>
-        )}
+          {/* AI Terminal Action Cards (ReAct Loop) */}
+          {isLoading && terminalActions.length > 0 && (
+            <div style={{ padding: '8px 14px' }}>
+              {terminalActions.map((action, i) => (
+                <div key={i} style={{
+                  background: 'var(--surface-2)', border: '1px solid var(--border)',
+                  borderRadius: 4, margin: '4px 0', overflow: 'hidden', fontSize: 11,
+                }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+                    background: action.type === 'done' ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)',
+                    borderBottom: action.output ? '1px solid var(--border)' : 'none',
+                  }}>
+                    <span>{action.type === 'done' ? '✓' : '⟳'}</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-main)', flex: 1, fontSize: 10 }}>{action.command}</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>#{action.iteration}</span>
+                  </div>
+                  {action.output && (
+                    <pre style={{
+                      margin: 0, padding: '5px 10px', fontSize: 9, color: 'var(--text-dim)',
+                      fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', maxHeight: 100, overflowY: 'auto',
+                    }}>{action.output.substring(0, 800)}{action.output.length > 800 ? '...' : ''}</pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {isLoading && !multiAIState?.isActive && terminalActions.length > 0 && (
+            <div className="ai-message-loading">
+              <div className="ai-loading-dots"><span className="ai-loading-dot" /><span className="ai-loading-dot" /><span className="ai-loading-dot" /></div>
+              <span>Exécution... ({terminalActions.filter(a => a.type === 'done').length}/{terminalActions.length} commandes)</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* ===== INPUT SECTION ===== */}
-      <div className="ai-input-section">
-        {/* Pending message indicator */}
-        {pendingMessage && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
-            background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
-            borderRadius: 4, fontSize: 10, color: 'var(--warning)',
-          }}>
-            <span>⏳</span>
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              En attente&#x202F;: <em>{pendingMessage.text}</em>
-            </span>
-            <span style={{ opacity: 0.6, fontSize: 9 }}>sera envoyé automatiquement</span>
-          </div>
-        )}
+      {/* Intelligent Router decision (auto mode only) — above the input bar */}
+      {autoRoute && <AIDecisionBadge decision={routerDecision} />}
 
-        {/* Pending images */}
-        {pendingImages && pendingImages.length > 0 && (
-          <div className="ai-input-images">
-            {pendingImages.map((img, idx) => (
-              <div key={idx} style={{ position: 'relative' }}>
-                <img src={img.dataUrl} alt="Pending" className="ai-input-image" />
-                <button
-                  onClick={() => onRemovePendingImage && onRemovePendingImage(idx)}
-                  style={{
-                    position: 'absolute', top: 1, right: 1, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff',
-                    borderRadius: '50%', width: 14, height: 14, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                  }}
-                >×</button>
-              </div>
-            ))}
-          </div>
-        )}
+      {/* ===== INPUT BAR (unified, Antigravity-style) ===== */}
+      <div className="ai-input-bar">
+        <div className="ai-reading-col ai-input-bar-inner">
+          {/* Pending message indicator */}
+          {pendingMessage && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+              background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
+              borderRadius: 4, fontSize: 10, color: 'var(--warning)',
+            }}>
+              <span>⏳</span>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                En attente&#x202F;: <em>{pendingMessage.text}</em>
+              </span>
+              <span style={{ opacity: 0.6, fontSize: 9 }}>sera envoyé automatiquement</span>
+            </div>
+          )}
 
-        {/* Explicit Context Tags */}
-        {explicitContext.length > 0 && (
-          <div className="ai-message-file-refs">
-            {explicitContext.map(filePath => {
-              const fileName = filePath.split(/[\\/]/).pop();
-              return (
-                <span key={filePath} className="ai-message-file-ref" title={filePath}>
-                  @{fileName}
-                  <span className="ai-message-file-ref-close" onClick={() => removeExplicitContext(filePath)}>×</span>
-                </span>
-              );
-            })}
-          </div>
-        )}
+          {/* Pending images */}
+          {pendingImages && pendingImages.length > 0 && (
+            <div className="ai-input-images">
+              {pendingImages.map((img, idx) => (
+                <div key={idx} style={{ position: 'relative' }}>
+                  <img src={img.dataUrl} alt="Pending" className="ai-input-image" />
+                  <button
+                    onClick={() => onRemovePendingImage && onRemovePendingImage(idx)}
+                    style={{
+                      position: 'absolute', top: 1, right: 1, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff',
+                      borderRadius: '50%', width: 14, height: 14, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                    }}
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          )}
 
-        {/* Textarea + tools */}
-        <div className="ai-input-textarea-wrap">
+          {/* Explicit Context Tags */}
+          {explicitContext.length > 0 && (
+            <div className="ai-message-file-refs">
+              {explicitContext.map(filePath => {
+                const fileName = filePath.split(/[\\/]/).pop();
+                return (
+                  <span key={filePath} className="ai-message-file-ref" title={filePath}>
+                    @{fileName}
+                    <span className="ai-message-file-ref-close" onClick={() => removeExplicitContext(filePath)}>×</span>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Composer: un seul bloc arrondi = textarea + rangée [+] [mode] [modèle] [autonomie] [Envoyer] */}
+          <div className="ai-composer">
+          {/* Textarea */}
           <textarea
             ref={promptInputRef}
             id="ai-prompt"
-            className="ai-input-textarea"
+            className="ai-input-bar-textarea"
             value={prompt}
             onChange={(e) => handlePromptChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder="Votre requête... (Tapez @ pour mentionner un fichier, / pour workflows)"
-            rows={3}
+            placeholder="Votre requête... (@ pour un fichier, / pour un workflow)"
+            rows={2}
           />
-          <div className="ai-input-tools">
-            <button className="ai-input-tool-btn" title="Joindre un fichier (@)" onClick={() => handlePromptChange(prompt + '@')}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
-            </button>
-            <button className="ai-input-tool-btn" title="Slash commande (/)" onClick={() => handlePromptChange('/')}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>
-            </button>
-          </div>
-        </div>
 
-        {/* Workflow suggestions */}
-        {showWorkflowSuggestions && filteredWorkflows.length > 0 && (
-          <div className="ai-suggest-overlay">
-            <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
-              <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Workflows disponibles</div>
-              {filteredWorkflows.map((workflow) => (
-                <button
-                  key={`${workflow.scope}-${workflow.name}`}
-                  onClick={() => handleSelectWorkflow(workflow)}
-                  style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '5px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
-                >
-                  <div>
-                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>/{workflow.name}</span>
-                    {workflow.description && <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>{workflow.description}</span>}
-                  </div>
-                  <span style={{ fontSize: 9, color: 'var(--text-muted)', padding: '1px 5px', background: 'var(--surface)', borderRadius: 3 }}>{workflow.scope}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Context file suggestions */}
-        {showContextSuggestions && (
-          <div className="ai-suggest-overlay">
-            <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
-              <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Fichiers du projet</div>
-              {filteredContextFiles.length === 0 && (
-                <div style={{ padding: '8px 10px', fontSize: 10, color: 'var(--text-muted)' }}>Aucun fichier pour {contextFilter}</div>
-              )}
-              {filteredContextFiles.map((filePath) => {
-                const fileName = filePath.split(/[\\/]/).pop() || filePath;
-                return (
+          {/* Workflow suggestions */}
+          {showWorkflowSuggestions && filteredWorkflows.length > 0 && (
+            <div className="ai-suggest-overlay">
+              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
+                <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Workflows disponibles</div>
+                {filteredWorkflows.map((workflow) => (
                   <button
-                    key={filePath}
-                    onClick={() => handleSelectContextFile(filePath)}
-                    style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
+                    key={`${workflow.scope}-${workflow.name}`}
+                    onClick={() => handleSelectWorkflow(workflow)}
+                    style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '5px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
                   >
-                    <span style={{ color: 'var(--accent)' }}>@{fileName}</span>
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{filePath}</span>
+                    <div>
+                      <span style={{ color: 'var(--accent)', fontWeight: 600 }}>/{workflow.name}</span>
+                      {workflow.description && <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>{workflow.description}</span>}
+                    </div>
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)', padding: '1px 5px', background: 'var(--surface)', borderRadius: 3 }}>{workflow.scope}</span>
                   </button>
-                );
-              })}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-
-        {/* Quick actions */}
-        <div className="ai-quick-actions">
-          {quickActions.map((action) => (
-            <button
-              key={action.id}
-              className="ai-quick-btn"
-              onClick={() => applyQuickPrompt(action)}
-              disabled={!isElectronApiAvailable}
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Intelligent Router decision (auto mode only) */}
-        {autoRoute && <AIDecisionBadge decision={routerDecision} />}
-      </div>
-
-      {/* ===== SEND / STOP BUTTON ===== */}
-      <div style={{ padding: '0 14px 10px', flexShrink: 0 }}>
-        <button
-          type="button"
-          onClick={isLoading ? handleStop : handleSend}
-          className={`ai-send-btn ${isLoading ? 'is-stop' : ''}`}
-          disabled={!currentProjectPath || !isElectronApiAvailable}
-          aria-label={isLoading ? "Arrêter la génération" : "Envoyer à l'IA"}
-          style={isLoading ? { background: 'var(--danger)', borderColor: 'var(--danger)' } : undefined}
-        >
-          {isLoading ? (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 10, height: 10, background: '#fff', borderRadius: 2, flexShrink: 0 }} />
-              <span>Arrêter</span>
-            </span>
-          ) : (
-            "Envoyer à l'IA"
           )}
-        </button>
+
+          {/* Context file suggestions */}
+          {showContextSuggestions && (
+            <div className="ai-suggest-overlay">
+              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
+                <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Fichiers du projet</div>
+                {filteredContextFiles.length === 0 && (
+                  <div style={{ padding: '8px 10px', fontSize: 10, color: 'var(--text-muted)' }}>Aucun fichier pour {contextFilter}</div>
+                )}
+                {filteredContextFiles.map((filePath) => {
+                  const fileName = filePath.split(/[\\/]/).pop() || filePath;
+                  return (
+                    <button
+                      key={filePath}
+                      onClick={() => handleSelectContextFile(filePath)}
+                      style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
+                    >
+                      <span style={{ color: 'var(--accent)' }}>@{fileName}</span>
+                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{filePath}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Bottom toolbar: [+] menu, mode/model/autonomy pills, send/stop */}
+          <div className="ai-input-bar-toolbar">
+            <button
+              type="button"
+              className="ai-plus-btn"
+              onClick={() => setShowPlusMenu((v) => !v)}
+              title="Mentionner un fichier ou lancer un workflow"
+              aria-expanded={showPlusMenu}
+            >
+              +
+            </button>
+
+            <AgentModePill
+              executionMode={executionMode}
+              onExecutionModeChange={setExecutionMode}
+              activeAgent={activeAgent}
+              onActiveAgentChange={onActiveAgentChange}
+              agents={agents}
+              disabled={isLoading}
+            />
+
+            <ProviderPill
+              aiProvider={aiProvider}
+              onProviderChange={onProviderChange}
+              disabled={isLoading}
+            />
+
+            <ModelPill
+              aiProvider={aiProvider}
+              activeModelValue={activeModelValue}
+              availableActiveModels={availableActiveModels}
+              onActiveModelChange={onActiveModelChange}
+              disabled={isLoading}
+            />
+
+            <AutonomyPill
+              autonomyLevel={autonomyLevel}
+              onAutonomyLevelChange={handleAutonomyLevelChange}
+              disabled={isLoading}
+            />
+
+            <div className="ai-input-bar-spacer" />
+
+            <button
+              type="button"
+              onClick={isLoading ? handleStop : handleSend}
+              className={`ai-send-btn-compact ${isLoading ? 'is-stop' : ''}`}
+              disabled={!currentProjectPath || !isElectronApiAvailable}
+              aria-label={isLoading ? "Arrêter la génération" : "Envoyer à l'IA"}
+            >
+              {isLoading ? 'Arrêter' : 'Envoyer'}
+            </button>
+          </div>
+          </div>
+
+          {/* [+] popover: contexte, agent, presets, actions rapides */}
+          {showPlusMenu && (
+            <div className="ai-plus-menu" role="menu">
+              <div className="ai-plus-menu-section">
+                <span className="ai-plus-menu-label">Contexte</span>
+                <button
+                  type="button"
+                  className="ai-pill-menu-item"
+                  onClick={() => { handlePromptChange(`${prompt}@`); setShowPlusMenu(false); promptInputRef.current?.focus(); }}
+                >
+                  @ Mentionner un fichier
+                </button>
+                <button
+                  type="button"
+                  className="ai-pill-menu-item"
+                  onClick={() => { handlePromptChange('/'); setShowPlusMenu(false); promptInputRef.current?.focus(); }}
+                >
+                  / Workflow
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -12,7 +12,6 @@ describe('aiAgentRuntime', () => {
     expect(buildSharedAgentContextOptions({
       localOnlyRun: true,
       executionMode: 'agent',
-      runPreset: 'default',
       deepContextEnabled: false
     })).toMatchObject({
       localOnly: true,
@@ -25,7 +24,6 @@ describe('aiAgentRuntime', () => {
     expect(buildSharedAgentContextOptions({
       localOnlyRun: false,
       executionMode: 'multi-agent',
-      runPreset: 'refactor',
       deepContextEnabled: true
     })).toMatchObject({
       localOnly: false,

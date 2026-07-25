@@ -237,6 +237,16 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     await saveSettingsPatch({ [field]: normalizedValue }, `Modele Ollama: ${normalizedValue}`);
   }, [saveSettingsPatch]);
 
+  // Allows UI surfaces other than the Settings modal (e.g. AutonomyControls
+  // in AIChat) to change permissionMode without duplicating the persistence
+  // flow. Mirrors the Settings modal's own save path: optimistic local
+  // update + saveSettingsPatch + 'settings-updated' broadcast.
+  const handlePermissionModeChange = useCallback(async (mode) => {
+    const nextMode = String(mode || 'edit_terminal');
+    setPermissionMode(nextMode);
+    await saveSettingsPatch({ permissionMode: nextMode }, `Autonomie: ${nextMode}`);
+  }, [saveSettingsPatch]);
+
   const ollamaTopbarLabel = useMemo(() => {
     if (aiProvider === 'ollama') {
       return `🦙 ${resolvedOllamaModel}`;
@@ -378,7 +388,8 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     aiModelSelection,
     handleAiProviderChange,
     handleOllamaSettingChange,
-    handleActiveModelChange
+    handleActiveModelChange,
+    handlePermissionModeChange
   };
 };
 

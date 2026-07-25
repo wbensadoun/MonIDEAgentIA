@@ -22,7 +22,7 @@ export const normalizeSingleAIProvider = (value) => {
   return '';
 };
 
-export const getModelForProvider = (provider, models = {}, sourceProvider = provider) => {
+export const getModelForProvider = (provider, models = {}, _sourceProvider = provider) => {
   if (provider === 'claude') {
     return normalizeRemoteModelName(models.claudeModel, DEFAULT_CLAUDE_MODEL);
   }

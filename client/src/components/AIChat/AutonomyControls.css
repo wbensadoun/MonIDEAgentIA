@@ -1,0 +1,106 @@
+/* AutonomyControls — reads exclusively from styles/tokens.css.
+   No color literals in this file; every value is a token reference so
+   the component re-themes for free across the 5 existing themes. */
+
+.autonomy-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.autonomy-controls__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.autonomy-controls__eyebrow {
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-dim);
+  flex: 0 0 auto;
+  min-width: 108px;
+}
+
+.autonomy-controls__segmented {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.autonomy-controls__segment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-dim);
+  border-radius: calc(var(--radius-sm) - 2px);
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.autonomy-controls__segment:hover:not(:disabled) {
+  color: var(--text-main);
+  background: var(--accent-soft);
+}
+
+.autonomy-controls__segment.is-active {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.autonomy-controls__segment--danger.is-active {
+  background: var(--danger);
+}
+
+.autonomy-controls__segment--warning.is-active {
+  background: var(--warning);
+}
+
+.autonomy-controls__segment--success.is-active {
+  background: var(--success);
+}
+
+.autonomy-controls__segment:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.autonomy-controls__segment-icon {
+  font-size: var(--text-md);
+  line-height: 1;
+}
+
+.autonomy-controls__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+
+.autonomy-controls__dot--success { background: var(--success); }
+.autonomy-controls__dot--warning { background: var(--warning); }
+.autonomy-controls__dot--danger { background: var(--danger); }
+
+.is-active .autonomy-controls__dot {
+  background: var(--on-accent);
+}
+
+.autonomy-controls__helper {
+  flex: 1 1 100%;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: var(--leading-snug);
+}

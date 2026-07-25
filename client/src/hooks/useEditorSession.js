@@ -26,6 +26,28 @@ const useEditorSession = ({
   const [revealRequest, setRevealRequest] = useState(null);
   const [aiDraftPreview, setAiDraftPreview] = useState(null);
   const [gitDiffPreview, setGitDiffPreview] = useState(null);
+  // Suivi des fichiers modifies mais pas encore ecrits sur disque (indicateur point sur les tabs)
+  const [dirtyFiles, setDirtyFiles] = useState(() => new Set());
+
+  const markFileDirty = useCallback((filePath) => {
+    if (!filePath) return;
+    setDirtyFiles((prev) => {
+      if (prev.has(filePath)) return prev;
+      const next = new Set(prev);
+      next.add(filePath);
+      return next;
+    });
+  }, []);
+
+  const clearFileDirty = useCallback((filePath) => {
+    if (!filePath) return;
+    setDirtyFiles((prev) => {
+      if (!prev.has(filePath)) return prev;
+      const next = new Set(prev);
+      next.delete(filePath);
+      return next;
+    });
+  }, []);
 
   const saveTimerRef = useRef(null);
   const pendingSaveRef = useRef({ projectPath: '', filePath: '', content: '' });
@@ -51,11 +73,12 @@ const useEditorSession = ({
 
       try {
         await window.electronAPI.writeFile(pending.projectPath, pending.filePath, pending.content);
+        clearFileDirty(pending.filePath);
       } catch (error) {
         console.error('Erreur sauvegarde:', error);
       }
     }, 450);
-  }, []);
+  }, [clearFileDirty]);
 
   useEffect(() => {
     const loadFileContent = async () => {
@@ -68,6 +91,7 @@ const useEditorSession = ({
           const response = await window.electronAPI.readFile(currentProjectPath, activeFile);
           if (response.success) {
             setCode(response.content);
+            clearFileDirty(activeFile);
             showMessage(`Fichier "${activeFile}" charge.`, 2000);
           } else {
             setCode('');
@@ -82,7 +106,7 @@ const useEditorSession = ({
     };
 
     loadFileContent();
-  }, [activeFile, currentProjectPath, gitDiffPreview, isElectronApiAvailable, showMessage]);
+  }, [activeFile, currentProjectPath, gitDiffPreview, isElectronApiAvailable, showMessage, clearFileDirty]);
 
   const handleCodeChange = useCallback((newCode) => {
     if (isReadOnlyMode) {
@@ -91,6 +115,7 @@ const useEditorSession = ({
     }
     if (newCode === code) return;
     setCode(newCode);
+    if (activeFile) markFileDirty(activeFile);
     if (!isElectronApiAvailable || !activeFile || !currentProjectPath) return;
     scheduleSave(currentProjectPath, activeFile, newCode);
   }, [
@@ -99,6 +124,7 @@ const useEditorSession = ({
     currentProjectPath,
     isElectronApiAvailable,
     isReadOnlyMode,
+    markFileDirty,
     scheduleSave,
     showMessage
   ]);
@@ -308,6 +334,7 @@ const useEditorSession = ({
     if (String(gitDiffPreview?.filePath || '') === String(filePath)) {
       clearGitDiffPreview();
     }
+    clearFileDirty(filePath);
     setOpenFiles((prev) => {
       const idx = prev.indexOf(filePath);
       if (idx === -1) return prev;
@@ -323,7 +350,7 @@ const useEditorSession = ({
 
       return next;
     });
-  }, [activeFile, clearGitDiffPreview, gitDiffPreview?.filePath]);
+  }, [activeFile, clearFileDirty, clearGitDiffPreview, gitDiffPreview?.filePath]);
 
   return {
     activeFile,
@@ -332,6 +359,7 @@ const useEditorSession = ({
     setCode,
     openFiles,
     setOpenFiles,
+    dirtyFiles,
     revealRequest,
     aiDraftPreview,
     gitDiffPreview,

@@ -248,6 +248,7 @@ const FileExplorer = ({
   onRenameItem,
   onMoveItem,
   onDeleteItem,
+  onImportOsFiles,
   onToggleFolder,
   onFileClick,
   onNewItemNameChange,
@@ -381,6 +382,13 @@ const FileExplorer = ({
 
   const handleDropIntoDirectory = useCallback(async (event, item) => {
     event.preventDefault();
+    // Drop de fichiers venant de l'OS (pas de dragState interne) -> import dans ce dossier
+    const osFiles = event.dataTransfer?.files;
+    if (!dragState.draggedPath && osFiles && osFiles.length > 0) {
+      resetDragState();
+      if (onImportOsFiles) await onImportOsFiles(Array.from(osFiles), item?.path || '');
+      return;
+    }
     if (!dragState.draggedPath || item?.type !== 'directory' || !onMoveItem) {
       resetDragState();
       return;
@@ -393,10 +401,17 @@ const FileExplorer = ({
     const destinationPath = joinNavigatorPath(item.path, getNavigatorBaseName(dragState.draggedPath), item.path);
     await onMoveItem(dragState.draggedPath, destinationPath, dragState.draggedType);
     resetDragState();
-  }, [canDropIntoDirectory, dragState.draggedPath, dragState.draggedType, onMoveItem, resetDragState]);
+  }, [canDropIntoDirectory, dragState.draggedPath, dragState.draggedType, onImportOsFiles, onMoveItem, resetDragState]);
 
   const handleRootDrop = useCallback(async (event) => {
     event.preventDefault();
+    // Drop de fichiers venant de l'OS (pas de dragState interne) -> import a la racine du projet
+    const osFiles = event.dataTransfer?.files;
+    if (!dragState.draggedPath && osFiles && osFiles.length > 0) {
+      resetDragState();
+      if (onImportOsFiles) await onImportOsFiles(Array.from(osFiles), '');
+      return;
+    }
     if (!dragState.draggedPath || !onMoveItem) {
       resetDragState();
       return;
@@ -408,7 +423,7 @@ const FileExplorer = ({
     }
     await onMoveItem(dragState.draggedPath, destinationPath, dragState.draggedType);
     resetDragState();
-  }, [dragState.draggedPath, dragState.draggedType, onMoveItem, resetDragState]);
+  }, [dragState.draggedPath, dragState.draggedType, onImportOsFiles, onMoveItem, resetDragState]);
 
   const handleOpenContextMenu = useCallback((event, item) => {
     event.preventDefault();
@@ -526,7 +541,9 @@ const FileExplorer = ({
           handleOpenContextMenu(event, null);
         }}
         onDragOver={(event) => {
-          if (!dragState.draggedPath || filterQuery) return;
+          if (filterQuery) return;
+          const isOsFileDrag = !dragState.draggedPath && event.dataTransfer?.types?.includes('Files');
+          if (!dragState.draggedPath && !isOsFileDrag) return;
           event.preventDefault();
           setDragState((prev) => ({ ...prev, overPath: '', overRoot: true }));
         }}

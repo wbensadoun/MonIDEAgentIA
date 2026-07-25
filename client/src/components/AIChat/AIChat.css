@@ -13,6 +13,23 @@
   background: var(--surface);
 }
 
+/* Colonne de lecture centrée — s'applique à l'intérieur de n'importe quel
+   conteneur (plein écran OU sidebar IDE étroite, où elle n'a aucun effet
+   puisque le conteneur est déjà < 760px). Utilisée pour les messages, le
+   stream box et le bloc de saisie afin que le fond/les bordures des
+   conteneurs parents (header, input bar) filent pleine largeur pendant que
+   leur contenu reste à une largeur de lecture confortable. */
+.ai-reading-col {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 /* =============================
    HEADER DU CHAT
    ============================= */
@@ -23,6 +40,17 @@
   flex-direction: column;
   gap: 8px;
   flex-shrink: 0;
+}
+
+/* Le fond/la bordure du header restent pleine largeur (.ai-chat-header
+   ci-dessus) ; seul son contenu est recentré à la largeur de lecture,
+   pour rester aligné avec les messages et le bloc de saisie en dessous.
+   Override flex:1/min-height:0 de .ai-reading-col : le header a une
+   hauteur intrinsèque, pas de zone scrollable à faire grandir. */
+.ai-chat-header-inner {
+  flex: 0 0 auto;
+  min-height: auto;
+  gap: 8px;
 }
 
 .ai-chat-header-top {
@@ -120,120 +148,18 @@
   flex-wrap: wrap;
 }
 
-.ai-mode-panel {
-  display: grid;
-  gap: 6px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.ai-mode-row,
-.ai-preset-row,
-.ai-multi-role-chips {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-
-.ai-mode-btn,
-.ai-preset-btn,
-.ai-multi-role-chip {
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text-dim);
-  border-radius: 4px;
-  padding: 5px 7px;
-  font-size: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.ai-mode-btn:hover:not(.is-active):not(:disabled),
-.ai-preset-btn:hover:not(.is-active):not(:disabled),
-.ai-multi-role-chip:hover:not(.is-active):not(:disabled) {
-  background: var(--surface);
-  color: var(--text-main);
-}
-
 /* Anneau de focus clavier partagé pour les boutons interactifs du chat */
-.ai-mode-btn:focus-visible,
-.ai-preset-btn:focus-visible,
-.ai-multi-role-chip:focus-visible,
 .ai-header-btn:focus-visible,
-.ai-quick-btn:focus-visible,
 .ai-agent-chip:focus-visible,
-.ai-send-btn:focus-visible,
-.ai-stop-btn:focus-visible {
+.ai-pill:focus-visible,
+.ai-pill-menu-item:focus-visible,
+.ai-plus-btn:focus-visible,
+.ai-send-btn-compact:focus-visible,
+.ai-stop-btn:focus-visible,
+.ai-agent-mode-button:focus-visible,
+.ai-agent-mode-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-}
-
-.ai-mode-btn.is-active,
-.ai-preset-btn.is-active,
-.ai-multi-role-chip:not(.is-disabled) {
-  color: var(--accent);
-  border-color: rgba(0, 245, 212, 0.35);
-  background: var(--accent-soft);
-}
-
-.ai-mode-btn:disabled,
-.ai-preset-btn:disabled,
-.ai-multi-role-chip:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.ai-multi-config {
-  display: grid;
-  gap: 6px;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: rgba(255,255,255,0.03);
-}
-
-.ai-multi-config-head {
-  display: grid;
-  grid-template-columns: minmax(120px, 0.65fr) minmax(0, 1fr);
-  gap: 6px;
-  align-items: center;
-}
-
-.ai-multi-config-head select {
-  min-width: 0;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text-main);
-  border-radius: 4px;
-  padding: 5px 6px;
-  font-size: 10px;
-}
-
-.ai-multi-config-head span {
-  min-width: 0;
-  color: var(--text-muted);
-  font-size: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-multi-role-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.ai-multi-role-chip small {
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.ai-multi-role-chip.is-disabled {
-  color: var(--text-muted);
-  background: transparent;
-  text-decoration: line-through;
 }
 
 .ai-chat-skills-badge {
@@ -286,216 +212,6 @@
 .ai-chat-metric-label {
   color: var(--text-muted);
   font-size: 8px;
-}
-
-/* =============================
-   SWARM / MULTI-AGENTS
-   ============================= */
-.ai-swarm-section {
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.ai-swarm-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 14px 5px;
-  cursor: pointer;
-}
-
-.ai-swarm-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
-}
-
-.ai-swarm-title svg {
-  width: 11px;
-  height: 11px;
-}
-
-.ai-swarm-progress {
-  height: 2px;
-  background: var(--surface-2);
-  margin: 0 14px 6px;
-  border-radius: 1px;
-  overflow: hidden;
-}
-
-.ai-swarm-progress-bar {
-  height: 100%;
-  width: 100%;
-  background: var(--accent);
-  border-radius: 1px;
-  transform-origin: left;
-  transform: scaleX(var(--swarm-progress, 0));
-  transition: transform 0.3s ease;
-}
-
-.ai-swarm-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 6px 10px 10px;
-}
-
-.ai-agent-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 11px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  transition: border-color 0.15s;
-}
-
-.ai-agent-card.is-active {
-  border-color: var(--accent);
-  background: rgba(0, 245, 212, 0.04);
-}
-
-.ai-agent-card.is-done {
-  border-color: rgba(16, 185, 129, 0.3);
-}
-
-.ai-agent-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-}
-
-.ai-agent-card-name {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.ai-agent-card-icon {
-  font-size: 12px;
-}
-
-.ai-agent-card-status {
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-
-.ai-agent-card-model {
-  font-size: 9px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ai-agent-card-info {
-  font-size: 9px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.ai-agent-card-info::before {
-  content: '';
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.5;
-  flex-shrink: 0;
-}
-
-/* Timeline */
-.ai-swarm-timeline {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 0 14px 8px;
-  overflow: hidden;
-}
-
-.ai-timeline-step {
-  flex: 1;
-  text-align: center;
-  font-size: 9px;
-  color: var(--text-muted);
-  position: relative;
-  padding: 0 4px;
-}
-
-.ai-timeline-step.is-done {
-  color: var(--success);
-}
-
-.ai-timeline-step.is-active {
-  color: var(--accent);
-}
-
-.ai-timeline-step::before {
-  content: '';
-  position: absolute;
-  top: -4px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--border);
-}
-
-.ai-timeline-step.is-done::before {
-  background: var(--success);
-}
-
-.ai-timeline-step.is-active::before {
-  background: var(--accent);
-}
-
-/* Journal du flux (collapsible) */
-.ai-swarm-log-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 14px;
-  font-size: 10px;
-  color: var(--text-dim);
-  cursor: pointer;
-  border-top: 1px solid var(--border);
-}
-
-.ai-swarm-log-toggle:hover {
-  color: var(--text-main);
-}
-
-.ai-swarm-log {
-  max-height: 80px;
-  overflow-y: auto;
-  padding: 4px 14px;
-  font-size: 10px;
-  font-family: var(--font-mono);
-  color: var(--text-dim);
-  border-top: 1px solid var(--border);
-}
-
-.ai-swarm-log-entry {
-  padding: 1px 0;
-  line-height: 1.5;
 }
 
 /* =============================
@@ -1046,15 +762,247 @@
 }
 
 /* =============================
-   ZONE DE SAISIE
+   ZONE DE SAISIE — bloc unifié type Antigravity
+   Un seul conteneur arrondi : attachments/tags, textarea, puis une rangée
+   basse fine (bouton [+], pills mode/modèle/autonomie, Envoyer/Stop).
    ============================= */
-.ai-input-section {
-  border-top: 1px solid var(--border);
-  padding: 10px 14px;
+.ai-input-bar {
+  /* Pas de border-top ici : le .ai-composer juste en dessous a déjà son
+     propre cadre complet (border pleine + fond var(--surface-2)), donc une
+     ligne de séparation ajoutée ici créait une double bordure horizontale
+     à 8px d'écart. Le composer suffit seul à délimiter la zone de saisie. */
+  flex-shrink: 0;
+  padding: 8px 0 10px;
+}
+
+.ai-input-bar-inner {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  position: relative;
+}
+
+/* Bloc composer unifié : un seul cadre arrondi contenant le textarea et la
+   rangée basse [+] [mode] [modèle] [autonomie] [Envoyer]. */
+.ai-composer {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 10px);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-composer:focus-within {
+  border-color: var(--accent);
+}
+
+.ai-input-bar-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  resize: none;
+  min-height: 44px;
+  max-height: 160px;
+  color: var(--text-main);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  outline: none;
+}
+
+.ai-input-bar-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.ai-input-bar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ai-input-bar-spacer {
+  flex: 1;
+}
+
+.ai-plus-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.ai-plus-btn:hover {
+  background: var(--surface);
+  color: var(--text-main);
+  border-color: var(--accent);
+}
+
+/* Pills (mode / modèle / autonomie) */
+.ai-pill-wrap {
+  position: relative;
+}
+
+.ai-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full, 999px);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.1s, color 0.1s;
+}
+
+.ai-pill:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-main);
+}
+
+.ai-pill:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ai-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ai-pill-dot--success { background: var(--success); }
+.ai-pill-dot--warning { background: var(--warning); }
+.ai-pill-dot--danger { background: var(--danger); }
+
+.ai-pill-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 6px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ai-pill-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: none;
+  border: none;
+  color: var(--text-main);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-pill-menu-item:hover {
+  background: var(--surface-2);
+}
+
+.ai-pill-menu-item.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* [+] popover: contexte / agent / presets / actions rapides */
+.ai-plus-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 6px;
+  z-index: 30;
+}
+
+.ai-plus-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 2px;
+}
+
+.ai-plus-menu-section + .ai-plus-menu-section {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
+.ai-plus-menu-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 2px 6px;
+}
+
+/* Bouton Envoyer / Stop compact, dans la toolbar du bloc de saisie */
+.ai-send-btn-compact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 16px;
+  border-radius: var(--radius-full, 999px);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  border: 1px solid var(--accent);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ai-send-btn-compact:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 85%, white);
+}
+
+.ai-send-btn-compact:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-send-btn-compact.is-stop {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.ai-send-btn-compact.is-stop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 80%, white);
 }
 
 /* Fichiers joints au prompt */
@@ -1110,91 +1058,10 @@
   cursor: pointer;
 }
 
-/* Zone textarea */
-.ai-input-textarea-wrap {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px;
-  transition: border-color 0.15s;
-}
-
-.ai-input-textarea-wrap:focus-within {
-  border-color: var(--accent);
-}
-
-.ai-input-textarea {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--text-main);
-  font-size: 13px;
-  font-family: var(--font-sans);
-  resize: none;
-  outline: none;
-  min-height: 22px;
-  max-height: 180px;
-  line-height: 1.5;
-}
-
-.ai-input-textarea::placeholder {
-  color: var(--text-muted);
-}
-
-.ai-input-tools {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.ai-input-tool-btn {
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  color: var(--text-dim);
-  font-size: 12px;
-  transition: background 0.1s, color 0.1s;
-}
-
-.ai-input-tool-btn:hover {
-  background: var(--surface);
-  color: var(--text-main);
-}
-
-.ai-input-tool-btn svg {
-  width: 13px;
-  height: 13px;
-}
-
-/* Actions rapides (Expliquer | Refactor | Tests | Docs | Plan) */
-.ai-quick-actions {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex-wrap: wrap;
-}
-
-.ai-quick-btn {
-  padding: 3px 9px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text-dim);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  transition: all 0.1s;
-}
-
-.ai-quick-btn:hover {
-  color: var(--text-main);
-  border-color: var(--text-dim);
+.ai-pill-menu-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
 }
 
 /* Bouton Stop */
@@ -1222,37 +1089,9 @@
   height: 11px;
 }
 
-/* Bouton Envoyer */
-.ai-send-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  padding: 9px 16px;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 600;
-  background: var(--accent);
-  color: white;
-  border: 1px solid var(--accent);
-  transition: all 0.15s;
-  cursor: pointer;
-}
-
-.ai-send-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 85%, white);
-}
-
-.ai-send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.ai-send-btn svg {
-  width: 14px;
-  height: 14px;
-}
+/* Bouton Envoyer (pleine largeur) — remplacé par .ai-send-btn-compact dans
+   la toolbar du bloc de saisie unifié. Règle conservée vide intentionnellement
+   supprimée : voir .ai-send-btn-compact plus haut. */
 
 /* =============================
    HISTORIQUE / CONVERSATIONS
@@ -1390,238 +1229,6 @@
   line-height: 1.6;
 }
 
-/* ══════════════════════════════════════════════════════════
-   Mode Collective — panneau simple Rapide/Profond + Local
-   ══════════════════════════════════════════════════════════ */
-
-.collective-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px 6px;
-  border-top: 1px solid var(--border-0, rgba(255,255,255,0.07));
-}
-
-.collective-depth-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.collective-depth-label {
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--text-2, rgba(255,255,255,0.45));
-  flex-shrink: 0;
-}
-
-.collective-depth-seg {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--border-0, rgba(255,255,255,0.08));
-}
-
-.collective-depth-btn {
-  padding: 4px 14px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  background: none;
-  border: none;
-  color: var(--text-2, rgba(255,255,255,0.5));
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.collective-depth-btn:hover:not(:disabled) {
-  background: rgba(0, 245, 212, 0.06);
-  color: var(--text-0, #e2e8f0);
-}
-
-.collective-depth-btn.is-active {
-  background: rgba(0, 245, 212, 0.15);
-  color: #00f5d4;
-}
-
-.collective-depth-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.collective-private-toggle {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.7rem;
-  color: var(--text-1, rgba(255,255,255,0.65));
-  cursor: pointer;
-  margin-left: auto;
-  user-select: none;
-}
-
-.collective-private-toggle input {
-  accent-color: #00f5d4;
-  cursor: pointer;
-}
-
-.collective-expand-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: none;
-  border: none;
-  color: var(--text-2, rgba(255,255,255,0.4));
-  font-size: 0.68rem;
-  cursor: pointer;
-  padding: 2px 0;
-  transition: color 0.15s;
-  text-align: left;
-  width: fit-content;
-}
-
-.collective-expand-btn:hover {
-  color: var(--text-0, #e2e8f0);
-}
-
-/* ── CollectiveTeamPreview ──────────────────────────────────── */
-
-.ctp-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(0, 245, 212, 0.15);
-  background: rgba(4, 16, 24, 0.7);
-  margin-top: 2px;
-}
-
-.ctp-header {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ctp-formation {
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #00f5d4;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.ctp-focus {
-  font-size: 0.65rem;
-  color: var(--text-2, rgba(255,255,255,0.4));
-}
-
-.ctp-stages {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.ctp-stage {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.ctp-stage-label {
-  font-size: 0.6rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: var(--text-2, rgba(255,255,255,0.4));
-  letter-spacing: 0.08em;
-  min-width: 80px;
-  padding-top: 3px;
-  flex-shrink: 0;
-}
-
-.ctp-stage-agents {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.ctp-agent-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.08);
-  font-size: 0.65rem;
-}
-
-.ctp-agent-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.ctp-agent-name {
-  color: var(--text-0, #e2e8f0);
-  font-weight: 600;
-}
-
-.ctp-agent-provider {
-  color: var(--text-2, rgba(255,255,255,0.4));
-  font-size: 0.58rem;
-}
-
-.ctp-budget {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.64rem;
-  color: var(--text-2, rgba(255,255,255,0.4));
-  padding-top: 2px;
-  border-top: 1px solid rgba(255,255,255,0.05);
-}
-
-.ctp-budget-sep { opacity: 0.4; }
-
-.ctp-budget-val {
-  color: #00f5d4;
-  font-weight: 700;
-}
-
-.ctp-cloud { color: #60a5fa; }
-.ctp-local { color: #f59e0b; }
-
-.ctp-excluded {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-
-.ctp-excluded-label {
-  font-size: 0.6rem;
-  color: var(--text-2, rgba(255,255,255,0.3));
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  flex-shrink: 0;
-}
-
-.ctp-excluded-chip {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.05);
-}
-
-.ctp-excluded-name {
-  font-size: 0.62rem;
-  color: var(--text-2, rgba(255,255,255,0.3));
-}
-
 /* ── Intelligent Router : Auto agent selector ───────────────── */
 .ai-auto-row {
   display: flex;
@@ -1659,27 +1266,6 @@
 .ai-auto-select:disabled {
   cursor: not-allowed;
   opacity: 0.55;
-}
-
-.ai-advanced-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  width: fit-content;
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  padding: 2px 0;
-  transition: color 0.15s;
-}
-
-.ai-advanced-toggle:hover {
-  color: var(--accent);
 }
 
 /* ── Intelligent Router : decision badge ────────────────────── */

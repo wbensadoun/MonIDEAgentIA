@@ -1,77 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import UpdateChecker from '../UpdateChecker';
 import ThemeSwitcher from './ThemeSwitcher';
 import AppViewSwitcher from './AppViewSwitcher';
 import { normalizeRemoteModelName } from '../../utils/remoteModels';
-
-/* ---- Icônes SVG inline ---- */
-const IconBot = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2a2 2 0 0 1 2 2v2H10V4a2 2 0 0 1 2-2z" />
-    <rect x="4" y="6" width="16" height="12" rx="2" />
-    <circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" />
-    <circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" />
-    <path d="M9 16h6" />
-    <path d="M2 10v4M22 10v4" />
-  </svg>
-);
-
-const IconFolder = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-  </svg>
-);
-
-const IconPlay = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none" />
-  </svg>
-);
-
-const IconStop = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" stroke="none" />
-  </svg>
-);
-
-const IconSidebar = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2" />
-    <line x1="9" y1="3" x2="9" y2="21" />
-  </svg>
-);
-
-const IconChat = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-  </svg>
-);
-
-const IconWorkflow = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-  </svg>
-);
-
-const IconSettings = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="3" />
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-  </svg>
-);
-
-const IconChevronDown = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="6 9 12 15 18 9" />
-  </svg>
-);
-
-const IconTerminal = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="4 17 10 11 4 5" />
-    <line x1="12" y1="19" x2="20" y2="19" />
-  </svg>
-);
+import { IconBot, IconFolder, IconPlay, IconStop, IconSidebar, IconChat, IconWorkflow, IconSettings, IconTerminal, IconLightning, IconCompass } from '../ComponentLibrary/icons';
+import { Toolbar, ToolbarGroup, ToolbarSeparator, IconButton, Pill } from '../ComponentLibrary/Toolbar';
 
 const getProviderLabel = (provider) => {
   if (provider === 'claude') return 'Claude';
@@ -98,18 +31,18 @@ const AppTopbar = ({
   activeModelValue,
   availableActiveModels,
   onActiveModelChange,
-  thinkingMode,
-  onThinkingModeChange,
-  deepContextEnabled,
-  onDeepContextEnabledChange,
+  _thinkingMode,
+  _onThinkingModeChange,
+  _deepContextEnabled,
+  _onDeepContextEnabledChange,
   isElectronApiAvailable,
-  isLoading,
-  multiAIState,
-  resolvedOllamaModel,
-  availableOllamaModels,
-  recommendedOllamaModel,
-  onOllamaSettingChange,
-  ollamaTopbarLabel,
+  _isLoading,
+  multiAIState: _multiAIState,
+  _resolvedOllamaModel,
+  _availableOllamaModels,
+  _recommendedOllamaModel,
+  _onOllamaSettingChange,
+  _ollamaTopbarLabel,
   showMessage,
   onOpenFolder,
   previewStatus,
@@ -125,18 +58,25 @@ const AppTopbar = ({
   isTerminalOpen,
   onToggleTerminal,
   autoRoute,
+  onAutoRouteChange,
   viewMode = 'ide',
   onViewModeChange = () => {},
 }) => {
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  // Deux popovers indépendants (Provider / Modèle) au lieu d'un seul bloc
+  // combiné : openPopover vaut null | 'provider' | 'model'. aiProvider et
+  // activeModelValue sont déjà deux states distincts côté App.js
+  // (useAIModelSettings) — ce composant se contente d'exposer chacun via son
+  // propre pill cliquable, plutôt qu'un unique contrôle qui les mélangeait
+  // visuellement (ex: "gemini-3-1-pro" sans indiquer "Gemini").
+  const [openPopover, setOpenPopover] = useState(null);
   const [modelDraft, setModelDraft] = useState(activeModelValue || '');
   const canEditRemoteModel = isRemoteProvider(aiProvider);
 
   useEffect(() => {
-    if (!isExpertMode && showAdvanced && aiProvider === 'ollama') {
-      setShowAdvanced(false);
+    if (!isExpertMode && openPopover && aiProvider === 'ollama') {
+      setOpenPopover(null);
     }
-  }, [aiProvider, isExpertMode, showAdvanced]);
+  }, [aiProvider, isExpertMode, openPopover]);
 
   useEffect(() => {
     setModelDraft(activeModelValue || '');
@@ -154,16 +94,6 @@ const AppTopbar = ({
     }
   };
 
-  const multiAISummary = useMemo(() => {
-    if (!multiAIState?.mode) return '';
-    const steps = Array.isArray(multiAIState.steps) ? multiAIState.steps : [];
-    if (!multiAIState.isActive && steps.length === 0 && !multiAIState.error) return '';
-    const done = steps.filter((s) => s?.status === 'done' || s?.status === 'completed').length;
-    const label = 'Équipe';
-    if (multiAIState.error) return `${label} erreur`;
-    if (multiAIState.isActive) return `${label}: ${multiAIState.currentPhase || 'en cours'} · ${done}/${steps.length || 0}`;
-    return `${label}: ${done}/${steps.length || 0} terminé`;
-  }, [multiAIState]);
 
   return (
     <header style={{ display: 'flex', flexDirection: 'column' }}>
@@ -208,245 +138,198 @@ const AppTopbar = ({
           </span>
         )}
 
-        {/* Menu bar */}
-        <span className="topbar-separator">|</span>
-        <nav className="topbar-menubar">
-          <button className="topbar-menu-item">Fichier</button>
-          <button className="topbar-menu-item">Édition</button>
-          <button className="topbar-menu-item">Vue</button>
-          <button className="topbar-menu-item">Run</button>
-          <button className="topbar-menu-item">Aide</button>
-        </nav>
-
         <div className="topbar-spacer" />
 
-        {/* Section IA */}
-        <div className="topbar-ai-section">
-          <select
-            value={aiProvider}
-            onChange={(e) => onAiProviderChange(e.target.value)}
-            className="topbar-select"
-            disabled={!isElectronApiAvailable}
-            title="Fournisseur IA (modifiable meme pendant un run — applique a la requete suivante)"
-          >
-            <option value="gemini">Gemini</option>
-            <option value="claude">Claude</option>
-            <option value="kimi">Kimi / Together</option>
-            <option value="multi">Multi-IA</option>
-            <option value="ollama">Ollama</option>
-          </select>
-
-          {canEditRemoteModel && activeModelValue && (
-            <>
-              <input
-                type="text"
-                list="topbar-active-models"
-                value={modelDraft}
-                onChange={(e) => setModelDraft(e.target.value)}
-                onBlur={commitRemoteModelDraft}
-                onKeyDown={(e) => {
-                  const key = String(e?.key || '').toLowerCase();
-                  if (key === 'enter') {
-                    e.preventDefault();
-                    commitRemoteModelDraft();
-                  } else if (key === 'escape') {
-                    e.preventDefault();
-                    setModelDraft(activeModelValue || '');
-                  }
-                }}
-                className="topbar-select"
-                disabled={!isElectronApiAvailable}
-                title={`Modele ${getProviderLabel(aiProvider)}`}
-              />
-              <datalist id="topbar-active-models">
-                {(Array.isArray(availableActiveModels) ? availableActiveModels : []).map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
-            </>
+        {/* Fournisseur IA — pill dédié, indépendant du modèle. Avant, un seul
+            contrôle combinait les deux (ex: "gemini-3-1-pro" ne montrait pas
+            "Gemini"); ici le fournisseur est toujours visible tel quel. */}
+        <div className="topbar-pill-anchor">
+          <Pill
+            variant="default"
+            isActive={openPopover === 'provider'}
+            label={getProviderLabel(aiProvider)}
+            clickable={isElectronApiAvailable}
+            onClick={() => setOpenPopover((prev) => (prev === 'provider' ? null : 'provider'))}
+            title="Choisir le fournisseur IA (Gemini, Claude, Kimi, Ollama)"
+          />
+          {openPopover === 'provider' && (
+            <div className="topbar-model-popover">
+              <div className="topbar-popover-section">
+                <span className="topbar-popover-label">Fournisseur</span>
+                <div className="topbar-popover-options">
+                  {['gemini', 'claude', 'kimi', 'ollama'].map((provider) => (
+                    <button
+                      key={provider}
+                      type="button"
+                      className={`topbar-popover-option ${provider === aiProvider ? 'is-active' : ''}`}
+                      onClick={() => { onAiProviderChange(provider); setOpenPopover(null); }}
+                      disabled={!isElectronApiAvailable}
+                    >
+                      {getProviderLabel(provider)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
-
-          {!canEditRemoteModel && activeModelValue && Array.isArray(availableActiveModels) && availableActiveModels.length > 0 && (
-            <select
-              value={activeModelValue}
-              onChange={(e) => onActiveModelChange(e.target.value)}
-              className="topbar-select"
-              disabled={!isElectronApiAvailable}
-              title="Modèle IA"
-            >
-              {availableActiveModels.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          )}
-
-          <button
-            className={`topbar-icon-btn ${showAdvanced ? 'is-active' : ''}`}
-            onClick={() => setShowAdvanced((p) => !p)}
-            title="Options IA avancées"
-            style={{ width: 'auto', padding: '0 6px', fontSize: 11 }}
-          >
-            Options
-            <IconChevronDown />
-          </button>
-
-          {multiAISummary && (
-            <span style={{ fontSize: 10, color: multiAIState?.error ? 'var(--danger)' : 'var(--success)', padding: '0 4px', whiteSpace: 'nowrap' }}>
-              ● {multiAISummary}
-            </span>
-          )}
-
-          {/* Badge Auto-Route (routeur intelligent) */}
-          <span
-            className={`topbar-autoroute-badge ${autoRoute ? 'is-active' : 'is-muted'}`}
-            title="Le routeur intelligent analyse votre demande et choisit le mode optimal (simple ou équipe multi-agent)"
-          >
-            <span aria-hidden="true">{autoRoute ? '⚡' : '🧭'}</span>
-            {autoRoute ? 'Auto-Route' : 'Manuel'}
-          </span>
         </div>
 
-        {/* Actions droite */}
-        <div className="topbar-actions">
-          {/* Terminal */}
-          <button
-            className={`topbar-icon-btn ${isTerminalOpen ? 'is-active' : ''}`}
-            title={isTerminalOpen ? 'Masquer le terminal' : 'Afficher le terminal'}
-            onClick={onToggleTerminal}
-            style={{ padding: '0 8px', gap: 4, width: 'auto', fontSize: 11, display: viewMode !== 'ide' ? 'none' : undefined }}
-          >
-            <IconTerminal />
-            <span className="topbar-btn-label">Terminal</span>
-          </button>
+        {/* Modèle — pill séparé, dont le contenu (input libre ou liste)
+            dépend du fournisseur actif ci-dessus. Changer de fournisseur
+            réinitialise activeModelValue à la valeur par défaut de ce
+            fournisseur côté useAIModelSettings (App.js), avant même
+            l'ouverture de ce popover. */}
+        {activeModelValue && (
+          <div className="topbar-pill-anchor">
+            <Pill
+              variant="default"
+              isActive={openPopover === 'model'}
+              label={activeModelValue}
+              clickable={isElectronApiAvailable}
+              onClick={() => setOpenPopover((prev) => (prev === 'model' ? null : 'model'))}
+              title={`Choisir le modèle ${getProviderLabel(aiProvider)}`}
+            />
+            {openPopover === 'model' && (
+              <div className="topbar-model-popover">
+                <div className="topbar-popover-section">
+                  <span className="topbar-popover-label">Modèle ({getProviderLabel(aiProvider)})</span>
+                  {canEditRemoteModel && (
+                    <>
+                      <input
+                        type="text"
+                        list="topbar-model-suggestions"
+                        value={modelDraft}
+                        onChange={(e) => setModelDraft(e.target.value)}
+                        onBlur={commitRemoteModelDraft}
+                        onKeyDown={(e) => {
+                          const key = String(e?.key || '').toLowerCase();
+                          if (key === 'enter') {
+                            e.preventDefault();
+                            commitRemoteModelDraft();
+                          } else if (key === 'escape') {
+                            e.preventDefault();
+                            setModelDraft(activeModelValue || '');
+                          }
+                        }}
+                        className="topbar-popover-input"
+                        disabled={!isElectronApiAvailable}
+                        placeholder={activeModelValue}
+                        autoFocus
+                      />
+                      <datalist id="topbar-model-suggestions">
+                        {(Array.isArray(availableActiveModels) ? availableActiveModels : []).map((m) => (
+                          <option key={m} value={m} />
+                        ))}
+                      </datalist>
+                    </>
+                  )}
+                  {!canEditRemoteModel && Array.isArray(availableActiveModels) && availableActiveModels.length > 0 && (
+                    <div className="topbar-popover-options">
+                      {availableActiveModels.map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          className={`topbar-popover-option ${m === activeModelValue ? 'is-active' : ''}`}
+                          onClick={() => { onActiveModelChange(m); setOpenPopover(null); }}
+                          disabled={!isElectronApiAvailable}
+                          title={m}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
-          {/* Thème switcher */}
+        {/* Auto-Route badge */}
+        <Pill
+          variant={autoRoute ? 'accent' : 'default'}
+          isActive={autoRoute}
+          icon={autoRoute ? <IconLightning size={13} /> : <IconCompass size={13} />}
+          label={autoRoute ? 'Auto-Route' : 'Manuel'}
+          clickable={isElectronApiAvailable}
+          onClick={typeof onAutoRouteChange === 'function' ? () => onAutoRouteChange(!autoRoute) : undefined}
+          title="Clic pour activer/désactiver le routeur intelligent (analyse automatique du mode optimal)"
+        />
+
+        {/* Actions droite — structured with Toolbar */}
+        <Toolbar className="topbar-actions">
+          {/* Layout group: Terminal (visible in IDE only) */}
+          {viewMode === 'ide' && (
+            <ToolbarGroup label="Disposition">
+              <IconButton
+                icon={<IconTerminal size={16} />}
+                label="Terminal"
+                isActive={isTerminalOpen}
+                title={isTerminalOpen ? 'Masquer le terminal' : 'Afficher le terminal'}
+                onClick={onToggleTerminal}
+              />
+            </ToolbarGroup>
+          )}
+
+          {/* Theme Switcher */}
           <ThemeSwitcher theme={theme} onThemeChange={onThemeChange} />
 
-          {/* Séparateur */}
-          <span className="topbar-separator" style={{ margin: '0 2px' }}>|</span>
+          {/* Separator */}
+          <ToolbarSeparator />
 
-          {/* Ouvrir dossier */}
-          <button
-            className="topbar-icon-btn"
-            onClick={onOpenFolder}
-            disabled={!isElectronApiAvailable}
-            title="Ouvrir un dossier"
-          >
-            <IconFolder />
-          </button>
-
-          {/* Preview */}
-          <button
-            className={`topbar-icon-btn ${previewStatus === 'running' ? 'is-active' : ''}`}
-            onClick={onTogglePreview}
-            title={previewStatus === 'running' ? 'Arrêter le preview' : 'Lancer le preview'}
-            style={{ display: viewMode !== 'ide' ? 'none' : undefined }}
-          >
-            {previewStatus === 'running' ? <IconStop /> : <IconPlay />}
-          </button>
-
-          {/* Toggle sidebar gauche */}
-          <button
-            className={`topbar-icon-btn ${isLeftCollapsed ? 'is-active' : ''}`}
-            onClick={onToggleLeftPanel}
-            title={isLeftCollapsed ? 'Afficher l\'explorateur' : 'Masquer l\'explorateur'}
-            style={{ display: viewMode !== 'ide' ? 'none' : undefined }}
-          >
-            <IconSidebar />
-          </button>
-
-          {/* Toggle sidebar droite */}
-          <button
-            className={`topbar-icon-btn ${isRightCollapsed ? 'is-active' : ''}`}
-            onClick={onToggleRightPanel}
-            title={isRightCollapsed ? 'Afficher le chat IA' : 'Masquer le chat IA'}
-            style={{ display: viewMode !== 'ide' ? 'none' : undefined }}
-          >
-            <IconChat />
-          </button>
-
-          {/* Mode Expert */}
-          <button
-            className={`topbar-icon-btn ${isExpertMode ? 'is-active' : ''}`}
-            onClick={onToggleExpertMode}
-            title={isExpertMode ? 'Mode IA avancé actif' : 'Activer le mode IA avancé'}
-            style={{ padding: '0 8px', width: 'auto', fontSize: 11, gap: 4, display: viewMode !== 'ide' ? 'none' : undefined }}
-          >
-            <span style={{ fontSize: 10 }}>●</span>
-            <span className="topbar-btn-label">{isExpertMode ? 'Avancé' : 'Simple'}</span>
-          </button>
-
-          {/* Workflows */}
-          <button
-            className="topbar-icon-btn"
-            onClick={onOpenWorkflowManager}
-            title="Gestionnaire de workflows"
-          >
-            <IconWorkflow />
-          </button>
-
-          {/* UpdateChecker */}
-          <UpdateChecker isElectronApiAvailable={isElectronApiAvailable} showMessage={showMessage} />
-
-          {/* Settings */}
-          <button
-            className="topbar-icon-btn"
-            onClick={onOpenSettings}
-            title="Paramètres"
-            style={{ padding: '0 8px', gap: 4, width: 'auto', fontSize: 11 }}
-          >
-            <IconSettings />
-            <span className="topbar-btn-label">Settings</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Options IA avancées (dépliables) */}
-      {showAdvanced && (
-        <div className="topbar-advanced">
-          <span className="topbar-advanced-label">Assistant</span>
-
-          <label className={`topbar-toggle ${thinkingMode ? 'is-active' : ''}`} title="Mode réflexion approfondie">
-            <input
-              type="checkbox"
-              checked={thinkingMode}
-              onChange={(e) => onThinkingModeChange(e.target.checked)}
-              disabled={!isElectronApiAvailable || isLoading}
-            />
-            Réflexion
-          </label>
-
-          <label className={`topbar-toggle ${deepContextEnabled ? 'is-active' : ''}`} title="Deep Context (scan complet du projet)">
-            <input
-              type="checkbox"
-              checked={deepContextEnabled}
-              onChange={(e) => onDeepContextEnabledChange(e.target.checked)}
-              disabled={!isElectronApiAvailable || isLoading}
-            />
-            Contexte profond
-          </label>
-
-          {aiProvider === 'ollama' && (
-            <>
-              <span className="topbar-advanced-label" style={{ marginLeft: 8 }}>Ollama</span>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-dim)' }}>
-                <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>Modèle</span>
-                <select
-                  value={resolvedOllamaModel}
-                  onChange={(e) => onOllamaSettingChange('ollamaModel', e.target.value)}
-                  className="topbar-select"
-                  disabled={!isElectronApiAvailable}
-                >
-                  {availableOllamaModels.map((m) => (
-                    <option key={m} value={m}>{m === recommendedOllamaModel ? `${m} (recommandée)` : m}</option>
-                  ))}
-                </select>
-              </label>
-            </>
+          {/* Project group: Folder, Preview, Sidebars, Expert mode (visible in IDE only) */}
+          {viewMode === 'ide' && (
+            <ToolbarGroup label="Projet">
+              <IconButton
+                icon={<IconFolder size={16} />}
+                disabled={!isElectronApiAvailable}
+                title="Ouvrir un dossier"
+                onClick={onOpenFolder}
+              />
+              <IconButton
+                icon={previewStatus === 'running' ? <IconStop size={16} /> : <IconPlay size={16} />}
+                isActive={previewStatus === 'running'}
+                title={previewStatus === 'running' ? 'Arrêter le preview' : 'Lancer le preview'}
+                onClick={onTogglePreview}
+              />
+              <IconButton
+                icon={<IconSidebar size={16} />}
+                isActive={isLeftCollapsed}
+                title={isLeftCollapsed ? 'Afficher l\'explorateur' : 'Masquer l\'explorateur'}
+                onClick={onToggleLeftPanel}
+              />
+              <IconButton
+                icon={<IconChat size={16} />}
+                isActive={isRightCollapsed}
+                title={isRightCollapsed ? 'Afficher le chat IA' : 'Masquer le chat IA'}
+                onClick={onToggleRightPanel}
+              />
+              <IconButton
+                label={isExpertMode ? 'Avancé' : 'Simple'}
+                isActive={isExpertMode}
+                title={isExpertMode ? 'Mode IA avancé actif' : 'Activer le mode IA avancé'}
+                onClick={onToggleExpertMode}
+              />
+            </ToolbarGroup>
           )}
-        </div>
-      )}
+
+          {/* Meta group: Workflows, Updates, Settings */}
+          <ToolbarGroup label="Métadonnées">
+            <IconButton
+              icon={<IconWorkflow size={16} />}
+              title="Gestionnaire de workflows"
+              onClick={onOpenWorkflowManager}
+            />
+            <UpdateChecker isElectronApiAvailable={isElectronApiAvailable} showMessage={showMessage} />
+            <IconButton
+              icon={<IconSettings size={16} />}
+              label="Settings"
+              title="Paramètres"
+              onClick={onOpenSettings}
+            />
+          </ToolbarGroup>
+        </Toolbar>
+      </div>
     </header>
   );
 };

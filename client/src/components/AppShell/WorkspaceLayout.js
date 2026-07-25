@@ -8,67 +8,8 @@ import VisualWorkflowEditor from '../VisualWorkflowEditor';
 import AIChat from '../AIChat';
 import AIChangesPanel from '../AIChangesPanel';
 import BrainGraphPanel from '../BrainGraphPanel';
-
-
-/* Icônes tabs centre */
-const IconCode = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
-    <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
-  </svg>
-);
-const IconEye = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-  </svg>
-);
-const IconGit = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
-    <circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" />
-  </svg>
-);
-const IconAudit = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
-    <path d="M9 11l2 2 4-4" />
-    <path d="M21 12a9 9 0 1 1-3-6.7" />
-    <path d="M21 3v6h-6" />
-  </svg>
-);
-const IconFlow = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
-    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-  </svg>
-);
-const IconBrain = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:13,height:13}}>
-    <circle cx="7" cy="8" r="3" />
-    <circle cx="17" cy="8" r="3" />
-    <circle cx="12" cy="16" r="3" />
-    <path d="M9.5 9.8 11 13.2" />
-    <path d="M14.5 9.8 13 13.2" />
-    <path d="M10 16h-2a4 4 0 0 1-4-4" />
-    <path d="M14 16h2a4 4 0 0 0 4-4" />
-  </svg>
-);
-const IconMaximize = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width:12,height:12}}>
-    <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
-  </svg>
-);
-const IconX = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:12,height:12}}>
-    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-  </svg>
-);
-const IconMaximize2 = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:12,height:12}}>
-    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-  </svg>
-);
-const IconMinimize2 = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:12,height:12}}>
-    <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" />
-  </svg>
-);
+import { IconCode, IconEye, IconGit, IconAudit, IconFlow, IconBrain, IconMaximize, IconX, IconMaximize2, IconMinimize2 } from '../ComponentLibrary/icons';
+import { IconButton } from '../ComponentLibrary/Toolbar';
 
 const DEFAULT_TERMINAL_HEIGHT = 250;
 const MIN_TERMINAL_HEIGHT = 100;
@@ -95,6 +36,7 @@ const WorkspaceLayout = ({
   onRenameItem,
   onMoveItem,
   onDeleteItem,
+  onImportOsFiles,
   onToggleFolder,
   onFileClick,
   onNewItemNameChange,
@@ -190,6 +132,7 @@ const WorkspaceLayout = ({
           onRenameItem={onRenameItem}
           onMoveItem={onMoveItem}
           onDeleteItem={onDeleteItem}
+          onImportOsFiles={onImportOsFiles}
           onToggleFolder={onToggleFolder}
           onFileClick={onFileClick}
           onNewItemNameChange={onNewItemNameChange}
@@ -312,20 +255,18 @@ const WorkspaceLayout = ({
               {...terminalProps}
               headerRightControls={
                 <div className="bottom-terminal-header-right">
-                  <button
-                    className="bottom-terminal-action"
+                  <IconButton
+                    icon={isTerminalMaximized ? <IconMinimize2 size={12} /> : <IconMaximize2 size={12} />}
                     onClick={toggleMaximize}
                     title={isTerminalMaximized ? 'Restaurer' : 'Maximiser'}
-                  >
-                    {isTerminalMaximized ? <IconMinimize2 /> : <IconMaximize2 />}
-                  </button>
-                  <button
-                    className="bottom-terminal-action"
+                    size="sm"
+                  />
+                  <IconButton
+                    icon={<IconX size={12} />}
                     onClick={onToggleTerminal}
                     title="Fermer le terminal"
-                  >
-                    <IconX />
-                  </button>
+                    size="sm"
+                  />
                 </div>
               }
             />

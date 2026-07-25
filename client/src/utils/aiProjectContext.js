@@ -138,7 +138,6 @@ export const prepareAIProjectContext = async ({
   projectScanIncludeSecrets,
   projectScanLargeFileStrategy,
   executionMode,
-  runPreset,
   showMessage,
   electronAPI = window.electronAPI
 }) => {
@@ -171,7 +170,7 @@ export const prepareAIProjectContext = async ({
     }
   }
 
-  promptToSend = decoratePromptForMode(promptToSend, executionMode, runPreset);
+  promptToSend = decoratePromptForMode(promptToSend, executionMode);
 
   const normalizedContextMode =
     contextMode === 'mentions' || contextMode === 'none' ? contextMode : 'auto';

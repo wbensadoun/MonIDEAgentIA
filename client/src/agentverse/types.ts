@@ -106,6 +106,26 @@ export interface Task {
 /** Identifier of a visual theme. */
 export type ThemeId = 'town' | 'cyberpunk' | 'isometric' | 'campus' | 'synthwave' | 'tamers';
 
+/**
+ * Optional extended color palette for a theme, beyond the single `accent`
+ * every theme already has. Added as prep for the "5 nouvelles palettes"
+ * expansion (see data/themes.ts) so semantic UI states (danger/success/
+ * warning/info) and a distinct brand `primary` can be sourced per-theme
+ * instead of every consumer falling back to `accent` for everything.
+ * Optional + additive: existing 6 themes keep working unchanged with only
+ * `accent` set; components should fall back to `accent` when a slot here
+ * is undefined.
+ */
+export interface ThemePalette {
+  /** Brand/primary color, distinct from `accent` when a theme wants e.g. a
+   *  neutral primary with a punchier accent for interactive highlights. */
+  primary?: string;
+  danger?: string;
+  success?: string;
+  warning?: string;
+  info?: string;
+}
+
 /** Everything a theme needs to lay out + skin the same world state. */
 export interface ThemeMeta {
   id: ThemeId;
@@ -126,6 +146,9 @@ export interface ThemeMeta {
    *  the target, so a path between two in-box points also stays in-box — no
    *  per-step collision test is needed. */
   walkable?: { x0: number; y0: number; x1: number; y1: number };
+  /** See ThemePalette — undefined for all 6 current themes until the next
+   *  batch of palettes fills it in. */
+  palette?: ThemePalette;
 }
 
 /** Aggregate KPIs shown in the topbar (à la "AGENT_OS"). */

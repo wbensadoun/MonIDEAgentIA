@@ -1,0 +1,338 @@
+/* ======================================================================
+   MonIDEAgentIA — Design Tokens (Single Source of Truth)
+   ======================================================================
+   Canonical replacement for the token block previously inlined in
+   App.css (lines 1-147). App.css must `@import './styles/tokens.css';`
+   at its top and drop its own :root/.theme-* color declarations —
+   see decisions[] in the design-system report for the rationale
+   (duplication was causing silent drift between the 5 themes).
+
+   Layers in this file, in order:
+     1. Color themes (5, unchanged palettes — re-homed, not redesigned)
+     2. Typography scale
+     3. Spacing (8px grid)
+     4. Radius
+     5. Elevation / shadows
+     6. Motion (durations, easings)
+     7. Z-index scale
+     8. Focus ring (new — closes a real WCAG gap, see below)
+   ========================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ============================================================
+   1. COLOR THEMES
+   Values are unchanged from the current production App.css —
+   this file only relocates + supplements them so component code
+   (ChatInterface, AutonomyControls, ComponentLibrary) has one
+   place to read tokens from regardless of which theme is active.
+   ============================================================ */
+/* Inspiré de Radix Slate (surfaces neutres) + Radix Blue (accent).
+   Objectif: gris ardoise neutre partout, un seul bleu vif qui signe le thème. */
+:root,
+.theme-midnight {
+  --bg: #101113;
+  --surface: #17181b;
+  --surface-2: #1d1f23;
+  --border: #2a2d33;
+  --accent: #3b9eff;
+  --accent-soft: rgba(59, 158, 255, 0.14);
+  --accent-hover: rgba(59, 158, 255, 0.22);
+  --accent-2: #a78bfa;
+  --accent-3: #22d3ee;
+  --text-main: #eceef1;
+  --text-dim: #a8adb6;
+  --text-muted: #80868f;
+  --success: #3dd68c;
+  --success-soft: rgba(61, 214, 140, 0.14);
+  --warning: #f5a524;
+  --warning-soft: rgba(245, 165, 36, 0.14);
+  --danger: #f5555f;
+  --danger-soft: rgba(245, 85, 95, 0.14);
+  --info: #4cc3f0;
+  --info-soft: rgba(76, 195, 240, 0.14);
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+  --on-accent: #ffffff;
+  color-scheme: dark;
+}
+
+/* Inspiré de Radix Sand/Slate (surfaces neutres chaudes) + accent Amber vif.
+   Le brun/ambre est réservé à --accent*, les surfaces restent gris neutre. */
+.theme-amber {
+  --bg: #121110;
+  --surface: #191817;
+  --surface-2: #201f1d;
+  --border: #322f2a;
+  --accent: #ffa41f;
+  --accent-soft: rgba(255, 164, 31, 0.14);
+  --accent-hover: rgba(255, 164, 31, 0.22);
+  --accent-2: #fb923c;
+  --accent-3: #fbbf24;
+  --text-main: #f0eeec;
+  --text-dim: #aba49c;
+  --text-muted: #8a837a;
+  --success: #79c94b;
+  --success-soft: rgba(121, 201, 75, 0.14);
+  --warning: #ff8a3d;
+  --warning-soft: rgba(255, 138, 61, 0.14);
+  --danger: #f5555f;
+  --danger-soft: rgba(245, 85, 95, 0.14);
+  --info: #4cc3f0;
+  --info-soft: rgba(76, 195, 240, 0.14);
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --on-accent: #000000;
+  color-scheme: dark;
+}
+
+/* Inspiré de Radix Sage/Olive (surfaces neutres verdâtres discrètes) + accent Grass.
+   Plusieurs verts (accent/success/accent-3) au lieu d'un seul vert plat partout. */
+.theme-mint {
+  --bg: #101211;
+  --surface: #171917;
+  --surface-2: #1d201d;
+  --border: #2b2f2b;
+  --accent: #2fd88f;
+  --accent-soft: rgba(47, 216, 143, 0.14);
+  --accent-hover: rgba(47, 216, 143, 0.22);
+  --accent-2: #2dd4bf;
+  --accent-3: #a3e635;
+  --text-main: #eaeeec;
+  --text-dim: #a7b1ab;
+  --text-muted: #82897e;
+  --success: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.14);
+  --warning: #f5a524;
+  --warning-soft: rgba(245, 165, 36, 0.14);
+  --danger: #f5555f;
+  --danger-soft: rgba(245, 85, 95, 0.14);
+  --info: #4cc3f0;
+  --info-soft: rgba(76, 195, 240, 0.14);
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --on-accent: #000000;
+  color-scheme: dark;
+}
+
+/* Inspiré de Radix Slate (gris neutres clairs) + Blue, à la GitHub Light / Figma. */
+.theme-paper {
+  --bg: #f7f8f9;
+  --surface: #ffffff;
+  --surface-2: #eef0f2;
+  --border: #d7dbe0;
+  --accent: #1a5fd6;
+  --accent-soft: rgba(26, 95, 214, 0.08);
+  --accent-hover: rgba(26, 95, 214, 0.15);
+  --accent-2: #6366f1;
+  --accent-3: #0ea5e9;
+  --text-main: #1a1d21;
+  --text-dim: #4b5157;
+  --text-muted: #6b7178;
+  --success: #16803c;
+  --success-soft: rgba(22, 128, 60, 0.1);
+  --warning: #b25e09;
+  --warning-soft: rgba(178, 94, 9, 0.1);
+  --danger: #c72a35;
+  --danger-soft: rgba(199, 42, 53, 0.1);
+  --info: #0369a1;
+  --info-soft: rgba(3, 105, 161, 0.08);
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --on-accent: #ffffff;
+  color-scheme: light;
+}
+
+/* Inspiré de Radix Mauve (surfaces neutres) + Iris/Violet (accent). */
+.theme-violet {
+  --bg: #121116;
+  --surface: #19181e;
+  --surface-2: #201f26;
+  --border: #302e38;
+  --accent: #a382f7;
+  --accent-soft: rgba(163, 130, 247, 0.14);
+  --accent-hover: rgba(163, 130, 247, 0.22);
+  --accent-2: #d946ef;
+  --accent-3: #60a5fa;
+  --text-main: #ece9f2;
+  --text-dim: #aba6b8;
+  --text-muted: #857f92;
+  --success: #3dd68c;
+  --success-soft: rgba(61, 214, 140, 0.14);
+  --warning: #f5a524;
+  --warning-soft: rgba(245, 165, 36, 0.14);
+  --danger: #f5555f;
+  --danger-soft: rgba(245, 85, 95, 0.14);
+  --info: #4cc3f0;
+  --info-soft: rgba(76, 195, 240, 0.14);
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --on-accent: #000000;
+  color-scheme: dark;
+}
+
+/* Semantic aliases resolved on <body> — the active .theme-* class lives on
+   <body>, not <html>, so aliases must be declared there too or they will
+   freeze at the :root (Midnight) values instead of tracking theme changes. */
+body {
+  --text-0: var(--text-main);
+  --text-1: var(--text-dim);
+  --text-2: var(--text-muted);
+  --border-0: var(--border);
+}
+
+/* ============================================================
+   2. TYPOGRAPHY SCALE
+   Minor third (1.2) ramp, base 13px to match current body font-size
+   in App.css:171 — changing the base would re-flow every panel.
+   ============================================================ */
+:root {
+  --text-xs: 11px;    /* metadata, timestamps, badges        */
+  --text-sm: 12px;    /* secondary labels, helper text        */
+  --text-base: 13px;  /* body copy, chat messages (unchanged) */
+  --text-md: 15px;    /* section titles, emphasized body      */
+  --text-lg: 18px;    /* panel headings                       */
+  --text-xl: 22px;    /* modal / view titles                  */
+  --text-2xl: 28px;   /* rare: empty-state / onboarding hero   */
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --leading-tight: 1.2;   /* headings                */
+  --leading-snug: 1.35;   /* dense UI (badges, chips) */
+  --leading-normal: 1.5;  /* body copy, chat bubbles  */
+  --leading-relaxed: 1.7; /* long-form docs / markdown */
+
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.02em;  /* uppercase eyebrow labels */
+}
+
+/* ============================================================
+   3. SPACING — 8px grid (4px half-step for icon/text gaps)
+   Use these instead of ad-hoc px values; every current CSS file
+   uses raw px (App.css alone has 60+ distinct spacing values).
+   ============================================================ */
+:root {
+  --space-0: 0px;
+  --space-1: 4px;   /* micro gap: icon-to-label            */
+  --space-2: 8px;   /* base unit                            */
+  --space-3: 12px;  /* compact padding (chips, badges)      */
+  --space-4: 16px;  /* default component padding            */
+  --space-5: 20px;
+  --space-6: 24px;  /* section padding                      */
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px; /* panel gutters                        */
+  --space-16: 64px;
+}
+
+/* ============================================================
+   4. RADIUS
+   ============================================================ */
+:root {
+  --radius-xs: 4px;   /* current default in App.css — kept for continuity */
+  --radius-sm: 6px;
+  --radius-md: 8px;   /* new: cards, panels, autonomy control group */
+  --radius-lg: 12px;  /* new: modals, elevated surfaces */
+  --radius-full: 999px; /* pills, avatars */
+}
+
+/* ============================================================
+   5. ELEVATION / SHADOWS
+   Dark-theme shadows need higher alpha than light to read at all;
+   --shadow-* below is tuned for the 4 dark themes. .theme-paper
+   overrides with softer, lower-alpha versions.
+   ============================================================ */
+:root {
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);                 /* resting card / input */
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.4);                 /* dropdown, popover (existing value, App.css:598) */
+  --shadow-3: 0 4px 16px rgba(0, 0, 0, 0.4);                 /* floating panel (existing value, App.css:654) */
+  --shadow-4: 0 12px 32px rgba(0, 0, 0, 0.5);                /* modal / dialog */
+  --shadow-focus-ring: 0 0 0 3px var(--accent-soft);          /* see section 8 */
+  --shadow-danger-ring: 0 0 0 3px var(--danger-soft);
+}
+
+.theme-paper {
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-2: 0 4px 12px rgba(16, 24, 40, 0.1);
+  --shadow-3: 0 4px 16px rgba(16, 24, 40, 0.12);
+  --shadow-4: 0 12px 32px rgba(16, 24, 40, 0.16);
+}
+
+/* ============================================================
+   6. MOTION
+   Durations already existed in App.css (fast/base/view). Adding
+   an explicit curve set + a `--motion-safe` switch so components
+   can respect prefers-reduced-motion in one place instead of each
+   CSS file re-implementing its own @media query (currently 0 do).
+   ============================================================ */
+:root {
+  --duration-instant: 60ms;
+  --duration-fast: 100ms;
+  --duration-base: 200ms;
+  --duration-view: 240ms;
+  --duration-slow: 320ms;
+
+  --ease-standard: ease;
+  --ease-out: ease-out;
+  --ease-in: ease-in;
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  --motion-safe: 1; /* flipped to 0 below when reduced motion is requested */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-safe: 0;
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-view: 0ms;
+    --duration-slow: 0ms;
+  }
+}
+
+/* ============================================================
+   7. Z-INDEX SCALE
+   Prevents the "z-index: 9999" arms race already visible across
+   panels (VisualWorkflow, Settings modals, LoadingAnimations).
+   ============================================================ */
+:root {
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-panel-overlay: 300;
+  --z-modal-backdrop: 400;
+  --z-modal: 410;
+  --z-toast: 500;
+  --z-tooltip: 600;
+}
+
+/* ============================================================
+   8. FOCUS RING (new)
+   App.css currently sets `outline: none` in at least 3 places
+   (topbar-select:479, input-surface:1227, others:1284) with no
+   replacement focus indicator — a WCAG 2.4.7 failure for keyboard
+   users. Every new/refactored component must use this token pair
+   instead of removing outline outright.
+   ============================================================ */
+:root {
+  --focus-ring-color: var(--accent);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+}
+
+.focus-ring,
+[data-focus-ring] {
+  outline: none;
+}
+
+.focus-ring:focus-visible,
+[data-focus-ring]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-xs);
+}

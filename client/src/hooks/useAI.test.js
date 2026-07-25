@@ -84,7 +84,6 @@ const renderUseAI = (executionMode, showMessage) => renderHook(() => useAI(
   'auto', // contextMode
   120, // contextMaxFiles
   executionMode,
-  'default', // runPreset
   {}, // multiAgentOptions
   false, // autoRoute
   jest.fn(), // setRouterDecision

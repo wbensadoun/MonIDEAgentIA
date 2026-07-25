@@ -4,10 +4,6 @@ import { DEFAULT_OLLAMA_MODEL, normalizeOllamaModelLabel } from '../../utils/oll
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
-const MODEL_FIELDS = [
-  { key: 'ollamaModel', label: 'Ollama' }
-];
-
 const normalizeModelName = (value) => String(value || '').trim();
 
 const buildConfiguredModels = (settings = {}) => {

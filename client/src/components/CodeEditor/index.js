@@ -12,6 +12,7 @@ import { buildSingleAIInvocation } from '../../utils/aiProviderRouting';
 
 const CodeEditor = ({
   openFiles = [],
+  dirtyFiles = null,
   activeFile,
   code,
   previousCode,
@@ -433,6 +434,7 @@ const CodeEditor = ({
           {openFiles.map((filePath) => {
             const fileName = String(filePath).split(/[\\/]/).pop() || String(filePath);
             const isActive = String(filePath) === String(activeFile);
+            const isDirty = Boolean(dirtyFiles && typeof dirtyFiles.has === 'function' && dirtyFiles.has(filePath));
             return (
               <button
                 key={filePath}
@@ -442,6 +444,9 @@ const CodeEditor = ({
                 title={String(filePath)}
               >
                 <span className="editor-tab-name">{fileName}</span>
+                {isDirty && (
+                  <span className="editor-tab-dot" aria-label="Modifications non enregistrees" title="Modifications non enregistrees" />
+                )}
                 <span
                   className="editor-tab-close"
                   onClick={(e) => {

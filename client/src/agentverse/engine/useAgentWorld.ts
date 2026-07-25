@@ -152,6 +152,7 @@ export function useAgentWorld(theme: ThemeMeta, client: AgentClient): AgentWorld
 
   // --- Animation / behaviour loop ---------------------------------------
   useEffect(() => {
+    const localTimeouts = delegationTimeouts.current;
     const loop = window.setInterval(() => {
       const now = Date.now();
       const th = themeRef.current;
@@ -166,10 +167,10 @@ export function useAgentWorld(theme: ThemeMeta, client: AgentClient): AgentWorld
           },
           schedule: (fn, delay) => {
             const id = window.setTimeout(() => {
-              delegationTimeouts.current.delete(id);
+              localTimeouts.delete(id);
               fn();
             }, delay);
-            delegationTimeouts.current.add(id);
+            localTimeouts.add(id);
           },
         });
       }
@@ -177,8 +178,8 @@ export function useAgentWorld(theme: ThemeMeta, client: AgentClient): AgentWorld
     }, TICK_MS);
     return () => {
       window.clearInterval(loop);
-      delegationTimeouts.current.forEach((id) => window.clearTimeout(id));
-      delegationTimeouts.current.clear();
+      localTimeouts.forEach((id) => window.clearTimeout(id));
+      localTimeouts.clear();
     };
   }, [getMeta, publish]);
 

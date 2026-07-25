@@ -147,6 +147,28 @@ export const useFileOperations = (
     }
   }, [currentProjectPath, isElectronApiAvailable, showMessage, loadProjectItems, setActiveFile, isReadOnly]);
 
+  // Ecrit un fichier importe depuis l'OS (drag & drop) avec son contenu, sans reset de contenu comme createNewItem
+  const importFileContent = useCallback(async (itemName, content) => {
+    if (isReadOnly) {
+      showMessage('Mode lecture seule actif: import bloque.', 3000);
+      return { success: false, error: 'read_only' };
+    }
+    const name = String(itemName || '').trim();
+    if (!name) return { success: false, error: 'Nom manquant' };
+    if (!currentProjectPath || !isElectronApiAvailable || !window.electronAPI?.createNewFile) {
+      return { success: false, error: 'Electron non disponible' };
+    }
+    try {
+      const response = await window.electronAPI.createNewFile(currentProjectPath, name, content || '');
+      if (response.success) {
+        return { success: true };
+      }
+      return { success: false, error: response.error };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }, [currentProjectPath, isElectronApiAvailable, isReadOnly, showMessage]);
+
   const renameItem = useCallback(async (itemPath, nextPath, itemType = 'file') => {
     if (isReadOnly) {
       showMessage('Mode lecture seule actif: renommage bloque.', 3000);
@@ -271,6 +293,7 @@ export const useFileOperations = (
     loadProjectItems,
     toggleFolderExpansion,
     createNewItem,
+    importFileContent,
     renameItem,
     moveItem,
     deleteItem,

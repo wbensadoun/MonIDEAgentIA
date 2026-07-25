@@ -61,7 +61,6 @@ export const useAI = (
   contextMode = 'auto',
   contextMaxFiles = 120,
   executionMode = 'agent',
-  runPreset = 'default',
   multiAgentOptions = {},
   autoRoute = false,
   setRouterDecision = () => {},
@@ -273,10 +272,9 @@ export const useAI = (
       }
     }
 
-    const isCollective = effExecutionMode === 'multi-agent';
     const effectiveAIProvider = resolveProviderForExecutionMode(aiProvider, effExecutionMode);
     const localOnlyRun = isLocalOnlyProvider(effectiveAIProvider);
-    const canProcessFilesForMode = shouldProcessFileModifications(effExecutionMode, runPreset);
+    const canProcessFilesForMode = shouldProcessFileModifications(effExecutionMode);
 
     setIsLoading(true);
     setPreviousCode(code);
@@ -311,14 +309,12 @@ export const useAI = (
         projectScanIncludeSecrets,
         projectScanLargeFileStrategy,
         executionMode: effExecutionMode,
-        runPreset,
         showMessage
       });
       updateContextEstimate(effectiveAIProvider, promptToSend, allProjectFiles);
       const sharedAgentContextOptions = buildSharedAgentContextOptions({
         localOnlyRun,
         executionMode: effExecutionMode,
-        runPreset,
         deepContextEnabled
       });
 
@@ -465,7 +461,6 @@ export const useAI = (
     showMessage,
     aiProvider,
     executionMode,
-    runPreset,
     thinkingMode,
     deepContextEnabled,
     contextMode,
@@ -499,7 +494,10 @@ export const useAI = (
     setPreviousCode,
     setAiConversationHistory,
     setPendingImages,
-    setPrompt
+    setPrompt,
+    routerClassifierModel,
+    routerClassifierProvider,
+    routerComplexityThreshold
   ]);
 
   useQueuedAIMessageEffect({

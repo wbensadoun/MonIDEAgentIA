@@ -12,7 +12,6 @@ const buildBaseArgs = (overrides = {}) => ({
   projectScanIncludeSecrets: false,
   projectScanLargeFileStrategy: 'skip',
   executionMode: 'agent',
-  runPreset: 'default',
   showMessage: jest.fn(),
   electronAPI: {
     readFile: jest.fn(),

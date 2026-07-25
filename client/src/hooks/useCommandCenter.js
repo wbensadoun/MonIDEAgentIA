@@ -16,8 +16,6 @@ const useCommandCenter = ({
   toggleFocusMode,
   setIsTerminalOpen,
   setExecutionMode,
-  handleAiProviderChange,
-  aiProvider,
   previewStatus,
   handleTogglePreview,
   setWorkflowManagerOpen,
@@ -181,14 +179,6 @@ const useCommandCenter = ({
       action: () => setExecutionMode('plan')
     },
     {
-      id: 'mode-multi-agent',
-      label: 'Mode IA Multi-Agent',
-      action: () => {
-        setExecutionMode('multi-agent');
-        handleAiProviderChange('multi');
-      }
-    },
-    {
       id: 'toggle-preview',
       label: previewStatus === 'running' ? 'Arreter la Preview' : 'Demarrer la Preview',
       action: handleTogglePreview
@@ -235,8 +225,6 @@ const useCommandCenter = ({
     setCenterView,
     setIsTerminalOpen,
     setExecutionMode,
-    handleAiProviderChange,
-    aiProvider,
     previewStatus,
     handleTogglePreview,
     setWorkflowManagerOpen,
@@ -468,12 +456,16 @@ const useCommandCenter = ({
     const handleGlobalKeys = (event) => {
       const target = event?.target;
       const tagName = String(target?.tagName || '').toLowerCase();
-      if (target?.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select') {
-        return;
-      }
-
       const key = String(event?.key || '').toLowerCase();
       if (!key) return;
+
+      // Exception ciblée : Ctrl+B et Ctrl+J s'exécutent même dans les zones éditables
+      const isLayoutToggle = ((event.ctrlKey || event.metaKey) && !event.shiftKey && (key === 'b' || key === 'j'));
+      const isInEditableZone = target?.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+
+      if (isInEditableZone && !isLayoutToggle) {
+        return;
+      }
 
       if ((event.ctrlKey || event.metaKey) && key === 'k') {
         event.preventDefault();
@@ -503,6 +495,14 @@ const useCommandCenter = ({
         setFilePaletteOpen(false);
         setSearchOpen(false);
       }
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && key === 'b') {
+        event.preventDefault();
+        toggleLeftPanel && toggleLeftPanel();
+      }
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && key === 'j') {
+        event.preventDefault();
+        setIsTerminalOpen && setIsTerminalOpen((prev) => !prev);
+      }
       if (key === 'escape') {
         setCommandOpen(false);
         setFilePaletteOpen(false);
@@ -513,7 +513,7 @@ const useCommandCenter = ({
 
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, []);
+  }, [toggleLeftPanel, setIsTerminalOpen]);
 
   const runCommand = useCallback((cmd) => {
     if (!cmd || typeof cmd.action !== 'function') return;

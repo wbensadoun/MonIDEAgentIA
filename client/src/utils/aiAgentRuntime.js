@@ -8,13 +8,11 @@ import { ROLE_PROVIDER_METHODS } from './multiAIState';
 export const buildSharedAgentContextOptions = ({
   localOnlyRun,
   executionMode,
-  runPreset,
   deepContextEnabled
 }) => ({
   localOnly: localOnlyRun,
   disallowProviderFallback: true,
   executionMode,
-  runPreset,
   includeVisualWorkflows: true,
   includeN8nCatalog: true,
   maxVisualWorkflowIndexItems: deepContextEnabled ? 40 : 20,
