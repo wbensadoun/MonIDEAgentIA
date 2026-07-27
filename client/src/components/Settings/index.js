@@ -1,15 +1,21 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './Settings.css';
 import ThemeSwitcher from '../AppShell/ThemeSwitcher';
 import {
+  IconSettings,
+  IconPackage,
+  IconAgents,
+  IconLightning,
+  IconShield,
+  IconFolder
+} from '../ComponentLibrary/icons';
+import {
   DEFAULT_OLLAMA_MODEL,
-  SUGGESTED_OLLAMA_MODELS,
   normalizeOllamaModelLabel
 } from '../../utils/ollamaModels';
 import {
   AI_PROVIDER_OPTIONS,
   MULTI_AGENT_ROLE_DEFINITIONS,
-  REMOTE_MODEL_SUGGESTIONS,
   getDefaultModelForProvider,
   normalizeMultiAgentRoles
 } from '../../utils/multiAgentConfig';
@@ -17,23 +23,23 @@ import {
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_GEMINI_MODEL,
   DEFAULT_KIMI_MODEL,
-  getRemoteModelOptions,
+  PROVIDER_CATALOG,
   normalizeRemoteModelName
 } from '../../utils/remoteModels';
+import {
+  PROVIDER_MODELS_UPDATED_EVENT,
+  getProviderModelsState,
+  refreshProviderModel
+} from '../../utils/providerModelsStore';
 
-const REMOTE_PROVIDER_MODEL_FIELDS = [
-  { provider: 'gemini', field: 'geminiModel', label: 'Gemini', fallback: DEFAULT_GEMINI_MODEL },
-  { provider: 'claude', field: 'claudeModel', label: 'Claude', fallback: DEFAULT_CLAUDE_MODEL },
-  { provider: 'kimi', field: 'kimiModel', label: 'Kimi / Together', fallback: DEFAULT_KIMI_MODEL }
+const SETTINGS_TABS = [
+  { id: 'general', Icon: IconSettings, label: 'Général' },
+  { id: 'providers', Icon: IconPackage, label: 'Fournisseurs' },
+  { id: 'agents', Icon: IconAgents, label: 'Agents' },
+  { id: 'execution', Icon: IconLightning, label: 'Exécution' },
+  { id: 'permissions', Icon: IconShield, label: 'Permissions' },
+  { id: 'context', Icon: IconFolder, label: 'Contexte' }
 ];
-
-// Routeur Intelligent: le classifieur L2 reutilise les cles API deja saisies dans
-// l'onglet Cles API & Avance (aucune nouvelle cle dediee) — Ollama n'en a pas besoin.
-const ROUTER_CLASSIFIER_API_KEY_FIELDS = {
-  gemini: { field: 'geminiApiKey', label: 'Gemini API Key' },
-  claude: { field: 'claudeApiKey', label: 'Claude API Key' },
-  kimi: { field: 'kimiApiKey', label: 'Kimi / Together API Key' }
-};
 
 const Settings = ({
   isOpen,
@@ -87,11 +93,19 @@ const Settings = ({
 
   const [loading, setLoading] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
-  const [validation, setValidation] = useState({ gemini: null, kimi: null, claude: null });
-  const [ollamaModels, setOllamaModels] = useState([]);
+  // Le catalogue detecte vit dans un store partage (rafraichi silencieusement
+  // au demarrage de l'app) : ce compteur force un re-render ET entre dans les
+  // deps des valeurs memoizees ci-dessous, pour qu'elles se recalculent quand
+  // le store change sans dupliquer son etat ici.
+  const [providerModelsTick, setProviderModelsTick] = useState(0);
   const [systemAIProfile, setSystemAIProfile] = useState(null);
   const [isSystemProfileLoading, setIsSystemProfileLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
+
+  // Les cles sont lues au moment du declenchement, pas capturees dans les deps :
+  // sinon chaque frappe dans un champ sans rapport relancerait la detection.
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   const loadSettings = useCallback(async () => {
     if (!isElectronApiAvailable || !window.electronAPI?.loadSettings) return;
@@ -115,83 +129,44 @@ const Settings = ({
     }
   }, [isOpen, loadSettings]);
 
+  // Re-render quand le store partage change : rafraichissement silencieux au
+  // demarrage de l'app, ou redetection declenchee ci-dessous par ce composant.
   useEffect(() => {
-    let mounted = true;
-    const fetchOllamaModels = async () => {
-      if (!isOpen || !isElectronApiAvailable || !window.electronAPI?.listOllamaModels) return;
-      try {
-        const response = await window.electronAPI.listOllamaModels();
-        if (!mounted) return;
-        if (response?.success && Array.isArray(response.models)) {
-          const models = response.models
-            .map((m) => String(m?.name || m || '').trim())
-            .filter(Boolean);
-          setOllamaModels(models);
-        } else {
-          setOllamaModels([]);
-        }
-      } catch {
-        if (mounted) setOllamaModels([]);
-      }
-    };
+    const onUpdate = () => setProviderModelsTick((n) => n + 1);
+    window.addEventListener(PROVIDER_MODELS_UPDATED_EVENT, onUpdate);
+    return () => window.removeEventListener(PROVIDER_MODELS_UPDATED_EVENT, onUpdate);
+  }, []);
 
-    fetchOllamaModels();
-    return () => { mounted = false; };
-  }, [isOpen, isElectronApiAvailable]);
+  // Signature stable des cles : ne change que si une cle change reellement.
+  const providerKeysSignature = PROVIDER_CATALOG
+    .map((provider) => (provider.keyField ? settings[provider.keyField] || '' : ''))
+    .join('|');
 
   useEffect(() => {
-    if (!isElectronApiAvailable) return;
-    const key = settings.geminiApiKey;
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      if (!key) {
-        setValidation(prev => ({ ...prev, gemini: null }));
-        return;
-      }
-      try {
-        const res = await window.electronAPI.validateApiKey('gemini', key);
-        if (!cancelled) setValidation(prev => ({ ...prev, gemini: res.valid ? 'valid' : 'invalid' }));
-      } catch {
-        if (!cancelled) setValidation(prev => ({ ...prev, gemini: 'invalid' }));
-      }
-    }, 600);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [settings.geminiApiKey, isElectronApiAvailable]);
+    if (!isOpen) return undefined;
+    const timers = PROVIDER_CATALOG.map((provider) => setTimeout(() => {
+      const apiKey = provider.keyField ? settingsRef.current[provider.keyField] : null;
+      refreshProviderModel(provider, apiKey);
+    }, 600));
+    return () => timers.forEach(clearTimeout);
+  }, [isOpen, providerKeysSignature]);
 
-  useEffect(() => {
-    if (!isElectronApiAvailable) return;
-    const key = settings.kimiApiKey;
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      if (!key) {
-        setValidation(prev => ({ ...prev, kimi: null }));
-        return;
-      }
-      try {
-        const res = await window.electronAPI.validateApiKey('kimi', key);
-        if (!cancelled) setValidation(prev => ({ ...prev, kimi: res.valid ? 'valid' : 'invalid' }));
-      } catch {
-        if (!cancelled) setValidation(prev => ({ ...prev, kimi: 'invalid' }));
-      }
-    }, 600);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [settings.kimiApiKey, isElectronApiAvailable]);
+  const getDetection = (providerId) => getProviderModelsState(providerId);
 
-  const getValidationIcon = (status) => {
-    if (status === 'valid') return <span className="settings-valid">OK</span>;
-    if (status === 'invalid') return <span className="settings-invalid">X</span>;
-    return null;
-  };
+  const getModelOptions = useCallback((provider) => {
+    const detected = getDetection(provider.id).models;
+    const current = String(settings[provider.modelField] || '').trim();
+    return Array.from(new Set([
+      ...(detected.length ? detected : provider.fallbackModels),
+      current
+    ].filter(Boolean)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, providerModelsTick]);
 
-  const getValidationMessage = (keyType) => {
-    if (keyType === 'gemini' && validation.gemini === 'invalid') {
-      return <span className="settings-warning">Cle Gemini invalide (ping echoue)</span>;
-    }
-    if (keyType === 'kimi' && validation.kimi === 'invalid') {
-      return <span className="settings-warning">Cle Kimi invalide (ping echoue)</span>;
-    }
-    return null;
-  };
+  // Le roster propose tout ce qui est reellement joignable, tous fournisseurs confondus.
+  const availableMultiAgentModels = useMemo(() => Array.from(new Set(
+    PROVIDER_CATALOG.flatMap((provider) => getModelOptions(provider))
+  )), [getModelOptions]);
 
   const saveSettings = async () => {
     if (!isElectronApiAvailable) {
@@ -201,12 +176,17 @@ const Settings = ({
 
     setLoading(true);
     try {
+      const normalizedProviderModels = PROVIDER_CATALOG.reduce((acc, provider) => {
+        const raw = settings[provider.modelField];
+        acc[provider.modelField] = provider.id === 'ollama'
+          ? normalizeOllamaModelLabel(raw)
+          : normalizeRemoteModelName(raw, provider.defaultModel);
+        return acc;
+      }, {});
+
       const normalizedSettings = {
         ...settings,
-        geminiModel: normalizeRemoteModelName(settings.geminiModel, DEFAULT_GEMINI_MODEL),
-        claudeModel: normalizeRemoteModelName(settings.claudeModel, DEFAULT_CLAUDE_MODEL),
-        kimiModel: normalizeRemoteModelName(settings.kimiModel, DEFAULT_KIMI_MODEL),
-        ollamaModel: normalizeOllamaModelLabel(settings.ollamaModel),
+        ...normalizedProviderModels,
         multiAgentRoles: normalizeMultiAgentRoles(settings.multiAgentRoles),
         localAIMaxConcurrentLocal: Math.max(1, Math.min(4, Number(settings.localAIMaxConcurrentLocal || 1))),
         localAIMaxConcurrentCloud: Math.max(1, Math.min(6, Number(settings.localAIMaxConcurrentCloud || 3))),
@@ -229,12 +209,9 @@ const Settings = ({
 
   const handleChange = (field, value) => {
     setSettings((prev) => {
-      if (field === 'ollamaModel') {
-        return { ...prev, [field]: normalizeOllamaModelLabel(value) };
-      }
-      if (field === 'geminiModel' || field === 'claudeModel' || field === 'kimiModel') {
-        return { ...prev, [field]: value };
-      }
+      // Les champs modele restent bruts pendant la saisie : normaliser a chaque
+      // frappe empecherait de vider le champ pour taper un autre modele.
+      // La normalisation se fait a la sauvegarde.
       if (field === 'localAIOptimizationMode' && value === 'safe') {
         return { ...prev, [field]: value, localAIHardwareConsent: false };
       }
@@ -243,7 +220,7 @@ const Settings = ({
   };
 
   const applyModelToProviderRoles = (provider, modelValue) => {
-    const model = normalizeRemoteModelName(modelValue, getDefaultModelForProvider(provider));
+    const model = normalizeRemoteModelName(modelValue, provider.defaultModel);
     if (!model) return;
 
     setSettings((prev) => {
@@ -251,7 +228,7 @@ const Settings = ({
       const nextRoles = Object.fromEntries(
         Object.entries(currentRoles).map(([roleKey, roleConfig]) => [
           roleKey,
-          roleConfig.provider === provider
+          roleConfig.provider === provider.id
             ? { ...roleConfig, model }
             : roleConfig
         ])
@@ -263,8 +240,7 @@ const Settings = ({
       };
     });
 
-    const providerLabel = REMOTE_PROVIDER_MODEL_FIELDS.find((item) => item.provider === provider)?.label || provider;
-    showMessage && showMessage(`${providerLabel}: modele applique aux roles`, 2500);
+    showMessage && showMessage(`${provider.label}: modele applique aux roles`, 2500);
   };
 
   const handleMultiAgentRoleChange = (roleKey, field, value) => {
@@ -314,40 +290,91 @@ const Settings = ({
     }
   };
 
-  const availableOllamaModels = Array.from(new Set([
-    ...SUGGESTED_OLLAMA_MODELS,
-    settings.ollamaModel,
-    ...ollamaModels
-  ].map((m) => String(m || '').trim()).filter((m) => m && !/:latest$/i.test(m))));
-
-  const availableMultiAgentModels = Array.from(new Set([
-    ...REMOTE_MODEL_SUGGESTIONS,
-    settings.geminiModel,
-    settings.claudeModel,
-    settings.kimiModel,
-    ...SUGGESTED_OLLAMA_MODELS,
-    ...availableOllamaModels,
-    ...Object.values(normalizeMultiAgentRoles(settings.multiAgentRoles))
-      .map((role) => role.model)
-  ].map((m) => String(m || '').trim()).filter(Boolean)));
-
   const normalizedMultiAgentRoles = normalizeMultiAgentRoles(settings.multiAgentRoles);
-  const geminiModelOptions = getRemoteModelOptions('gemini', settings.geminiModel);
-  const claudeModelOptions = getRemoteModelOptions('claude', settings.claudeModel);
-  const kimiModelOptions = getRemoteModelOptions('kimi', settings.kimiModel);
 
   if (!isOpen) return null;
 
-  const SETTINGS_TABS = [
-    { id: 'general',  icon: '🎨', label: 'Général' },
-    { id: 'models',   icon: '☁️', label: 'Modèles cloud' },
-    { id: 'multi',    icon: '🤖', label: 'Multi-agents' },
-    { id: 'router',   icon: '⚙️', label: 'Routeur Intelligent' },
-    { id: 'ollama',   icon: '🦙', label: 'Ollama local' },
-    { id: 'security', icon: '🔒', label: 'Sécurité' },
-    { id: 'context',  icon: '📂', label: 'Contexte & Qualité' },
-    { id: 'advanced', icon: '🔑', label: 'Clés API & Avancé' },
-  ];
+  const renderDetectionStatus = (provider) => {
+    const detection = getDetection(provider.id);
+    if (detection.status === 'loading') {
+      return <span className="settings-provider-status is-loading">Détection…</span>;
+    }
+    if (detection.status === 'ok') {
+      return (
+        <span className="settings-provider-status is-ok">
+          {detection.models.length} modèle{detection.models.length > 1 ? 's' : ''} détecté{detection.models.length > 1 ? 's' : ''}
+        </span>
+      );
+    }
+    if (detection.status === 'error') {
+      return <span className="settings-provider-status is-error">{detection.error}</span>;
+    }
+    return (
+      <span className="settings-provider-status">
+        {provider.keyField ? 'Clé requise' : 'Non détecté'}
+      </span>
+    );
+  };
+
+  const renderProviderCard = (provider) => {
+    const detection = getDetection(provider.id);
+    const modelOptions = getModelOptions(provider);
+    const listId = `provider-models-${provider.id}`;
+
+    return (
+      <div className="settings-provider" key={provider.id}>
+        <div className="settings-provider-head">
+          <span className="settings-provider-name">{provider.label}</span>
+          <span className={`settings-provider-kind is-${provider.kind}`}>
+            {provider.kind === 'local' ? 'Local' : 'Cloud'}
+          </span>
+          {renderDetectionStatus(provider)}
+        </div>
+
+        {provider.keyField && (
+          <div className="settings-key">
+            <label className="settings-key-label">Clé API</label>
+            <input
+              type={showApiKeys ? 'text' : 'password'}
+              value={settings[provider.keyField] || ''}
+              onChange={(e) => handleChange(provider.keyField, e.target.value)}
+              placeholder={provider.keyPlaceholder}
+              className={`settings-input ${detection.status === 'error' ? 'is-invalid' : ''}`}
+            />
+          </div>
+        )}
+
+        <div className="settings-key">
+          <label className="settings-key-label">Modèle</label>
+          <input
+            type="text"
+            list={listId}
+            value={settings[provider.modelField] || provider.defaultModel}
+            onChange={(e) => handleChange(provider.modelField, e.target.value)}
+            placeholder={provider.defaultModel}
+            className="settings-input"
+          />
+          <datalist id={listId}>
+            {modelOptions.map((modelName) => (
+              <option key={`${provider.id}-${modelName}`} value={modelName} />
+            ))}
+          </datalist>
+          <div className="settings-hint">
+            {provider.keyHint}
+            {detection.status !== 'ok' && ' — liste de repli affichée tant que la détection n’a pas abouti.'}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => applyModelToProviderRoles(provider, settings[provider.modelField] || provider.defaultModel)}
+        >
+          Appliquer ce modèle aux rôles {provider.label}
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="settings-overlay">
@@ -361,15 +388,15 @@ const Settings = ({
         </div>
 
         <div className="settings-tabs">
-          {SETTINGS_TABS.map((t) => (
+          {SETTINGS_TABS.map(({ id, Icon, label }) => (
             <button
-              key={t.id}
+              key={id}
               type="button"
-              className={`settings-tab ${activeTab === t.id ? 'is-active' : ''}`}
-              onClick={() => setActiveTab(t.id)}
+              className={`settings-tab ${activeTab === id ? 'is-active' : ''}`}
+              onClick={() => setActiveTab(id)}
             >
-              <span className="settings-tab-icon">{t.icon}</span>
-              <span className="settings-tab-label">{t.label}</span>
+              <Icon size={15} className="settings-tab-icon" />
+              <span className="settings-tab-label">{label}</span>
             </button>
           ))}
         </div>
@@ -385,266 +412,70 @@ const Settings = ({
           </div>
 
           <div className="settings-section">
-            <label className="settings-label">Provider IA par defaut</label>
+            <label className="settings-label">Fournisseur par défaut</label>
             <select
               value={settings.defaultProvider}
               onChange={(e) => handleChange('defaultProvider', e.target.value)}
               className="settings-input"
             >
-              <option value="gemini">Gemini</option>
-              <option value="claude">Claude</option>
-              <option value="kimi">Kimi</option>
-              <option value="multi">Multi-IA</option>
-              <option value="ollama">Ollama</option>
+              {PROVIDER_CATALOG.map((provider) => (
+                <option key={`default-${provider.id}`} value={provider.id}>{provider.label}</option>
+              ))}
+              <option value="multi">Équipe d&apos;agents</option>
             </select>
+            <div className="settings-hint">
+              « Équipe d&apos;agents » délègue la demande au roster configuré dans l&apos;onglet Agents,
+              au lieu d&apos;interroger un seul fournisseur.
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <label className="settings-label">Port serveur dev</label>
+            <input
+              type="text"
+              value={settings.devPort}
+              onChange={(e) => handleChange('devPort', e.target.value)}
+              placeholder="3004"
+              className="settings-input"
+            />
           </div>
           </>)}
 
-          {activeTab === 'models' && (<>
+          {activeTab === 'providers' && (<>
           <div className="settings-section">
-            <label className="settings-label">Modeles IA simples</label>
-            <div className="settings-hint">
-              Ces valeurs sont celles utilisees par le chat quand vous choisissez Gemini, Claude ou Kimi dans la barre du haut.
-            </div>
-
-            <label className="settings-label">Gemini</label>
-            <input
-              type="text"
-              list="settings-gemini-models"
-              value={settings.geminiModel || DEFAULT_GEMINI_MODEL}
-              onChange={(e) => handleChange('geminiModel', e.target.value)}
-              className="settings-input"
-            />
-            <datalist id="settings-gemini-models">
-              {geminiModelOptions.map((modelName) => (
-                <option key={`settings-gemini-${modelName}`} value={modelName} />
-              ))}
-            </datalist>
-
-            <label className="settings-label">Claude</label>
-            <input
-              type="text"
-              list="settings-claude-models"
-              value={settings.claudeModel || DEFAULT_CLAUDE_MODEL}
-              onChange={(e) => handleChange('claudeModel', e.target.value)}
-              className="settings-input"
-            />
-            <datalist id="settings-claude-models">
-              {claudeModelOptions.map((modelName) => (
-                <option key={`settings-claude-${modelName}`} value={modelName} />
-              ))}
-            </datalist>
-
-            <label className="settings-label">Kimi / Together</label>
-            <input
-              type="text"
-              list="settings-kimi-models"
-              value={settings.kimiModel || DEFAULT_KIMI_MODEL}
-              onChange={(e) => handleChange('kimiModel', e.target.value)}
-              className="settings-input"
-            />
-            <datalist id="settings-kimi-models">
-              {kimiModelOptions.map((modelName) => (
-                <option key={`settings-kimi-${modelName}`} value={modelName} />
-              ))}
-            </datalist>
-
-            <div className="settings-hint" style={{ marginTop: '10px' }}>
-              Les listes proposent des reperes, mais les champs acceptent aussi les nouvelles versions publiees par les providers.
-            </div>
-            <div className="settings-agent-controls">
-              {REMOTE_PROVIDER_MODEL_FIELDS.map(({ provider, field, label, fallback }) => (
-                <button
-                  type="button"
-                  key={`apply-${provider}-roles`}
-                  className="btn btn-ghost"
-                  onClick={() => applyModelToProviderRoles(provider, settings[field] || fallback)}
-                >
-                  Appliquer aux roles {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          </>)}
-
-          {activeTab === 'multi' && (<>
-          <datalist id="multi-agent-model-suggestions">
-            {availableMultiAgentModels.map((modelName) => (
-              <option key={`multi-agent-model-${modelName}`} value={modelName} />
-            ))}
-          </datalist>
-
-          <div className="settings-section">
-            <div className="settings-hint">
-              Ce roster s&apos;applique uniquement quand le mode d&apos;execution = « Agent » (manuel) ou quand le routeur (Auto) decide de former une equipe (Swarm).
-            </div>
-            <label className="settings-label">Multi-IA: roster du selectionneur</label>
-            <div className="settings-hint">
-              Le selectionneur compose une formation selon la demande. Ces reglages fixent le provider et le modele disponibles pour chaque specialiste.
-            </div>
-
-            <div className="settings-agent-grid">
-              {MULTI_AGENT_ROLE_DEFINITIONS.map((role) => {
-                const roleConfig = normalizedMultiAgentRoles[role.key];
-                return (
-                  <div className="settings-agent-role" key={role.key}>
-                    <div className="settings-agent-role-head">
-                      <span className="settings-agent-title">{role.title}</span>
-                      <span className="settings-agent-focus">{role.focus}</span>
-                    </div>
-                    <div className="settings-agent-controls">
-                      <select
-                        value={roleConfig.provider}
-                        onChange={(e) => handleMultiAgentRoleChange(role.key, 'provider', e.target.value)}
-                        className="settings-input"
-                      >
-                        {AI_PROVIDER_OPTIONS.map((providerOption) => (
-                          <option key={`${role.key}-${providerOption.value}`} value={providerOption.value}>
-                            {providerOption.label}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="text"
-                        list="multi-agent-model-suggestions"
-                        value={roleConfig.model}
-                        onChange={(e) => handleMultiAgentRoleChange(role.key, 'model', e.target.value)}
-                        placeholder={getDefaultModelForProvider(roleConfig.provider)}
-                        className="settings-input"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          </>)}
-
-          {activeTab === 'router' && (<>
-          <datalist id="router-classifier-model-suggestions">
-            {availableMultiAgentModels.map((modelName) => (
-              <option key={`router-classifier-model-${modelName}`} value={modelName} />
-            ))}
-          </datalist>
-
-          <div className="settings-section">
-            <label className="settings-label">Activation</label>
-            <div className="settings-hint">
-              Manuel : vous choisissez vous-meme le mode d&apos;execution (Ask / Plan / Agent) pour chaque demande.
-              Auto : le routeur intelligent decide a votre place.
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.78rem', color: 'var(--text-1)' }}>
-                <input
-                  type="radio"
-                  name="router-activation-mode"
-                  checked={!autoRoute}
-                  onChange={() => onAutoRouteChange && onAutoRouteChange(false)}
-                />
-                <span>Manuel</span>
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.78rem', color: 'var(--text-1)' }}>
-                <input
-                  type="radio"
-                  name="router-activation-mode"
-                  checked={!!autoRoute}
-                  onChange={() => onAutoRouteChange && onAutoRouteChange(true)}
-                />
-                <span>Auto</span>
-              </label>
-            </div>
-            <div className="settings-hint">
-              L1 (heuristique locale instantanee, &lt;100ms, sans appel reseau) tranche les cas triviaux ; L2 (appel a un modele leger, temperature 0.1) tranche les cas ambigus entre agent simple et equipe multi-agent.
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <label className="settings-label">Modele de classification</label>
-            <div className="settings-hint">
-              Modele leger utilise par le routeur (niveau L2) pour trancher les cas ambigus. Independant des modeles utilises pour repondre a la demande. Laissez sur « Provider actif du chat » pour reutiliser automatiquement le provider en cours.
-            </div>
-            <div className="settings-agent-controls">
-              <select
-                value={routerClassifierProvider || ''}
-                onChange={(e) => onRouterClassifierProviderChange && onRouterClassifierProviderChange(e.target.value || null)}
-                className="settings-input"
+            <div className="settings-row">
+              <label className="settings-label">Fournisseurs</label>
+              <button
+                type="button"
+                onClick={() => setShowApiKeys(!showApiKeys)}
+                className="settings-link"
               >
-                <option value="">Provider actif du chat (par defaut)</option>
-                {AI_PROVIDER_OPTIONS.map((providerOption) => (
-                  <option key={`router-classifier-${providerOption.value}`} value={providerOption.value}>
-                    {providerOption.label}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                list="router-classifier-model-suggestions"
-                value={routerClassifierModel || ''}
-                onChange={(e) => onRouterClassifierModelChange && onRouterClassifierModelChange(e.target.value || null)}
-                placeholder={routerClassifierProvider ? getDefaultModelForProvider(routerClassifierProvider) : 'Modele leger par defaut'}
-                className="settings-input"
-              />
+                {showApiKeys ? 'Masquer les clés' : 'Afficher les clés'}
+              </button>
             </div>
-            {ROUTER_CLASSIFIER_API_KEY_FIELDS[routerClassifierProvider] && (
-              <div className="settings-key">
-                <label className="settings-key-label">
-                  {ROUTER_CLASSIFIER_API_KEY_FIELDS[routerClassifierProvider].label}
-                </label>
-                <input
-                  type={showApiKeys ? 'text' : 'password'}
-                  value={settings[ROUTER_CLASSIFIER_API_KEY_FIELDS[routerClassifierProvider].field] || ''}
-                  onChange={(e) => handleChange(
-                    ROUTER_CLASSIFIER_API_KEY_FIELDS[routerClassifierProvider].field,
-                    e.target.value
-                  )}
-                  placeholder="Cle API"
-                  className="settings-input"
-                />
-                <div className="settings-hint">
-                  Reutilise la cle deja saisie dans l&apos;onglet Cles API &amp; Avance.
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="settings-section">
-            <label className="settings-label">Seuil de complexite (frontiere L1/L2)</label>
             <div className="settings-hint">
-              Plus le curseur est bas, plus l&apos;heuristique locale (L1) tranche seule sans appel reseau. Plus il est haut, plus les cas ambigus sont envoyes au modele de classification (L2).
+              Les modèles sont lus directement chez le fournisseur dès qu&apos;une clé valide est saisie.
+              Les champs restent libres : un modèle publié après cette version peut être saisi à la main.
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span className="settings-hint" style={{ margin: 0 }}>Simple</span>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                value={Math.round((routerComplexityThreshold ?? 0.5) * 100)}
-                onChange={(e) => onRouterComplexityThresholdChange && onRouterComplexityThresholdChange(Number(e.target.value) / 100)}
-                style={{ flex: 1 }}
-              />
-              <span className="settings-hint" style={{ margin: 0 }}>Complexe</span>
-              <span className="settings-hint" style={{ margin: 0, minWidth: 30, textAlign: 'right' }}>
-                {Math.round((routerComplexityThreshold ?? 0.5) * 100)}
-              </span>
+
+            <div className="settings-provider-grid">
+              {PROVIDER_CATALOG.map(renderProviderCard)}
             </div>
           </div>
-          </>)}
 
-          {activeTab === 'ollama' && (<>
           <div className="settings-section">
-            <label className="settings-label">Optimisation IA locale</label>
+            <label className="settings-label">Exécution locale (Ollama)</label>
             <select
               value={settings.localAIOptimizationMode || 'safe'}
               onChange={(e) => handleChange('localAIOptimizationMode', e.target.value)}
               className="settings-input"
             >
-              <option value="safe">Prive / Safe</option>
+              <option value="safe">Privé / Safe</option>
               <option value="auto">Auto-adaptatif</option>
               <option value="manual">Manuel expert</option>
             </select>
             <div className="settings-hint">
-              Safe ne lit pas la configuration PC et limite Ollama a un agent local. Auto lit CPU/RAM/GPU uniquement apres accord explicite. Le mode multi-agent utilise le roster pour choisir le provider de chaque agent.
+              Safe ne lit pas la configuration PC et limite Ollama a un agent local. Auto lit CPU/RAM/GPU uniquement apres accord explicite.
             </div>
 
             {settings.localAIOptimizationMode === 'auto' && (
@@ -724,64 +555,158 @@ const Settings = ({
               </div>
             )}
           </div>
+          </>)}
+
+          {activeTab === 'agents' && (<>
+          <datalist id="multi-agent-model-suggestions">
+            {availableMultiAgentModels.map((modelName) => (
+              <option key={`multi-agent-model-${modelName}`} value={modelName} />
+            ))}
+          </datalist>
 
           <div className="settings-section">
-            <label className="settings-label">Modele Ollama</label>
+            <label className="settings-label">Roster d&apos;agents</label>
             <div className="settings-hint">
-              Utilise pour Ollama simple et les agents du roster qui choisissent Ollama.
-            </div>
-            <div className="settings-hint">
-              Tailles proposees dynamiquement selon la famille Qwen la plus recente (8b, 14b, 30b, 32b...). La taille adaptee a votre machine est marquee (recommandee) dans la barre du haut. Aucun alias latest. Installer via `ollama pull` si absent localement.
+              Utilisé quand le fournisseur par défaut est « Équipe d&apos;agents », ou quand le mode
+              d&apos;exécution automatique décide de constituer une équipe. L&apos;orchestrateur compose
+              la formation selon la demande ; ces réglages fixent le fournisseur et le modèle de chaque rôle.
             </div>
 
-            <select
-              value={settings.ollamaModel || DEFAULT_OLLAMA_MODEL}
-              onChange={(e) => handleChange('ollamaModel', e.target.value)}
-              className="settings-input"
-            >
-              {availableOllamaModels.length === 0 && (
-                <option value={settings.ollamaModel || DEFAULT_OLLAMA_MODEL}>
-                  {settings.ollamaModel || DEFAULT_OLLAMA_MODEL}
-                </option>
-              )}
-              {availableOllamaModels.map((modelName) => (
-                <option key={`ollama-${modelName}`} value={modelName}>{modelName}</option>
-              ))}
-            </select>
+            <div className="settings-agent-grid">
+              {MULTI_AGENT_ROLE_DEFINITIONS.map((role) => {
+                const roleConfig = normalizedMultiAgentRoles[role.key];
+                return (
+                  <div className="settings-agent-role" key={role.key}>
+                    <div className="settings-agent-role-head">
+                      <span className="settings-agent-title">{role.title}</span>
+                      <span className="settings-agent-focus">{role.focus}</span>
+                    </div>
+                    <div className="settings-agent-controls">
+                      <select
+                        value={roleConfig.provider}
+                        onChange={(e) => handleMultiAgentRoleChange(role.key, 'provider', e.target.value)}
+                        className="settings-input"
+                      >
+                        {AI_PROVIDER_OPTIONS.map((providerOption) => (
+                          <option key={`${role.key}-${providerOption.value}`} value={providerOption.value}>
+                            {providerOption.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        list="multi-agent-model-suggestions"
+                        value={roleConfig.model}
+                        onChange={(e) => handleMultiAgentRoleChange(role.key, 'model', e.target.value)}
+                        placeholder={getDefaultModelForProvider(roleConfig.provider)}
+                        className="settings-input"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
           </>)}
 
-          {activeTab === 'security' && (<>
+          {activeTab === 'execution' && (<>
+          <datalist id="router-classifier-model-suggestions">
+            {availableMultiAgentModels.map((modelName) => (
+              <option key={`router-classifier-model-${modelName}`} value={modelName} />
+            ))}
+          </datalist>
+
           <div className="settings-section">
-            <label className="settings-label">Options</label>
-            <label className="settings-toggle">
-              <input
-                type="checkbox"
-                checked={settings.thinkingMode}
-                onChange={(e) => handleChange('thinkingMode', e.target.checked)}
-              />
-              <span>Activer le mode Thinking (raisonnement visible)</span>
-            </label>
-            <label className="settings-toggle">
-              <input
-                type="checkbox"
-                checked={settings.allowDangerousActions}
-                onChange={(e) => handleChange('allowDangerousActions', e.target.checked)}
-              />
-              <span>Autoriser les actions risquees sans confirmation</span>
-            </label>
-            <label className="settings-toggle">
-              <input
-                type="checkbox"
-                checked={settings.aiTerminalApprovalMode !== false}
-                onChange={(e) => handleChange('aiTerminalApprovalMode', e.target.checked)}
-              />
-              <span>Demander confirmation avant chaque commande terminal IA</span>
-            </label>
+            <label className="settings-label">Choix du mode d&apos;exécution</label>
+            <div className="settings-hint">
+              Manuel : vous choisissez vous-meme le mode d&apos;execution (Ask / Plan / Agent) pour chaque demande.
+              Automatique : l&apos;application décide à votre place.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.78rem', color: 'var(--text-1)' }}>
+                <input
+                  type="radio"
+                  name="router-activation-mode"
+                  checked={!autoRoute}
+                  onChange={() => onAutoRouteChange && onAutoRouteChange(false)}
+                />
+                <span>Manuel</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.78rem', color: 'var(--text-1)' }}>
+                <input
+                  type="radio"
+                  name="router-activation-mode"
+                  checked={!!autoRoute}
+                  onChange={() => onAutoRouteChange && onAutoRouteChange(true)}
+                />
+                <span>Automatique</span>
+              </label>
+            </div>
+            <div className="settings-hint">
+              Une heuristique locale (&lt;100ms, sans appel reseau) tranche les cas triviaux ; un modèle léger
+              (temperature 0.1) tranche les cas ambigus entre agent simple et équipe.
+            </div>
           </div>
 
           <div className="settings-section">
-            <label className="settings-label">Mode permissions</label>
+            <label className="settings-label">Modèle de classification</label>
+            <div className="settings-hint">
+              Modele leger utilise pour trancher les cas ambigus. Independant des modeles utilises pour repondre a la demande.
+              Laissez sur « Fournisseur actif du chat » pour reutiliser automatiquement celui en cours.
+              La clé employée est celle déjà saisie dans l&apos;onglet Fournisseurs.
+            </div>
+            <div className="settings-agent-controls">
+              <select
+                value={routerClassifierProvider || ''}
+                onChange={(e) => onRouterClassifierProviderChange && onRouterClassifierProviderChange(e.target.value || null)}
+                className="settings-input"
+              >
+                <option value="">Fournisseur actif du chat (par defaut)</option>
+                {AI_PROVIDER_OPTIONS.map((providerOption) => (
+                  <option key={`router-classifier-${providerOption.value}`} value={providerOption.value}>
+                    {providerOption.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                list="router-classifier-model-suggestions"
+                value={routerClassifierModel || ''}
+                onChange={(e) => onRouterClassifierModelChange && onRouterClassifierModelChange(e.target.value || null)}
+                placeholder={routerClassifierProvider ? getDefaultModelForProvider(routerClassifierProvider) : 'Modele leger par defaut'}
+                className="settings-input"
+              />
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <label className="settings-label">Seuil de complexité</label>
+            <div className="settings-hint">
+              Plus le curseur est bas, plus l&apos;heuristique locale tranche seule sans appel reseau.
+              Plus il est haut, plus les cas ambigus sont envoyes au modele de classification.
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="settings-hint" style={{ margin: 0 }}>Simple</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={Math.round((routerComplexityThreshold ?? 0.5) * 100)}
+                onChange={(e) => onRouterComplexityThresholdChange && onRouterComplexityThresholdChange(Number(e.target.value) / 100)}
+                style={{ flex: 1 }}
+              />
+              <span className="settings-hint" style={{ margin: 0 }}>Complexe</span>
+              <span className="settings-hint" style={{ margin: 0, minWidth: 30, textAlign: 'right' }}>
+                {Math.round((routerComplexityThreshold ?? 0.5) * 100)}
+              </span>
+            </div>
+          </div>
+          </>)}
+
+          {activeTab === 'permissions' && (<>
+          <div className="settings-section">
+            <label className="settings-label">Niveau d&apos;accès</label>
             <select
               value={settings.permissionMode || 'edit_terminal'}
               onChange={(e) => handleChange('permissionMode', e.target.value)}
@@ -794,6 +719,34 @@ const Settings = ({
             <div className="settings-hint">
               Lecture seule bloque les modifications. Edition bloque uniquement les commandes terminal.
             </div>
+          </div>
+
+          <div className="settings-section">
+            <label className="settings-label">Confirmations</label>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.aiTerminalApprovalMode !== false}
+                onChange={(e) => handleChange('aiTerminalApprovalMode', e.target.checked)}
+              />
+              <span>Demander confirmation avant chaque commande terminal IA</span>
+            </label>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.allowDangerousActions}
+                onChange={(e) => handleChange('allowDangerousActions', e.target.checked)}
+              />
+              <span>Autoriser les actions risquees sans confirmation</span>
+            </label>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.thinkingMode}
+                onChange={(e) => handleChange('thinkingMode', e.target.checked)}
+              />
+              <span>Activer le mode Thinking (raisonnement visible)</span>
+            </label>
           </div>
           </>)}
 
@@ -899,74 +852,6 @@ const Settings = ({
               />
               <span>Bloquer l&apos;application si un gate echoue</span>
             </label>
-          </div>
-          </>)}
-
-          {activeTab === 'advanced' && (<>
-          <div className="settings-section">
-            <label className="settings-label">Port serveur dev</label>
-            <input
-              type="text"
-              value={settings.devPort}
-              onChange={(e) => handleChange('devPort', e.target.value)}
-              placeholder="3004"
-              className="settings-input"
-            />
-          </div>
-
-          <div className="settings-section">
-            <div className="settings-row">
-              <label className="settings-label">Cles API</label>
-              <button
-                type="button"
-                onClick={() => setShowApiKeys(!showApiKeys)}
-                className="settings-link"
-              >
-                {showApiKeys ? 'Masquer' : 'Afficher'}
-              </button>
-            </div>
-
-            <div className="settings-key">
-              <label className="settings-key-label">
-                Gemini API Key {getValidationIcon(validation.gemini)}
-              </label>
-              <input
-                type={showApiKeys ? 'text' : 'password'}
-                value={settings.geminiApiKey}
-                onChange={(e) => handleChange('geminiApiKey', e.target.value)}
-                placeholder="AIza..."
-                className={`settings-input ${validation.gemini === 'invalid' ? 'is-invalid' : ''}`}
-              />
-              {getValidationMessage('gemini')}
-            </div>
-
-            <div className="settings-key">
-              <label className="settings-key-label">
-                Kimi/Together API Key {getValidationIcon(validation.kimi)}
-              </label>
-              <input
-                type={showApiKeys ? 'text' : 'password'}
-                value={settings.kimiApiKey || ''}
-                onChange={(e) => handleChange('kimiApiKey', e.target.value)}
-                placeholder="tgp_v1_..."
-                className={`settings-input ${validation.kimi === 'invalid' ? 'is-invalid' : ''}`}
-              />
-              {getValidationMessage('kimi')}
-            </div>
-
-            <div className="settings-key">
-              <label className="settings-key-label">
-                Claude API Key {getValidationIcon(validation.claude)}
-              </label>
-              <input
-                type={showApiKeys ? 'text' : 'password'}
-                value={settings.claudeApiKey || ''}
-                onChange={(e) => handleChange('claudeApiKey', e.target.value)}
-                placeholder="sk-ant-api..."
-                className={`settings-input ${validation.claude === 'invalid' ? 'is-invalid' : ''}`}
-              />
-              {getValidationMessage('claude')}
-            </div>
           </div>
           </>)}
         </div>

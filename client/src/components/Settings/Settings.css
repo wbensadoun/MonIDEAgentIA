@@ -91,7 +91,12 @@
 }
 
 .settings-tab-icon {
-  font-size: 0.9rem;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.settings-tab.is-active .settings-tab-icon {
+  opacity: 1;
 }
 
 .settings-body {
@@ -186,6 +191,69 @@
   font-size: 0.72rem;
   color: #ffb4a2;
   line-height: 1.35;
+}
+
+.settings-provider-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.settings-provider {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-0);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.settings-provider-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-provider-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-0);
+}
+
+.settings-provider-kind {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-0);
+  color: var(--text-2);
+}
+
+.settings-provider-kind.is-local {
+  color: var(--accent-3);
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.settings-provider-status {
+  margin-left: auto;
+  font-size: 0.68rem;
+  color: var(--text-2);
+  text-align: right;
+}
+
+.settings-provider-status.is-ok {
+  color: var(--accent-3);
+}
+
+.settings-provider-status.is-error {
+  color: var(--accent-4);
+}
+
+.settings-provider-status.is-loading {
+  color: var(--accent-1);
 }
 
 .settings-agent-grid {

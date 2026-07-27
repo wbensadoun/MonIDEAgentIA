@@ -1,11 +1,20 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import Settings from './index';
+import { resetProviderModelsStore } from '../../utils/providerModelsStore';
+
+// Le cache de detection est un singleton module-level (partage avec le reste
+// de l'app pour eviter des requetes dupliquees) : sans reset, la detection
+// mockee d'un test fuiterait vers le suivant.
+beforeEach(() => {
+  resetProviderModelsStore();
+});
 
 const baseSettings = {
   defaultProvider: 'kimi',
   geminiModel: 'gemini-3-flash-preview',
   claudeModel: 'claude-sonnet-4-6',
   kimiModel: 'moonshotai/Kimi-K2.7',
+  kimiApiKey: 'tgp_v1_test',
   permissionMode: 'edit_terminal',
   multiAgentRoles: {
     selector: { provider: 'gemini', model: 'gemini-3.1-pro-preview' },
@@ -15,11 +24,12 @@ const baseSettings = {
   }
 };
 
-const renderSettings = () => {
+const renderSettings = ({ listProviderModels } = {}) => {
   window.electronAPI = {
     loadSettings: jest.fn().mockResolvedValue({ success: true, settings: baseSettings }),
     saveSettings: jest.fn().mockResolvedValue({ success: true }),
-    listOllamaModels: jest.fn().mockResolvedValue({ success: true, models: [] }),
+    listProviderModels: listProviderModels
+      || jest.fn().mockResolvedValue({ success: true, valid: false, models: [], error: 'offline' }),
     validateApiKey: jest.fn().mockResolvedValue({ valid: true })
   };
 
@@ -39,19 +49,15 @@ const renderSettings = () => {
 test('saves custom remote models and applies provider model to matching roles only', async () => {
   renderSettings();
 
-  // Click on "Modèles cloud" tab
-  fireEvent.click(screen.getByText('Modèles cloud'));
+  fireEvent.click(screen.getByText('Fournisseurs'));
 
   await waitFor(() => {
-    // try to just find it
-    const els = screen.queryAllByDisplayValue('moonshotai/Kimi-K2.7');
-    expect(els.length).toBeGreaterThan(0);
+    expect(screen.queryAllByDisplayValue('moonshotai/Kimi-K2.7').length).toBeGreaterThan(0);
   });
 
-  fireEvent.click(screen.getByText('Appliquer aux roles Kimi / Together'));
+  fireEvent.click(screen.getByText('Appliquer ce modèle aux rôles Moonshot Kimi'));
 
-  // Switch to Multi-agents tab to see the updated roles
-  fireEvent.click(screen.getByText('Multi-agents'));
+  fireEvent.click(screen.getByText('Agents'));
 
   await waitFor(() => {
     expect(screen.getAllByDisplayValue('moonshotai/Kimi-K2.7').length).toBeGreaterThan(1);
@@ -76,8 +82,7 @@ test('saves custom remote models and applies provider model to matching roles on
 test('saves read-only permission mode from settings', async () => {
   renderSettings();
 
-  // Click on "Sécurité" tab
-  fireEvent.click(screen.getByText('Sécurité'));
+  fireEvent.click(screen.getByText('Permissions'));
 
   const permissionSelect = await screen.findByDisplayValue('Edition + terminal');
 
@@ -92,4 +97,52 @@ test('saves read-only permission mode from settings', async () => {
   });
 
   expect(window.electronAPI.saveSettings.mock.calls[0][0].permissionMode).toBe('read_only');
+});
+
+test('lists models detected from the provider instead of the hardcoded fallback', async () => {
+  const listProviderModels = jest.fn().mockImplementation((provider) => {
+    if (provider === 'kimi') {
+      return Promise.resolve({
+        success: true,
+        valid: true,
+        models: ['moonshotai/Kimi-K9-future', 'moonshotai/Kimi-K2.5']
+      });
+    }
+    return Promise.resolve({ success: true, valid: false, models: [], error: 'offline' });
+  });
+
+  renderSettings({ listProviderModels });
+
+  fireEvent.click(screen.getByText('Fournisseurs'));
+
+  // La detection est debouncee : on attend qu'elle ait ete declenchee par fournisseur.
+  await waitFor(() => {
+    expect(listProviderModels).toHaveBeenCalledWith('kimi', 'tgp_v1_test');
+  }, { timeout: 3000 });
+
+  // Un modele inconnu du catalogue code en dur doit apparaitre dans les options.
+  await waitFor(() => {
+    expect(screen.getByText('2 modèles détectés')).toBeInTheDocument();
+  });
+
+  const options = Array.from(document.querySelectorAll('#provider-models-kimi option'))
+    .map((option) => option.value);
+  expect(options).toContain('moonshotai/Kimi-K9-future');
+});
+
+test('reports a detection failure on the provider card', async () => {
+  const listProviderModels = jest.fn().mockResolvedValue({
+    success: true,
+    valid: false,
+    models: [],
+    error: 'Request failed with status code 401'
+  });
+
+  renderSettings({ listProviderModels });
+
+  fireEvent.click(screen.getByText('Fournisseurs'));
+
+  await waitFor(() => {
+    expect(screen.getAllByText('Request failed with status code 401').length).toBeGreaterThan(0);
+  }, { timeout: 3000 });
 });

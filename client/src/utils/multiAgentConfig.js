@@ -4,16 +4,18 @@ import {
   DEFAULT_GEMINI_MODEL,
   DEFAULT_GEMINI_PRO_MODEL,
   DEFAULT_KIMI_MODEL,
-  KIMI_K2_6_MODEL
+  KIMI_K2_6_MODEL,
+  PROVIDER_CATALOG
 } from './remoteModels';
 
-export const AI_PROVIDER_OPTIONS = [
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'kimi', label: 'Kimi / Together' },
-  { value: 'ollama', label: 'Ollama local' }
-];
+// Derive du catalogue : les menus de roles et l'onglet Fournisseurs affichent
+// forcement les memes noms, et ajouter un fournisseur n'impose qu'une seule edition.
+export const AI_PROVIDER_OPTIONS = PROVIDER_CATALOG.map((provider) => ({
+  value: provider.id,
+  label: provider.label
+}));
 
+// Libelles courts pour les badges du chat, ou la place est comptee.
 export const PROVIDER_LABELS = {
   gemini: 'Gemini',
   claude: 'Claude',
@@ -25,8 +27,8 @@ export const MULTI_AGENT_ROLE_DEFINITIONS = [
   {
     key: 'selector',
     settingsKey: 'selectionneur',
-    title: 'Selectionneur',
-    shortLabel: 'Selectionneur',
+    title: 'Orchestrateur',
+    shortLabel: 'Orchestrateur',
     provider: 'gemini',
     model: DEFAULT_GEMINI_PRO_MODEL,
     focus: 'Compose l equipe, choisit la formation, les dependances et le budget de run.',
@@ -37,8 +39,8 @@ export const MULTI_AGENT_ROLE_DEFINITIONS = [
   {
     key: 'captain',
     settingsKey: 'capitaineProjet',
-    title: 'Capitaine Projet',
-    shortLabel: 'Capitaine',
+    title: 'Planificateur',
+    shortLabel: 'Planificateur',
     provider: 'gemini',
     model: DEFAULT_GEMINI_PRO_MODEL,
     focus: 'Tient le plan, les criteres d acceptation et consolide le livrable.',
@@ -49,8 +51,8 @@ export const MULTI_AGENT_ROLE_DEFINITIONS = [
   {
     key: 'domain',
     settingsKey: 'expertMetier',
-    title: 'Expert Metier',
-    shortLabel: 'Metier',
+    title: 'Expert Métier',
+    shortLabel: 'Métier',
     provider: 'gemini',
     model: DEFAULT_GEMINI_MODEL,
     focus: 'Analyse les regles metier, risques fonctionnels et contraintes de domaine.',
@@ -85,7 +87,7 @@ export const MULTI_AGENT_ROLE_DEFINITIONS = [
   {
     key: 'frontend',
     settingsKey: 'frontendFunctional',
-    title: 'Frontend Fonctionnel',
+    title: 'Développeur Frontend',
     shortLabel: 'Frontend',
     provider: 'kimi',
     model: DEFAULT_KIMI_MODEL,
@@ -261,4 +263,10 @@ export const buildMultiAgentModelMap = (rolesConfig = {}) => (
 
 export const getProviderLabel = (provider) => (
   PROVIDER_LABELS[normalizeAIProvider(provider)] || 'IA'
+);
+
+// Les libelles affiches (chat, timeline, settings) doivent toujours venir d'ici :
+// les dupliquer en dur ailleurs les fait diverger au premier renommage.
+export const getRoleTitle = (roleKey, fallback = 'Agent') => (
+  getRoleDefinition(roleKey)?.title || fallback
 );

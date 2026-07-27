@@ -1,4 +1,4 @@
-import { getProviderLabel } from './multiAgentConfig';
+import { getProviderLabel, getRoleTitle } from './multiAgentConfig';
 import {
   appendMultiAIEvent,
   buildDynamicTeamSteps,
@@ -174,7 +174,7 @@ export const runDynamicMultiAgentFlow = async ({
     isActive: true,
     mode: 'multi',
     runLabel: `Equipe ${teamPlan.formationLabel}`,
-    currentPhase: 'Selectionneur',
+    currentPhase: getRoleTitle('selector'),
     architectPlan: teamPlanText,
     approvedPlan: null,
     startedAt: Date.now(),
@@ -182,7 +182,7 @@ export const runDynamicMultiAgentFlow = async ({
     requestedModels: teamPlan.selectedAgents,
     steps: buildDynamicTeamSteps(teamPlan, { selector: 'completed' }),
     events: appendMultiAIEvent([], {
-      label: 'Selectionneur',
+      label: getRoleTitle('selector'),
       status: 'completed',
       detail: `${teamPlan.formationLabel}: ${teamPlan.budget?.reason || 'budget etabli'}`,
       roleKey: 'selector'
@@ -192,9 +192,9 @@ export const runDynamicMultiAgentFlow = async ({
 
   setAiConversationHistory((prev) => [...prev, {
     role: 'model',
-    text: `**[Selectionneur - TeamPlan]**\n\n${teamPlanText}`,
+    text: `**[${getRoleTitle('selector')} - TeamPlan]**\n\n${teamPlanText}`,
     dynamicAgentKey: 'selector',
-    dynamicAgentTitle: 'Selectionneur',
+    dynamicAgentTitle: getRoleTitle('selector'),
     agentProvider: 'Local',
     agentModel: 'heuristique'
   }]);
@@ -273,14 +273,14 @@ export const runDynamicMultiAgentFlow = async ({
     : { success: true, text: 'Aucun capitaine selectionne.' };
 
   if (!captainResponse.success) {
-    throw new Error(`Capitaine Projet: ${captainResponse.error}`);
+    throw new Error(`${getRoleTitle('captain')}: ${captainResponse.error}`);
   }
 
   const artifactsText = outputs
     .filter((output) => output?.agent?.canWrite)
     .map((output) => `\n\n## Artefacts - ${output.agent.title}\n${output.text}`)
     .join('');
-  const finalDeliverable = `## TeamPlan\n${teamPlanText}\n\n## Synthese Capitaine\n${captainResponse.text}\n${artifactsText}`;
+  const finalDeliverable = `## TeamPlan\n${teamPlanText}\n\n## Synthese ${getRoleTitle('captain')}\n${captainResponse.text}\n${artifactsText}`;
 
   setMultiAIState((prev) => ({
     ...prev,
@@ -297,9 +297,9 @@ export const runDynamicMultiAgentFlow = async ({
 
   setAiConversationHistory((prev) => [...prev, {
     role: 'model',
-    text: `**[Capitaine Projet - LIVRABLE FINAL]**\n\n${finalDeliverable}`,
+    text: `**[${getRoleTitle('captain')} - LIVRABLE FINAL]**\n\n${finalDeliverable}`,
     dynamicAgentKey: 'captain',
-    dynamicAgentTitle: 'Capitaine Projet',
+    dynamicAgentTitle: getRoleTitle('captain'),
     agentProvider: captainResponse.provider ? getProviderLabel(captainResponse.provider) : 'Local',
     agentModel: captainResponse.model || 'synthese'
   }]);

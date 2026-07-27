@@ -310,6 +310,12 @@ export const IconPackage: React.FC<IconProps> = (props) => (
   </SvgIcon>
 );
 
+export const IconShield: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+  </SvgIcon>
+);
+
 /**
  * Export all icons as a namespace for easier consumption:
  * import { Icons } from './icons';
@@ -350,6 +356,7 @@ export const Icons = {
   Upload: IconUpload,
   Download: IconDownload,
   Package: IconPackage,
+  Shield: IconShield,
 };
 
 export default Icons;

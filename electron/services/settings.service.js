@@ -237,60 +237,95 @@ const saveSettings = async (settings) => {
   return normalized;
 };
 
+// ---------------------------------------------------------------------------
+// Provider model discovery
+// ---------------------------------------------------------------------------
+//
+// Chaque provider expose deja un endpoint "list models". On s'en sert a la fois
+// pour valider la cle (un 200 = cle bonne) ET pour recuperer le catalogue reel.
+// Un seul aller-retour reseau repond aux deux questions, donc les constantes
+// DEFAULT_*_MODEL ne servent plus que de repli hors-ligne.
+
+const getOllamaBaseUrl = () => process.env.OLLAMA_URL || 'http://localhost:11434';
+
+const PROVIDER_MODEL_SOURCES = {
+  gemini: {
+    requiresKey: true,
+    request: (apiKey) => ({
+      url: `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}&pageSize=200`,
+      timeout: 15000
+    }),
+    // On affiche tout ce que l'API renvoie (y compris les modeles d'embedding
+    // ou preview) : filtrer silencieusement cache des modeles a l'utilisateur
+    // sans qu'il puisse savoir pourquoi ni passer outre.
+    parse: (data) => (data?.models || [])
+      .map((m) => String(m?.name || '').replace(/^models\//, ''))
+  },
+  claude: {
+    requiresKey: true,
+    request: (apiKey) => ({
+      url: 'https://api.anthropic.com/v1/models?limit=200',
+      timeout: 15000,
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
+    }),
+    parse: (data) => (data?.data || []).map((m) => String(m?.id || ''))
+  },
+  kimi: {
+    requiresKey: true,
+    request: (apiKey) => ({
+      url: 'https://api.together.xyz/v1/models',
+      timeout: 15000,
+      headers: { Authorization: `Bearer ${apiKey}` }
+    }),
+    // Together renvoie parfois un tableau nu, parfois { data: [...] }.
+    // Tous les types sont affiches (chat, embedding, image...) : voir la note
+    // Gemini ci-dessus sur le filtrage silencieux.
+    parse: (data) => (Array.isArray(data) ? data : data?.data || [])
+      .map((m) => String(m?.id || ''))
+  },
+  ollama: {
+    requiresKey: false,
+    request: () => ({ url: `${getOllamaBaseUrl()}/api/tags`, timeout: 5000 }),
+    parse: (data) => (data?.models || []).map((m) => String(m?.name || ''))
+  }
+};
+
+const listProviderModels = async (provider, apiKey) => {
+  const source = PROVIDER_MODEL_SOURCES[normalizeAIProviderName(provider, '')];
+  if (!source) {
+    return { success: false, valid: false, models: [], error: 'Provider inconnu' };
+  }
+  if (source.requiresKey && !apiKey) {
+    return { success: false, valid: false, models: [], error: 'Clé API manquante' };
+  }
+
+  const { url, timeout, headers } = source.request(apiKey);
+  try {
+    const resp = await axios.get(url, { timeout, ...(headers ? { headers } : {}) });
+    const models = Array.from(new Set(
+      source.parse(resp?.data).map((name) => name.trim()).filter(Boolean)
+    )).sort();
+    return { success: true, valid: true, models };
+  } catch (err) {
+    return {
+      success: true,
+      valid: false,
+      models: [],
+      status: err.response?.status,
+      error: provider === 'ollama' ? `Ollama non disponible: ${err.message}` : err.message
+    };
+  }
+};
+
 const validateApiKey = async (provider, apiKey) => {
-  if (!provider || !apiKey) {
+  if (!provider || (!apiKey && provider !== 'ollama')) {
     return { success: false, valid: false, error: 'Provider ou clé manquant' };
   }
 
-  if (provider === 'gemini') {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
-    try {
-      const resp = await axios.get(url, { timeout: 15000 });
-      return { success: true, valid: !!(resp && resp.status === 200) };
-    } catch (err) {
-      return { success: true, valid: false, status: err.response?.status, error: err.message };
-    }
-  }
+  const result = await listProviderModels(provider, apiKey);
+  if (!result.success) return { success: false, valid: false, error: result.error };
 
-  if (provider === 'kimi') {
-    try {
-      const resp = await axios.get('https://api.together.xyz/v1/models', {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        timeout: 15000
-      });
-      return { success: true, valid: !!(resp && resp.status === 200) };
-    } catch (err) {
-      return { success: true, valid: false, status: err.response?.status, error: err.message };
-    }
-  }
-
-  if (provider === 'claude') {
-    try {
-      const resp = await axios.get('https://api.anthropic.com/v1/models', {
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        timeout: 15000
-      });
-      return { success: true, valid: !!(resp && resp.status === 200) };
-    } catch (err) {
-      return { success: true, valid: false, status: err.response?.status, error: err.message };
-    }
-  }
-
-  if (provider === 'ollama') {
-    try {
-      const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
-      const resp = await axios.get(`${ollamaUrl}/api/tags`, { timeout: 5000 });
-      const models = resp.data?.models || [];
-      return { success: true, valid: true, modelCount: models.length };
-    } catch (err) {
-      return { success: true, valid: false, error: `Ollama non disponible: ${err.message}` };
-    }
-  }
-
-  return { success: false, valid: false, error: 'Provider inconnu' };
+  return { success: true, valid: result.valid, modelCount: result.models.length, error: result.error };
 };
 
 // ---------------------------------------------------------------------------
@@ -441,6 +476,7 @@ module.exports = {
   readSettingsSafe,
   saveSettings,
   validateApiKey,
+  listProviderModels,
   canEditFiles,
   canUseTerminal,
   ensureEditPermission,

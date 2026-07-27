@@ -1,7 +1,12 @@
 'use strict';
 
 const { ipcMain } = require('electron');
-const { readSettingsSafe, saveSettings, validateApiKey } = require('../services/settings.service');
+const {
+  readSettingsSafe,
+  saveSettings,
+  validateApiKey,
+  listProviderModels
+} = require('../services/settings.service');
 
 const registerSettingsHandlers = () => {
   ipcMain.handle('save-settings', async (_event, settings) => {
@@ -27,6 +32,14 @@ const registerSettingsHandlers = () => {
       return await validateApiKey(provider, apiKey);
     } catch (error) {
       return { success: false, valid: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('list-provider-models', async (_event, provider, apiKey) => {
+    try {
+      return await listProviderModels(provider, apiKey);
+    } catch (error) {
+      return { success: false, valid: false, models: [], error: error.message };
     }
   });
 };

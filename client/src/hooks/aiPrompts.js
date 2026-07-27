@@ -283,7 +283,7 @@ export const generateCaptainFinalPrompt = ({
   teamPlanText,
   userRequest,
   previousOutputs
-}) => `Tu es le Capitaine Projet. Tu consolides le run multi-agent sans perdre les artefacts.
+}) => `Tu es le Planificateur. Tu consolides le run multi-agent sans perdre les artefacts.
 
 DEMANDE UTILISATEUR:
 ${userRequest}

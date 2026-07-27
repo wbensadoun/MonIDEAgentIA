@@ -139,6 +139,7 @@ try {
     loadSettings: () => ipcRenderer.invoke('load-settings'),
     getSystemAIProfile: (options) => ipcRenderer.invoke('get-system-ai-profile', options),
     validateApiKey: (provider, apiKey) => ipcRenderer.invoke('validate-api-key', provider, apiKey),
+    listProviderModels: (provider, apiKey) => ipcRenderer.invoke('list-provider-models', provider, apiKey),
 
     // Terminal / Process Runner
     startProcess: (payload) => ipcRenderer.invoke('start-process', payload),

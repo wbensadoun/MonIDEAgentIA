@@ -11,6 +11,7 @@ import {
   getRemoteModelOptions,
   normalizeRemoteModelName
 } from '../utils/remoteModels';
+import { refreshAllProviderModels } from '../utils/providerModelsStore';
 
 const DEFAULT_QUALITY_GATE_CONFIG = {
   onApply: false,
@@ -117,6 +118,10 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
         const res = await window.electronAPI.loadSettings();
         if (res?.success && res.settings) {
           applySettings(res.settings);
+          // Silencieux : pas de bouton "rafraichir", juste une detection
+          // en arriere-plan au demarrage pour que Settings affiche des
+          // modeles a jour des la premiere ouverture.
+          refreshAllProviderModels(res.settings);
         }
       } catch {
         // silent

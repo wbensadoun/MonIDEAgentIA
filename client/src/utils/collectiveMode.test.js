@@ -44,12 +44,12 @@ const makePlan = () => ({
   formationFocus: 'Experience produit',
   appKind: 'frontend-only',
   selectedAgents: [
-    { key: 'selector', title: 'Selectionneur', stage: 'selection' },
-    { key: 'captain', title: 'Capitaine Projet', stage: 'planning' },
-    { key: 'domain', title: 'Expert Metier', stage: 'analysis' },
+    { key: 'selector', title: 'Orchestrateur', stage: 'selection' },
+    { key: 'captain', title: 'Planificateur', stage: 'planning' },
+    { key: 'domain', title: 'Expert Métier', stage: 'analysis' },
     { key: 'ux', title: 'UX Researcher', stage: 'analysis' },
     { key: 'ui', title: 'UI Designer', stage: 'analysis' },
-    { key: 'frontend', title: 'Frontend Fonctionnel', stage: 'implementation' },
+    { key: 'frontend', title: 'Développeur Frontend', stage: 'implementation' },
     { key: 'qa', title: 'QA Validator', stage: 'validation' }
   ],
   excludedAgents: [{ key: 'apiData', title: 'API / Data Engineer', reason: 'Pas necessaire.' }],
