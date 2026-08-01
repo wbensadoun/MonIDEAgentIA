@@ -2,11 +2,11 @@ const pptxgen = require('pptxgenjs');
 
 // Create a new Presentation
 let pres = new pptxgen();
-pres.author = 'MonIDEAgentIA';
-pres.company = 'MonIDEAgentIA';
+pres.author = 'Code Companion';
+pres.company = 'Code Companion';
 pres.revision = '1';
 pres.subject = 'Pitch Deck';
-pres.title = 'MonIDEAgentIA - Pitch Deck';
+pres.title = 'Code Companion - Pitch Deck';
 pres.layout = 'LAYOUT_16x9';
 
 // Define master slide with a background and logo placeholder
@@ -14,14 +14,14 @@ pres.defineSlideMaster({
     title: 'MASTER_SLIDE',
     background: { color: '0A192F' }, // Dark blue/gray background
     objects: [
-        { text: { text: "MonIDEAgentIA", options: { x: 0.5, y: 0.3, w: 3, h: 0.5, color: '64FFDA', fontSize: 18, bold: true, fontFace: 'Arial' } } },
+        { text: { text: "Code Companion", options: { x: 0.5, y: 0.3, w: 3, h: 0.5, color: '64FFDA', fontSize: 18, bold: true, fontFace: 'Arial' } } },
         { line: { x: 0.5, y: 0.8, w: '93%', h: 0, line: { color: '233554', width: 2 } } }
     ]
 });
 
 // SLIDE 1: Title
 let slide1 = pres.addSlide({ masterName: 'MASTER_SLIDE' });
-slide1.addText('🚀 MonIDEAgentIA', {
+slide1.addText('🚀 Code Companion', {
     x: '10%', y: '30%', w: '80%', color: 'FFFFFF', fontSize: 44, bold: true, align: 'center'
 });
 slide1.addText("L'IDE qui ne se contente pas de coder, il exécute.", {
@@ -44,7 +44,7 @@ slide2.addText("Résultat : Charge mentale énorme et coûts d'intégration proh
 
 // SLIDE 3: La Révolution
 let slide3 = pres.addSlide({ masterName: 'MASTER_SLIDE' });
-slide3.addText('✅ La Révolution : MonIDEAgentIA', { x: 0.5, y: 1.0, w: '90%', color: 'FFFFFF', fontSize: 32, bold: true });
+slide3.addText('✅ La Révolution : Code Companion', { x: 0.5, y: 1.0, w: '90%', color: 'FFFFFF', fontSize: 32, bold: true });
 slide3.addText('Une fusion inédite entre un IDE et une plateforme Multi-Agents.', { x: 0.5, y: 1.8, w: '90%', color: 'CCD6F6', fontSize: 20 });
 slide3.addText([
     { text: "1. 🤖 Agents Autonomes : Terminaux intelligents qui se corrigent seuls (ReAct).", options: { breakLine: true } },
@@ -61,7 +61,7 @@ let rows = [
         { text: 'VS Code', options: { fill: '233554', color: '64FFDA', bold: true } },
         { text: 'Cursor', options: { fill: '233554', color: '64FFDA', bold: true } },
         { text: 'Devin', options: { fill: '233554', color: '64FFDA', bold: true } },
-        { text: 'MonIDEAgentIA', options: { fill: '233554', color: '64FFDA', bold: true } }
+        { text: 'Code Companion', options: { fill: '233554', color: '64FFDA', bold: true } }
     ],
     ['Éditeur natif', '✅', '✅', '❌', '✅'],
     ['Auto-complétion IA', '❌', '✅', '✅', '✅'],

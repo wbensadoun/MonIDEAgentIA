@@ -141,12 +141,12 @@ const AppTopbar = ({
           dans l'ActivityBar persistante (voir App.js), plus dans cette
           barre : elle ne mélange plus navigation de vue et actions. */}
       <div className="topbar-shell">
-        {/* Marque FuturIA */}
+        {/* Marque Code Companion */}
         <div className="topbar-brand">
           <div className="topbar-brand-icon">
             <IconBot />
           </div>
-          <span className="topbar-brand-name">FuturIA</span>
+          <span className="topbar-brand-name">Code Companion</span>
         </div>
 
         <span className="topbar-separator">|</span>

@@ -1,6 +1,6 @@
-# Cahier des Charges & Business Plan : MonIDEAgentIA
+# Cahier des Charges & Business Plan : Code Companion
 
-Ce document rassemble les spécifications fonctionnelles, l'architecture technique, le modèle économique et le budget prévisionnel pour le logiciel "MonIDEAgentIA" (nom de code provisoire).
+Ce document rassemble les spécifications fonctionnelles, l'architecture technique, le modèle économique et le budget prévisionnel pour le logiciel "Code Companion" (nom de code provisoire).
 
 ---
 
@@ -139,4 +139,4 @@ Ici nous estimons un budget frugal pour valider le marché et acquérir les prem
 
 ---
 
-**Conclusion** : Le produit `MonIDEAgentIA` a un positionnement clair (l'hybridation entre la complexité des agents autonomes textuels via l'IDE, et la vulgarisation visuelle via les pipelines n8n intégrés). En soulageant la charge mentale d'installation et d'hébergement matériel via un SaaS par abonnement, l'outil devient financièrement accessible et surtout viable économiquement pour vous.
+**Conclusion** : Le produit `Code Companion` a un positionnement clair (l'hybridation entre la complexité des agents autonomes textuels via l'IDE, et la vulgarisation visuelle via les pipelines n8n intégrés). En soulageant la charge mentale d'installation et d'hébergement matériel via un SaaS par abonnement, l'outil devient financièrement accessible et surtout viable économiquement pour vous.

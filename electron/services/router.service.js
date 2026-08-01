@@ -310,7 +310,7 @@ const buildRouterSystemPrompt = (agents, skills) => {
     ? `SKILLS DISPONIBLES :\n${skillNames.join(', ')}`
     : 'SKILLS DISPONIBLES : (aucun)';
 
-  return `Tu es le routeur de classification de FuturIA, un assistant de developpement multi-agents. Analyse la demande de l'utilisateur (fournie dans le message utilisateur) et decide UNIQUEMENT comment la router — tu n'executes JAMAIS la tache toi-meme.
+  return `Tu es le routeur de classification de Code Companion, un assistant de developpement multi-agents. Analyse la demande de l'utilisateur (fournie dans le message utilisateur) et decide UNIQUEMENT comment la router — tu n'executes JAMAIS la tache toi-meme.
 
 ${agentsBlock}
 

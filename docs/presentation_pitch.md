@@ -1,9 +1,9 @@
-# Pitch Deck : MonIDEAgentIA
+# Pitch Deck : Code Companion
 
 Ce document est formaté comme une présentation interactive. Utilisez un lecteur Markdown compatible (ou convertissez-le en PDF/PPT via des outils comme Marp) pour le projeter à vos clients.
 
 ````carousel
-# 🚀 MonIDEAgentIA
+# 🚀 Code Companion
 ## L'IDE qui ne se contente pas de coder, il exécute.
 **La première plateforme hybride réunissant un Éditeur de Code IA, des Agents Autonomes et des Workflows Visuels.**
 
@@ -19,7 +19,7 @@ Les développeurs et les entreprises perdent un temps infini à jongler entre de
 
 **Résultat :** Une charge mentale énorme et des coûts d'intégration prohibitifs pour les entreprises.
 <!-- slide -->
-## ✅ La Révolution : MonIDEAgentIA
+## ✅ La Révolution : Code Companion
 
 Une fusion inédite entre un Environnement de Développement et une plateforme d'Automatisation Multi-Agents.
 
@@ -29,9 +29,9 @@ Une fusion inédite entre un Environnement de Développement et une plateforme d
 <!-- slide -->
 ## 📊 Comparaison avec la Concurrence
 
-Où se situe MonIDEAgentIA par rapport aux géants du marché ?
+Où se situe Code Companion par rapport aux géants du marché ?
 
-| Fonctionnalité | VS Code | Cursor | Devin (AutoGPT) | **MonIDEAgentIA** |
+| Fonctionnalité | VS Code | Cursor | Devin (AutoGPT) | **Code Companion** |
 | :--- | :---: | :---: | :---: | :---: |
 | Éditeur de code natif | ✅ | ✅ | ❌ | **✅** |
 | Auto-complétion IA | ❌ | ✅ | ✅ | **✅** |
@@ -40,13 +40,13 @@ Où se situe MonIDEAgentIA par rapport aux géants du marché ?
 | Catalogue n8n inclus (2000+ flux) | ❌ | ❌ | ❌ | **✅** |
 | Confidentialité "Local-First" | ✅ | ❌ | ❌ | **✅** |
 
-> MonIDEAgentIA est le seul outil à offrir une interface visuelle pour orchestrer des agents IA directement sur le code source de l'entreprise.
+> Code Companion est le seul outil à offrir une interface visuelle pour orchestrer des agents IA directement sur le code source de l'entreprise.
 <!-- slide -->
 ## ⚙️ Comment ça marche ? (L'Architecture Hybride)
 
 ```mermaid
 graph TD
-    A[Utilisateur / Développeur] -->|Prompt ou Click| B(MonIDEAgentIA Interface)
+    A[Utilisateur / Développeur] -->|Prompt ou Click| B(Code Companion Interface)
     B --> C{Orchestrateur}
     
     C -->|Tâches de Code Complexes| D[Agent Cloud Premium<br/>Gemini 2.5 Pro]
@@ -65,10 +65,10 @@ graph TD
 <!-- slide -->
 ## 📈 Projections & ROI pour vos équipes
 
-Pourquoi investir dans des licences `MonIDEAgentIA` pour vos développeurs ou chefs de projet ?
+Pourquoi investir dans des licences `Code Companion` pour vos développeurs ou chefs de projet ?
 
 ```mermaid
-pie title Répartition du Temps Développeur (Avec vs Sans MonIDEAgentIA)
+pie title Répartition du Temps Développeur (Avec vs Sans Code Companion)
     "Codage Réel" : 45
     "Débug / StackOverflow (Éliminé par les Agents)" : 25
     "DevOps / Tâches Répétitives (Automatisé par Workflows)" : 20

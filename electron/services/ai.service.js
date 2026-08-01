@@ -326,7 +326,7 @@ const fetchN8nBranchCommitSha = async (branch, timeoutMs = 12000) => {
   const response = await axios.get(url, {
     headers: {
       Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'MonIDEAgentIA'
+      'User-Agent': 'Code Companion'
     },
     timeout: timeoutMs
   });
@@ -353,7 +353,7 @@ const fetchN8nCatalogFromGitTree = async (timeoutMs = 12000) => {
       const response = await axios.get(url, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'MonIDEAgentIA'
+          'User-Agent': 'Code Companion'
         },
         timeout: timeoutMs
       });
@@ -392,7 +392,7 @@ const fetchN8nCatalogFromContents = async (timeoutMs = 12000) => {
       const response = await axios.get(url, {
         headers: {
           Accept: 'application/vnd.github.v3+json',
-          'User-Agent': 'MonIDEAgentIA'
+          'User-Agent': 'Code Companion'
         },
         timeout: timeoutMs
       });

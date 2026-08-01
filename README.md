@@ -40,7 +40,7 @@ Un IDE desktop intelligent avec agent IA intgr (Google Gemini) pour dvelopper pl
 ```bash
 # 1. Cloner le projet
 git clone <repo>
-cd MonIDEAgentIA
+cd Code Companion
 
 # 2. Installer les dpendances racine
 npm install
@@ -158,7 +158,7 @@ Note securite: par defaut, le bridge refuse les numeros absents de `WHATSAPP_ALL
 ##  Structure du projet
 
 ```
-MonIDEAgentIA/
+Code Companion/
 ├── main.js              # Processus principal Electron + IPC + API Gemini
 ├── preload.js           # Pont scuris entre Electron et React
 ├── assets/              # Icnes et ressources

@@ -32,7 +32,7 @@ const FALLBACK_OLLAMA_MODEL_CANDIDATES = [
 const activeOllamaPulls = new Set();
 const OLLAMA_REGISTRY_CACHE = new Map();
 const OLLAMA_REGISTRY_TTL_MS = 30 * 60 * 1000;
-const OLLAMA_REGISTRY_HTTP = { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0 (FuturIA)' } };
+const OLLAMA_REGISTRY_HTTP = { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0 (Code Companion)' } };
 
 // ─── Low-level utilities ─────────────────────────────────────────────────────
 

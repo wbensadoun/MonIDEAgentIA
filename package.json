@@ -1,6 +1,6 @@
 {
   "name": "monideagentia",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "main": "main.js",
   "scripts": {
     "start": "concurrently \"npm:start-react\" \"npm:electron-dev\"",
@@ -45,7 +45,7 @@
   },
   "build": {
     "appId": "com.votreentreprise.monide",
-    "productName": "Mon IDE Agent IA",
+    "productName": "Code Companion",
     "npmRebuild": false,
     "asarUnpack": [
       "node_modules/node-pty/**/*"
@@ -75,7 +75,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Mon IDE Agent IA"
+      "shortcutName": "Code Companion"
     },
     "mac": {
       "icon": "iconeDesktop.png"

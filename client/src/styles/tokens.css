@@ -1,5 +1,5 @@
 /* ======================================================================
-   MonIDEAgentIA — Design Tokens (Single Source of Truth)
+   Code Companion — Design Tokens (Single Source of Truth)
    ======================================================================
    Canonical replacement for the token block previously inlined in
    App.css (lines 1-147). App.css must `@import './styles/tokens.css';`
