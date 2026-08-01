@@ -135,14 +135,22 @@ const AppContent = () => {
     leftWidth,
     rightWidth,
     middleWidth,
+    leftMinWidth,
+    leftMaxWidth,
+    rightMinWidth,
+    rightMaxWidth,
+    editorMinWidth,
     isLeftCollapsed,
     isRightCollapsed,
     isFocusMode,
+    isChatMaximized,
     dragging,
+    resizeHandleProps,
     handleDragStart,
     resizeStep,
     toggleLeftPanel,
     toggleRightPanel,
+    toggleChatMaximize,
     toggleFocusMode
   } = useWorkspaceSessionLayout({
     currentProjectPath,
@@ -295,8 +303,8 @@ const AppContent = () => {
   );
 
   // ---- Mise en page vue Chat : sidebar gauche (projets) + panneau agents
-  // droit. Raisonne en simple visible/masque (contrairement a
-  // useWorkspaceSessionLayout qui gere des % pour la vue IDE), donc un etat
+  // droit. Raisonne en simple visible/masque (les largeurs de la vue IDE sont
+  // gerees en pixels par useWorkspaceSessionLayout), donc un etat
   // local ici plutot que dans ce hook partage — remonte au niveau racine
   // (et non laisse local a ChatLayout) pour que la topbar puisse piloter
   // les memes toggles que la vue IDE (isLeftCollapsed/isRightCollapsed).
@@ -650,6 +658,8 @@ const AppContent = () => {
           isLeftCollapsed={isLeftCollapsed}
           onToggleRightPanel={toggleRightPanel}
           isRightCollapsed={isRightCollapsed}
+          isChatMaximized={isChatMaximized}
+          onToggleChatMaximize={toggleChatMaximize}
           onToggleChatSidebar={toggleChatSidebar}
           isChatSidebarCollapsed={isChatSidebarCollapsed}
           onToggleSwarmPanel={toggleSwarmPanel}
@@ -682,9 +692,15 @@ const AppContent = () => {
             leftWidth={leftWidth}
             rightWidth={rightWidth}
             middleWidth={middleWidth}
+            leftMinWidth={leftMinWidth}
+            leftMaxWidth={leftMaxWidth}
+            rightMinWidth={rightMinWidth}
+            rightMaxWidth={rightMaxWidth}
+            editorMinWidth={editorMinWidth}
             isLeftCollapsed={isLeftCollapsed}
             isRightCollapsed={isRightCollapsed}
             dragging={dragging}
+            resizeHandleProps={resizeHandleProps}
             onDragStart={handleDragStart}
             onResizeStep={resizeStep}
             projectItems={projectItems}
@@ -706,6 +722,7 @@ const AppContent = () => {
             centerView={centerView}
             onCenterViewChange={setCenterView}
             isFocusMode={isFocusMode}
+            isChatMaximized={isChatMaximized}
             onToggleFocusMode={toggleFocusMode}
             editorProps={editorProps}
             previewProps={previewPanelProps}

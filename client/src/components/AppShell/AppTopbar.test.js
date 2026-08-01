@@ -27,6 +27,8 @@ const renderTopbar = (props = {}) => {
     isLeftCollapsed: false,
     onToggleRightPanel: jest.fn(),
     isRightCollapsed: false,
+    isChatMaximized: false,
+    onToggleChatMaximize: jest.fn(),
     onToggleChatSidebar: jest.fn(),
     isChatSidebarCollapsed: false,
     onToggleSwarmPanel: jest.fn(),
@@ -122,4 +124,21 @@ test('Escape closes the customize menu', () => {
   fireEvent.keyDown(document, { key: 'Escape' });
 
   expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+});
+
+test('chat maximize has a dedicated topbar control and restores through the same control', () => {
+  const props = renderTopbar({ viewMode: 'ide' });
+  const maximizeButton = screen.getByTitle('Maximiser le chat');
+  maximizeButton.focus();
+  fireEvent.click(maximizeButton);
+  expect(props.onToggleChatMaximize).toHaveBeenCalledTimes(1);
+
+  // The focused topbar control remains mounted, so keyboard focus is not lost
+  // when the workspace swaps from three columns to the chat-only region.
+  expect(maximizeButton).toHaveFocus();
+});
+
+test('chat maximize control is hidden when the chat region is collapsed', () => {
+  renderTopbar({ viewMode: 'ide', isRightCollapsed: true });
+  expect(screen.queryByTitle('Maximiser le chat')).not.toBeInTheDocument();
 });

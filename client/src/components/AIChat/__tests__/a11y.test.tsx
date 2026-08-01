@@ -62,37 +62,36 @@ describe('AutonomyControls — keyboard navigation', () => {
     render(<AutonomyHarness initialMode="agent" />);
     const modeGroup = screen.getByRole('radiogroup', { name: "Mode d'exécution" });
     const radios = within(modeGroup).getAllByRole('radio');
-    const [ask, plan, agent, collective] = radios;
+    const [ask, plan, agent] = radios;
 
     expect(agent).toHaveAttribute('aria-checked', 'true');
 
     agent.focus();
     fireEvent.keyDown(agent, { key: 'ArrowRight' });
 
-    await waitFor(() => expect(collective).toHaveAttribute('aria-checked', 'true'));
+    await waitFor(() => expect(ask).toHaveAttribute('aria-checked', 'true'));
     expect(agent).toHaveAttribute('aria-checked', 'false');
 
-    // wrap-around: from the last item, ArrowRight goes back to the first
-    fireEvent.keyDown(collective, { key: 'ArrowRight' });
-    await waitFor(() => expect(ask).toHaveAttribute('aria-checked', 'true'));
-    expect(plan).toHaveAttribute('aria-checked', 'false');
+    // wrap-around: from the last item, ArrowRight goes back to the first.
+    fireEvent.keyDown(ask, { key: 'ArrowRight' });
+    await waitFor(() => expect(plan).toHaveAttribute('aria-checked', 'true'));
   });
 
   test('ArrowLeft moves selection to the previous execution mode and wraps at the start', async () => {
     render(<AutonomyHarness initialMode="ask" />);
     const modeGroup = screen.getByRole('radiogroup', { name: "Mode d'exécution" });
-    const [ask, , , collective] = within(modeGroup).getAllByRole('radio');
+    const [ask, , agent] = within(modeGroup).getAllByRole('radio');
 
     ask.focus();
     fireEvent.keyDown(ask, { key: 'ArrowLeft' });
 
-    await waitFor(() => expect(collective).toHaveAttribute('aria-checked', 'true'));
+    await waitFor(() => expect(agent).toHaveAttribute('aria-checked', 'true'));
   });
 
   test('Home and End jump to the first/last autonomy level', async () => {
     render(<AutonomyHarness initialLevel="normal" />);
     const levelGroup = screen.getByRole('radiogroup', { name: "Niveau d'autonomie" });
-    const [restricted, normal, permissive] = within(levelGroup).getAllByRole('radio');
+    const [normal, permissive] = within(levelGroup).getAllByRole('radio');
 
     normal.focus();
     fireEvent.keyDown(normal, { key: 'End' });
@@ -100,7 +99,7 @@ describe('AutonomyControls — keyboard navigation', () => {
 
     permissive.focus();
     fireEvent.keyDown(permissive, { key: 'Home' });
-    await waitFor(() => expect(restricted).toHaveAttribute('aria-checked', 'true'));
+    await waitFor(() => expect(normal).toHaveAttribute('aria-checked', 'true'));
   });
 
   test('ArrowDown/ArrowUp are also accepted (grid-style navigation)', async () => {
@@ -120,14 +119,14 @@ describe('AutonomyControls — focus follows selection', () => {
     const modeGroup = screen.getByRole('radiogroup', { name: "Mode d'exécution" });
     const radios = within(modeGroup).getAllByRole('radio');
     const agent = radios[2];
-    const collective = radios[3];
+    const ask = radios[0];
 
     agent.focus();
     expect(agent).toHaveFocus();
 
     fireEvent.keyDown(agent, { key: 'ArrowRight' });
 
-    await waitFor(() => expect(collective).toHaveFocus());
+    await waitFor(() => expect(ask).toHaveFocus());
   });
 
   test('inactive radios are not tab-focusable (roving tabindex)', () => {
@@ -287,8 +286,8 @@ describe('ARIA role semantics are correct', () => {
   test('execution mode / autonomy level controls use radiogroup + radio, not generic buttons', () => {
     render(<AutonomyHarness />);
     expect(screen.getAllByRole('radiogroup')).toHaveLength(2);
-    // 4 execution modes + 3 autonomy levels
-    expect(screen.getAllByRole('radio')).toHaveLength(7);
+    // 3 execution modes + 2 autonomy levels
+    expect(screen.getAllByRole('radio')).toHaveLength(5);
   });
 
   test('the autonomy helper text is a polite status region', () => {

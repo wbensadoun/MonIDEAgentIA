@@ -15,14 +15,121 @@ const DEFAULT_TERMINAL_HEIGHT = 250;
 const MIN_TERMINAL_HEIGHT = 100;
 const MAX_TERMINAL_HEIGHT_RATIO = 0.7;
 
+const CENTER_TABS = [
+  { id: 'code', label: 'Code', Icon: IconCode },
+  { id: 'preview', label: 'Aperçu', Icon: IconEye },
+  { id: 'git', label: 'Git', Icon: IconGit },
+  { id: 'ai-changes', label: 'AI Changes', Icon: IconAudit },
+  { id: 'brain', label: 'Brain', Icon: IconBrain },
+  { id: 'workflows', label: 'Flux', Icon: IconFlow },
+];
+
+const FALLBACK_FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'area[href]',
+  'button',
+  'input',
+  'select',
+  'textarea',
+  'iframe',
+  'object',
+  'embed',
+  '[contenteditable]',
+  '[tabindex]'
+].join(',');
+
+// Current Electron builds support `inert`. This fallback keeps the same
+// keyboard contract in older browsers and in DOM-based tests.
+const useInertFallback = (containerRef, inactive) => {
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !inactive || (typeof HTMLElement !== 'undefined' && 'inert' in HTMLElement.prototype)) {
+      return undefined;
+    }
+
+    const disableElement = (element) => {
+      if (!(element instanceof HTMLElement) || element.dataset.workbenchPreviousTabindex !== undefined) return;
+      element.dataset.workbenchPreviousTabindex = element.hasAttribute('tabindex')
+        ? element.getAttribute('tabindex')
+        : '';
+      element.setAttribute('tabindex', '-1');
+    };
+    const disableTree = (root) => {
+      if (root.matches?.(FALLBACK_FOCUSABLE_SELECTOR)) disableElement(root);
+      root.querySelectorAll?.(FALLBACK_FOCUSABLE_SELECTOR).forEach(disableElement);
+    };
+    const restore = () => {
+      container.querySelectorAll('[data-workbench-previous-tabindex]').forEach((element) => {
+        const previous = element.dataset.workbenchPreviousTabindex;
+        if (previous === '') element.removeAttribute('tabindex');
+        else element.setAttribute('tabindex', previous);
+        delete element.dataset.workbenchPreviousTabindex;
+      });
+    };
+
+    disableTree(container);
+    const observer = new MutationObserver((records) => {
+      records.forEach((record) => record.addedNodes.forEach((node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) disableTree(node);
+      }));
+    });
+    observer.observe(container, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      restore();
+    };
+  }, [containerRef, inactive]);
+};
+
+const PersistentPane = ({ id, active, children }) => {
+  const paneRef = useRef(null);
+  useInertFallback(paneRef, !active);
+
+  return (
+    <div
+      ref={paneRef}
+      id={`workspace-pane-${id}`}
+      className={`center-view-pane ${active ? 'is-active' : ''}`}
+      role="tabpanel"
+      aria-labelledby={`workspace-tab-${id}`}
+      aria-hidden={!active}
+      inert={active ? undefined : ''}
+      tabIndex={active ? 0 : -1}
+    >
+      {children}
+    </div>
+  );
+};
+
+const TransientPane = ({ id, active, children }) => (
+  <div
+    id={`workspace-pane-${id}`}
+    className={`center-transient-pane ${active ? 'is-active' : ''}`}
+    role="tabpanel"
+    aria-labelledby={`workspace-tab-${id}`}
+    aria-hidden={!active}
+    inert={active ? undefined : ''}
+    tabIndex={active ? 0 : -1}
+  >
+    {children}
+  </div>
+);
+
 const WorkspaceLayout = ({
   layoutRef,
   leftWidth,
   rightWidth,
   middleWidth,
+  leftMinWidth,
+  leftMaxWidth,
+  rightMinWidth,
+  rightMaxWidth,
+  editorMinWidth,
   isLeftCollapsed,
   isRightCollapsed,
   dragging,
+  resizeHandleProps,
   onDragStart,
   onResizeStep,
   projectItems,
@@ -44,6 +151,7 @@ const WorkspaceLayout = ({
   centerView,
   onCenterViewChange,
   isFocusMode,
+  isChatMaximized,
   onToggleFocusMode,
   editorProps,
   previewProps,
@@ -67,6 +175,7 @@ const WorkspaceLayout = ({
   const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
   const termDragRef = useRef(null);
   const centerRef = useRef(null);
+  const centerTabRefs = useRef([]);
 
   useEffect(() => {
     try {
@@ -115,13 +224,27 @@ const WorkspaceLayout = ({
     ? (centerRef.current ? centerRef.current.clientHeight - 36 : 600)
     : terminalHeight;
 
+  const handleCenterTabKeyDown = (event, index) => {
+    let nextIndex;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % CENTER_TABS.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + CENTER_TABS.length) % CENTER_TABS.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = CENTER_TABS.length - 1;
+    else return;
+
+    event.preventDefault();
+    const nextTab = CENTER_TABS[nextIndex];
+    onCenterViewChange(nextTab.id);
+    centerTabRefs.current[nextIndex]?.focus();
+  };
+
   return (
     <div ref={layoutRef} className="workspace">
       {/* Sidebar gauche — Explorateur */}
-      {!isLeftCollapsed && (
+      {!isLeftCollapsed && !isChatMaximized && (
         <WorkspaceSidebar
           sidebarVisibility="full"
-          style={{ width: `${leftWidth}%` }}
+          style={{ width: `${leftWidth}px`, minWidth: `${leftMinWidth}px` }}
           activeSection={activeSidebarSection}
           projectItems={projectItems}
           currentProjectPath={currentProjectPath}
@@ -145,40 +268,47 @@ const WorkspaceLayout = ({
       )}
 
       {/* Resizer gauche */}
-      {!isLeftCollapsed && (
+      {!isLeftCollapsed && !isChatMaximized && (
         <div
           className={`panel-resizer ${dragging === 'left' ? 'panel-resizer-active' : ''}`}
-          onMouseDown={(e) => onDragStart(e, 'left')}
+          onPointerDown={(e) => onDragStart(e, 'left')}
+          {...resizeHandleProps}
           role="separator"
           aria-orientation="vertical"
           aria-label="Redimensionner le panneau de gauche"
+          aria-valuemin={leftMinWidth}
+          aria-valuemax={Math.max(leftWidth, leftMaxWidth)}
+          aria-valuenow={Math.round(leftWidth)}
           tabIndex={0}
           onKeyDown={(e) => {
             if (!onResizeStep) return;
-            if (e.key === 'ArrowLeft') { e.preventDefault(); onResizeStep('left', -2); }
-            else if (e.key === 'ArrowRight') { e.preventDefault(); onResizeStep('left', 2); }
+            if (e.key === 'ArrowLeft') { e.preventDefault(); onResizeStep('left', -20); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); onResizeStep('left', 20); }
           }}
         />
       )}
 
       {/* Panneau central */}
-      <main ref={centerRef} className="ide-center" style={{ width: `${middleWidth}%` }}>
+      {!isChatMaximized && <main
+        ref={centerRef}
+        className="ide-center"
+        style={{ width: `${middleWidth}px`, minWidth: `${editorMinWidth}px` }}
+        tabIndex={-1}
+      >
         {/* Tabs (sans Terminal) */}
-        <div className="center-tabs" role="tablist">
-          {[
-            { id: 'code', label: 'Code', Icon: IconCode },
-            { id: 'preview', label: 'Aperçu', Icon: IconEye },
-            { id: 'git', label: 'Git', Icon: IconGit },
-            { id: 'ai-changes', label: 'AI Changes', Icon: IconAudit },
-            { id: 'brain', label: 'Brain', Icon: IconBrain },
-            { id: 'workflows', label: 'Flux', Icon: IconFlow },
-          ].map(({ id, label, Icon }) => (
+        <div className="center-tabs" role="tablist" aria-label="Vues du workspace">
+          {CENTER_TABS.map(({ id, label, Icon }, index) => (
             <button
               key={id}
+              ref={(element) => { centerTabRefs.current[index] = element; }}
+              id={`workspace-tab-${id}`}
               onClick={() => onCenterViewChange(id)}
+              onKeyDown={(event) => handleCenterTabKeyDown(event, index)}
               className={`center-tab ${centerView === id ? 'is-active' : ''}`}
               role="tab"
               aria-selected={centerView === id}
+              aria-controls={`workspace-pane-${id}`}
+              tabIndex={centerView === id ? 0 : -1}
             >
               <Icon />
               {label}
@@ -204,23 +334,28 @@ const WorkspaceLayout = ({
               cross-faded via CSS instead of remounted on every switch. See D3. */}
           <div
             className={`center-view-stack ${['code', 'preview', 'brain', 'workflows'].includes(centerView) ? 'is-visible' : ''}`}
+            aria-hidden={!['code', 'preview', 'brain', 'workflows'].includes(centerView)}
           >
-            <div className={`center-view-pane ${centerView === 'code' ? 'is-active' : ''}`} aria-hidden={centerView !== 'code'}>
+            <PersistentPane id="code" active={centerView === 'code'}>
               <CodeEditor {...editorProps} />
-            </div>
-            <div className={`center-view-pane ${centerView === 'preview' ? 'is-active' : ''}`} aria-hidden={centerView !== 'preview'}>
+            </PersistentPane>
+            <PersistentPane id="preview" active={centerView === 'preview'}>
               <LivePreview {...previewProps} />
-            </div>
-            <div className={`center-view-pane ${centerView === 'brain' ? 'is-active' : ''}`} aria-hidden={centerView !== 'brain'}>
+            </PersistentPane>
+            <PersistentPane id="brain" active={centerView === 'brain'}>
               <BrainGraphPanel {...brainGraphProps} />
-            </div>
-            <div className={`center-view-pane ${centerView === 'workflows' ? 'is-active' : ''}`} aria-hidden={centerView !== 'workflows'}>
+            </PersistentPane>
+            <PersistentPane id="workflows" active={centerView === 'workflows'}>
               <VisualWorkflowEditor {...workflowProps} />
-            </div>
+            </PersistentPane>
           </div>
           {/* Cheap/stateless views — plain conditional mount is fine here. */}
-          {centerView === 'git' && <GitPanel {...gitPanelProps} />}
-          {centerView === 'ai-changes' && <AIChangesPanel {...aiChangesPanelProps} />}
+          <TransientPane id="git" active={centerView === 'git'}>
+            {centerView === 'git' && <GitPanel {...gitPanelProps} />}
+          </TransientPane>
+          <TransientPane id="ai-changes" active={centerView === 'ai-changes'}>
+            {centerView === 'ai-changes' && <AIChangesPanel {...aiChangesPanelProps} />}
+          </TransientPane>
         </div>
 
         {/* Bottom Terminal Panel */}
@@ -275,21 +410,25 @@ const WorkspaceLayout = ({
             />
           </div>
         )}
-      </main>
+      </main>}
 
       {/* Resizer droit */}
-      {!isRightCollapsed && (
+      {!isRightCollapsed && !isChatMaximized && (
         <div
           className={`panel-resizer ${dragging === 'right' ? 'panel-resizer-active' : ''}`}
-          onMouseDown={(e) => onDragStart(e, 'right')}
+          onPointerDown={(e) => onDragStart(e, 'right')}
+          {...resizeHandleProps}
           role="separator"
           aria-orientation="vertical"
           aria-label="Redimensionner le panneau de droite"
+          aria-valuemin={rightMinWidth}
+          aria-valuemax={Math.max(rightWidth, rightMaxWidth)}
+          aria-valuenow={Math.round(rightWidth)}
           tabIndex={0}
           onKeyDown={(e) => {
             if (!onResizeStep) return;
-            if (e.key === 'ArrowLeft') { e.preventDefault(); onResizeStep('right', -2); }
-            else if (e.key === 'ArrowRight') { e.preventDefault(); onResizeStep('right', 2); }
+            if (e.key === 'ArrowLeft') { e.preventDefault(); onResizeStep('right', 20); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); onResizeStep('right', -20); }
           }}
         />
       )}
@@ -297,8 +436,10 @@ const WorkspaceLayout = ({
       {/* Sidebar droite — AI Chat */}
       {!isRightCollapsed && (
         <aside
-          className="ide-sidebar-right"
-          style={{ width: `${rightWidth}%` }}
+          className={`ide-sidebar-right${isChatMaximized ? ' is-maximized' : ''}`}
+          style={isChatMaximized
+            ? { width: '100%', minWidth: `${rightMinWidth}px` }
+            : { width: `${rightWidth}px`, minWidth: `${rightMinWidth}px` }}
         >
           <AIChat {...aiChatProps} />
         </aside>

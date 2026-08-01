@@ -12,6 +12,8 @@ import {
   IconLayoutSidebarRightOff,
   IconLayoutCustomize,
   IconCheck,
+  IconMaximize2,
+  IconMinimize2,
 } from '../ComponentLibrary/icons';
 import { Toolbar, ToolbarGroup, ToolbarSeparator, IconButton } from '../ComponentLibrary/Toolbar';
 
@@ -68,6 +70,8 @@ const AppTopbar = ({
   isLeftCollapsed,
   onToggleRightPanel,
   isRightCollapsed,
+  isChatMaximized,
+  onToggleChatMaximize,
   onToggleChatSidebar,
   isChatSidebarCollapsed,
   onToggleSwarmPanel,
@@ -261,6 +265,15 @@ const AppTopbar = ({
                     onClick={onClick}
                   />
                 ))}
+                {!isChat && !isRightCollapsed && (
+                  <IconButton
+                    icon={isChatMaximized ? <IconMinimize2 size={16} /> : <IconMaximize2 size={16} />}
+                    isActive={Boolean(isChatMaximized)}
+                    title={isChatMaximized ? 'Restaurer le chat' : 'Maximiser le chat'}
+                    aria-label={isChatMaximized ? 'Restaurer le chat' : 'Maximiser le chat'}
+                    onClick={onToggleChatMaximize}
+                  />
+                )}
               </ToolbarGroup>
             </>
           )}

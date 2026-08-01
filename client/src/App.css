@@ -1212,6 +1212,22 @@ select option:checked {
   z-index: 1;
 }
 
+.ide-sidebar-right.is-maximized {
+  flex: 1 1 auto;
+}
+
+.center-transient-pane {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.center-transient-pane.is-active {
+  display: flex;
+}
+
 /* ============================
    BOTTOM TERMINAL PANEL (VS Code style)
    ============================ */

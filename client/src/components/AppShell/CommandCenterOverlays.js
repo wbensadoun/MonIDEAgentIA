@@ -1,4 +1,5 @@
 import React from 'react';
+import Dialog from '../ComponentLibrary/Dialog';
 
 const CommandCenterOverlays = ({
   commandOpen,
@@ -43,8 +44,13 @@ const CommandCenterOverlays = ({
 }) => (
   <>
     {commandOpen && (
-      <div className="command-overlay" onClick={closeCommand}>
-        <div className="command-modal" onClick={(e) => e.stopPropagation()}>
+      <Dialog
+        onClose={closeCommand}
+        ariaLabel="Palette de commandes"
+        initialFocusRef={commandInputRef}
+        overlayClassName="command-overlay"
+        className="command-modal"
+      >
           <div className="command-input-row">
             <input
               ref={commandInputRef}
@@ -52,6 +58,7 @@ const CommandCenterOverlays = ({
               onChange={(e) => setCommandQuery(e.target.value)}
               onKeyDown={handleCommandKey}
               placeholder="Chercher une commande, une vue, une action..."
+              aria-label="Rechercher une commande"
               className="command-input"
             />
             <span className="command-hint">Ctrl+K</span>
@@ -71,13 +78,17 @@ const CommandCenterOverlays = ({
               </button>
             ))}
           </div>
-        </div>
-      </div>
+      </Dialog>
     )}
 
     {filePaletteOpen && (
-      <div className="command-overlay" onClick={closeFilePalette}>
-        <div className="command-modal" onClick={(e) => e.stopPropagation()}>
+      <Dialog
+        onClose={closeFilePalette}
+        ariaLabel="Ouverture rapide de fichier"
+        initialFocusRef={filePaletteInputRef}
+        overlayClassName="command-overlay"
+        className="command-modal"
+      >
           <div className="command-input-row">
             <input
               ref={filePaletteInputRef}
@@ -85,6 +96,7 @@ const CommandCenterOverlays = ({
               onChange={(e) => setFilePaletteQuery(e.target.value)}
               onKeyDown={handleFilePaletteKey}
               placeholder="Ouvrir un fichier (fuzzy)..."
+              aria-label="Rechercher un fichier"
               className="command-input"
             />
             <span className="command-hint">Ctrl+P</span>
@@ -112,13 +124,17 @@ const CommandCenterOverlays = ({
               );
             })}
           </div>
-        </div>
-      </div>
+      </Dialog>
     )}
 
     {searchOpen && (
-      <div className="command-overlay" onClick={closeSearch}>
-        <div className="command-modal is-wide" onClick={(e) => e.stopPropagation()}>
+      <Dialog
+        onClose={closeSearch}
+        ariaLabel="Recherche dans le projet"
+        initialFocusRef={searchInputRef}
+        overlayClassName="command-overlay"
+        className="command-modal is-wide"
+      >
           <div className="command-input-row">
             <input
               ref={searchInputRef}
@@ -126,6 +142,7 @@ const CommandCenterOverlays = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKey}
               placeholder="Rechercher dans le projet..."
+              aria-label="Rechercher dans le projet"
               className="command-input"
             />
             <span className="command-hint">Ctrl+Shift+F</span>
@@ -156,13 +173,17 @@ const CommandCenterOverlays = ({
               );
             })}
           </div>
-        </div>
-      </div>
+      </Dialog>
     )}
 
     {symbolOpen && (
-      <div className="command-overlay" onClick={closeSymbol}>
-        <div className="command-modal is-wide" onClick={(e) => e.stopPropagation()}>
+      <Dialog
+        onClose={closeSymbol}
+        ariaLabel="Recherche de symboles"
+        initialFocusRef={symbolInputRef}
+        overlayClassName="command-overlay"
+        className="command-modal is-wide"
+      >
           <div className="command-input-row">
             <input
               ref={symbolInputRef}
@@ -170,6 +191,7 @@ const CommandCenterOverlays = ({
               onChange={(e) => setSymbolQuery(e.target.value)}
               onKeyDown={handleSymbolKey}
               placeholder="Rechercher un symbole..."
+              aria-label="Rechercher un symbole"
               className="command-input"
             />
             <span className="command-hint">Ctrl+T</span>
@@ -196,8 +218,7 @@ const CommandCenterOverlays = ({
               </button>
             ))}
           </div>
-        </div>
-      </div>
+      </Dialog>
     )}
   </>
 );
