@@ -130,9 +130,21 @@
   transition: background 0.1s, color 0.1s;
 }
 
-.ai-header-btn:hover {
+.ai-header-btn:hover:not(:disabled) {
   background: var(--surface-2);
   color: var(--text-main);
+}
+
+.ai-header-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Bouton de réouverture du panneau des agents : état actif visible même
+   sans hover, pour que l'utilisateur sache si le panneau est ouvert. */
+.ai-header-btn[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .ai-header-btn svg {
@@ -157,7 +169,8 @@
 .ai-send-btn-compact:focus-visible,
 .ai-stop-btn:focus-visible,
 .ai-agent-mode-button:focus-visible,
-.ai-agent-mode-item:focus-visible {
+.ai-agent-mode-item:focus-visible,
+.ai-pending-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -170,8 +183,8 @@
   border-radius: 3px;
   background: var(--accent-soft);
   color: var(--accent);
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  font-size: 9px;
+  border: 1px solid var(--accent-hover);
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   flex-shrink: 0;
@@ -190,7 +203,7 @@
 
 .ai-chat-metric {
   flex: 1;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-2);
   border-radius: 3px;
   padding: 3px 4px;
   text-align: center;
@@ -211,7 +224,7 @@
 
 .ai-chat-metric-label {
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: var(--text-xs);
 }
 
 /* =============================
@@ -225,6 +238,7 @@
   flex-direction: column;
   gap: 0;
   min-height: 0;
+  position: relative;
 }
 
 /* Séparateur de section */
@@ -250,12 +264,12 @@
   flex-direction: column;
   padding: 8px 14px;
   gap: 6px;
-  transition: background 0.1s;
+  transition: background var(--duration-fast, 100ms) var(--ease-emphasized, ease);
   animation: view-fade-in 200ms ease both;
 }
 
 .ai-message:hover {
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--surface-2);
 }
 
 .ai-message-meta {
@@ -277,7 +291,7 @@
 }
 
 .ai-message-avatar.user {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-2);
   color: var(--text-dim);
 }
 
@@ -298,7 +312,7 @@
 }
 
 .ai-message-time {
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   margin-left: auto;
 }
@@ -316,6 +330,133 @@
 
 .ai-message-body p:last-child {
   margin-bottom: 0;
+}
+
+/* Raisonnement du modèle — replié par défaut, volontairement discret : c'est
+   un outil de debug, pas la réponse. N'apparaît que si le mode Raisonnement
+   est actif (sinon le backend l'a déjà retiré). */
+.ai-reasoning {
+  interpolate-size: allow-keywords;
+  margin: 0 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.ai-reasoning::details-content {
+  block-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: block-size var(--duration-base, 200ms) var(--ease-emphasized, cubic-bezier(0.2,0,0,1)),
+              opacity var(--duration-fast, 100ms) var(--ease-emphasized, cubic-bezier(0.2,0,0,1)),
+              content-visibility var(--duration-base, 200ms) allow-discrete;
+}
+
+.ai-reasoning[open]::details-content {
+  block-size: auto;
+  opacity: 1;
+}
+
+.ai-reasoning-summary {
+  cursor: pointer;
+  padding: 5px 9px;
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+  list-style: none;
+}
+
+.ai-reasoning-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: opacity 100ms ease-in-out, transform 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ai-reasoning[open] > .ai-reasoning-summary::before {
+  transform: rotate(90deg);
+}
+
+.ai-reasoning-summary:hover {
+  color: var(--text-main);
+}
+
+.ai-reasoning-body {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.ai-message-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Barre d'actions par message (copier / relancer). Invisible au repos, revelee
+   au survol ET au focus clavier — sans pointer-events:none, pour que la
+   tabulation puisse atteindre les boutons et les faire apparaitre. La barre du
+   DERNIER message assistant reste visible en permanence (is-pinned), comme la
+   barre d'actions de la derniere reponse dans VS Code. */
+.ai-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 24px;
+  opacity: 0;
+  transition: opacity var(--duration-fast, 100ms) var(--ease-emphasized, ease);
+}
+
+.ai-message:hover .ai-message-actions,
+.ai-message:focus-within .ai-message-actions,
+.ai-message-actions:focus-within,
+.ai-message-actions.is-pinned {
+  opacity: 1;
+}
+
+.ai-msg-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--duration-fast, 100ms) ease, color var(--duration-fast, 100ms) ease;
+}
+
+.ai-msg-action:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-main);
+}
+
+.ai-msg-action:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ai-msg-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ai-msg-action svg {
+  width: 13px;
+  height: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-message-actions { transition: none; }
 }
 
 .ai-message-body code {
@@ -413,6 +554,103 @@
   40% { opacity: 1; transform: scale(1); }
 }
 
+/* Carte de commande terminal exécutée par l'IA — repliable, sortie non
+   tronquée. Utilisée à la fois pour le tour en cours et pour l'historique
+   archivé sous chaque message (cf. historicalTerminalActions). */
+.ai-terminal-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 4px 0;
+  overflow: hidden;
+  font-size: 11px;
+}
+
+.ai-terminal-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ai-terminal-card-status {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.ai-terminal-card-status.is-running {
+  background: var(--accent);
+  animation: ai-pulse 1.2s ease-in-out infinite;
+}
+
+.ai-terminal-card-status.is-success { background: var(--success, #4ade80); }
+.ai-terminal-card-status.is-error   { background: var(--danger,  #f87171); }
+
+.ai-terminal-card-exit {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 0 5px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+.ai-terminal-card-exit.is-success { color: var(--success, #4ade80); border-color: rgba(74,222,128,0.35); }
+.ai-terminal-card-exit.is-error   { color: var(--danger,  #f87171); border-color: rgba(248,113,113,0.35); }
+
+.ai-terminal-card-command {
+  font-family: var(--font-mono);
+  color: var(--text-main);
+  flex: 1;
+  font-size: 10px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-terminal-card-iteration {
+  color: var(--text-muted);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.ai-terminal-card-chevron {
+  color: var(--text-dim);
+  flex-shrink: 0;
+  transition: transform var(--duration-fast, 100ms) var(--ease-emphasized, ease);
+}
+
+.ai-terminal-card-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.ai-terminal-card-xterm {
+  padding: 5px 8px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.ai-terminal-card-xterm .xterm { height: 100%; }
+.ai-terminal-card-xterm .xterm-viewport { background-color: transparent !important; }
+.ai-terminal-card-xterm .xterm .xterm-screen { cursor: text; }
+
+.ai-terminal-card-empty {
+  padding: 5px 10px;
+  font-size: 9px;
+  font-style: italic;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+
 /* Overlay wrapper for dropdowns (conversation history, workflow/@ suggestions):
    takes zero space in flow (only an absolutely-positioned child), so opening
    it floats over the content below instead of reflowing the whole column. */
@@ -450,6 +688,16 @@
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-main);
+}
+
+/* Wrapper du stream en mode 'text' : rendu par MarkdownRenderer (prose
+   normale, PAS le mono/pre-wrap de .ai-stream-text ci-dessus qui était taillé
+   pour du texte brut). Mêmes proportions que .ai-message-body, sans son
+   padding-left (le stream a déjà son propre conteneur/marges). */
+.ai-stream-markdown {
   font-size: 12px;
   line-height: 1.6;
   color: var(--text-main);
@@ -704,7 +952,7 @@
 }
 
 .ai-pending-label {
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -712,7 +960,7 @@
 }
 
 .ai-pending-count {
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -737,16 +985,21 @@
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color var(--duration-fast, 150ms), border-color var(--duration-fast, 150ms), color var(--duration-fast, 150ms), opacity var(--duration-fast, 150ms);
+}
+
+.ai-pending-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .ai-pending-btn-apply {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
   border: 1px solid var(--accent);
 }
 
-.ai-pending-btn-apply:hover {
+.ai-pending-btn-apply:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 80%, white);
 }
 
@@ -756,7 +1009,7 @@
   border: 1px solid var(--border);
 }
 
-.ai-pending-btn-reject:hover {
+.ai-pending-btn-reject:hover:not(:disabled) {
   color: var(--danger);
   border-color: var(--danger);
 }
@@ -784,7 +1037,11 @@
 
 /* Bloc composer unifié : un seul cadre arrondi contenant le textarea et la
    rangée basse [+] [mode] [modèle] [autonomie] [Envoyer]. */
+@property --ai-composer-angle { syntax: '<angle>'; inherits: false; initial-value: 135deg; }
+@keyframes ai-composer-beam { from { --ai-composer-angle: 135deg; } to { --ai-composer-angle: 495deg; } }
+
 .ai-composer {
+  position: relative;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg, 10px);
@@ -794,8 +1051,40 @@
   gap: 6px;
 }
 
+.ai-composer::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(from var(--ai-composer-angle),
+    transparent 0deg,
+    color-mix(in srgb, var(--accent) 90%, transparent) 20deg,
+    var(--accent) 30deg,
+    color-mix(in srgb, var(--accent) 60%, transparent) 50deg,
+    transparent 90deg, transparent 360deg);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  opacity: 0;
+  transition: opacity 350ms ease;
+  pointer-events: none;
+}
+
+.ai-composer.is-working::before {
+  opacity: 1;
+  animation: ai-composer-beam 4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-composer.is-working::before {
+    animation: none;
+  }
+}
+
 .ai-composer:focus-within {
   border-color: var(--accent);
+  box-shadow: var(--shadow-focus-ring);
 }
 
 .ai-input-bar-textarea {
@@ -808,7 +1097,13 @@
   font-size: 13px;
   font-family: var(--font-sans);
   line-height: 1.5;
-  outline: none;
+  background: transparent;
+  border: none;
+}
+
+.ai-input-bar-textarea:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .ai-input-bar-textarea::placeholder {
@@ -820,6 +1115,7 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .ai-input-bar-spacer {
@@ -852,6 +1148,7 @@
 /* Pills (mode / modèle / autonomie) */
 .ai-pill-wrap {
   position: relative;
+  min-width: 0;
 }
 
 .ai-pill {
@@ -867,7 +1164,11 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 0.1s, color 0.1s;
+  transition: border-color var(--duration-fast, 100ms), color var(--duration-fast, 100ms);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .ai-pill:hover:not(:disabled) {
@@ -962,7 +1263,7 @@
 }
 
 .ai-plus-menu-label {
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -984,7 +1285,7 @@
   border: 1px solid var(--accent);
   flex-shrink: 0;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color var(--duration-fast, 150ms), border-color var(--duration-fast, 150ms), opacity var(--duration-fast, 150ms);
 }
 
 .ai-send-btn-compact:hover:not(:disabled) {
@@ -1077,7 +1378,7 @@
   color: white;
   border: 1px solid var(--danger);
   flex-shrink: 0;
-  transition: all 0.15s;
+  transition: background-color var(--duration-fast, 150ms), opacity var(--duration-fast, 150ms);
 }
 
 .ai-stop-btn:hover {
@@ -1161,7 +1462,7 @@
 .ai-agent-chip.is-active {
   background: var(--accent-soft);
   color: var(--accent);
-  border-color: rgba(59, 130, 246, 0.3);
+  border-color: var(--accent-hover);
 }
 
 /* Permission mode indicator */
@@ -1201,7 +1502,7 @@
   gap: 3px;
   padding: 1px 6px;
   border-radius: 3px;
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 600;
 }
 
@@ -1259,8 +1560,10 @@
   outline: none;
 }
 
-.ai-auto-select:focus {
-  border-color: rgba(0, 245, 212, 0.35);
+.ai-auto-select:focus-visible {
+  border-color: var(--accent);
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .ai-auto-select:disabled {
@@ -1275,9 +1578,9 @@
   align-items: center;
   gap: 6px;
   padding: 5px 9px;
-  border: 1px solid rgba(0, 245, 212, 0.2);
+  border: 1px solid var(--accent-hover);
   border-radius: 6px;
-  background: var(--accent-soft, rgba(0, 245, 212, 0.08));
+  background: var(--accent-soft);
   font-size: 10px;
   line-height: 1.4;
   color: var(--text-dim);
@@ -1291,4 +1594,55 @@
 .ai-decision-sep {
   color: var(--text-muted);
   opacity: 0.5;
+}
+
+/* Scroll to bottom button */
+.ai-scroll-to-bottom {
+  position: absolute;
+  bottom: 7px;
+  right: 12px;
+  width: 27px;
+  height: 27px;
+  border-radius: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-md, 0 2px 8px rgba(0,0,0,0.3));
+  transition: opacity var(--duration-fast, 100ms) var(--ease-emphasized, cubic-bezier(0.2,0,0,1));
+  z-index: 10;
+}
+
+.ai-scroll-to-bottom:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Shimmer animation for thinking label */
+.ai-loading-label {
+  background: linear-gradient(90deg,
+    var(--text-dim) 0%, var(--text-dim) 30%,
+    var(--text-main) 50%,
+    var(--text-dim) 70%, var(--text-dim) 100%);
+  background-size: 400% 100%;
+  background-clip: text; -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: ai-shimmer 2s linear infinite;
+  will-change: background-position;
+}
+
+@keyframes ai-shimmer {
+  0% { background-position: 120% 0; }
+  100% { background-position: -120% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-loading-label {
+    animation: none;
+    -webkit-text-fill-color: currentColor;
+  }
 }

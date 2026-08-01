@@ -1,0 +1,188 @@
+/* ============================================================
+   TerminalPanel — Process runner and output display
+   ============================================================ */
+
+.terminal-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text-main);
+  overflow: hidden;
+}
+
+/* Header — tabs and controls */
+.bottom-terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  height: 36px;
+  flex-shrink: 0;
+  gap: var(--space-2);
+}
+
+.bottom-terminal-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+/* Tab buttons */
+.bottom-terminal-title-btn {
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: all var(--duration-fast) var(--ease-standard);
+  position: relative;
+  top: 2px;
+}
+
+.bottom-terminal-title-btn:hover:not(.is-active) {
+  color: var(--text-main);
+}
+
+.bottom-terminal-title-btn.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Content area */
+.bottom-terminal-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Logs — scrollable, monospace, white-space preserved */
+.terminal-log {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--text-dim);
+  background: var(--bg);
+  padding: var(--space-3);
+}
+
+.terminal-log__ai {
+  color: var(--success);
+}
+
+/* Process control bar */
+.terminal-actions {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.terminal-action {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+/* Process selector pill */
+.terminal-pill {
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast) var(--ease-standard);
+  white-space: nowrap;
+  font-weight: var(--font-weight-medium);
+}
+
+.terminal-pill:hover:not(.is-active) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.terminal-pill.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Start/Stop toggle button */
+.terminal-toggle {
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast) var(--ease-standard);
+  white-space: nowrap;
+  font-weight: var(--font-weight-medium);
+}
+
+.terminal-toggle:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.terminal-toggle.is-running {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.terminal-toggle.is-running:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--on-accent);
+}
+
+.terminal-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Problem list styling */
+.terminal-problem-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.terminal-problem-list li {
+  padding: var(--space-2);
+  margin: 0;
+  border-left: 3px solid;
+  line-height: var(--leading-normal);
+}
+
+.problem-error {
+  color: var(--danger);
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger-soft) 50%, transparent);
+}
+
+.problem-warn {
+  color: var(--warning);
+  border-left-color: var(--warning);
+  background: color-mix(in srgb, var(--warning-soft) 50%, transparent);
+}

@@ -99,7 +99,7 @@ const WorkspacePanel = ({
         <button
           type="button"
           className="ws-add"
-          title="Ouvrir un projet"
+          title={isElectronApiAvailable ? 'Ouvrir un projet' : 'Disponible uniquement dans l\'application de bureau'}
           onClick={() => onOpenProject && onOpenProject()}
           disabled={!isElectronApiAvailable}
         >
@@ -196,6 +196,7 @@ const WorkspacePanel = ({
         <button
           type="button"
           className="ws-open-btn"
+          title={isElectronApiAvailable ? 'Ouvrir un projet' : 'Disponible uniquement dans l\'application de bureau'}
           onClick={() => onOpenProject && onOpenProject()}
           disabled={!isElectronApiAvailable}
         >

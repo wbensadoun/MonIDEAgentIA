@@ -81,6 +81,7 @@
   gap: var(--space-0);
   padding: var(--space-1);
   min-height: 24px;
+  min-width: 24px;
   font-size: var(--text-xs);
 }
 

@@ -1,10 +1,18 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import './AIChat.css';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
 import { LiveFilesPanel } from '../LoadingAnimations';
 import SyntaxHighlightedCode from './SyntaxHighlightedCode';
 import { EXECUTION_MODES } from '../../utils/agentModes';
 import AIDecisionBadge from './AIDecisionBadge';
+import MarkdownRenderer from './MarkdownRenderer';
 import { AUTONOMY_LEVELS, toLegacyPermission } from './AutonomyControls';
+import { IconAgents } from '../ComponentLibrary/icons';
+
+const THINKING_MESSAGES = ['Réflexion', 'Analyse', 'Évaluation', 'Examen', 'Travail en cours'];
+const TERMINAL_MESSAGES = ['Exécution', 'Traitement'];
 
 const WORKFLOW_STREAM_REGEX = /\*\*WORKFLOW:/i;
 const DIFF_STREAM_REGEX = /<<<<\s*SEARCH/i;
@@ -59,30 +67,60 @@ const extractStreamingFiles = (text) => {
   return paths.map((p, i) => ({ path: p, status: i === paths.length - 1 ? 'writing' : 'done' }));
 };
 
-const filterUserVisibleText = (text) => {
+// Normalisation miroir de sanitizeProposedFilePath (useAIPendingChanges.js:32)
+// pour pouvoir rapprocher un marqueur **FICHIER:** d'une entrée pendingFileChanges.
+const normalizeMarkerPath = (value) => String(value || '')
+  .trim()
+  .replace(/\\/g, '/')
+  .split('/')
+  .map((segment) => segment.trim())
+  .filter(Boolean)
+  .join('/');
+
+// Miroir front de stripThinkBlocks() (electron/services/ollama.service.js).
+// Couvre <think> ET <thinking>, bloc fermé ou non — un flux coupé en plein
+// raisonnement laisse la balise ouverte, et l'ancien filtre (paire complète
+// uniquement) laissait alors tout le raisonnement à l'écran.
+const REASONING_BLOCK_REGEX = /<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>\n*/gi;
+const REASONING_OPEN_REGEX = /<(?:think|thinking)>[\s\S]*$/i;
+
+const stripReasoningBlocks = (text) => {
   if (!text) return '';
-  // Remove internal workflow construction details
-  // Remove lines starting with "Construction du workflow", "Trigger", "AI", "Output", "Analyse du besoin", etc.
-  return text
-    .split('\n')
-    .filter(line => {
-      const trimmed = line.trim();
-      // Filter out technical workflow steps and internal details
-      if (/^(Construction du workflow|Trigger|AI|Output|Analyse du besoin|Creation des noeuds|Cablage des liens|Verification|Finalisation|Etape active:)/i.test(trimmed)) {
-        return false;
-      }
-      // Filter out JSON blocks for workflows
-      if (trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"')) {
-        return false;
-      }
-      // Filter out opening/closing braces and commas that are part of JSON
-      if (/^[{}[\],]*$/.test(trimmed)) {
-        return false;
-      }
-      return true;
-    })
-    .join('\n')
+  return String(text)
+    .replace(REASONING_BLOCK_REGEX, '')
+    .replace(REASONING_OPEN_REGEX, '')
     .trim();
+};
+
+// Découpe un message en segments raisonnement / réponse. Le backend ne laisse
+// les balises que si le mode Raisonnement est actif (sinon il a déjà strippé),
+// donc ce parseur donne le bon résultat dans les deux cas sans avoir à
+// connaître le réglage. Le bloc non fermé (génération coupée) est capturé
+// aussi, sinon il repartirait en texte visible.
+const REASONING_SEGMENT_REGEX = /<(?:think|thinking)>([\s\S]*?)(?:<\/(?:think|thinking)>|$)/gi;
+
+const splitReasoningSegments = (text) => {
+  const source = String(text || '');
+  if (!source) return [];
+
+  const segments = [];
+  const regex = new RegExp(REASONING_SEGMENT_REGEX.source, REASONING_SEGMENT_REGEX.flags);
+  let cursor = 0;
+  let match;
+
+  while ((match = regex.exec(source)) !== null) {
+    if (match.index > cursor) {
+      segments.push({ type: 'text', content: source.slice(cursor, match.index) });
+    }
+    segments.push({ type: 'reasoning', content: match[1] });
+    cursor = match.index + match[0].length;
+    if (match.index === regex.lastIndex) regex.lastIndex += 1;
+  }
+  if (cursor < source.length) {
+    segments.push({ type: 'text', content: source.slice(cursor) });
+  }
+
+  return segments.filter((segment) => segment.content.trim());
 };
 
 const extractStreamingWorkflowDraft = (text) => {
@@ -105,6 +143,188 @@ const fromLegacyPermission = (mode) => {
   return 'permissive'; // edit_terminal (and default)
 };
 
+// ─── ReasoningBlock ─────────────────────────────────────────────────────────
+// Le raisonnement du modèle, replié par défaut. Visible seulement quand le
+// mode Raisonnement est actif — sinon le backend l'a déjà retiré et aucun
+// segment de ce type n'arrive jusqu'ici.
+const ReasoningBlock = ({ content }) => (
+  <details className="ai-reasoning">
+    <summary className="ai-reasoning-summary">Raisonnement du modèle</summary>
+    <pre className="ai-reasoning-body">{content.trim()}</pre>
+  </details>
+);
+
+// ─── usePillMenu ────────────────────────────────────────────────────────────
+// Popover plumbing partagée par toutes les pills de la barre d'outils : fermer
+// au clic extérieur et à Escape. Sans ça, un menu ouvert juste avant le début
+// d'une génération devenait impossible à fermer — le bouton déclencheur passe
+// disabled={isLoading}, donc le re-clic qui le referme ne part jamais.
+const usePillMenu = () => {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (event) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target)) setOpen(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return { open, setOpen, wrapRef };
+};
+
+const readChatTerminalTheme = () => {
+  const styles = getComputedStyle(document.documentElement);
+  const read = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
+  return {
+    background: read('--surface-2', '#17181b'),
+    foreground: read('--text-dim', '#b6bac1'),
+    cursor: 'transparent',
+    selectionBackground: read('--accent-soft', 'rgba(59,158,255,0.25)'),
+    black: '#1d1f23',
+    brightBlack: '#5c6370',
+  };
+};
+
+const URL_IN_TERMINAL_REGEX = /(https?:\/\/[^\s"'<>`]+)/g;
+
+const TERMINAL_ROW_PX = 15;
+const TERMINAL_MAX_ROWS = 20;
+
+const TerminalOutputView = ({ output }) => {
+  const hostRef = useRef(null);
+  const lineCount = useMemo(
+    () => Math.max(1, String(output || '').split('\n').length),
+    [output]
+  );
+  const rows = Math.min(TERMINAL_MAX_ROWS, Math.max(3, lineCount));
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return undefined;
+
+    const term = new Terminal({
+      convertEol: true,
+      disableStdin: true,
+      cursorBlink: false,
+      cursorStyle: 'bar',
+      fontSize: 11,
+      lineHeight: 1.3,
+      fontFamily: 'var(--font-mono, Consolas, monospace)',
+      theme: readChatTerminalTheme(),
+      scrollback: 5000,
+      rows,
+    });
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+
+    const linkDisposable = term.registerLinkProvider({
+      provideLinks(bufferLineNumber, callback) {
+        const line = term.buffer.active.getLine(bufferLineNumber - 1);
+        if (!line) { callback(undefined); return; }
+        const text = line.translateToString(true);
+        const links = [];
+        const re = new RegExp(URL_IN_TERMINAL_REGEX.source, 'g');
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          const url = m[1].replace(/[.,;:)\]}]+$/, '');
+          links.push({
+            range: {
+              start: { x: m.index + 1, y: bufferLineNumber },
+              end: { x: m.index + url.length, y: bufferLineNumber },
+            },
+            text: url,
+            activate: () => { window.open(url, '_blank', 'noopener,noreferrer'); },
+          });
+        }
+        callback(links.length > 0 ? links : undefined);
+      },
+    });
+
+    term.open(host);
+    try { fitAddon.fit(); } catch { /* conteneur pas encore mesure */ }
+    term.write(String(output || ''));
+    term.scrollToTop();
+
+    const ro = new ResizeObserver(() => { try { fitAddon.fit(); } catch { /* ignore */ } });
+    ro.observe(host);
+
+    return () => {
+      ro.disconnect();
+      linkDisposable.dispose();
+      term.dispose();
+    };
+  }, [output, rows]);
+
+  return (
+    <div
+      ref={hostRef}
+      className="ai-terminal-card-xterm"
+      style={{ height: rows * TERMINAL_ROW_PX + 10 }}
+    />
+  );
+};
+
+// ─── TerminalActionCard ─────────────────────────────────────────────────────
+// Une commande exécutée par l'IA. Dépliée tant qu'elle tourne pour suivre en
+// direct, repliée automatiquement à la fin (l'utilisateur peut la redéplier).
+// Sortie scrollable, jamais tronquée — l'ancienne version coupait à 800
+// caractères et perdait la fin du log. Pastille succès/échec : le code de
+// sortie est transporté via le canal IPC et affiché comme indicateur visuel.
+// Un code de sortie null signifie que la commande a été bloquée (permissions,
+// timeout, refus utilisateur) ou qu'une erreur a survenu avant fork — pas de code shell.
+const TerminalActionCard = ({ action }) => {
+  const isDone = action.type === 'done';
+  const isOk = isDone && action.ok === true;
+  const hasExitCode = typeof action.exitCode === 'number';
+  const [expanded, setExpanded] = useState(!isDone);
+
+  useEffect(() => {
+    if (isDone) setExpanded(false);
+  }, [isDone]);
+
+  return (
+    <div className="ai-terminal-card">
+      <button
+        type="button"
+        className="ai-terminal-card-header"
+        onClick={() => setExpanded((v) => !v)}
+        title={isDone ? (isOk ? `Commande reussie${hasExitCode ? ` (code ${action.exitCode})` : ''}` : `Commande en echec${hasExitCode ? ` (code ${action.exitCode})` : ' (bloquee ou interrompue)'}`) : 'Commande en cours'}
+      >
+        <span className={`ai-terminal-card-status${!isDone ? ' is-running' : isOk ? ' is-success' : ' is-error'}`} />
+        <span className="ai-terminal-card-command">{action.command}</span>
+        {isDone && (
+          <span className={`ai-terminal-card-exit${isOk ? ' is-success' : ' is-error'}`}>
+            {hasExitCode ? `exit ${action.exitCode}` : (isOk ? 'OK' : 'echec')}
+          </span>
+        )}
+        <span className="ai-terminal-card-iteration">#{action.iteration}</span>
+        <svg
+          width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+          className={`ai-terminal-card-chevron${expanded ? ' is-open' : ''}`}
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
+      {expanded && (
+        action.output
+          ? <TerminalOutputView output={action.output} />
+          : <div className="ai-terminal-card-empty">{isDone ? 'Aucune sortie.' : 'En cours…'}</div>
+      )}
+    </div>
+  );
+};
+
 // ─── AgentModePill ──────────────────────────────────────────────────────────
 // Single fused control replacing the old separate ModePill (Ask/Plan/Agent)
 // + the "Agent" persona picker: one dropdown, top section = execution modes,
@@ -118,7 +338,7 @@ const AgentModePill = ({
   onOpenAgentManager,
   disabled
 }) => {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, wrapRef } = usePillMenu();
   const currentMode = EXECUTION_MODES.find((m) => m.id === executionMode) || EXECUTION_MODES[0];
   const label = activeAgent ? activeAgent.name : (currentMode?.label || 'Agent');
   const icon = activeAgent ? '👤' : (currentMode?.icon || '🔧');
@@ -141,7 +361,7 @@ const AgentModePill = ({
   };
 
   return (
-    <div className="ai-pill-wrap">
+    <div className="ai-pill-wrap" ref={wrapRef}>
       <button
         type="button"
         className="ai-pill"
@@ -209,11 +429,11 @@ const AgentModePill = ({
 // Compact pill showing the current autonomy level (dot + label); click opens
 // a popover to switch between Lecture seule / Supervisé / Autonome.
 const AutonomyPill = ({ autonomyLevel, onAutonomyLevelChange, disabled }) => {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, wrapRef } = usePillMenu();
   const current = AUTONOMY_LEVELS.find((l) => l.id === autonomyLevel) || AUTONOMY_LEVELS[0];
 
   return (
-    <div className="ai-pill-wrap">
+    <div className="ai-pill-wrap" ref={wrapRef}>
       <button
         type="button"
         className="ai-pill"
@@ -258,11 +478,11 @@ const PROVIDER_PILL_LABELS = { gemini: 'Gemini', claude: 'Claude', kimi: 'Kimi',
 const PROVIDER_PILL_OPTIONS = ['gemini', 'claude', 'kimi', 'ollama'];
 
 const ProviderPill = ({ aiProvider, onProviderChange, disabled }) => {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, wrapRef } = usePillMenu();
   const providerLabel = PROVIDER_PILL_LABELS[aiProvider] || aiProvider || 'Gemini';
 
   return (
-    <div className="ai-pill-wrap">
+    <div className="ai-pill-wrap" ref={wrapRef}>
       <button
         type="button"
         className="ai-pill"
@@ -299,11 +519,11 @@ const ModelPill = ({
   onActiveModelChange,
   disabled
 }) => {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, wrapRef } = usePillMenu();
   const models = Array.isArray(availableActiveModels) ? availableActiveModels : [];
 
   return (
-    <div className="ai-pill-wrap">
+    <div className="ai-pill-wrap" ref={wrapRef}>
       <button
         type="button"
         className="ai-pill"
@@ -345,6 +565,8 @@ const AIChat = ({
   onSaveConversation,
   onPasteImage,
   multiAIState,
+  isSwarmPanelOpen,
+  onToggleSwarmPanel,
   conversations = [],
   activeConversationFile,
   isConversationLoading = false,
@@ -419,14 +641,31 @@ const AIChat = ({
   const [isApplyingPending, setIsApplyingPending] = useState(false);
   const [isBulkApplyingPending, setIsBulkApplyingPending] = useState(false);
 
-  const [terminalActions, setTerminalActions] = useState([]); // AI terminal ReAct cards
+  const [terminalActions, setTerminalActions] = useState([]); // AI terminal ReAct cards (tour en cours)
+  // Actions terminal des tours PRECEDENTS, indexees par position dans
+  // conversationHistory — sinon elles disparaissaient integralement des que
+  // isLoading repassait a false (l'ancien garde de rendu exigeait isLoading).
+  const [historicalTerminalActions, setHistoricalTerminalActions] = useState({});
+  const prevIsLoadingRef = useRef(false);
   const [streamingText, setStreamingText] = useState('');       // live streaming output
+  const [throttledStreamingText, setThrottledStreamingText] = useState(''); // version rendue en Markdown (throttled)
+  const lastStreamingParseAtRef = useRef(0);
+  // Compteur de secondes écoulées. Sur CPU-only une réponse peut demander
+  // plusieurs minutes : un indicateur qui bouge est la seule façon de distinguer
+  // "ça travaille" de "c'est planté".
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [streamingMode, setStreamingMode] = useState('text');   // text | workflow | code | diff
   const [workflowAnimStep, setWorkflowAnimStep] = useState(0);
   const streamingRef = useRef(null);
   const streamingBufferRef = useRef('');
   const streamingFlushRafRef = useRef(null);
   const streamingScrollRafRef = useRef(null);
+  const isPinnedToBottomRef = useRef(true);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const [thinkingLabel, setThinkingLabel] = useState('Réflexion');
+
+  const [copiedMessageIndex, setCopiedMessageIndex] = useState(null);
+  const copyResetTimerRef = useRef(null);
 
   const flushStreamingBuffer = useCallback(() => {
     streamingFlushRafRef.current = null;
@@ -435,6 +674,43 @@ const AIChat = ({
     streamingBufferRef.current = '';
     setStreamingText((prev) => prev + chunk);
   }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setElapsedSeconds(0);
+      return undefined;
+    }
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (!isLoading) return undefined;
+    const thinkingTimer = setInterval(() => {
+      const messages = terminalActions.length > 0 ? TERMINAL_MESSAGES : THINKING_MESSAGES;
+      setThinkingLabel(messages[Math.floor(Math.random() * messages.length)]);
+    }, 1200);
+    return () => clearInterval(thinkingTimer);
+  }, [isLoading, terminalActions.length]);
+
+  const handleConversationScroll = () => {
+    if (!conversationHistoryRef.current) return;
+    const el = conversationHistoryRef.current;
+    const isPinned = (el.scrollHeight - el.scrollTop - el.clientHeight) < 24;
+    isPinnedToBottomRef.current = isPinned;
+    setShowScrollDown(!isPinned);
+  };
+
+  const handleScrollToBottom = () => {
+    isPinnedToBottomRef.current = true;
+    setShowScrollDown(false);
+    if (conversationHistoryRef.current) {
+      conversationHistoryRef.current.scrollTop = conversationHistoryRef.current.scrollHeight;
+    }
+  };
 
   // Register AI terminal IPC events
   useEffect(() => {
@@ -445,7 +721,7 @@ const AIChat = ({
     const offResult = window.electronAPI.onAITerminalResult((data) => {
       setTerminalActions(prev => prev.map((a, i) =>
         i === prev.length - 1 && a.command === data.command
-          ? { ...a, type: 'done', output: data.output }
+          ? { ...a, type: 'done', output: data.output, exitCode: (typeof data.exitCode === 'number' ? data.exitCode : null), ok: data.success === true }
           : a
       ));
     });
@@ -486,6 +762,8 @@ const AIChat = ({
     if (isLoading) {
       setTerminalActions([]);
       setStreamingText('');
+      setThrottledStreamingText('');
+      lastStreamingParseAtRef.current = 0;
       setStreamingMode('text');
       setWorkflowAnimStep(0);
       streamingBufferRef.current = '';
@@ -495,6 +773,47 @@ const AIChat = ({
       }
     }
   }, [isLoading]);
+
+  // À la fin d'une génération (transition true -> false), archive les actions
+  // terminal de CE tour sous l'index du message assistant qui vient d'être
+  // ajouté à conversationHistory. Le message est déjà présent à ce point : le
+  // hook parent (useAI.js) pousse le message AVANT de couper isLoading (deux
+  // setState séparés par des await, donc deux rendus distincts), ce composant
+  // reçoit donc conversationHistory à jour avant que isLoading ne passe à false.
+  useEffect(() => {
+    const wasLoading = prevIsLoadingRef.current;
+    prevIsLoadingRef.current = isLoading;
+    if (wasLoading && !isLoading && terminalActions.length > 0) {
+      const idx = conversationHistory.length - 1;
+      // Si la génération a échoué APRES avoir execute des commandes (le
+      // provider a planté au dernier appel), useAI.js n'ajoute aucun message
+      // — le dernier index pointerait alors sur un message deja existant
+      // (ex: le prompt utilisateur) et lui collerait a tort ces actions.
+      if (idx >= 0 && conversationHistory[idx]?.role === 'model') {
+        setHistoricalTerminalActions((prev) => ({ ...prev, [idx]: terminalActions }));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
+
+  // Changer de conversation (nouvelle ou chargée) invalide les index
+  // précédents : sans ce reset, les cartes d'un autre fil s'afficheraient
+  // sous les mauvais messages. Deux signaux distincts, car aucun des deux ne
+  // couvre l'autre cas : charger une conversation sauvegardée remplace
+  // l'historique par un tableau NON VIDE et change activeConversationFile ;
+  // "Nouvelle conversation" vide l'historique mais ne touche PAS
+  // activeConversationFile s'il valait déjà null (cas par défaut tant que
+  // l'utilisateur n'a jamais cliqué "Sauvegarder" — autoSaveConversation
+  // écrit sur disque en arrière-plan sans jamais l'assigner).
+  useEffect(() => {
+    setHistoricalTerminalActions({});
+  }, [activeConversationFile]);
+
+  useEffect(() => {
+    if (conversationHistory.length === 0) {
+      setHistoricalTerminalActions({});
+    }
+  }, [conversationHistory.length]);
 
   useEffect(() => {
     if (!streamingText) {
@@ -518,6 +837,28 @@ const AIChat = ({
       return;
     }
     setStreamingMode('text');
+  }, [streamingText, streamingMode]);
+
+  // Le mode 'text' rend le stream en Markdown (même moteur que le message
+  // final, cf. plus bas) au lieu d'un <pre> brut — donc chaque mise à jour
+  // reparse tout le texte accumulé depuis le début de la réponse. RAF borne
+  // déjà la fréquence à l'écran, mais un provider cloud rapide (Gemini/Claude/
+  // Kimi, contrairement à Ollama CPU) peut streamer bien plus vite que 100ms —
+  // ce throttle plafonne le coût de reparsing indépendamment du débit du token.
+  useEffect(() => {
+    if (streamingMode !== 'text') return undefined;
+    const MIN_INTERVAL_MS = 100;
+    const elapsed = Date.now() - lastStreamingParseAtRef.current;
+    if (elapsed >= MIN_INTERVAL_MS) {
+      lastStreamingParseAtRef.current = Date.now();
+      setThrottledStreamingText(streamingText);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      lastStreamingParseAtRef.current = Date.now();
+      setThrottledStreamingText(streamingText);
+    }, MIN_INTERVAL_MS - elapsed);
+    return () => clearTimeout(timer);
   }, [streamingText, streamingMode]);
 
   useEffect(() => {
@@ -553,11 +894,14 @@ const AIChat = ({
       if (streamingScrollRafRef.current !== null) {
         window.cancelAnimationFrame(streamingScrollRafRef.current);
       }
+      if (copyResetTimerRef.current) {
+        clearTimeout(copyResetTimerRef.current);
+      }
     };
   }, []);
 
   useEffect(() => {
-    if (conversationHistoryRef.current) {
+    if (conversationHistoryRef.current && isPinnedToBottomRef.current) {
       conversationHistoryRef.current.scrollTop = conversationHistoryRef.current.scrollHeight;
     }
   }, [conversationHistory, isLoading]);
@@ -689,6 +1033,36 @@ const AIChat = ({
     }
   };
 
+  const lastAssistantIndex = useMemo(() => {
+    for (let i = conversationHistory.length - 1; i >= 0; i -= 1) {
+      if (conversationHistory[i]?.role === 'model') return i;
+    }
+    return -1;
+  }, [conversationHistory]);
+
+  const handleCopyMessage = useCallback((index, text) => {
+    const plain = stripReasoningBlocks(text);
+    if (!plain || !navigator.clipboard?.writeText) return;
+    navigator.clipboard.writeText(plain).then(() => {
+      setCopiedMessageIndex(index);
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current);
+      copyResetTimerRef.current = setTimeout(() => setCopiedMessageIndex(null), 1800);
+    }).catch(() => { /* presse-papiers refuse : pas de faux succes affiche */ });
+  }, []);
+
+  const findPrecedingUserText = useCallback((index) => {
+    for (let i = index - 1; i >= 0; i -= 1) {
+      if (conversationHistory[i]?.role === 'user') return String(conversationHistory[i].text || '');
+    }
+    return '';
+  }, [conversationHistory]);
+
+  const handleRerunMessage = useCallback((index) => {
+    const text = findPrecedingUserText(index);
+    if (!text.trim() || isLoading || typeof onSend !== 'function') return;
+    onSend(text);
+  }, [findPrecedingUserText, isLoading, onSend]);
+
   const canApplyPending = permissionMode !== 'read_only';
   const currentWorkflowAnimStep = WORKFLOW_STREAM_STEPS[workflowAnimStep] || WORKFLOW_STREAM_STEPS[0];
   const streamingFileDraft = useMemo(() => extractStreamingFileDraft(streamingText), [streamingText]);
@@ -763,7 +1137,10 @@ const AIChat = ({
         {streamingMode === 'diff' && (
           <div className="ai-stream-anim ai-stream-diff">
             <div className="ai-stream-anim-title">Edition structuree en cours...</div>
-            <pre className="ai-stream-raw-preview">{filterUserVisibleText(streamingText)}</pre>
+            {/* Un diff se lit verbatim : l'ancien filterUserVisibleText()
+                supprimait ici toute ligne commençant par {, [ ou ", donc une
+                bonne partie du contenu édité. */}
+            <pre className="ai-stream-raw-preview">{stripReasoningBlocks(streamingText)}</pre>
             <div className="ai-stream-anim-subtitle">Syntaxe detectee: {'<<<< SEARCH ... >>>> REPLACE'}</div>
           </div>
         )}
@@ -783,23 +1160,43 @@ const AIChat = ({
           </div>
         )}
         {streamingMode === 'text' && (
-          <pre className="ai-stream-text">
-            {filterUserVisibleText(streamingText ? streamingText.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trimStart() : '')}
-          </pre>
+          <div className="ai-stream-markdown">
+            {/* Même moteur (MarkdownRenderer) que le message final une fois la
+                génération terminée : avant, le stream passait par un <pre>
+                brut puis basculait sur du Markdown rendu à la fin, avec un
+                saut visuel et des blocs de code non coloriés pendant tout le
+                stream. Le bruit "construction de workflow" est déjà géré en
+                amont par streamingMode ('workflow' a son propre rendu). */}
+            <MarkdownRenderer text={stripReasoningBlocks(throttledStreamingText)} />
+          </div>
         )}
       </div>
     );
   };
 
-  const handleApplyPending = async (index) => {
+  const handleApplyPending = useCallback(async (index, overrideContent = null) => {
     if (typeof onApplyPendingChange !== 'function') return;
     setIsApplyingPending(true);
     try {
-      await onApplyPendingChange(index);
+      await onApplyPendingChange(index, overrideContent);
     } finally {
       setIsApplyingPending(false);
     }
-  };
+  }, [onApplyPendingChange]);
+
+  const findPendingIndexForPath = useCallback((filePath) => {
+    const target = normalizeMarkerPath(filePath);
+    if (!target || !Array.isArray(pendingFileChanges)) return -1;
+    return pendingFileChanges.findIndex(
+      (change) => normalizeMarkerPath(change?.filePath) === target
+    );
+  }, [pendingFileChanges]);
+
+  const handleApplyMarkdownBlock = useCallback((code, language, filePath) => {
+    const index = findPendingIndexForPath(filePath);
+    if (index < 0) return;
+    handleApplyPending(index, code);
+  }, [findPendingIndexForPath, handleApplyPending]);
 
   const handleRejectPending = async (index) => {
     if (typeof onRejectPendingChange !== 'function') return;
@@ -951,6 +1348,18 @@ const AIChat = ({
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
             </button>
+            {onToggleSwarmPanel && (
+              <button
+                type="button"
+                onClick={onToggleSwarmPanel}
+                className="ai-header-btn"
+                title={isSwarmPanelOpen ? 'Masquer le panneau des agents' : 'Afficher le panneau des agents'}
+                aria-label={isSwarmPanelOpen ? 'Masquer le panneau des agents' : 'Afficher le panneau des agents'}
+                aria-pressed={Boolean(isSwarmPanelOpen)}
+              >
+                <IconAgents />
+              </button>
+            )}
           </div>
         </div>
 
@@ -1107,6 +1516,7 @@ const AIChat = ({
       <div
         ref={conversationHistoryRef}
         className="ai-messages custom-scrollbar"
+        onScroll={handleConversationScroll}
       >
         <div className="ai-reading-col">
           {conversationHistory.length === 0 && !isLoading && (
@@ -1135,10 +1545,79 @@ const AIChat = ({
                   <span className="ai-message-role">{meta.label}</span>
                 </div>
                 <div className="ai-message-body">
-                  <p style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {msg.text ? msg.text.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trim() : ''}
-                  </p>
+                  {(() => {
+                    const segments = splitReasoningSegments(msg.text);
+                    // Garde-fou : un provider peut renvoyer success avec un
+                    // texte vide (cf. ollama.provider, 8 tours d'outils sans
+                    // réponse). Sans ça, la bulle s'affichait totalement vide.
+                    if (segments.length === 0) {
+                      return !isUser ? (
+                        <p className="ai-message-empty">
+                          (réponse vide — le modèle n&apos;a rien renvoyé)
+                        </p>
+                      ) : null;
+                    }
+                    return segments.map((segment, segmentIndex) => {
+                      if (segment.type === 'reasoning') {
+                        return <ReasoningBlock key={`seg-${segmentIndex}`} content={segment.content} />;
+                      }
+                      // Le message utilisateur reste en texte brut : ce qu'il a
+                      // tapé doit s'afficher tel quel, sans réinterpréter ses
+                      // astérisques ou ses backticks.
+                      if (isUser) {
+                        return (
+                          <p
+                            key={`seg-${segmentIndex}`}
+                            style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                          >
+                            {segment.content.trim()}
+                          </p>
+                        );
+                      }
+                      // Réponse IA : Markdown rendu (blocs de code avec
+                      // coloration + bouton Copier, titres, listes). Le
+                      // renderer existait depuis toujours mais n'était importé
+                      // nulle part — tout s'affichait en brut.
+                      return (
+                        <MarkdownRenderer
+                          key={`seg-${segmentIndex}`}
+                          text={segment.content.trim()}
+                          onApply={canApplyPending && !isApplyingPending && !isBulkApplyingPending && Array.isArray(pendingFileChanges) && pendingFileChanges.length > 0
+                            ? handleApplyMarkdownBlock
+                            : undefined}
+                        />
+                      );
+                    });
+                  })()}
                 </div>
+
+                {!isUser && msg.role !== 'system' && (
+                  <div className={`ai-message-actions${index === lastAssistantIndex ? ' is-pinned' : ''}`}>
+                    <button
+                      type="button"
+                      className="ai-msg-action"
+                      onClick={() => handleCopyMessage(index, msg.text)}
+                      title={copiedMessageIndex === index ? 'Copié' : 'Copier la réponse'}
+                      aria-label="Copier la réponse"
+                    >
+                      {copiedMessageIndex === index ? (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="ai-msg-action"
+                      onClick={() => handleRerunMessage(index)}
+                      disabled={isLoading || !findPrecedingUserText(index).trim()}
+                      title={isLoading ? 'Génération en cours' : 'Relancer cette requête'}
+                      aria-label="Relancer cette requête"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                    </button>
+                  </div>
+                )}
 
                 {Array.isArray(msg.images) && msg.images.length > 0 && (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 26 }}>
@@ -1147,34 +1626,26 @@ const AIChat = ({
                     ))}
                   </div>
                 )}
+
+                {/* Cartes terminal du tour AUQUEL ce message appartient (archivées
+                    par l'effet historicalTerminalActions à la fin de ce tour-là —
+                    pas le tour en cours, qui se rend plus bas via `terminalActions`). */}
+                {Array.isArray(historicalTerminalActions[index]) && historicalTerminalActions[index].length > 0 && (
+                  <div style={{ paddingLeft: 26, marginTop: 4 }}>
+                    {historicalTerminalActions[index].map((action, i) => (
+                      <TerminalActionCard key={i} action={action} />
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
 
-          {/* AI Terminal Action Cards (ReAct Loop) */}
+          {/* AI Terminal Action Cards (ReAct Loop) — tour EN COURS */}
           {isLoading && terminalActions.length > 0 && (
             <div style={{ padding: '8px 14px' }}>
               {terminalActions.map((action, i) => (
-                <div key={i} style={{
-                  background: 'var(--surface-2)', border: '1px solid var(--border)',
-                  borderRadius: 4, margin: '4px 0', overflow: 'hidden', fontSize: 11,
-                }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
-                    background: action.type === 'done' ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)',
-                    borderBottom: action.output ? '1px solid var(--border)' : 'none',
-                  }}>
-                    <span>{action.type === 'done' ? '✓' : '⟳'}</span>
-                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-main)', flex: 1, fontSize: 10 }}>{action.command}</span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>#{action.iteration}</span>
-                  </div>
-                  {action.output && (
-                    <pre style={{
-                      margin: 0, padding: '5px 10px', fontSize: 9, color: 'var(--text-dim)',
-                      fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', maxHeight: 100, overflowY: 'auto',
-                    }}>{action.output.substring(0, 800)}{action.output.length > 800 ? '...' : ''}</pre>
-                  )}
-                </div>
+                <TerminalActionCard key={i} action={action} />
               ))}
             </div>
           )}
@@ -1185,7 +1656,44 @@ const AIChat = ({
               <span>Exécution... ({terminalActions.filter(a => a.type === 'done').length}/{terminalActions.length} commandes)</span>
             </div>
           )}
+
+          {/* Indicateur INCONDITIONNEL d'attente. Les trois autres blocs
+              `isLoading &&` exigent tous soit streamingText, soit une commande
+              terminal en cours : dans le cas nominal (aucune commande, provider
+              non streamant) l'interface restait donc rigoureusement identique à
+              l'état de repos pendant toute la génération — seul le libellé du
+              bouton changeait. C'est ce qui poussait à renvoyer le message en
+              croyant qu'il n'était pas parti. */}
+          {isLoading && !multiAIState?.isActive && terminalActions.length === 0 && !streamingText && (
+            <div className="ai-message-loading">
+              <div className="ai-loading-dots"><span className="ai-loading-dot" /><span className="ai-loading-dot" /><span className="ai-loading-dot" /></div>
+              <span className="ai-loading-label">
+                {elapsedSeconds > 0
+                  ? `${thinkingLabel}… ${elapsedSeconds}s`
+                  : `${thinkingLabel}…`}
+              </span>
+            </div>
+          )}
         </div>
+
+        {/* Doit rester ENFANT de .ai-messages : c'est ce conteneur qui porte
+            position:relative (AIChat.css), pas ses freres. Place en sibling,
+            le bouton s'ancre au premier ancetre positionne trouve plus haut
+            dans l'arbre — potentiellement tout autre chose que le panneau de
+            chat. */}
+        {showScrollDown && (
+          <button
+            type="button"
+            onClick={handleScrollToBottom}
+            className="ai-scroll-to-bottom"
+            title="Revenir en bas"
+            aria-label="Revenir en bas"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Intelligent Router decision (auto mode only) — above the input bar */}
@@ -1243,7 +1751,7 @@ const AIChat = ({
           )}
 
           {/* Composer: un seul bloc arrondi = textarea + rangée [+] [mode] [modèle] [autonomie] [Envoyer] */}
-          <div className="ai-composer">
+          <div className={`ai-composer${isLoading ? ' is-working' : ''}`}>
           {/* Textarea */}
           <textarea
             ref={promptInputRef}

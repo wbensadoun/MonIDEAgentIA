@@ -42,6 +42,8 @@ const { registerAgentHandlers } = require('./electron/ipc/agentHandlers');
 const { registerOllamaHandlers } = require('./electron/ipc/ollamaHandlers');
 const { registerAIHandlers } = require('./electron/ipc/aiHandlers');
 const { registerRouterHandlers } = require('./electron/ipc/routerHandlers');
+const { registerPtyHandlers } = require('./electron/ipc/ptyHandlers');
+const { createPtyService } = require('./electron/services/pty.service');
 
 const isDev =
   process.env.NODE_ENV === 'development' ||
@@ -82,6 +84,20 @@ installStdioBrokenPipeGuards();
 let mainWindow;
 configureAIService({ dialog, getMainWindow: () => mainWindow });
 const processService = createProcessService({ getMainWindow: () => mainWindow });
+const ptyService = createPtyService({ getMainWindow: () => mainWindow });
+
+// Deuxieme passe de configuration : configureAIService fusionne ses deps, et
+// ptyService n'existe pas encore ligne 85. Donne a l'outil <read_terminal> des
+// providers un acces LECTURE SEULE au tampon du terminal partage.
+configureAIService({ ptyService });
+
+// Des shells reels doivent etre tues explicitement : contrairement aux
+// process.service (spawn de commandes ponctuelles, deja termines pour la
+// plupart), un pty reste vivant indefiniment tant qu'on ne le kill pas. Sans
+// ce hook, fermer la fenetre laisserait des powershell.exe/bash orphelins.
+app.on('before-quit', () => {
+  ptyService.killAll();
+});
 
 const getLogsDir = () => {
   return path.join(app.getPath('userData'), 'logs');
@@ -164,3 +180,4 @@ registerRouterHandlers({
   ensureTrustedProjectPath,
   resolveOptionalTrustedProjectPath
 });
+registerPtyHandlers(ptyService);

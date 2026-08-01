@@ -4,6 +4,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const logger = require('../../../logger');
 const { DEFAULT_CLAUDE_MODEL } = require('../settings.service');
 const { resolveOptionalTrustedProjectPath } = require('../../core/security');
+const { stripThinkBlocks } = require('../ollama.service');
 const {
   loadAgentForCompletion,
   loadSkillForCompletion,
@@ -15,6 +16,10 @@ const {
   buildN8nCatalogContextForPrompt,
   pickFilesForContext,
   parseRunCommand,
+  stripRunCommandTags,
+  parseReadTerminalCall,
+  stripReadTerminalTags,
+  readSharedTerminalBuffer,
   TERMINAL_CAPABILITY_PROMPT,
   FILE_EDIT_PROTOCOL,
   executeCommandForAI: defaultExecuteCommandForAI,
@@ -40,6 +45,13 @@ const getClaudeCompletion = async ({
   const modelFromEnv = process.env.CLAUDE_MODEL;
   const model = options.model || modelFromEnv || DEFAULT_CLAUDE_MODEL;
   const thinkingMode = !!options.thinkingMode;
+  // Meme contrat que ollama.provider : mode Raisonnement ON -> on conserve les
+  // balises <thinking> demandees plus bas au modele, le front les replie ;
+  // OFF -> on strip ici. Avant, les deux `return` renvoyaient le transcript
+  // brut et le raisonnement s'affichait toujours.
+  const finalizeText = (value) => (
+    thinkingMode ? String(value || '').trim() : stripThinkBlocks(value)
+  );
   const images = Array.isArray(options.images) ? options.images : [];
 
   console.log(`[Main] Appel Claude (${model}): Vérification de la clé API...`);
@@ -212,18 +224,39 @@ const getClaudeCompletion = async ({
       const aiText = await claudeCallWithMessages(currentMessages);
       logger.info(`[Claude Agent API] Réponse de l'IA (Itération ${iter + 1}):\n${aiText}`);
 
-      fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
+      // Idem ollama.provider : la balise <run_command> a sa carte terminal, on
+      // n'empile que la narration. Le separateur se base sur fullTranscript et
+      // non sur `iter > 0`, sinon un premier tour vide laissait un "---" en
+      // tete de reponse.
+      const visibleTurn = stripReadTerminalTags(stripRunCommandTags(aiText));
+      if (visibleTurn) {
+        fullTranscript += (fullTranscript ? '\n\n---\n\n' : '') + visibleTurn;
+      }
+
+      // Outil de lecture du terminal partage. Place AVANT parseRunCommand :
+      // c'est un tour sans effet de bord, et il ne doit pas produire de carte
+      // terminal cote UI (aucun evenement 'ai-terminal-action' emis ici).
+      if (parseReadTerminalCall(aiText)) {
+        const shared = readSharedTerminalBuffer();
+        currentMessages = [...currentMessages,
+          { role: 'assistant', content: [{ type: 'text', text: aiText }] },
+          { role: 'user', content: [{ type: 'text', text: `${shared.text}\nContinue si necessaire.` }] }];
+        continue;
+      }
 
       const cmd = parseRunCommand(aiText);
       if (!cmd) {
-        return { success: true, text: fullTranscript, terminalActions: iter };
+        return { success: true, text: finalizeText(fullTranscript), terminalActions: iter };
       }
 
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
       }
 
-      const { output } = await executeCommandForAI(cmd, projectPath);
+      const { output, success: commandSucceeded, exitCode } = await executeCommandForAI(cmd, projectPath, undefined, {
+        executionMode: options.executionMode,
+        autonomyLevel: options.autonomyLevel
+      });
 
       currentMessages = [
         ...currentMessages,
@@ -232,11 +265,11 @@ const getClaudeCompletion = async ({
       ];
 
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1 });
+        mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1, exitCode: typeof exitCode === 'number' ? exitCode : null, success: commandSucceeded === true });
       }
     }
 
-    return { success: true, text: fullTranscript, terminalActions: MAX_ITERATIONS };
+    return { success: true, text: finalizeText(fullTranscript), terminalActions: MAX_ITERATIONS };
 
   } catch (error) {
     if (error.status === 429) {

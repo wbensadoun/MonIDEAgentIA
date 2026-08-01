@@ -369,6 +369,53 @@ const TERMINAL_ALLOWED_COMMANDS = new Set([
   'n8n-search', 'n8n-import'
 ]);
 
+// Terminal en LECTURE SEULE (mode Plan). Le mode Plan doit pouvoir inspecter le
+// projet pour batir un plan credible (git status, npm ls) sans jamais rien
+// muter. Le controle se fait au niveau de la SOUS-COMMANDE et pas du binaire :
+// `git` seul ne veut rien dire — `git status` est inoffensif, `git push` non.
+// Toute commande absente de cette table est refusee en Plan, y compris si elle
+// figure dans TERMINAL_ALLOWED_COMMANDS.
+const TERMINAL_READONLY_BARE_COMMANDS = new Set(['ls', 'dir', 'cat', 'type', 'echo']);
+
+const TERMINAL_READONLY_SUBCOMMANDS = {
+  git: new Set([
+    'status', 'log', 'diff', 'show', 'branch', 'remote', 'tag', 'blame',
+    'ls-files', 'ls-remote', 'rev-parse', 'describe', 'shortlog', 'whatchanged'
+  ]),
+  npm: new Set(['ls', 'list', 'view', 'outdated', 'why', 'ping', 'root', 'prefix']),
+  ollama: new Set(['list', 'ls', 'ps', 'show'])
+};
+
+// Binaires dont SEULE l'interrogation de version est toleree : les executer
+// sans argument lance un REPL, avec un script cela execute du code arbitraire.
+const TERMINAL_READONLY_VERSION_ONLY = new Set(['node', 'python', 'py', 'go', 'cargo', 'rustc', 'mvn']);
+const VERSION_FLAGS = new Set(['--version', '-v', '-version', 'version', '--help', '-h']);
+
+const isReadOnlyCommand = (commandName, tokens = []) => {
+  const name = String(commandName || '');
+  if (TERMINAL_READONLY_BARE_COMMANDS.has(name)) return true;
+
+  // Premier argument qui n'est pas une option : la sous-commande.
+  const args = tokens.slice(1).map((token) => String(token || ''));
+  const firstArg = args.find((arg) => arg && !arg.startsWith('-')) || '';
+
+  const subcommands = TERMINAL_READONLY_SUBCOMMANDS[name];
+  if (subcommands) {
+    if (!firstArg) return false;
+    if (!subcommands.has(firstArg.toLowerCase())) return false;
+    // `git log -p` reste en lecture, mais on refuse toute ecriture glissee en
+    // option (`git branch -d`, `git tag -d`, `git remote add`...).
+    return !args.some((arg) => /^(-d|-D|--delete|--force|-f|--prune|--set-upstream)$/i.test(arg))
+      && !['add', 'set-url', 'remove', 'rename'].includes((args[1] || '').toLowerCase());
+  }
+
+  if (TERMINAL_READONLY_VERSION_ONLY.has(name)) {
+    return args.length > 0 && args.every((arg) => VERSION_FLAGS.has(arg.toLowerCase()));
+  }
+
+  return false;
+};
+
 const TERMINAL_DANGEROUS_COMMAND_PATTERNS =
   /(rm\s+-rf|del\s+\/[a-z]+|rmdir\s+\/[a-z]+|format\s+|shutdown|reboot|halt|mkfs|diskpart|git\s+reset\s+--hard|git\s+clean\s+-fd|:\(\)\{:\|:&\};:)/i;
 const TERMINAL_CONTROL_OPERATOR_PATTERNS = /(&&|\|\||[|;&`<>]|\r|\n|\$\()/;
@@ -431,7 +478,7 @@ const validateCommandTokens = (tokens) => {
   if (!TERMINAL_ALLOWED_COMMANDS.has(commandName)) {
     throw new Error(`Commande non autorisee: ${tokens[0]}`);
   }
-  return { commandName, normalizedCommandLine };
+  return { commandName, normalizedCommandLine, readOnly: isReadOnlyCommand(commandName, tokens) };
 };
 
 const resolveExecutableForPlatform = (commandName) => {
@@ -483,6 +530,7 @@ module.exports = {
   ensureTerminalPermission,
   // Terminal validation
   TERMINAL_ALLOWED_COMMANDS,
+  isReadOnlyCommand,
   MAX_CMD_OUTPUT,
   normalizeCommandName,
   buildCommandTokens,

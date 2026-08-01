@@ -7,7 +7,7 @@
     flex-direction: column;
     height: 100%;
     width: 100%;
-    background: var(--bg-1);
+    background: var(--surface);
     min-width: 0;
     min-height: 0;
 }
@@ -22,6 +22,8 @@
     border-bottom: 1px solid var(--border-0);
     background: rgba(10, 15, 23, 0.7);
     flex-shrink: 0;
+    overflow-x: auto;
+    min-width: 0;
 }
 
 .vw-toolbar-left,
@@ -67,25 +69,25 @@
 }
 
 .vw-btn:hover {
-    background: rgba(0, 245, 212, 0.1);
-    border-color: var(--accent-1);
+    background: var(--accent-soft);
+    border-color: var(--accent);
     color: var(--text-0);
 }
 
 .vw-btn-primary {
-    background: linear-gradient(135deg, var(--accent-1), #48e5c2);
-    color: #041017;
+    background: linear-gradient(135deg, var(--accent), #48e5c2);
+    color: var(--on-accent);
     border: none;
     font-weight: 600;
 }
 
 .vw-btn-primary:hover {
-    box-shadow: var(--glow-1);
+    box-shadow: var(--shadow-focus-ring);
 }
 
 .vw-btn-danger {
     border-color: rgba(255, 107, 107, 0.4);
-    color: var(--accent-4);
+    color: var(--danger);
 }
 
 .vw-btn-danger:hover {
@@ -104,8 +106,8 @@
 
 .vw-workflow-name:focus {
     outline: none;
-    border-color: var(--accent-1);
-    box-shadow: 0 0 0 2px rgba(0, 245, 212, 0.15);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 /* ── React Flow container ── */
@@ -117,7 +119,7 @@
 }
 
 .vw-editor.vw-editor-ai-write .vw-toolbar {
-    box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.35), 0 0 18px rgba(0, 245, 212, 0.2);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 18px var(--accent-soft);
     animation: vw-ai-toolbar-flash 1.25s ease-out;
 }
 
@@ -126,18 +128,18 @@
     position: absolute;
     inset: 8px;
     border-radius: 14px;
-    border: 1px solid rgba(0, 245, 212, 0.42);
-    box-shadow: 0 0 24px rgba(0, 245, 212, 0.16);
+    border: 1px solid var(--accent);
+    box-shadow: 0 0 24px var(--accent-soft);
     pointer-events: none;
     animation: vw-ai-canvas-flash 1.25s ease-out;
 }
 
 .vw-canvas .react-flow__background {
-    background: var(--bg-1) !important;
+    background: var(--surface) !important;
 }
 
 .vw-canvas .react-flow__minimap {
-    background: var(--bg-0) !important;
+    background: var(--bg) !important;
     border: 1px solid var(--border-0);
     border-radius: 10px;
     overflow: hidden;
@@ -151,7 +153,7 @@
 }
 
 .vw-canvas .react-flow__controls-button {
-    background: rgba(10, 15, 23, 0.92) !important;
+    background: var(--surface) !important;
     border-bottom: 1px solid var(--border-0) !important;
     fill: var(--text-1) !important;
     width: 28px;
@@ -159,17 +161,17 @@
 }
 
 .vw-canvas .react-flow__controls-button:hover {
-    background: rgba(0, 245, 212, 0.12) !important;
-    fill: var(--accent-1) !important;
+    background: var(--accent-soft) !important;
+    fill: var(--accent) !important;
 }
 
 .vw-canvas .react-flow__edge-path {
-    stroke: rgba(0, 245, 212, 0.5);
+    stroke: var(--accent);
     stroke-width: 2;
 }
 
 .vw-canvas .react-flow__edge.selected .react-flow__edge-path {
-    stroke: var(--accent-1);
+    stroke: var(--accent);
     stroke-width: 3;
 }
 
@@ -205,12 +207,12 @@
 }
 
 .vw-node:hover {
-    box-shadow: 0 8px 30px rgba(0, 245, 212, 0.15);
+    box-shadow: 0 8px 30px var(--accent-soft);
 }
 
 .vw-node.selected {
-    border-color: var(--accent-1);
-    box-shadow: 0 0 0 2px rgba(0, 245, 212, 0.3), 0 8px 30px rgba(0, 245, 212, 0.2);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft), 0 8px 30px var(--accent-soft);
 }
 
 .vw-node-header {
@@ -238,7 +240,7 @@
 }
 
 .vw-node-icon.action {
-    background: rgba(0, 245, 212, 0.15);
+    background: var(--accent-soft);
 }
 
 .vw-node-icon.ai {
@@ -296,7 +298,7 @@
 
 .vw-node-input:focus {
     outline: none;
-    border-color: rgba(0, 245, 212, 0.5);
+    border-color: var(--accent);
 }
 
 .vw-node-select {
@@ -317,14 +319,14 @@
 .vw-canvas .react-flow__handle {
     width: 10px;
     height: 10px;
-    border: 2px solid var(--accent-1);
-    background: var(--bg-0);
+    border: 2px solid var(--accent);
+    background: var(--bg);
     transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .vw-canvas .react-flow__handle:hover {
-    background: var(--accent-1);
-    box-shadow: 0 0 8px rgba(0, 245, 212, 0.5);
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
 }
 
 .vw-canvas .react-flow__handle-left {
@@ -408,7 +410,7 @@
 }
 
 .vw-add-item:hover {
-    background: rgba(0, 245, 212, 0.08);
+    background: var(--accent-soft);
     color: var(--text-0);
 }
 
@@ -475,8 +477,8 @@
     border-radius: 8px;
     font-size: 0.55rem;
     font-weight: 700;
-    background: var(--accent-1);
-    color: #041017;
+    background: var(--accent);
+    color: var(--on-accent);
     margin-left: 4px;
 }
 
@@ -545,8 +547,8 @@
 }
 
 .vw-saved-item.is-ai-updated .vw-add-item {
-    border-left: 2px solid var(--accent-1);
-    background: rgba(0, 245, 212, 0.14);
+    border-left: 2px solid var(--accent);
+    background: var(--accent-soft);
     animation: vw-ai-saved-highlight 1.8s ease-out;
 }
 
@@ -884,11 +886,11 @@
 
 @keyframes vw-ai-toolbar-flash {
     0% {
-        box-shadow: 0 0 0 0 rgba(0, 245, 212, 0.48), 0 0 0 rgba(0, 245, 212, 0);
+        box-shadow: 0 0 0 0 var(--accent), 0 0 0 var(--accent);
     }
 
     35% {
-        box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.4), 0 0 24px rgba(0, 245, 212, 0.28);
+        box-shadow: 0 0 0 1px var(--accent), 0 0 24px var(--accent-soft);
     }
 
     100% {
@@ -954,7 +956,7 @@
 
 @keyframes vw-node-draft-settle {
     0% {
-        box-shadow: 0 0 0 1px rgba(0, 245, 212, 0.26), 0 12px 30px rgba(0, 245, 212, 0.14);
+        box-shadow: 0 0 0 1px var(--accent), 0 12px 30px var(--accent-soft);
     }
 
     100% {

@@ -293,7 +293,7 @@ const BrainGraphPanel = ({
               nodesConnectable={false}
               onNodeClick={(_, node) => setSelectedNodeId(node.id)}
             >
-              <Background color="rgba(255,255,255,0.08)" gap={18} />
+              <Background color="var(--border)" gap={18} />
               <Controls />
               <MiniMap nodeStrokeWidth={2} pannable zoomable />
             </ReactFlow>

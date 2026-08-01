@@ -294,6 +294,61 @@ const AppContent = () => {
     routerComplexityThreshold
   );
 
+  // ---- Mise en page vue Chat : sidebar gauche (projets) + panneau agents
+  // droit. Raisonne en simple visible/masque (contrairement a
+  // useWorkspaceSessionLayout qui gere des % pour la vue IDE), donc un etat
+  // local ici plutot que dans ce hook partage — remonte au niveau racine
+  // (et non laisse local a ChatLayout) pour que la topbar puisse piloter
+  // les memes toggles que la vue IDE (isLeftCollapsed/isRightCollapsed).
+  const [isChatSidebarCollapsed, setIsChatSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('futurIA_chatSidebarCollapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('futurIA_chatSidebarCollapsed', String(isChatSidebarCollapsed));
+    } catch {
+      // ignore
+    }
+  }, [isChatSidebarCollapsed]);
+  const toggleChatSidebar = React.useCallback(() => {
+    setIsChatSidebarCollapsed((prev) => !prev);
+  }, []);
+
+  const [isSwarmPanelOpen, setIsSwarmPanelOpen] = useState(() => {
+    try {
+      return localStorage.getItem('futurIA_chatSwarmOpen') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('futurIA_chatSwarmOpen', String(isSwarmPanelOpen));
+    } catch {
+      // ignore
+    }
+  }, [isSwarmPanelOpen]);
+  const toggleSwarmPanel = React.useCallback(() => {
+    setIsSwarmPanelOpen((prev) => !prev);
+  }, []);
+
+  // Auto-ouverture du panneau agents au demarrage d'un run multi-agents —
+  // detecte la transition de multiAIState.startedAt via un ref, pour ne
+  // rouvrir qu'une fois par run et ne jamais lutter contre une fermeture
+  // manuelle pendant le meme run.
+  const swarmStartedAtRef = React.useRef(multiAIState?.startedAt ?? null);
+  React.useEffect(() => {
+    const startedAt = multiAIState?.startedAt ?? null;
+    if (startedAt && startedAt !== swarmStartedAtRef.current) {
+      setIsSwarmPanelOpen(true);
+    }
+    swarmStartedAtRef.current = startedAt;
+  }, [multiAIState?.startedAt]);
+
   const {
     workspaces,
     projectRunState,
@@ -549,7 +604,7 @@ const AppContent = () => {
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${viewMode === 'agents' ? ' app-shell--agents' : ''}`}>
       {message && (
         <div className="toast">
           <span className="toast-dot"></span>
@@ -595,6 +650,10 @@ const AppContent = () => {
           isLeftCollapsed={isLeftCollapsed}
           onToggleRightPanel={toggleRightPanel}
           isRightCollapsed={isRightCollapsed}
+          onToggleChatSidebar={toggleChatSidebar}
+          isChatSidebarCollapsed={isChatSidebarCollapsed}
+          onToggleSwarmPanel={toggleSwarmPanel}
+          isSwarmPanelOpen={isSwarmPanelOpen}
           onOpenWorkflowManager={openWorkflowManager}
           onOpenSettings={openSettings}
           theme={theme}
@@ -666,6 +725,9 @@ const AppContent = () => {
           <ChatLayout
             workspacePanelProps={workspacePanelProps}
             aiChatProps={aiChatProps}
+            isSidebarCollapsed={isChatSidebarCollapsed}
+            isSwarmOpen={isSwarmPanelOpen}
+            onToggleSwarmPanel={toggleSwarmPanel}
           />
         )}
         {viewMode === 'agents' && (

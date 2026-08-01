@@ -17,27 +17,9 @@ const renderTopbar = (props = {}) => {
     displayedActiveFile: '',
     isStreamingCodePreview: false,
     gitDiffPreview: null,
-    onOpenCommandPalette: jest.fn(),
     isExpertMode: false,
     onToggleExpertMode: jest.fn(),
-    aiProvider: 'kimi',
-    onAiProviderChange: jest.fn(),
-    activeModelValue: 'moonshotai/Kimi-K2.5',
-    availableActiveModels: ['moonshotai/Kimi-K2.5', 'moonshotai/Kimi-K2.6'],
-    onActiveModelChange: jest.fn(),
-    thinkingMode: false,
-    onThinkingModeChange: jest.fn(),
-    deepContextEnabled: false,
-    onDeepContextEnabledChange: jest.fn(),
     isElectronApiAvailable: true,
-    isLoading: false,
-    multiAIState: null,
-    resolvedOllamaModel: 'qwen3:latest',
-    availableOllamaModels: ['qwen3:latest'],
-    onOllamaSettingChange: jest.fn(),
-    ollamaTopbarLabel: '',
-    ollamaStatusLabel: '',
-    showMessage: jest.fn(),
     onOpenFolder: jest.fn(),
     previewStatus: 'stopped',
     onTogglePreview: jest.fn(),
@@ -45,14 +27,13 @@ const renderTopbar = (props = {}) => {
     isLeftCollapsed: false,
     onToggleRightPanel: jest.fn(),
     isRightCollapsed: false,
-    onOpenWorkflowManager: jest.fn(),
-    onOpenSettings: jest.fn(),
-    theme: 'midnight',
-    onThemeChange: jest.fn(),
+    onToggleChatSidebar: jest.fn(),
+    isChatSidebarCollapsed: false,
+    onToggleSwarmPanel: jest.fn(),
+    isSwarmPanelOpen: false,
     isTerminalOpen: false,
     onToggleTerminal: jest.fn(),
     viewMode: 'ide',
-    onViewModeChange: jest.fn(),
     ...props
   };
 
@@ -60,42 +41,85 @@ const renderTopbar = (props = {}) => {
   return baseProps;
 };
 
-test('remote model input commits custom values from the topbar', () => {
-  const props = renderTopbar();
-  const input = screen.getByTitle('Modele Kimi / Together');
+test('IDE view exposes the three layout region toggles', () => {
+  renderTopbar({ viewMode: 'ide' });
 
-  fireEvent.change(input, { target: { value: '  moonshotai/Kimi-K2.7  ' } });
-  fireEvent.keyDown(input, { key: 'Enter' });
-
-  expect(props.onActiveModelChange).toHaveBeenCalledWith('moonshotai/Kimi-K2.7');
+  expect(screen.getByTitle("Masquer l'explorateur")).toBeInTheDocument();
+  expect(screen.getByTitle('Afficher le terminal')).toBeInTheDocument();
+  expect(screen.getByTitle('Masquer le chat IA')).toBeInTheDocument();
+  expect(screen.getByTitle('Personnaliser la disposition')).toBeInTheDocument();
 });
 
-test('remote model input resets draft on escape', () => {
-  renderTopbar();
-  const input = screen.getByTitle('Modele Kimi / Together');
+test('Chat view swaps the layout toggles to its own panels', () => {
+  renderTopbar({ viewMode: 'chat' });
 
-  fireEvent.change(input, { target: { value: 'moonshotai/Kimi-K2.7' } });
-  fireEvent.keyDown(input, { key: 'Escape' });
-
-  expect(input).toHaveValue('moonshotai/Kimi-K2.5');
+  expect(screen.getByTitle('Masquer les projets')).toBeInTheDocument();
+  expect(screen.getByTitle('Afficher les agents')).toBeInTheDocument();
+  expect(screen.queryByTitle('Afficher le terminal')).not.toBeInTheDocument();
 });
 
-const AUTO_ROUTE_TOOLTIP = 'Le routeur intelligent analyse votre demande et choisit le mode optimal (simple ou équipe multi-agent)';
+test('layout toggles call the handler for the active view', () => {
+  const props = renderTopbar({ viewMode: 'chat' });
 
-test('Auto-Route badge shows active state and tooltip when autoRoute is true', () => {
-  renderTopbar({ autoRoute: true });
-  const badge = screen.getByTitle(AUTO_ROUTE_TOOLTIP);
+  fireEvent.click(screen.getByTitle('Afficher les agents'));
 
-  expect(badge).toHaveTextContent('Auto-Route');
-  expect(badge.className).toContain('is-active');
-  expect(badge.className).not.toContain('is-muted');
+  expect(props.onToggleSwarmPanel).toHaveBeenCalled();
+  expect(props.onToggleRightPanel).not.toHaveBeenCalled();
 });
 
-test('Auto-Route badge shows muted state when autoRoute is false', () => {
-  renderTopbar({ autoRoute: false });
-  const badge = screen.getByTitle(AUTO_ROUTE_TOOLTIP);
+test('toggle titles reflect the collapsed state', () => {
+  renderTopbar({ viewMode: 'ide', isLeftCollapsed: true, isTerminalOpen: true });
 
-  expect(badge).toHaveTextContent('Manuel');
-  expect(badge.className).toContain('is-muted');
-  expect(badge.className).not.toContain('is-active');
+  expect(screen.getByTitle("Afficher l'explorateur")).toBeInTheDocument();
+  expect(screen.getByTitle('Masquer le terminal')).toBeInTheDocument();
+});
+
+// Comme VS Code, la region masquee prend le glyphe "-off" (trait de
+// separation) et non la zone pleine : l'etat ne se lit pas qu'a la couleur.
+test('a visible region uses the filled glyph', () => {
+  renderTopbar({ viewMode: 'ide', isLeftCollapsed: false });
+  const btn = screen.getByTitle("Masquer l'explorateur");
+
+  expect(btn.querySelectorAll('rect')).toHaveLength(2);
+  expect(btn.querySelector('line')).toBeNull();
+});
+
+test('a hidden region swaps to the outline glyph', () => {
+  renderTopbar({ viewMode: 'ide', isLeftCollapsed: true });
+  const btn = screen.getByTitle("Afficher l'explorateur");
+
+  expect(btn.querySelectorAll('rect')).toHaveLength(1);
+  expect(btn.querySelector('line')).not.toBeNull();
+});
+
+test('customize menu lists each region with its visibility state', () => {
+  renderTopbar({ viewMode: 'ide', isRightCollapsed: true });
+
+  fireEvent.click(screen.getByTitle('Personnaliser la disposition'));
+
+  expect(screen.getByRole('menuitemcheckbox', { name: "Panneau de l'explorateur" }))
+    .toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('menuitemcheckbox', { name: 'Panneau du chat IA' }))
+    .toHaveAttribute('aria-checked', 'false');
+});
+
+test('customize menu item toggles its panel and closes the menu', () => {
+  const props = renderTopbar({ viewMode: 'ide' });
+
+  fireEvent.click(screen.getByTitle('Personnaliser la disposition'));
+  fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Panneau du terminal' }));
+
+  expect(props.onToggleTerminal).toHaveBeenCalled();
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+});
+
+test('Escape closes the customize menu', () => {
+  renderTopbar({ viewMode: 'ide' });
+
+  fireEvent.click(screen.getByTitle('Personnaliser la disposition'));
+  expect(screen.getByRole('menu')).toBeInTheDocument();
+
+  fireEvent.keyDown(document, { key: 'Escape' });
+
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 });

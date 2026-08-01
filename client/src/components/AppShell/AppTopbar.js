@@ -1,6 +1,45 @@
-import React from 'react';
-import { IconBot, IconFolder, IconPlay, IconStop, IconSidebar, IconChat, IconTerminal } from '../ComponentLibrary/icons';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  IconBot,
+  IconFolder,
+  IconPlay,
+  IconStop,
+  IconLayoutSidebarLeft,
+  IconLayoutSidebarLeftOff,
+  IconLayoutPanel,
+  IconLayoutPanelOff,
+  IconLayoutSidebarRight,
+  IconLayoutSidebarRightOff,
+  IconLayoutCustomize,
+  IconCheck,
+} from '../ComponentLibrary/icons';
 import { Toolbar, ToolbarGroup, ToolbarSeparator, IconButton } from '../ComponentLibrary/Toolbar';
+
+// Popover plumbing pour le menu "Personnaliser la disposition" — meme
+// pattern que usePillMenu dans AIChat/index.js (fermeture au clic exterieur
+// et a Escape), duplique ici plutot qu'importe car non exporte par AIChat.
+const useLayoutMenu = () => {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (event) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target)) setOpen(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return { open, setOpen, wrapRef };
+};
 
 const AppTopbar = ({
   projectName,
@@ -29,10 +68,68 @@ const AppTopbar = ({
   isLeftCollapsed,
   onToggleRightPanel,
   isRightCollapsed,
+  onToggleChatSidebar,
+  isChatSidebarCollapsed,
+  onToggleSwarmPanel,
+  isSwarmPanelOpen,
   isTerminalOpen,
   onToggleTerminal,
   viewMode = 'ide',
 }) => {
+  const layoutMenu = useLayoutMenu();
+  const isChat = viewMode === 'chat';
+
+  // Les trois zones de la barre de titre VS Code (Primary Side Bar / Panel /
+  // Secondary Side Bar) mappent sur des cibles differentes selon la vue :
+  // en IDE ce sont explorateur/terminal/chat, en Chat ce sont projets/—/agents.
+  // Le glyphe reste identique — c'est la region de l'ecran qu'il designe, pas
+  // la fonctionnalite — pour que la position spatiale garde son sens.
+  const layoutControls = isChat
+    ? [
+      {
+        id: 'primary',
+        Icon: isChatSidebarCollapsed ? IconLayoutSidebarLeftOff : IconLayoutSidebarLeft,
+        isActive: !isChatSidebarCollapsed,
+        label: isChatSidebarCollapsed ? 'Afficher les projets' : 'Masquer les projets',
+        menuLabel: 'Panneau des projets',
+        onClick: onToggleChatSidebar,
+      },
+      {
+        id: 'secondary',
+        Icon: isSwarmPanelOpen ? IconLayoutSidebarRight : IconLayoutSidebarRightOff,
+        isActive: Boolean(isSwarmPanelOpen),
+        label: isSwarmPanelOpen ? 'Masquer les agents' : 'Afficher les agents',
+        menuLabel: 'Panneau des agents',
+        onClick: onToggleSwarmPanel,
+      },
+    ]
+    : [
+      {
+        id: 'primary',
+        Icon: isLeftCollapsed ? IconLayoutSidebarLeftOff : IconLayoutSidebarLeft,
+        isActive: !isLeftCollapsed,
+        label: isLeftCollapsed ? "Afficher l'explorateur" : "Masquer l'explorateur",
+        menuLabel: "Panneau de l'explorateur",
+        onClick: onToggleLeftPanel,
+      },
+      {
+        id: 'panel',
+        Icon: isTerminalOpen ? IconLayoutPanel : IconLayoutPanelOff,
+        isActive: Boolean(isTerminalOpen),
+        label: isTerminalOpen ? 'Masquer le terminal' : 'Afficher le terminal',
+        menuLabel: 'Panneau du terminal',
+        onClick: onToggleTerminal,
+      },
+      {
+        id: 'secondary',
+        Icon: isRightCollapsed ? IconLayoutSidebarRightOff : IconLayoutSidebarRight,
+        isActive: !isRightCollapsed,
+        label: isRightCollapsed ? 'Afficher le chat IA' : 'Masquer le chat IA',
+        menuLabel: 'Panneau du chat IA',
+        onClick: onToggleRightPanel,
+      },
+    ];
+
   return (
     <header style={{ display: 'flex', flexDirection: 'column' }}>
       {/* Barre principale 40px — identité + breadcrumb projet/fichier
@@ -86,19 +183,6 @@ const AppTopbar = ({
 
         {/* Actions droite — structured with Toolbar */}
         <Toolbar className="topbar-actions">
-          {/* Layout group: Terminal (visible in IDE only) */}
-          {viewMode === 'ide' && (
-            <ToolbarGroup label="Disposition">
-              <IconButton
-                icon={<IconTerminal size={16} />}
-                label="Terminal"
-                isActive={isTerminalOpen}
-                title={isTerminalOpen ? 'Masquer le terminal' : 'Afficher le terminal'}
-                onClick={onToggleTerminal}
-              />
-            </ToolbarGroup>
-          )}
-
           {/* Project group: Folder, Preview, Expert mode (visible in IDE only) */}
           {viewMode === 'ide' && (
             <ToolbarGroup label="Projet">
@@ -123,27 +207,60 @@ const AppTopbar = ({
             </ToolbarGroup>
           )}
 
-          {/* Panels group — isolated at the far right edge, always in the
+          {/* Layout controls — isolated at the far right edge, always in the
               same place, so their position spatially maps to what they
               control (left toggle near the left panel side of the shell,
               right toggle near the right panel), instead of being buried
-              among 9 other icons in a single crowded group. */}
-          {viewMode === 'ide' && (
+              among 9 other icons in a single crowded group. Same glyph
+              vocabulary as VS Code's title bar: a panel frame with the
+              active region filled in. */}
+          {(viewMode === 'ide' || isChat) && (
             <>
               <ToolbarSeparator />
-              <ToolbarGroup label="Panneaux">
-                <IconButton
-                  icon={<IconSidebar size={16} />}
-                  isActive={isLeftCollapsed}
-                  title={isLeftCollapsed ? "Afficher l'explorateur" : "Masquer l'explorateur"}
-                  onClick={onToggleLeftPanel}
-                />
-                <IconButton
-                  icon={<IconChat size={16} />}
-                  isActive={isRightCollapsed}
-                  title={isRightCollapsed ? 'Afficher le chat IA' : 'Masquer le chat IA'}
-                  onClick={onToggleRightPanel}
-                />
+              <ToolbarGroup label="Disposition">
+                <div className="topbar-layout-menu-wrap" ref={layoutMenu.wrapRef}>
+                  <IconButton
+                    icon={<IconLayoutCustomize size={16} />}
+                    isActive={layoutMenu.open}
+                    title="Personnaliser la disposition"
+                    aria-label="Personnaliser la disposition"
+                    aria-haspopup="menu"
+                    aria-expanded={layoutMenu.open}
+                    onClick={() => layoutMenu.setOpen((v) => !v)}
+                  />
+                  {layoutMenu.open && (
+                    <div className="topbar-layout-menu" role="menu">
+                      <div className="topbar-layout-menu-title">Disposition</div>
+                      {layoutControls.map(({ id, Icon, isActive, menuLabel, onClick }) => (
+                        <button
+                          key={id}
+                          type="button"
+                          role="menuitemcheckbox"
+                          aria-checked={isActive}
+                          className={`topbar-layout-menu-item${isActive ? ' is-active' : ''}`}
+                          onClick={() => { onClick?.(); layoutMenu.setOpen(false); }}
+                        >
+                          <span className="topbar-layout-menu-check">
+                            {isActive && <IconCheck size={12} />}
+                          </span>
+                          <Icon size={14} />
+                          <span className="topbar-layout-menu-label">{menuLabel}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {layoutControls.map(({ id, Icon, isActive, label, onClick }) => (
+                  <IconButton
+                    key={id}
+                    icon={<Icon size={16} />}
+                    isActive={isActive}
+                    title={label}
+                    aria-label={label}
+                    onClick={onClick}
+                  />
+                ))}
               </ToolbarGroup>
             </>
           )}

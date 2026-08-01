@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import useProjectStore from '../stores/projectStore';
 import {
   generateCaptainFinalPrompt,
@@ -90,6 +90,10 @@ export const useAI = (
   } = apiKeys;
   const [multiAIState, setMultiAIState] = useState(createEmptyMultiAIState);
   const [abortController, setAbortController] = useState(null);
+  // Run courant. Sert de jeton de validité : quand la réponse revient, si le ref
+  // ne pointe plus sur le runId qui l'a demandée, c'est que l'utilisateur a
+  // annulé (ou relancé) — on jette le résultat au lieu de l'injecter.
+  const activeRunIdRef = useRef(null);
   const {
     pendingImages,
     setPendingImages,
@@ -169,6 +173,20 @@ export const useAI = (
       abortController.abort();
       setAbortController(null);
     }
+
+    // Invalider le run AVANT tout le reste : c'est ce qui fait jeter la réponse
+    // si elle arrive quand même (requête déjà partie, réponse en vol).
+    const runId = activeRunIdRef.current;
+    activeRunIdRef.current = null;
+
+    // Et surtout : couper réellement l'inférence côté main process. Sans cet
+    // appel, Ollama continuait à saturer le CPU jusqu'au bout malgré l'arrêt.
+    if (runId && window.electronAPI?.cancelAIGeneration) {
+      Promise.resolve(window.electronAPI.cancelAIGeneration(runId)).catch(() => {
+        // La génération venait de finir d'elle-même : rien à annuler.
+      });
+    }
+
     setIsLoading(false);
     resetMultiAIState();
     showMessage('Generation arretee', 2000);
@@ -310,6 +328,14 @@ export const useAI = (
     const controller = new AbortController();
     setAbortController(controller);
 
+    // Identifiant de run : c'est LUI qui permet au main process d'avorter la
+    // bonne requête HTTP. L'AbortController ci-dessus ne franchit pas le pont
+    // IPC (un AbortSignal n'est pas sérialisable) — il ne sert qu'au code local.
+    // Stocké dans un ref et non un state : stopGeneration doit lire la valeur
+    // courante, pas celle capturée par la closure de son dernier rendu.
+    const runId = `run-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    activeRunIdRef.current = runId;
+
     const newMessage = { role: 'user', text: effectivePrompt };
     if (pendingImages.length > 0) {
       newMessage.images = pendingImages;
@@ -411,6 +437,8 @@ export const useAI = (
           allProjectFiles,
           thinkingMode,
           deepContextEnabled,
+          runId,
+          executionMode: effExecutionMode,
           currentProjectPath: effectiveProjectPath,
           activeAgent: effAgent,
           activeSkill: effSkill,
@@ -423,8 +451,27 @@ export const useAI = (
           }
         });
 
+        // Run invalidé entre-temps (Arrêter, ou relance) : on sort AVANT tout
+        // effet de bord. Sans cette garde, une réponse annulée revenait plusieurs
+        // minutes plus tard s'injecter dans le fil, créer des changements en
+        // attente dans le panneau de diff et écraser la conversation sauvegardée.
+        if (activeRunIdRef.current !== runId) {
+          return;
+        }
+
+        if (response?.aborted) {
+          return;
+        }
+
         if (response.success) {
           const fullAiText = response.text;
+          // Un provider peut renvoyer success avec un texte vide. On pousse
+          // quand meme le message (la bulle affiche alors "(reponse vide)"),
+          // mais on previent : sans ca l'utilisateur voit un blanc et croit
+          // a un plantage.
+          if (!String(fullAiText || '').trim()) {
+            showMessage("L'IA n'a renvoye aucun texte. Reformulez, ou essayez un autre modele.", 5000);
+          }
           setAiConversationHistory(prev => [...prev, { role: 'model', text: fullAiText }]);
 
           // Détection de présence de blocs de modification
@@ -476,6 +523,11 @@ export const useAI = (
         error: error.message
       }));
     } finally {
+      // Ne libérer le ref que si c'est TOUJOURS notre run : stopGeneration a
+      // pu le remettre à null, ou une relance a pu en démarrer un autre.
+      if (activeRunIdRef.current === runId) {
+        activeRunIdRef.current = null;
+      }
       setIsLoading(false);
       setAbortController(null);
     }

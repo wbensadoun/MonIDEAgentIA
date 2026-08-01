@@ -15,7 +15,7 @@
     "start-server": "bash scripts/start-server.sh",
     "stop-server": "bash scripts/stop-server.sh",
     "logs-server": "bash scripts/logs-server.sh",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "node scripts/postinstall.js",
     "test": "npm test --prefix client -- --watchAll=false --runInBand"
   },
   "keywords": [],
@@ -27,6 +27,7 @@
     "axios": "^1.16.1",
     "dotenv": "^17.2.1",
     "electron-is-dev": "^2.0.0",
+    "node-pty": "^1.1.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
@@ -45,13 +46,18 @@
   "build": {
     "appId": "com.votreentreprise.monide",
     "productName": "Mon IDE Agent IA",
+    "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/node-pty/**/*"
+    ],
     "files": [
       "main.js",
       "logger.js",
       "preload.js",
       "electron/**/*",
       "assets/**/*",
-      "client/build/**/*"
+      "client/build/**/*",
+      "client/src/utils/applySearchReplace.js"
     ],
     "directories": {
       "output": "dist",
@@ -76,7 +82,9 @@
     },
     "linux": {
       "icon": "iconeDesktop.png",
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "extraFiles": [
         "scripts/setup-server.sh",
         "scripts/start-server.sh",

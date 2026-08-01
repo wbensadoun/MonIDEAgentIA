@@ -1,10 +1,17 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import InteractiveTerminal from './InteractiveTerminal';
+import './TerminalPanel.css';
 
 const TOP_TABS = [
   { id: 'problems', label: 'Problems' },
   { id: 'output', label: 'Output' },
   { id: 'debug', label: 'Debug Console' },
   { id: 'terminal', label: 'Terminal' },
+  // Onglet distinct de "Terminal" (qui reste le lanceur de taches Dev/Test/
+  // Build a boutons) : un vrai shell interactif backe par node-pty, ou
+  // l'utilisateur tape librement. Volontairement separe pour ne rien changer
+  // au comportement existant du lanceur de taches.
+  { id: 'shell', label: 'Shell' },
   { id: 'ai', label: 'AI Terminal' },
   { id: 'ports', label: 'Ports' },
 ];
@@ -263,6 +270,18 @@ const TerminalPanel = ({
         )}
       </div>
     );
+  } else if (activeView === 'shell') {
+    // Montee/demontee seulement quand l'onglet est actif : chaque montage
+    // ouvre une nouvelle session pty (cf. InteractiveTerminal), donc on ne
+    // veut pas la garder en vie hors ecran ni en recreer une a chaque re-rendu
+    // du panneau.
+    content = (
+      <InteractiveTerminal
+        currentProjectPath={currentProjectPath}
+        isElectronApiAvailable={isElectronApiAvailable}
+        canUseTerminal={canUseTerminal}
+      />
+    );
   } else if (activeView === 'output') {
     content = (
       <div className="terminal-log custom-scrollbar">
@@ -278,7 +297,7 @@ const TerminalPanel = ({
   } else if (activeView === 'ai') {
     const aiLog = logs.ai || '';
     content = (
-      <div className="terminal-log custom-scrollbar" style={{ color: '#00FA9A' }}>
+      <div className="terminal-log terminal-log__ai custom-scrollbar">
         {aiLog || "L'IA n'a pas encore exécuté de commande dans le terminal.\n(Note: La création de fichiers se fait silencieusement et directement via le système de fichiers pour plus de rapidité, pas avec des commandes du terminal !)"}
       </div>
     );

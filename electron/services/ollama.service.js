@@ -48,10 +48,16 @@ const computeOllamaThink = (model, thinkingMode) => {
   return thinkingMode === true;
 };
 
+// Couvre <think> (Ollama : qwen3, deepseek-r1, qwq...) ET <thinking>, la balise
+// que claude.provider.js demande explicitement au modele en mode Thinking et
+// que personne ne retirait. Le second replace traite le bloc NON ferme : une
+// generation coupee (num_predict atteint, bouton Arreter) laisse la balise
+// ouverte, et sans ce cas tout le raisonnement reste affiche.
+const THINK_TAG = '(?:think|thinking)';
 const stripThinkBlocks = (text) => {
   let out = String(text || '');
-  out = out.replace(/<think>[\s\S]*?<\/think>/gi, '');
-  out = out.replace(/<think>[\s\S]*$/i, '');
+  out = out.replace(new RegExp(`<${THINK_TAG}>[\\s\\S]*?</${THINK_TAG}>`, 'gi'), '');
+  out = out.replace(new RegExp(`<${THINK_TAG}>[\\s\\S]*$`, 'i'), '');
   return out.trim();
 };
 

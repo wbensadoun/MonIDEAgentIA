@@ -28,24 +28,13 @@ interface AgentVerseProps {
   onViewChanges?: (task: Task) => void;
 }
 
-const THEME_KEY = 'agentverse_theme';
-
-function readTheme(): ThemeId {
-  try {
-    const v = localStorage.getItem(THEME_KEY) as ThemeId | null;
-    if (v && v in THEMES) return v;
-  } catch {
-    /* ignore */
-  }
-  return DEFAULT_THEME;
-}
-
 /**
  * Root of the multi-agent RPG interface. One engine, six sellable skins.
  * Self-contained (mock data) but ready to plug into a real agent backend.
  */
 export default function AgentVerse({ client, onViewChanges }: AgentVerseProps) {
-  const [themeId, setThemeId] = useState<ThemeId>(readTheme);
+  // A scene changes world art and movement only; the IDE owns chrome tokens.
+  const [themeId, setThemeId] = useState<ThemeId>(DEFAULT_THEME);
   const [rail, setRail] = useState<'team' | 'tasks'>('team');
 
   const theme = THEMES[themeId];
@@ -82,14 +71,7 @@ export default function AgentVerse({ client, onViewChanges }: AgentVerseProps) {
     return map;
   }, [world.tasks]);
 
-  const changeTheme = (id: ThemeId) => {
-    setThemeId(id);
-    try {
-      localStorage.setItem(THEME_KEY, id);
-    } catch {
-      /* ignore */
-    }
-  };
+  const changeTheme = (id: ThemeId) => setThemeId(id);
 
   return (
     <div className={`av-root av-root--${theme.id}`}>

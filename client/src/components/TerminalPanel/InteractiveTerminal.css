@@ -1,0 +1,28 @@
+.pty-terminal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.pty-terminal-banner {
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  font-size: var(--text-sm, 12px);
+  color: var(--text-dim);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.pty-terminal-surface {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 8px;
+}
+
+/* xterm.js gere sa propre mise en page interne ; on ne force que le conteneur
+   a occuper l'espace disponible pour que l'addon-fit calcule les bonnes
+   dimensions (colonnes/lignes) a chaque redimensionnement du panneau. */
+.pty-terminal-surface .xterm {
+  height: 100%;
+}

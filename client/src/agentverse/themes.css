@@ -6,12 +6,6 @@
 
 /* =========================== 1. AGENT TOWN ================================ */
 .av-root--town {
-  --av-accent: #2f9e62;
-  --av-accent-soft: rgba(47, 158, 98, 0.18);
-  --av-bg: #11190f;
-  --av-panel: #172417;
-  --av-panel-2: #20311f;
-  --av-border: #365132;
   --av-font-game: 'Courier New', 'Lucida Console', monospace;
 }
 .av-root--town .av-npc__name,
@@ -19,15 +13,6 @@
 
 /* =========================== 2. CYBERPUNK STUDIO ========================= */
 .av-root--cyberpunk {
-  --av-accent: #00e5ff;
-  --av-accent-soft: rgba(0, 229, 255, 0.18);
-  --av-bg: #05080f;
-  --av-panel: #0c1220;
-  --av-panel-2: #111a2b;
-  --av-border: #1e3b55;
-  --av-text: #eafcff;
-  --av-muted: #7ca5bd;
-  --av-shadow: 0 14px 40px rgba(0, 229, 255, 0.1), 0 14px 38px rgba(0, 0, 0, 0.58);
 }
 .av-world--cyberpunk .av-world__floor {
   background:
@@ -161,12 +146,6 @@
 
 /* =========================== 3. ISOMETRIC HQ ============================= */
 .av-root--isometric {
-  --av-accent: #3b82f6;
-  --av-accent-soft: rgba(59, 130, 246, 0.16);
-  --av-bg: #0b1120;
-  --av-panel: #111a2e;
-  --av-panel-2: #16223b;
-  --av-border: #25324d;
 }
 .av-world--isometric .av-world__floor {
   background-color: #16223b;
@@ -312,15 +291,6 @@
 
 /* =========================== 4. RPG GUILD ================================ */
 .av-root--campus {
-  --av-accent: #d6a13f;
-  --av-accent-soft: rgba(214, 161, 63, 0.18);
-  --av-bg: #15120f;
-  --av-panel: #211914;
-  --av-panel-2: #2a2119;
-  --av-border: #473527;
-  --av-text: #f3ead7;
-  --av-muted: #ad9874;
-  --av-shadow: 0 14px 38px rgba(0, 0, 0, 0.48);
   --av-font-game: 'Courier New', 'Lucida Console', monospace;
 }
 .av-world--campus .av-world__floor {
@@ -610,15 +580,6 @@
 
 /* =========================== 5. SYNTHWAVE RETRO GRID ===================== */
 .av-root--synthwave {
-  --av-accent: #ff2db2;
-  --av-accent-soft: rgba(255, 45, 178, 0.2);
-  --av-bg: #070511;
-  --av-panel: #120b21;
-  --av-panel-2: #1a1030;
-  --av-border: #382357;
-  --av-text: #fff1ff;
-  --av-muted: #88bfd2;
-  --av-shadow: 0 14px 40px rgba(0, 238, 255, 0.12), 0 14px 38px rgba(0, 0, 0, 0.62);
 }
 .av-world--synthwave .av-world__floor {
   background:

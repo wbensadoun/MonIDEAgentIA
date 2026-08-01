@@ -3,8 +3,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   background: #0c0c0e;
-  overflow: hidden;
-  overflow-y: auto;
+  overflow: auto;
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.65;
@@ -38,6 +37,7 @@
   overflow: visible;
   white-space: pre;
   word-break: normal;
+  min-width: 0;
 }
 
 .shc-line { display: block; }

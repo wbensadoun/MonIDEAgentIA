@@ -192,7 +192,7 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
-  background: #071016;
+  background: var(--bg);
 }
 
 .brain-flow .react-flow__node {
@@ -201,6 +201,30 @@
 
 .brain-flow .react-flow__attribution {
   display: none;
+}
+
+.brain-flow .react-flow__controls {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.brain-flow .react-flow__controls button {
+  background: var(--surface);
+  border: none;
+  color: var(--text-main);
+  border-radius: 0;
+}
+
+.brain-flow .react-flow__controls button:hover {
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+.brain-flow .react-flow__minimap {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 
 .brain-node {
@@ -344,6 +368,13 @@
   padding: 2px 0;
   text-align: left;
   cursor: pointer;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.brain-rel-block button:hover {
+  text-decoration: underline;
+  color: var(--accent-hover, var(--accent));
 }
 
 .brain-rel-block span {

@@ -17,6 +17,32 @@ const providerHandlers = {
   ollama: getOllamaCompletion
 };
 
+// Registre des generations en cours : runId -> AbortController.
+//
+// ipcMain.handle est un aller-retour anonyme : sans identifiant de requete, le
+// renderer n'a aucun moyen de designer LA generation a interrompre. C'est
+// exactement ce qui rendait le bouton "Arreter" decoratif — un AbortController
+// etait bien cree cote React, mais son signal ne quittait jamais le renderer.
+const activeRuns = new Map();
+
+const registerRun = (runId) => {
+  if (!runId) return null;
+  // Meme runId reutilise (relance rapide) : on avorte l'ancien avant d'ecraser,
+  // sinon la premiere requete devient orpheline et intuable.
+  const previous = activeRuns.get(runId);
+  if (previous) previous.abort();
+  const controller = new AbortController();
+  activeRuns.set(runId, controller);
+  return controller;
+};
+
+// On ne supprime que si l'entree est toujours la NOTRE : un run relance sous le
+// meme id a pu remplacer la valeur entre-temps.
+const releaseRun = (runId, controller) => {
+  if (!runId) return;
+  if (activeRuns.get(runId) === controller) activeRuns.delete(runId);
+};
+
 const registerProviderCompletionHandler = ({
   ipcMain,
   channel,
@@ -30,18 +56,27 @@ const registerProviderCompletionHandler = ({
   }
 
   ipcMain.handle(channel, async (_event, history, currentCode, allProjectFiles = null, options = {}) => {
+    const runId = options?.runId || null;
+    const controller = registerRun(runId);
     try {
       return await handler({
         history,
         currentCode,
         allProjectFiles,
-        options,
+        // Le signal est injecte ici et non cote renderer : un AbortSignal n'est
+        // pas serialisable a travers le pont IPC, il doit naitre dans le main.
+        options: controller ? { ...options, signal: controller.signal } : options,
         getMainWindow,
         executeCommandForAI,
         showErrorBox: (title, message) => dialog.showErrorBox(title, message)
       });
     } catch (error) {
+      if (controller?.signal?.aborted) {
+        return { success: false, aborted: true, error: 'Generation annulee.', provider };
+      }
       return { success: false, error: error?.message || String(error), provider };
+    } finally {
+      releaseRun(runId, controller);
     }
   });
 };
@@ -52,6 +87,17 @@ const registerAIHandlers = ({
   executeCommandForAI = defaultExecuteCommandForAI
 } = {}) => {
   ipcMain.handle('list-gemini-models', async (_event, apiKey) => listGeminiModels(apiKey));
+
+  ipcMain.handle('cancel-ai-generation', async (_event, runId) => {
+    const controller = runId ? activeRuns.get(runId) : null;
+    if (!controller) {
+      // Cas normal quand la generation vient de finir d'elle-meme : pas une erreur.
+      return { success: false, reason: 'no-active-run' };
+    }
+    controller.abort();
+    activeRuns.delete(runId);
+    return { success: true };
+  });
 
   registerProviderCompletionHandler({
     ipcMain,

@@ -528,21 +528,19 @@ const CodeEditor = ({
                 <button
                   onClick={onAcceptDiff}
                   className="btn btn-primary"
-                  style={{ background: 'rgba(0, 245, 212, 0.15)', borderColor: 'rgba(0, 245, 212, 0.4)', color: '#00f5d4', padding: '4px 12px', fontSize: '11px' }}
                 >
                   ✓ Accepter IA
                 </button>
                 <button
                   onClick={onUndo}
                   className="btn btn-warning"
-                  style={{ padding: '4px 12px', fontSize: '11px' }}
                 >
                   ✕ Rejeter IA
                 </button>
               </>
             )}
             {!isDiffMode && activeFile && previousCode && (
-              <button onClick={onUndo} className="btn btn-warning" style={{ padding: '4px 12px', fontSize: '11px' }}>
+              <button onClick={onUndo} className="btn btn-warning">
                 Annuler IA (Undo)
               </button>
             )}

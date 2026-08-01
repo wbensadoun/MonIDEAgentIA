@@ -55,6 +55,7 @@ const FileSearchSection = ({ projectItems, activeFile, onFileClick, isReadOnlyMo
         type="text"
         className="sidebar-search-input"
         placeholder="Rechercher un fichier par nom..."
+        aria-label="Rechercher un fichier par nom"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         disabled={isReadOnlyMode && allFiles.length === 0}

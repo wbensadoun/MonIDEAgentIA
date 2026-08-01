@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import './MarkdownRenderer.css';
 
 /**
  * MarkdownRenderer — lightweight Markdown-to-JSX renderer.
@@ -83,7 +84,7 @@ const tokenizeLine = (line, _language) => {
 
 /* ── code block component ─────────────────────────────── */
 
-const CodeBlock = ({ language, code, onCopy, onApply }) => {
+const CodeBlock = ({ language, code, filePath, onCopy, onApply }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -103,12 +104,12 @@ const CodeBlock = ({ language, code, onCopy, onApply }) => {
       <div className="md-codeblock-header">
         <span className="md-codeblock-lang">{language || 'text'}</span>
         <div className="md-codeblock-actions">
-          {onApply && (
+          {onApply && filePath && (
             <button
               type="button"
               className="md-codeblock-btn md-codeblock-apply"
-              onClick={() => onApply(code, language)}
-              title="Appliquer dans l'éditeur"
+              onClick={() => onApply(code, language, filePath)}
+              title={`Appliquer dans ${filePath}`}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
@@ -122,22 +123,16 @@ const CodeBlock = ({ language, code, onCopy, onApply }) => {
             onClick={handleCopy}
             title="Copier le code"
           >
-            {copied ? (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                Copié !
-              </>
-            ) : (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-                Copier
-              </>
-            )}
+            <div className="md-copy-icon-stack">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={!copied ? 'is-visible' : ''}>
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={copied ? 'is-visible' : ''}>
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </div>
+            {copied ? 'Copié !' : 'Copier'}
           </button>
         </div>
       </div>
@@ -209,9 +204,34 @@ const parseMarkdown = (text, onCopy, onApply) => {
   const blocks = [];
   let i = 0;
   let key = 0;
+  let currentFilePath = '';
 
   while (i < lines.length) {
     const line = lines[i];
+
+    // Rattache chaque bloc de code au dernier marqueur de fichier rencontré.
+    // Mêmes deux formes que processAIFileModifications (useAIPendingChanges.js):
+    // **FICHIER: chemin** et FILE: chemin. La ligne n'est PAS consommée ici,
+    // elle continue vers son rendu normal (paragraphe en gras).
+    const fileMarker = line.match(/^\s*\*\*FICHIER:\s*(.+?)\*\*\s*$/i)
+      || line.match(/^\s*FILE:\s*(.+?)\s*$/i);
+    if (fileMarker) {
+      // Vérifier que la prochaine ligne non-vide est un bloc de code (ouverture ```).
+      // Cela imite le backend (fileBlockRegex1 et fileBlockRegex2 dans useAIPendingChanges.js)
+      // qui n'accepte que des espaces/retours à la ligne entre le marqueur et le bloc.
+      let nextNonEmptyIdx = i + 1;
+      while (nextNonEmptyIdx < lines.length && lines[nextNonEmptyIdx].trim() === '') {
+        nextNonEmptyIdx++;
+      }
+
+      // Définir currentFilePath seulement si immédiatement suivi d'un bloc de code
+      if (nextNonEmptyIdx < lines.length && lines[nextNonEmptyIdx].match(/^```(\w*)\s*$/)) {
+        currentFilePath = String(fileMarker[1] || '').trim();
+      } else {
+        // Aucun bloc de code ne suit: ne pas associer ce marqueur
+        currentFilePath = '';
+      }
+    }
 
     // Code block (``` or ~~~)
     const codeMatch = line.match(/^```(\w*)\s*$/);
@@ -229,10 +249,12 @@ const parseMarkdown = (text, onCopy, onApply) => {
           key={key++}
           language={lang}
           code={codeLines.join('\n')}
+          filePath={currentFilePath}
           onCopy={onCopy}
           onApply={onApply}
         />
       );
+      currentFilePath = '';
       continue;
     }
 

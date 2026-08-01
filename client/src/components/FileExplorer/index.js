@@ -124,8 +124,11 @@ const FileItem = ({
         <div className="file-item-main">
           {item.type === 'directory' && (
             <button
+              type="button"
               onClick={() => onToggleFolder(item)}
               className="file-item-toggle"
+              aria-label={isExpanded ? 'Replier le dossier' : 'Déplier le dossier'}
+              aria-expanded={isExpanded}
             >
               <ChevronIcon isExpanded={isExpanded} />
             </button>

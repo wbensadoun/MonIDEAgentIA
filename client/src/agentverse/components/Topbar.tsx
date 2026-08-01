@@ -9,7 +9,7 @@ interface TopbarProps {
   onThemeChange: (id: ThemeId) => void;
 }
 
-/** Header: product title, theme switcher and live project KPIs. */
+/** Header: product title, scene switcher and live project KPIs. */
 export function Topbar({ theme, kpis, live, onThemeChange }: TopbarProps) {
   return (
     <header className="av-topbar">
@@ -28,13 +28,15 @@ export function Topbar({ theme, kpis, live, onThemeChange }: TopbarProps) {
         </span>
       </div>
 
-      <nav className="av-switcher" aria-label="Theme visuel">
+      <nav className="av-switcher" aria-label="Scène visuelle AgentVerse">
         {THEME_ORDER.map((id) => (
           <button
             key={id}
             type="button"
             className={`av-switcher__btn${theme.id === id ? ' is-active' : ''}`}
             onClick={() => onThemeChange(id)}
+            aria-pressed={theme.id === id}
+            aria-label={`Choisir la scène ${THEMES[id].name}`}
           >
             {THEMES[id].badge}
           </button>

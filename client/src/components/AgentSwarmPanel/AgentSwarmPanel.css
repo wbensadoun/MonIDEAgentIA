@@ -1,0 +1,559 @@
+/* ======================================================================
+   AgentSwarmPanel — Refonte design 2026
+   Liste compacte horizontale avec pastilles élégantes
+   Grammaire visuelle moderne & accessible
+   ====================================================================== */
+
+.swarm-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  animation: swarm-panel-in var(--duration-view, 240ms) var(--ease-emphasized) both;
+}
+
+@keyframes swarm-panel-in {
+  from { opacity: 0; transform: translateX(6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ============================== HEADER ============================== */
+
+.swarm-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.swarm-header-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.swarm-eyebrow {
+  font-size: 9px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.swarm-run-label {
+  margin-top: 3px;
+  font-size: var(--text-base, 13px);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.swarm-close-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.swarm-close-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-main);
+}
+
+.swarm-close-btn:active {
+  background: var(--surface-3);
+}
+
+/* ============================== STATUT / PROGRESSION ============================== */
+
+.swarm-status {
+  padding: var(--space-2) var(--space-3);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.swarm-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 9px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  width: fit-content;
+}
+
+.swarm-badge-accent {
+  color: var(--accent);
+  background: transparent;
+}
+
+.swarm-badge-success {
+  color: var(--success);
+  background: transparent;
+}
+
+.swarm-badge-danger {
+  color: var(--danger);
+  background: transparent;
+}
+
+.swarm-progress-track {
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--border);
+  overflow: hidden;
+}
+
+.swarm-progress-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, var(--success)));
+  transition: width 400ms var(--ease-emphasized);
+}
+
+.swarm-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs, 10px);
+  color: var(--text-muted);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.swarm-meta-item {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.swarm-meta-phase {
+  color: var(--text-dim);
+  min-width: 0;
+}
+
+.swarm-meta-duration {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.swarm-meta-sep {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+/* ============================== LISTE DES STEPS (Compact Layout) ============================== */
+
+.swarm-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.swarm-steps-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.swarm-step {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--radius-md);
+  opacity: 0;
+  animation: swarm-step-in 240ms var(--ease-emphasized) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+@keyframes swarm-step-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.swarm-step-active {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.swarm-step-error {
+  background: color-mix(in srgb, var(--danger) 4%, transparent);
+}
+
+/* Row principale : pastille + label + meta */
+.swarm-step-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-2);
+  min-width: 0;
+}
+
+/* Pastille 8px compacte */
+.swarm-step-marker {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-main);
+  transition: background var(--duration-base) var(--ease-emphasized),
+              border-color var(--duration-base) var(--ease-emphasized),
+              box-shadow var(--duration-base) var(--ease-emphasized);
+}
+
+.swarm-step-active .swarm-step-marker {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.swarm-step-completed .swarm-step-marker {
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--surface);
+  animation: swarm-marker-pop 220ms var(--ease-emphasized) both;
+}
+
+.swarm-step-error .swarm-step-marker {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--surface);
+  animation: swarm-marker-pop 220ms var(--ease-emphasized) both;
+}
+
+@keyframes swarm-marker-pop {
+  from { transform: scale(0.75); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* Spinner très fin pour active */
+.swarm-spinner-small {
+  width: 6px;
+  height: 6px;
+  color: var(--accent);
+  animation: swarm-spin 800ms linear infinite;
+}
+
+@keyframes swarm-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Header : label + chevron optionnel */
+.swarm-step-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1;
+}
+
+.swarm-step-chevron {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 10px;
+  transition: transform 200ms var(--ease-emphasized),
+              color 200ms var(--ease-emphasized);
+  padding: 0;
+}
+
+.swarm-step-chevron:hover {
+  color: var(--text-main);
+}
+
+.swarm-step-chevron.is-open {
+  transform: rotate(90deg);
+  color: var(--accent);
+}
+
+/* Label : shimmer doux au lieu du background-clip:text agressif */
+.swarm-step-label {
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.swarm-step-pending .swarm-step-label {
+  color: var(--text-muted);
+}
+
+/* Shimmer doux : opacity pulse au lieu de background-clip:text */
+.swarm-step-label-shimmer {
+  color: var(--text-main);
+  animation: swarm-shimmer-pulse 3s ease-in-out infinite;
+}
+
+@keyframes swarm-shimmer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Meta (provider · model) très discret, aligné à droite */
+.swarm-step-meta {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  white-space: nowrap;
+  padding-left: var(--space-1);
+  border-left: 1px solid var(--border);
+  padding-left: var(--space-2);
+}
+
+/* Détail : se déplie en grid-rows */
+.swarm-step-detail-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  overflow: hidden;
+  transition: grid-template-rows 240ms var(--ease-emphasized),
+              opacity 160ms var(--ease-emphasized);
+}
+
+.swarm-step-detail-wrap.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.swarm-step-detail {
+  min-height: 0;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: var(--leading-snug, 1.35);
+  color: var(--text-dim);
+  padding: 0 var(--space-2) var(--space-2) calc(8px + var(--space-2) + var(--space-2));
+}
+
+/* ============================== JOURNAL ============================== */
+
+.swarm-journal {
+  flex-shrink: 0;
+  margin: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.swarm-journal::details-content {
+  block-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: block-size var(--duration-base, 200ms) var(--ease-emphasized),
+              opacity var(--duration-fast, 100ms) var(--ease-emphasized),
+              content-visibility var(--duration-base, 200ms) allow-discrete;
+}
+
+.swarm-journal[open]::details-content {
+  block-size: auto;
+  opacity: 1;
+}
+
+.swarm-journal-summary {
+  cursor: pointer;
+  padding: 6px 9px;
+  font-size: var(--text-xs, 10px);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  user-select: none;
+  list-style: none;
+  transition: color 200ms var(--ease-standard);
+}
+
+.swarm-journal-summary::-webkit-details-marker {
+  display: none;
+}
+
+.swarm-journal-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 180ms var(--ease-emphasized);
+}
+
+.swarm-journal[open] > .swarm-journal-summary::before {
+  transform: rotate(90deg);
+}
+
+.swarm-journal-summary:hover {
+  color: var(--text-main);
+}
+
+.swarm-journal-content {
+  border-top: 1px solid var(--border);
+}
+
+.swarm-journal-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 9px;
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.swarm-journal-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 0;
+  min-width: 0;
+  font-size: 10px;
+}
+
+/* Pastille très petite 4px */
+.swarm-journal-dot {
+  flex-shrink: 0;
+  width: 4px;
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.swarm-journal-dot-active {
+  background: var(--accent);
+}
+
+.swarm-journal-dot-completed {
+  background: var(--success);
+}
+
+.swarm-journal-dot-error {
+  background: var(--danger);
+}
+
+.swarm-journal-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.swarm-journal-label {
+  font-size: 10px;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.swarm-journal-detail {
+  font-size: 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================== ÉTAT VIDE ============================== */
+
+.swarm-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+}
+
+.swarm-empty-icon {
+  opacity: 0.12;
+  color: var(--text-dim);
+}
+
+.swarm-empty-title {
+  font-size: var(--text-md, 14px);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-main);
+  line-height: 1.3;
+}
+
+.swarm-empty-text {
+  margin: 0;
+  max-width: 260px;
+  font-size: var(--text-xs, 11px);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--text-muted);
+}
+
+/* ============================== ACCESSIBILITÉ ============================== */
+
+.swarm-close-btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.swarm-step-chevron:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swarm-panel,
+  .swarm-step,
+  .swarm-step-marker,
+  .swarm-step-detail-wrap,
+  .swarm-progress-fill,
+  .swarm-step-chevron {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .swarm-spinner-small {
+    animation: none !important;
+  }
+
+  .swarm-step-label-shimmer {
+    animation: none !important;
+    opacity: 1;
+  }
+}

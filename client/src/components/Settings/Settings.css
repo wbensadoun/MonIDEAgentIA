@@ -5,21 +5,22 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 70;
+  z-index: var(--z-modal-backdrop);
   backdrop-filter: blur(6px);
 }
 
 .settings-modal {
   width: min(680px, 92vw);
   max-height: 90vh;
-  background: rgba(12, 18, 28, 0.98);
+  background: var(--surface);
   border: 1px solid var(--border-0);
   border-radius: 18px;
   box-shadow: var(--shadow-1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  color: var(--text-0);
+  color: var(--text-main);
+  z-index: var(--z-modal);
 }
 
 .settings-header {
@@ -86,8 +87,8 @@
 }
 
 .settings-tab.is-active {
-  color: var(--accent-1);
-  border-bottom-color: var(--accent-1);
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 .settings-tab-icon {
@@ -129,7 +130,7 @@
 
 .settings-link {
   font-size: 0.7rem;
-  color: var(--accent-1);
+  color: var(--accent);
   background: none;
 }
 
@@ -143,10 +144,11 @@
   font-size: 0.8rem;
 }
 
-.settings-input:focus {
-  outline: none;
-  border-color: rgba(0, 245, 212, 0.45);
-  box-shadow: 0 0 0 2px rgba(0, 245, 212, 0.12);
+.settings-input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  box-shadow: var(--shadow-focus-ring);
+  border-color: var(--accent);
 }
 
 .settings-input.is-invalid {
@@ -162,7 +164,7 @@
 }
 
 .settings-toggle input {
-  accent-color: var(--accent-1);
+  accent-color: var(--accent);
 }
 
 .settings-key {
@@ -178,7 +180,7 @@
 
 .settings-warning {
   font-size: 0.7rem;
-  color: #ffb4a2;
+  color: var(--warning);
 }
 
 .settings-hint {
@@ -189,7 +191,7 @@
 
 .settings-danger {
   font-size: 0.72rem;
-  color: #ffb4a2;
+  color: var(--danger);
   line-height: 1.35;
 }
 
@@ -249,11 +251,11 @@
 }
 
 .settings-provider-status.is-error {
-  color: var(--accent-4);
+  color: var(--danger);
 }
 
 .settings-provider-status.is-loading {
-  color: var(--accent-1);
+  color: var(--accent);
 }
 
 .settings-agent-grid {
@@ -331,7 +333,7 @@
 }
 
 .settings-invalid {
-  color: var(--accent-4);
+  color: var(--danger);
   background: rgba(255, 107, 107, 0.12);
   border: 1px solid rgba(255, 107, 107, 0.4);
 }

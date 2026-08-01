@@ -144,6 +144,18 @@ try {
     // Terminal / Process Runner
     startProcess: (payload) => ipcRenderer.invoke('start-process', payload),
     stopProcess: (id) => ipcRenderer.invoke('stop-process', id),
+
+    // Terminal interactif (node-pty). Distinct de startProcess/stopProcess :
+    // celui-ci ouvre un vrai shell persistant (cd, variables d'env qui
+    // survivent, pipes, programmes interactifs), pas un spawn ponctuel.
+    createPty: (payload) => ipcRenderer.invoke('pty-create', payload),
+    writePty: (id, data) => ipcRenderer.invoke('pty-write', id, data),
+    resizePty: (id, cols, rows) => ipcRenderer.invoke('pty-resize', id, cols, rows),
+    killPty: (id) => ipcRenderer.invoke('pty-kill', id),
+    readPtyBuffer: (id) => ipcRenderer.invoke('pty-read-buffer', id),
+    isPtyAvailable: () => ipcRenderer.invoke('pty-is-available'),
+    onPtyData: (callback) => registerChannelListener('pty-data', callback),
+    onPtyExit: (callback) => registerChannelListener('pty-exit', callback),
     onProcessOutput: (callback) => {
       return registerChannelListener('process-output', callback);
     },
@@ -233,6 +245,12 @@ try {
     },
     getOllamaCompletion: (history, currentCode, allProjectFiles, options) =>
       ipcRenderer.invoke('get-ollama-completion', history, currentCode, allProjectFiles, options),
+
+    // Annulation REELLE d'une generation. Avant, le renderer creait un
+    // AbortController qu'il n'envoyait nulle part : le bouton "Arreter" masquait
+    // le resultat pendant que le CPU continuait a generer jusqu'au bout.
+    // Le runId est genere par le renderer et passe dans options.runId.
+    cancelAIGeneration: (runId) => ipcRenderer.invoke('cancel-ai-generation', runId),
 
     // Inline Completion (Ctrl+K / Ghost Text)
     getInlineCompletion: (prompt, code, options) =>

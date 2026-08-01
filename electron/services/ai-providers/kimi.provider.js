@@ -15,6 +15,9 @@ const {
   buildN8nCatalogContextForPrompt,
   pickFilesForContext,
   parseRunCommand,
+  parseReadTerminalCall,
+  stripReadTerminalTags,
+  readSharedTerminalBuffer,
   TERMINAL_CAPABILITY_PROMPT,
   executeCommandForAI: defaultExecuteCommandForAI,
 } = require('../ai.service');
@@ -435,7 +438,21 @@ const getKimiCompletion = async ({
         const aiText = await kimiCallWithRetry(messages);
         logger.info(`[Kimi Agent API] Réponse de l'IA (Itération ${iter + 1}):\n${aiText}`);
 
-        fullTranscript += (iter > 0 ? '\n\n---\n\n' : '') + aiText;
+        const visibleTurn = stripReadTerminalTags(aiText);
+        if (visibleTurn) {
+          fullTranscript += (fullTranscript ? '\n\n---\n\n' : '') + visibleTurn;
+        }
+
+        // Outil de lecture du terminal partage. Place AVANT parseRunCommand :
+        // c'est un tour sans effet de bord, et il ne doit pas produire de carte
+        // terminal cote UI (aucun evenement 'ai-terminal-action' emis ici).
+        if (parseReadTerminalCall(aiText)) {
+          const shared = readSharedTerminalBuffer();
+          messages = [...messages,
+            { role: 'assistant', content: aiText },
+            { role: 'user', content: `${shared.text}\nContinue si necessaire.` }];
+          continue;
+        }
 
         const cmd = parseRunCommand(aiText);
         if (!cmd) {
@@ -448,7 +465,10 @@ const getKimiCompletion = async ({
           mainWindow.webContents.send('ai-terminal-action', { command: cmd, iteration: iter + 1 });
         }
 
-        const { output } = await executeCommandForAI(cmd, projectPath);
+        const { output, success: commandSucceeded, exitCode } = await executeCommandForAI(cmd, projectPath, undefined, {
+          executionMode: options.executionMode,
+          autonomyLevel: options.autonomyLevel
+        });
 
         // Feed result back as new user message
         messages = [
@@ -458,7 +478,7 @@ const getKimiCompletion = async ({
         ];
 
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1 });
+          mainWindow.webContents.send('ai-terminal-result', { command: cmd, output, iteration: iter + 1, exitCode: typeof exitCode === 'number' ? exitCode : null, success: commandSucceeded === true });
         }
       }
 

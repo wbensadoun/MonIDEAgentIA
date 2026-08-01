@@ -37,8 +37,8 @@
 }
 
 .nav-header-btn {
-  width: 22px;
-  height: 22px;
+  min-width: 24px;
+  min-height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -113,7 +113,7 @@
 .nav-meta-chip.is-warning {
   color: var(--warning);
   background: var(--warning-soft);
-  border-color: rgba(245, 158, 11, 0.2);
+  border-color: var(--warning-soft);
 }
 
 /* Hint */
@@ -147,6 +147,10 @@
 }
 
 .file-item-row:hover .file-item-actions {
+  opacity: 1;
+}
+
+.file-item-row:focus-within .file-item-actions {
   opacity: 1;
 }
 
@@ -194,7 +198,7 @@
 }
 
 .file-item-button:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-2);
   color: var(--text-main);
 }
 
@@ -250,6 +254,11 @@
   min-width: 0;
 }
 
+.file-item-rename-input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
 /* Actions mini (visibles au hover) */
 .file-item-actions {
   display: flex;
@@ -272,6 +281,14 @@
   font-weight: 700;
   color: var(--text-muted);
   transition: background 0.1s, color 0.1s;
+  position: relative;
+}
+
+.file-item-mini::after,
+.file-item-delete::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
 }
 
 .file-item-mini:hover {
@@ -351,11 +368,11 @@
 /* Menu contextuel */
 .nav-context-menu {
   position: fixed;
-  z-index: 999;
+  z-index: var(--z-dropdown);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-2);
   min-width: 160px;
   overflow: hidden;
   padding: 4px;

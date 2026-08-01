@@ -14,7 +14,7 @@
   background:
     radial-gradient(circle at top left, rgba(255, 209, 102, 0.24), transparent 55%),
     linear-gradient(135deg, rgba(36, 26, 8, 0.92), rgba(65, 42, 10, 0.9));
-  color: #ffe4a6;
+  color: var(--warning);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -37,7 +37,7 @@
   background:
     radial-gradient(circle at top left, rgba(0, 245, 212, 0.18), transparent 55%),
     linear-gradient(135deg, rgba(9, 32, 35, 0.94), rgba(12, 57, 61, 0.9));
-  color: var(--accent-1);
+  color: var(--accent);
 }
 
 .update-checker-trigger.is-error {
@@ -266,7 +266,7 @@
 
 .update-checker-model-status {
   margin-top: 4px;
-  color: var(--accent-1);
+  color: var(--accent);
   font-size: 0.68rem;
 }
 
@@ -342,9 +342,9 @@
 }
 
 .update-checker-pill.is-downloading {
-  background: rgba(0, 245, 212, 0.12);
-  border-color: rgba(0, 245, 212, 0.24);
-  color: var(--accent-1);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .update-checker-progress {
@@ -359,8 +359,8 @@
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent-1), #54f2cf);
-  box-shadow: 0 0 18px rgba(0, 245, 212, 0.24);
+  background: linear-gradient(90deg, var(--accent), var(--accent-3));
+  box-shadow: 0 0 18px var(--accent-soft);
 }
 
 .update-checker-progress-bar.is-indeterminate {

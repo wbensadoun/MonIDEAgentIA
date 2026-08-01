@@ -7,24 +7,24 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
-  z-index: 9999;
+  background: var(--bg);
+  z-index: var(--z-toast);
 }
 
 .error-boundary-content {
   max-width: 600px;
-  padding: 3rem;
+  padding: var(--space-8);
   text-align: center;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 1rem;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-4);
 }
 
 .error-icon {
-  color: #ef4444;
-  margin-bottom: 1.5rem;
+  color: var(--danger);
+  margin-bottom: var(--space-4);
   animation: pulse 2s ease-in-out infinite;
 }
 
@@ -34,75 +34,76 @@
 }
 
 .error-title {
-  font-size: 1.875rem;
-  font-weight: 700;
-  color: #f8fafc;
-  margin-bottom: 1rem;
+  font-size: var(--text-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-main);
+  margin-bottom: var(--space-3);
 }
 
 .error-message {
-  font-size: 1.125rem;
-  color: #cbd5e1;
-  margin-bottom: 1.5rem;
+  font-size: var(--text-lg);
+  color: var(--text-dim);
+  margin-bottom: var(--space-4);
 }
 
 .error-details {
-  margin: 1.5rem 0;
+  margin: var(--space-4) 0;
   text-align: left;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 0.5rem;
-  padding: 1rem;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
 }
 
 .error-details summary {
-  color: #3b82f6;
+  color: var(--accent);
   cursor: pointer;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: var(--space-2);
 }
 
 .error-stack {
-  color: #94a3b8;
-  font-family: monospace;
-  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-all;
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
 }
 
 .error-actions {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-3);
   justify-content: center;
   flex-wrap: wrap;
 }
 
 .error-button {
-  padding: 0.75rem 1.5rem;
-  border-radius: 0.5rem;
-  font-weight: 600;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+  transition: background-color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard);
   border: none;
 }
 
 .error-button.primary {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: white;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--on-accent);
 }
 
 .error-button.primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 20px -5px rgba(59, 130, 246, 0.4);
+  box-shadow: var(--shadow-focus-ring);
 }
 
 .error-button.secondary {
-  background: rgba(255, 255, 255, 0.1);
-  color: #cbd5e1;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
 }
 
 .error-button.secondary:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--surface);
+  border-color: var(--accent);
 }

@@ -50,7 +50,8 @@ const {
 
 let serviceDeps = {
   dialog: null,
-  getMainWindow: null
+  getMainWindow: null,
+  ptyService: null
 };
 
 const configureAIService = (deps = {}) => {
@@ -768,6 +769,18 @@ Règles :
 - Si une commande échoue, analyse l'erreur et essaie une solution alternative.
 - Quand tu n'as plus besoin d'exécuter de commandes, réponds normalement sans balise <run_command>.
 
+LECTURE DU TERMINAL PARTAGÉ :
+L'utilisateur dispose d'un terminal interactif dans lequel il tape lui-même.
+Son contenu ne t'est PAS fourni par défaut. Si — et seulement si — la question
+porte sur ce qui s'est passé dans CE terminal (erreur affichée à l'écran, sortie
+d'une commande lancée par l'utilisateur), demande-le avec exactement :
+
+<read_terminal/>
+
+Tu recevras les dernières lignes du tampon dans ton prochain tour. N'utilise pas
+cette balise pour lire le résultat de TES propres commandes : celui-ci t'est déjà
+renvoyé automatiquement après chaque <run_command>. Une seule balise par tour.
+
 ÉDITION DE FICHIERS — PROTOCOLE CHIRURGICAL :
 Pour MODIFIER un fichier EXISTANT → SEARCH/REPLACE:
   FILE: chemin/relatif/nom.ext
@@ -818,6 +831,56 @@ JAMAIS réécrire un fichier entier qui existe déjà.`;
 const parseRunCommand = (text) => {
   const match = String(text || '').match(/<run_command>([\s\S]*?)<\/run_command>/i);
   return match ? match[1].trim() : null;
+};
+
+// La commande est deja remontee a l'UI par l'evenement 'ai-terminal-action',
+// qui lui donne sa propre carte terminal. La laisser dans le transcript
+// affichait en plus du XML brut (<run_command>npm install</run_command>) au
+// milieu de la reponse finale.
+const stripRunCommandTags = (text) => String(text || '')
+  .replace(/<run_command>[\s\S]*?<\/run_command>/gi, '')
+  .replace(/[ \t]+\n/g, '\n')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+
+// ─── Lecture du terminal partage (outil explicite, JAMAIS injecte d'office) ──
+// Le tampon pty peut peser 20 000 caracteres : l'injecter dans chaque prompt
+// systeme couterait des milliers de tokens a chaque tour, y compris quand la
+// question n'a rien a voir avec le terminal. Il n'est donc lu QUE lorsque le
+// modele emet explicitement <read_terminal/>.
+const READ_TERMINAL_MAX_CHARS = 6000;
+
+const parseReadTerminalCall = (text) =>
+  /<read_terminal\s*\/?>(?:\s*<\/read_terminal>)?/i.test(String(text || ''));
+
+const stripReadTerminalTags = (text) => String(text || '')
+  .replace(/<read_terminal\s*\/?>(?:\s*<\/read_terminal>)?/gi, '')
+  .replace(/[ \t]+\n/g, '\n')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+
+const readSharedTerminalBuffer = (deps = serviceDeps) => {
+  const ptyService = deps?.ptyService;
+  if (!ptyService || typeof ptyService.readLatestBuffer !== 'function') {
+    return { success: false, text: '[TERMINAL PARTAGE] Service terminal indisponible.' };
+  }
+  const res = ptyService.readLatestBuffer();
+  if (!res?.success) {
+    return { success: false, text: `[TERMINAL PARTAGE] ${res?.error || 'Aucun tampon disponible.'}` };
+  }
+  let buffer = String(res.buffer || '');
+  if (!buffer.trim()) {
+    return { success: true, text: '[TERMINAL PARTAGE] Le tampon est vide (aucune sortie depuis l\'ouverture de la session).' };
+  }
+  let truncated = false;
+  if (buffer.length > READ_TERMINAL_MAX_CHARS) {
+    buffer = buffer.slice(buffer.length - READ_TERMINAL_MAX_CHARS);
+    truncated = true;
+  }
+  return {
+    success: true,
+    text: `[TERMINAL PARTAGE${truncated ? ' - dernieres lignes seulement' : ''}]\n\`\`\`\n${buffer}\n\`\`\``
+  };
 };
 
 const isUrlLikeToken = (value) => /^[a-z][a-z0-9+.-]*:\/\//i.test(String(value || ''));
@@ -935,7 +998,13 @@ const buildN8nWorkflowAdapter = (n8nWf, saveName) => {
   return adapted;
 };
 
-const executeCommandForAI = (cmd, projectPath, deps = serviceDeps) => {
+// runContext porte le mode d'execution ('ask' | 'plan' | 'agent') et le niveau
+// d'autonomie, transmis depuis le renderer via options. Avant, ces deux notions
+// n'existaient QUE dans le prompt : un modele qui ignorait la consigne
+// "CONTRAINTE: lecture seule" pouvait executer n'importe quelle commande de
+// l'allowlist en mode Ask. Le controle est desormais ici, cote serveur, hors de
+// portee du modele.
+const executeCommandForAI = (cmd, projectPath, deps = serviceDeps, runContext = {}) => {
   return new Promise(async (resolve) => {
     if (!cmd || typeof cmd !== 'string' || !cmd.trim()) {
       return resolve({ success: false, output: '[AI TERMINAL] Commande vide ignoree.' });
@@ -962,7 +1031,46 @@ const executeCommandForAI = (cmd, projectPath, deps = serviceDeps) => {
       });
     }
 
-    if (settings.aiTerminalApprovalMode !== false) {
+    // ── Enveloppe de capacites par mode d'execution (non negociable) ──────────
+    const executionMode = String(runContext?.executionMode || 'agent').toLowerCase();
+
+    if (executionMode === 'ask') {
+      return resolve({
+        success: false,
+        output: '[AI TERMINAL] Mode Ask: aucune commande ne peut etre executee. Passez en Plan (lecture) ou Agent.'
+      });
+    }
+
+    if (executionMode === 'plan' && !spawnRequest.readOnly) {
+      return resolve({
+        success: false,
+        output: `[AI TERMINAL] Mode Plan: seules les commandes de lecture sont autorisees (git status, git log, git diff, npm ls, ls, cat...). Refusee: ${spawnRequest.normalizedCommandLine}`
+      });
+    }
+
+    // ── Politique de confirmation (autopilot) ─────────────────────────────────
+    // C'est le NIVEAU D'AUTONOMIE qui decide, pas un reglage separe : choisir
+    // "Autonome" dans une pill au ton danger EST le consentement explicite.
+    // Lier l'autopilot a aiTerminalApprovalMode (defaut true) aurait rendu le
+    // niveau d'autonomie decoratif — l'exact defaut qu'on corrige ici.
+    //
+    // Ce qui reste actif en Autonome, parce que ces garde-fous ne dependent pas
+    // d'un clic : allowlist de binaires, interdiction des operateurs shell et
+    // blocage des patterns destructeurs (rm -rf, git reset --hard, mkfs...),
+    // tous appliques par buildSafeSpawnRequest plus haut. L'autopilot supprime
+    // le dialogue, pas les limites.
+    // L'autopilot terminal exige DEUX consentements, comme l'auto-approve de
+    // Copilot qui est opt-in : etre en Autonome (permissionMode edit_terminal)
+    // ET avoir decoche la confirmation par commande. Raison : edit_terminal est
+    // le mode par DEFAUT, donc s'y fier seul reviendrait a activer l'execution
+    // silencieuse de commandes shell sur une installation neuve.
+    // L'auto-application des PATCHS, elle, ne demande qu'un consentement
+    // (choisir Autonome) : elle est reversible — snapshot, undo, detection de
+    // conflit par mtime. Une commande shell ne l'est pas.
+    const autopilotTerminal = settings.permissionMode === 'edit_terminal'
+      && settings.aiTerminalApprovalMode === false;
+
+    if (!autopilotTerminal && settings.aiTerminalApprovalMode !== false) {
       const approved = await requestTerminalApproval(spawnRequest.normalizedCommandLine, deps);
       if (!approved) {
         return resolve({
@@ -1061,7 +1169,7 @@ const executeCommandForAI = (cmd, projectPath, deps = serviceDeps) => {
     const timer = setTimeout(() => {
       try { child.kill(); } catch { /* ignore */ }
       const output = `[AI TERMINAL - TIMEOUT apres 30s]\nstdout: ${stdout.slice(0, 2000)}\nstderr: ${stderr.slice(0, 2000)}`;
-      resolve({ success: false, output });
+      resolve({ success: false, exitCode: null, output });
     }, 30000);
 
     child.on('close', (code) => {
@@ -1073,12 +1181,12 @@ const executeCommandForAI = (cmd, projectPath, deps = serviceDeps) => {
       if (output.length > MAX_CMD_OUTPUT) {
         output = output.substring(0, MAX_CMD_OUTPUT) + '\n[...sortie tronquee...]';
       }
-      resolve({ success: code === 0, output });
+      resolve({ success: code === 0, exitCode: typeof code === 'number' ? code : null, output });
     });
 
     child.on('error', (err) => {
       clearTimeout(timer);
-      resolve({ success: false, output: `[AI TERMINAL ERREUR] ${err.message}` });
+      resolve({ success: false, exitCode: null, output: `[AI TERMINAL ERREUR] ${err.message}` });
     });
   });
 };
@@ -1102,6 +1210,10 @@ module.exports = {
   executeCommandForAI,
   requestTerminalApproval,
   parseRunCommand,
+  stripRunCommandTags,
+  parseReadTerminalCall,
+  stripReadTerminalTags,
+  readSharedTerminalBuffer,
   parseTagAttributes,
   parseAgentToolCalls,
   executeAgentFileToolCall,

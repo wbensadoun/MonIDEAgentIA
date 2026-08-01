@@ -26,6 +26,14 @@ export const callSingleAIProvider = async ({
   allProjectFiles,
   thinkingMode,
   deepContextEnabled,
+  // Jeton d'annulation : le main process s'en sert pour retrouver et avorter la
+  // requête HTTP de CETTE génération (cf. electron/ipc/aiHandlers.js, activeRuns).
+  // Doit être transmis à tous les providers, sinon leur Arrêter reste décoratif.
+  runId = null,
+  // Mode d'execution transmis au backend pour y etre APPLIQUE (cf.
+  // executeCommandForAI / runContext). Tant qu'il restait cote renderer, Ask et
+  // Plan n'etaient qu'une phrase de prompt qu'un petit modele local ignore.
+  executionMode = 'agent',
   currentProjectPath,
   activeAgent,
   activeSkill,
@@ -39,6 +47,8 @@ export const callSingleAIProvider = async ({
     const kimiOptions = {
       model: models.kimiModel || DEFAULT_KIMI_MODEL,
       thinkingMode,
+      runId,
+      executionMode,
       images,
       apiKey: apiKeys.kimiApiKey,
       projectPath: currentProjectPath,
@@ -69,6 +79,8 @@ export const callSingleAIProvider = async ({
     const claudeOptions = {
       model: models.claudeModel || DEFAULT_CLAUDE_MODEL,
       thinkingMode,
+      runId,
+      executionMode,
       images,
       apiKey: apiKeys.claudeApiKey,
       projectPath: currentProjectPath,
@@ -88,6 +100,12 @@ export const callSingleAIProvider = async ({
   if (effectiveAIProvider === 'ollama') {
     const ollamaOptions = {
       model: models.ollamaModel || DEFAULT_OLLAMA_MODEL,
+      // Seule branche qui oubliait thinkingMode : computeOllamaThink() le
+      // recevait donc toujours `undefined` et le toggle Settings n'avait
+      // aucun effet sur Ollama, dans les deux sens.
+      thinkingMode,
+      runId,
+      executionMode,
       projectPath: currentProjectPath,
       agent: activeAgent,
       skill: activeSkill,
@@ -105,6 +123,8 @@ export const callSingleAIProvider = async ({
   const geminiOptions = {
     model: models.geminiModel || DEFAULT_GEMINI_MODEL,
     thinkingMode,
+    runId,
+    executionMode,
     apiKey: apiKeys.geminiApiKey,
     projectPath: currentProjectPath,
     agent: activeAgent,

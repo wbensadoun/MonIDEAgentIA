@@ -5,18 +5,18 @@
    ========================================================================== */
 
 .av-root {
-  --av-bg: #0d1018;
-  --av-panel: #151a24;
-  --av-panel-2: #1b2130;
-  --av-border: #2a3140;
-  --av-text: #e7eaf1;
-  --av-muted: #98a2b6;
-  --av-accent: #6ea8fe;
-  --av-accent-soft: rgba(110, 168, 254, 0.16);
-  --av-radius: 8px;
-  --av-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
-  --av-npc-glide: 1.4s;
-  --av-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --av-bg: var(--bg);
+  --av-panel: var(--surface);
+  --av-panel-2: var(--surface-2);
+  --av-border: var(--border);
+  --av-text: var(--text-main);
+  --av-muted: var(--text-muted);
+  --av-accent: var(--accent);
+  --av-accent-soft: var(--accent-soft);
+  --av-radius: var(--radius-md);
+  --av-shadow: var(--shadow-4);
+  --av-npc-glide: var(--duration-slow);
+  --av-font: var(--font-sans);
   --av-font-game: var(--av-font);
 
   /* Status semantics — single source shared by roster pips, board columns,
@@ -93,10 +93,16 @@
   appearance: none; border: 0; cursor: pointer;
   padding: 7px 13px; border-radius: 8px;
   background: transparent; color: var(--av-muted);
-  font-size: 12.5px; font-weight: 600; transition: all .15s ease;
+  font-size: 12.5px; font-weight: 600; transition: all var(--duration-fast) var(--ease-standard);
 }
 .av-switcher__btn:hover { color: var(--av-text); }
 .av-switcher__btn.is-active { background: var(--av-accent); color: #0b0e14; box-shadow: 0 4px 12px var(--av-accent-soft); }
+.av-switcher__btn:focus-visible,
+.av-rail__tab:focus-visible,
+.av-roster__row:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
 
 .av-kpis { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .av-kpi { display: flex; flex-direction: column; align-items: flex-start; padding: 6px 12px; border-radius: 10px; background: var(--av-panel-2); border: 1px solid var(--av-border); }

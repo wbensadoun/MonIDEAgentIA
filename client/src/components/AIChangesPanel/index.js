@@ -498,7 +498,7 @@ const AIChangesPanel = ({
                         language={getLanguageFromPath(selectedChange.filePath)}
                         original={selectedChange.oldContent || ''}
                         modified={selectedChange.newContent || ''}
-                        theme="vs-dark"
+                        theme={document.body.classList.contains('theme-paper') ? 'vs' : 'vs-dark'}
                         onMount={handleDiffEditorMount}
                         options={{
                           readOnly: true,

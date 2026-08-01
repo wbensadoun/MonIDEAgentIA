@@ -340,6 +340,7 @@ const Settings = ({
               onChange={(e) => handleChange(provider.keyField, e.target.value)}
               placeholder={provider.keyPlaceholder}
               className={`settings-input ${detection.status === 'error' ? 'is-invalid' : ''}`}
+              aria-label={`Clé API ${provider.label}`}
             />
           </div>
         )}
@@ -353,6 +354,7 @@ const Settings = ({
             onChange={(e) => handleChange(provider.modelField, e.target.value)}
             placeholder={provider.defaultModel}
             className="settings-input"
+            aria-label={`Modèle ${provider.label}`}
           />
           <datalist id={listId}>
             {modelOptions.map((modelName) => (
@@ -417,6 +419,7 @@ const Settings = ({
               value={settings.defaultProvider}
               onChange={(e) => handleChange('defaultProvider', e.target.value)}
               className="settings-input"
+              aria-label="Fournisseur par défaut"
             >
               {PROVIDER_CATALOG.map((provider) => (
                 <option key={`default-${provider.id}`} value={provider.id}>{provider.label}</option>
@@ -437,6 +440,7 @@ const Settings = ({
               onChange={(e) => handleChange('devPort', e.target.value)}
               placeholder="3004"
               className="settings-input"
+              aria-label="Port serveur dev"
             />
           </div>
           </>)}
@@ -469,6 +473,7 @@ const Settings = ({
               value={settings.localAIOptimizationMode || 'safe'}
               onChange={(e) => handleChange('localAIOptimizationMode', e.target.value)}
               className="settings-input"
+              aria-label="Mode d'exécution locale (Ollama)"
             >
               <option value="safe">Privé / Safe</option>
               <option value="auto">Auto-adaptatif</option>
@@ -524,6 +529,7 @@ const Settings = ({
                   onChange={(e) => handleChange('localAIMaxConcurrentLocal', Number(e.target.value || 1))}
                   className="settings-input"
                   title="Agents Ollama locaux simultanes"
+                  aria-label="Agents Ollama locaux simultanes"
                 />
                 <input
                   type="number"
@@ -533,11 +539,13 @@ const Settings = ({
                   onChange={(e) => handleChange('localAIMaxConcurrentCloud', Number(e.target.value || 3))}
                   className="settings-input"
                   title="Agents API/cloud simultanes"
+                  aria-label="Agents API/cloud simultanes"
                 />
                 <select
                   value={settings.localAIContextBudget || 'short'}
                   onChange={(e) => handleChange('localAIContextBudget', e.target.value)}
                   className="settings-input"
+                  aria-label="Budget de contexte"
                 >
                   <option value="short">Contexte court</option>
                   <option value="medium">Contexte moyen</option>
@@ -551,6 +559,7 @@ const Settings = ({
                   onChange={(e) => handleChange('localAIMaxTokens', Number(e.target.value || 4096))}
                   className="settings-input"
                   title="Tokens max par agent"
+                  aria-label="Tokens max par agent"
                 />
               </div>
             )}
@@ -586,6 +595,7 @@ const Settings = ({
                         value={roleConfig.provider}
                         onChange={(e) => handleMultiAgentRoleChange(role.key, 'provider', e.target.value)}
                         className="settings-input"
+                        aria-label={`Fournisseur pour ${role.title}`}
                       >
                         {AI_PROVIDER_OPTIONS.map((providerOption) => (
                           <option key={`${role.key}-${providerOption.value}`} value={providerOption.value}>
@@ -600,6 +610,7 @@ const Settings = ({
                         onChange={(e) => handleMultiAgentRoleChange(role.key, 'model', e.target.value)}
                         placeholder={getDefaultModelForProvider(roleConfig.provider)}
                         className="settings-input"
+                        aria-label={`Modèle pour ${role.title}`}
                       />
                     </div>
                   </div>
@@ -660,6 +671,7 @@ const Settings = ({
                 value={routerClassifierProvider || ''}
                 onChange={(e) => onRouterClassifierProviderChange && onRouterClassifierProviderChange(e.target.value || null)}
                 className="settings-input"
+                aria-label="Fournisseur du modèle de classification"
               >
                 <option value="">Fournisseur actif du chat (par defaut)</option>
                 {AI_PROVIDER_OPTIONS.map((providerOption) => (
@@ -675,6 +687,7 @@ const Settings = ({
                 onChange={(e) => onRouterClassifierModelChange && onRouterClassifierModelChange(e.target.value || null)}
                 placeholder={routerClassifierProvider ? getDefaultModelForProvider(routerClassifierProvider) : 'Modele leger par defaut'}
                 className="settings-input"
+                aria-label="Modèle de classification"
               />
             </div>
           </div>
@@ -695,6 +708,8 @@ const Settings = ({
                 value={Math.round((routerComplexityThreshold ?? 0.5) * 100)}
                 onChange={(e) => onRouterComplexityThresholdChange && onRouterComplexityThresholdChange(Number(e.target.value) / 100)}
                 style={{ flex: 1 }}
+                aria-label="Seuil de complexité"
+                aria-valuetext={`${Math.round((routerComplexityThreshold ?? 0.5) * 100)}%`}
               />
               <span className="settings-hint" style={{ margin: 0 }}>Complexe</span>
               <span className="settings-hint" style={{ margin: 0, minWidth: 30, textAlign: 'right' }}>
@@ -711,6 +726,7 @@ const Settings = ({
               value={settings.permissionMode || 'edit_terminal'}
               onChange={(e) => handleChange('permissionMode', e.target.value)}
               className="settings-input"
+              aria-label="Niveau d'accès"
             >
               <option value="read_only">Lecture seule</option>
               <option value="edit">Edition (sans terminal)</option>
@@ -745,8 +761,19 @@ const Settings = ({
                 checked={settings.thinkingMode}
                 onChange={(e) => handleChange('thinkingMode', e.target.checked)}
               />
-              <span>Activer le mode Thinking (raisonnement visible)</span>
+              <span>Afficher le raisonnement du modele (plus lent)</span>
             </label>
+            {/* Le cout est reel et paye en secondes d'attente : le raisonnement
+                triple a decuple le nombre de tokens generes. Sur Ollama en
+                local, c'est le CPU qui encaisse. */}
+            <p className="settings-hint">
+              Le modele redige un brouillon avant sa reponse, affiche dans un bloc
+              repliable. Sans rapport avec la taille du modele (4b / 8b) : c&apos;est
+              un comportement, pas un fichier different.
+              {settings.defaultProvider === 'ollama'
+                ? ' En local sur CPU, multiplie le temps de reponse par 3 a 10.'
+                : ''}
+            </p>
           </div>
           </>)}
 
@@ -757,6 +784,7 @@ const Settings = ({
               value={settings.aiContextPreset || 'safe'}
               onChange={(e) => handleChange('aiContextPreset', e.target.value)}
               className="settings-input"
+              aria-label="Contexte IA (scan projet)"
             >
               <option value="safe">Safe (rapide)</option>
               <option value="full">Full (configs + dotfiles)</option>
@@ -783,6 +811,7 @@ const Settings = ({
               value={settings.aiContextLargeFileStrategy || 'skip'}
               onChange={(e) => handleChange('aiContextLargeFileStrategy', e.target.value)}
               className="settings-input"
+              aria-label="Stratégie pour les fichiers volumineux"
             >
               <option value="skip">Ignorer</option>
               <option value="truncate">Tronquer</option>
@@ -793,6 +822,7 @@ const Settings = ({
               value={settings.contextMode || 'auto'}
               onChange={(e) => handleChange('contextMode', e.target.value)}
               className="settings-input"
+              aria-label="Mode de contexte injecte"
             >
               <option value="auto">Auto (intention detectee)</option>
               <option value="mentions">Mentions uniquement (@fichier)</option>
@@ -807,6 +837,7 @@ const Settings = ({
               value={settings.contextMaxFiles ?? 120}
               onChange={(e) => handleChange('contextMaxFiles', Number(e.target.value || 120))}
               className="settings-input"
+              aria-label="Nombre maximum de fichiers dans le contexte"
             />
           </div>
 

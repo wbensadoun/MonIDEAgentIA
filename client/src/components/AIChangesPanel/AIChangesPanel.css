@@ -69,11 +69,16 @@
 }
 
 .ai-run-item:hover,
-.ai-change-file:hover,
+.ai-change-file:hover {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+
 .ai-run-item.is-active,
 .ai-change-file.is-active {
-  border-color: rgba(0, 245, 212, 0.45);
-  background: rgba(0, 245, 212, 0.07);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .ai-run-title,
@@ -124,6 +129,24 @@
   background: rgba(245, 158, 11, 0.12);
 }
 
+.ai-run-status.is-applied,
+.ai-change-status.is-applied {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.ai-run-status.is-partial,
+.ai-change-status.is-partial {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.ai-run-status.is-proposed,
+.ai-change-status.is-proposed {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .ai-changes-review {
   min-width: 0;
   min-height: 0;
@@ -151,7 +174,7 @@
 
 .ai-changes-btn:hover,
 .ai-changes-icon-btn:hover {
-  border-color: rgba(0, 245, 212, 0.4);
+  border-color: var(--accent);
 }
 
 .ai-changes-btn:disabled,
@@ -161,8 +184,8 @@
 }
 
 .ai-changes-btn.is-primary {
-  border-color: rgba(0, 245, 212, 0.45);
-  background: rgba(0, 245, 212, 0.14);
+  border-color: var(--accent);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -214,7 +237,7 @@
   overflow-x: auto;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface);
 }
 
 .ai-hunk-toggle {
@@ -231,9 +254,9 @@
 }
 
 .ai-hunk-toggle.is-selected {
-  border-color: rgba(0, 245, 212, 0.45);
+  border-color: var(--accent);
   color: var(--accent);
-  background: rgba(0, 245, 212, 0.08);
+  background: var(--accent-soft);
 }
 
 .ai-hunk-toggle.is-partial {
@@ -261,12 +284,12 @@
   max-height: 132px;
   overflow-y: auto;
   border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.018);
+  background: var(--surface);
 }
 
 .ai-line-hunk {
   padding: 6px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border);
 }
 
 .ai-line-hunk:last-child {
@@ -299,7 +322,7 @@
 
 .ai-line-toggle:hover,
 .ai-line-toggle.is-selected {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-2);
 }
 
 .ai-line-toggle.is-excluded {
@@ -373,7 +396,7 @@
   height: 14px;
   margin: 3px auto 0;
   border-radius: 3px;
-  color: #06111c;
+  color: var(--on-accent);
   font-size: 11px;
   font-weight: 800;
   line-height: 14px;

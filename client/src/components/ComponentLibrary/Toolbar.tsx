@@ -38,7 +38,7 @@ interface IconButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: React.ReactNode;
   label?: string;
-  isActive?: boolean;
+  isActive?: boolean | undefined;
   size?: 'sm' | 'md' | 'lg';
   variant?: 'default' | 'accent';
 }
@@ -102,7 +102,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
       <button
         ref={ref}
         className={classNames}
-        aria-pressed={isActive}
+        aria-pressed={isActive === undefined ? undefined : isActive}
         title={title || label}
         {...rest}
       >

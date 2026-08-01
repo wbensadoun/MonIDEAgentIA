@@ -432,6 +432,7 @@ const GitPanel = ({
             className="git-select"
             value={selectedBranch}
             onChange={(e) => setSelectedBranch(e.target.value)}
+            aria-label="Branche à activer"
           >
             {branches.length === 0 && <option value="">(branche courante)</option>}
             {branches.map((item) => (
@@ -461,6 +462,7 @@ const GitPanel = ({
             value={newBranchName}
             onChange={(e) => setNewBranchName(e.target.value)}
             placeholder="nouvelle-branche"
+            aria-label="Nom de la nouvelle branche"
           />
           <button
             className="git-btn"
@@ -477,6 +479,7 @@ const GitPanel = ({
             value={stashMessage}
             onChange={(e) => setStashMessage(e.target.value)}
             placeholder="message stash (optionnel)"
+            aria-label="Message du stash"
           />
           <button
             className="git-btn"
@@ -492,6 +495,7 @@ const GitPanel = ({
             className="git-select"
             value={selectedStashRef}
             onChange={(e) => setSelectedStashRef(e.target.value)}
+            aria-label="Stash à appliquer"
           >
             {stashEntries.length === 0 && <option value="">Aucun stash</option>}
             {stashEntries.map((entry) => (
@@ -617,6 +621,7 @@ const GitPanel = ({
               onChange={(e) => setCommitMessage(e.target.value)}
               rows={3}
               onKeyDown={(e) => { if (e.ctrlKey && e.key === 'Enter') handleCommit(); }}
+              aria-label="Message de commit"
             />
             <div className="git-commit-actions">
               <button className="git-btn" onClick={handleStageAll} disabled={isLoading || !canEditGit}>Stage All</button>

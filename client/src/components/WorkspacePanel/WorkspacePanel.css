@@ -132,7 +132,7 @@
 .ws-project-name {
   flex: 1;
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
@@ -164,14 +164,17 @@
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
 }
 
-.ws-project:hover .ws-project-remove {
-  display: flex;
+.ws-project:hover .ws-project-remove,
+.ws-project:focus-within .ws-project-remove {
+  opacity: 1;
 }
 
 .ws-project-remove:hover {
@@ -201,9 +204,9 @@
 }
 
 @keyframes ws-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
-  70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+  0% { box-shadow: 0 0 0 0 var(--success); }
+  70% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--success) 0%); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 0%); }
 }
 
 /* ---- Sessions ---- */
@@ -241,7 +244,7 @@
 }
 
 .ws-session.is-active {
-  background: rgba(59, 130, 246, 0.07);
+  background: var(--accent-soft);
 }
 
 .ws-session-icon {

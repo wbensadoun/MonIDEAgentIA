@@ -89,6 +89,68 @@ export const IconSidebar: React.FC<IconProps> = (props) => (
   </SvgIcon>
 );
 
+/**
+ * Layout controls — même grammaire visuelle que la barre de titre VS Code
+ * (Toggle Primary/Secondary Side Bar, Toggle Panel, Customize Layout) :
+ * un cadre du panneau complet + une zone pleine indiquant la région active.
+ * Redessinées en stroke 24x24 pour matcher SvgIcon plutôt que copiées telles
+ * quelles depuis les codicons (qui sont des glyphes "fill" 16x16).
+ *
+ * Comme dans VS Code, chaque région a DEUX glyphes : zone pleine quand le
+ * panneau est visible, simple trait de séparation quand il est masqué
+ * (codicons layout-sidebar-left vs layout-sidebar-left-off). L'état ne se
+ * lit donc pas qu'à la couleur — utile en daltonisme et en contraste élevé.
+ */
+export const IconLayoutSidebarLeft: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <rect x="4" y="4.5" width="6" height="15" rx="1" fill="currentColor" stroke="none" />
+  </SvgIcon>
+);
+
+export const IconLayoutSidebarLeftOff: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <line x1="9" y1="3" x2="9" y2="21" />
+  </SvgIcon>
+);
+
+export const IconLayoutPanel: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <rect x="4" y="14.5" width="16" height="5.5" rx="1" fill="currentColor" stroke="none" />
+  </SvgIcon>
+);
+
+export const IconLayoutPanelOff: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <line x1="3" y1="15" x2="21" y2="15" />
+  </SvgIcon>
+);
+
+export const IconLayoutSidebarRight: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <rect x="14" y="4.5" width="6" height="15" rx="1" fill="currentColor" stroke="none" />
+  </SvgIcon>
+);
+
+export const IconLayoutSidebarRightOff: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <line x1="15" y1="3" x2="15" y2="21" />
+  </SvgIcon>
+);
+
+export const IconLayoutCustomize: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <rect x="3" y="3" width="9" height="18" rx="1.5" />
+    <rect x="14" y="3" width="7" height="8" rx="1.5" />
+    <rect x="14" y="13" width="7" height="8" rx="1.5" />
+  </SvgIcon>
+);
+
 export const IconChat: React.FC<IconProps> = (props) => (
   <SvgIcon {...props}>
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -327,6 +389,13 @@ export const Icons = {
   Play: IconPlay,
   Stop: IconStop,
   Sidebar: IconSidebar,
+  LayoutSidebarLeft: IconLayoutSidebarLeft,
+  LayoutSidebarLeftOff: IconLayoutSidebarLeftOff,
+  LayoutPanel: IconLayoutPanel,
+  LayoutPanelOff: IconLayoutPanelOff,
+  LayoutSidebarRight: IconLayoutSidebarRight,
+  LayoutSidebarRightOff: IconLayoutSidebarRightOff,
+  LayoutCustomize: IconLayoutCustomize,
   Chat: IconChat,
   Workflow: IconWorkflow,
   Settings: IconSettings,
