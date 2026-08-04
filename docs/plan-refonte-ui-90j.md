@@ -755,6 +755,92 @@ et `tokens.css` sont **deja la** et attendent d'etre branches.
 
 ---
 
+## 9. Journal d'execution — Phase 1
+
+### 9.1 R9 + 1.1 + 1.2 + 1.3 — soldes (2026-08-04)
+
+- **R9** : les 20 fichiers non commites a J0 etaient un reste coherent du sweep de
+  renommage `futurIA` → `Code Companion` (cles localStorage, titre fenetre, chemins
+  `mcp-server/`, docs) plus un vrai bugfix (`dismissOnboarding` manquant). Solde en
+  2 commits avant toute autre modification.
+- **1.1** : Tailwind confirme **fantome a 100%** — non declare dans `client/package.json`,
+  **zero** usage `@apply` ou classe utilitaire dans `client/src` (la mention "2 fichiers
+  Settings" du §2.0 etait un faux positif de grep sur des noms de classe BEM du type
+  `settings-provider-grid`). `tailwind.config.js` supprime ; `react-scripts` ne monte le
+  plugin PostCSS Tailwind que si ce fichier existe (verifie dans
+  `node_modules/react-scripts/config/webpack.config.js:71-73`), donc sa suppression suffit
+  a couper Tailwind du build sans toucher a `index.css` au-dela d'un reset minimal.
+  `npm uninstall tailwindcss` ne peut pas purger `node_modules` (peer-dep optionnelle de
+  `react-scripts`) — sans consequence, non montee sans le config file.
+- **1.2** : stylelint + `scripts/check-design-debt.sh` ajoutes, `.github/workflows/design-debt.yml`
+  cree (**premier workflow CI de ce repo**). Le budget hex (259, confirme identique a la
+  mesure du §2.6) est le gate bloquant reel ; stylelint plein-repo remonte aujourd'hui 309
+  violations (290 couleurs, 19 `!important`) et n'est **pas** lance en mode bloquant sur
+  tout le repo — seulement sur les fichiers CSS touches par une PR (`stylelint-diff` job),
+  pour ne pas exiger la resorption immediate de la dette existante des J0.
+- **1.3** : tokens ajoutes tels que specifies (`--attn-*`, `--diff-*`, `--type-*`),
+  resolus sur `body` comme les alias existants pour suivre le theme actif. Aucune nouvelle
+  couleur — uniquement des alias `var()`.
+
+### 9.2 Spike 1.4 (R2) — resultat : ecart trop important pour un branchement direct
+
+Conformement a R2 ("Spike de 2 jours en J1 : monter `ChatInterface` derriere un flag et
+lister les manques. Si >60% du perimetre manque, replanifier 1.4 en reecriture"), lecture
+complete des 5 fichiers TSX + comparaison ligne a ligne avec `AIChat/index.js`.
+
+**Ce que le shelve TSX couvre reellement** (713 l., 54/54 tests verts a l'execution) :
+un shell de composition a 3 niveaux (`AutonomyControls` → `MessageViewer` → `InputArea`)
+avec liste de messages simples (role + blocs texte/code), streaming basique avec
+`aria-live`, composer avec piece jointe generique, et **un vrai bon resultat** : la
+resolution de C1 a 2 axes (`executionMode` + `autonomyLevel`) est deja ecrite et testee
+au clavier (`ArrowLeft/Right/Home/End`, `role="radiogroup"`).
+
+**Ce qu'il ne couvre pas**, mesure sur `AIChat/index.js` (1907 l. avant extraction R6,
+59 props destructurees en tete de composant, ~66 appels de hooks, 7 sous-composants
+locaux) :
+
+| Fonctionnalite production | Present dans le shelve TSX ? |
+|---|---|
+| Revue des changements en attente (accept/reject/apply-all/reject-all) — **le "moment critique" du flow principal, §1.1** | Non |
+| Gestion de conversations (sauvegarde/chargement, liste, nouvelle conversation) | Non |
+| Terminal integre (`xterm`, `TerminalOutputView`, `TerminalActionCard`) | Non |
+| Selection d'agent personnalise (roster, `AgentModePill`) | Non — `AutonomyControls` n'a que executionMode + autonomyLevel, pas d'agent actif |
+| Selection provider/modele (`ProviderPill`/`ModelPill`) | Non |
+| Mentions de contexte (`@fichier`), suggestions de workflow | Non |
+| Rendu Markdown complet (listes, tableaux, liens, titres) | Non — `MessageViewer.tsx` rend un bloc `text` en `<p>` litteral, pas de parsing Markdown (`MarkdownRenderer.js`, 374 l., n'est importe que par la prod) |
+| Snapshot/checkpoint (meme minimal) | Non |
+
+**Verdict** : le perimetre manquant depasse largement le seuil de 60% du §8-R2 — le shelve
+TSX est un squelette de composition + un vrai gain sur C1, pas une alternative fonctionnelle
+au panneau de production. `ComponentLibrary.tsx`, cense le rendre visible en dev (§2.4/R5),
+n'est lui-meme importe nulle part dans `App.js`/`index.js` — totalement hors d'atteinte
+au runtime aujourd'hui.
+
+**Decision prise** : pas de bascule "big bang" de `ChatInterface.tsx` en Phase 1 — le
+risque de regression (perte de la revue de diff, du terminal, de la selection provider/
+modele, du Markdown) est disproportionne par rapport au design system §1-§3 dont c'est
+cense etre la consequence. A la place :
+
+1. **Fait** — extraction R6 (`utils/streamParsing.js`, 30 tests) : les regex de parsing du
+   stream (`FILE_BLOCK_STREAM_REGEX`, `<think>`, detection workflow/diff) sortent de
+   `index.js` (1907 → 1790 l.) vers un module pur, testable independamment du composant
+   qui consomme le flux. C'etait explicitement le prerequis "avant de toucher au rendu."
+2. **Non fait, recommande pour la suite de Phase 1** : elargir `AutonomyControls.tsx` pour
+   porter la selection d'agent actif (aujourd'hui dans `AgentModePill`) avant de pouvoir le
+   substituer sans perte de fonctionnalite ; brancher `MarkdownRenderer.js` dans
+   `MessageViewer.tsx` a la place du `<p>` litteral ; puis, et seulement alors, tenter un
+   remplacement reel de la portion "affichage" de `AIChat/index.js` par
+   `ChatInterface.tsx`, en laissant la revue de diff/terminal/checkpoints comme des
+   enfants injectes plutot que re-ecrits.
+3. **Conformement au plan lui-meme** : "Point de decision J30 : si 1.4 n'est pas en
+   production, tout decaler d'un mois." 1.4 n'etant pas en production a l'issue de ce
+   spike, **1.5/1.6/1.7 (qui en dependent tous, cf. graphe §6) restent bloques** en
+   attendant soit (a) la poursuite du branchement incremental ci-dessus, soit (b) une
+   decision explicite de perimetre reduit pour Phase 1. 1.8 (audit focus-visible) ne
+   depend que de 1.2 et reste faisable independamment.
+
+---
+
 ## Annexe — commandes de verification
 
 ```bash
