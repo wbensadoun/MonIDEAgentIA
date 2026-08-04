@@ -1,0 +1,43 @@
+{
+  "extends": "stylelint-config-standard",
+  "rules": {
+    "declaration-property-value-disallowed-list": {
+      "/^(color|background|background-color|border-color|border-top-color|border-right-color|border-bottom-color|border-left-color|outline-color|fill|stroke|box-shadow)$/": [
+        "/^#/",
+        "/^rgb/",
+        "/^hsl/"
+      ]
+    },
+    "declaration-no-important": true,
+
+    "at-rule-no-unknown": null,
+    "no-descending-specificity": null,
+    "selector-class-pattern": null,
+    "custom-property-pattern": null,
+    "keyframes-name-pattern": null,
+    "import-notation": null,
+    "media-feature-range-notation": null,
+    "color-function-notation": null,
+    "alpha-value-notation": null,
+
+    "color-function-alias-notation": null,
+    "declaration-block-single-line-max-declarations": null,
+    "rule-empty-line-before": null,
+    "at-rule-empty-line-before": null,
+    "comment-empty-line-before": null,
+    "color-hex-length": null,
+    "value-keyword-case": null,
+    "declaration-block-no-redundant-longhand-properties": null,
+    "property-no-vendor-prefix": null,
+    "font-family-name-quotes": null,
+    "declaration-property-value-keyword-no-deprecated": null,
+    "property-no-unknown": null,
+    "property-no-deprecated": null,
+    "declaration-block-no-duplicate-properties": null
+  },
+  "ignoreFiles": [
+    "src/agentverse/**",
+    "src/styles/tokens.css",
+    "build/**"
+  ]
+}

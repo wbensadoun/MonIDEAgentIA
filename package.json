@@ -16,7 +16,9 @@
     "stop-server": "bash scripts/stop-server.sh",
     "logs-server": "bash scripts/logs-server.sh",
     "postinstall": "node scripts/postinstall.js",
-    "test": "npm test --prefix client -- --watchAll=false --runInBand"
+    "test": "npm test --prefix client -- --watchAll=false --runInBand",
+    "lint:css": "npm run lint:css --prefix client",
+    "check:design-debt": "bash scripts/check-design-debt.sh"
   },
   "keywords": [],
   "author": "",

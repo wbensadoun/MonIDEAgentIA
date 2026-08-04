@@ -32,6 +32,8 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "jest-axe": "^10.0.0",
     "prettier": "^3.2.5",
+    "stylelint": "^17.14.1",
+    "stylelint-config-standard": "^40.0.0",
     "typescript": "^6.0.3"
   },
   "scripts": {
@@ -41,6 +43,8 @@
     "eject": "react-scripts eject",
     "lint": "eslint src --ext .js,.jsx",
     "lint:fix": "eslint src --ext .js,.jsx --fix",
+    "lint:css": "stylelint \"src/**/*.css\"",
+    "lint:css:fix": "stylelint \"src/**/*.css\" --fix",
     "format": "prettier --write \"src/**/*.{js,jsx,css}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,css}\""
   },
