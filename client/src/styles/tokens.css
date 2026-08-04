@@ -9,7 +9,8 @@
 
    Layers in this file, in order:
      1. Color themes (5, unchanged palettes — re-homed, not redesigned)
-     2. Typography scale
+     1bis. Attention hierarchy + diff semantics (Phase 1 §2.1)
+     2. Typography scale + roles (Phase 1 §2.2)
      3. Spacing (8px grid)
      4. Radius
      5. Elevation / shadows
@@ -194,6 +195,35 @@ body {
 }
 
 /* ============================================================
+   1bis. ATTENTION HIERARCHY & DIFF SEMANTICS
+   plan-refonte-ui-90j.md §2.1 — roles, not new hues. Resolved on
+   <body> (not :root) for the same reason as the aliases above: they
+   must re-resolve --accent/--success/--danger per active theme.
+
+   GOLDEN RULE — read before using --attn-critical anywhere:
+   At most ONE --attn-critical may be visible on screen at a time.
+   It is reserved for the pending-diff decision (the single moment
+   the plan identifies as "LE MOMENT CRITIQUE" in the main flow —
+   §1.1). A panel, tab, or status badge is never --attn-critical by
+   default; if you think it needs to be, that's a sign something
+   else is already using the slot and needs to lose it first.
+   ============================================================ */
+body {
+  --attn-critical: var(--accent);      /* diff awaiting accept/reject   */
+  --attn-active:   var(--accent-soft); /* run in progress, streaming    */
+  --attn-info:     var(--text-dim);    /* passive state, metadata       */
+
+  /* Diff semantics — currently hardcoded ad hoc in ~4 different CSS
+     files (AIChangesPanel, GitPanel, AIChat, VisualWorkflow). This is
+     the one place a new/refactored diff view should read from. */
+  --diff-add-bg: var(--success-soft);
+  --diff-add-fg: var(--success);
+  --diff-del-bg: var(--danger-soft);
+  --diff-del-fg: var(--danger);
+  --diff-gutter: var(--border);
+}
+
+/* ============================================================
    2. TYPOGRAPHY SCALE
    Minor third (1.2) ramp, base 13px to match current body font-size
    in App.css:171 — changing the base would re-flow every panel.
@@ -220,6 +250,17 @@ body {
   --tracking-tight: -0.01em;
   --tracking-normal: 0;
   --tracking-wide: 0.02em;  /* uppercase eyebrow labels */
+
+  /* Typography ROLES (plan §2.2) — every component currently
+     re-picks its own size/family combo from the raw scale above.
+     Naming the role instead of the value is what makes "plus aucun
+     font-size numerique en dur" enforceable. Shorthand `font` syntax:
+     <weight?> <size>/<line-height> <family>. */
+  --type-code:    var(--text-base) / var(--leading-normal) var(--font-mono);
+  --type-body:    var(--text-base) / var(--leading-normal) var(--font-sans);
+  --type-ui:      var(--text-sm) / var(--leading-snug) var(--font-sans);
+  --type-meta:    var(--text-xs) / var(--leading-snug) var(--font-sans);
+  --type-panel-h: var(--font-weight-semibold) var(--text-md) / var(--leading-tight) var(--font-sans);
 }
 
 /* ============================================================
