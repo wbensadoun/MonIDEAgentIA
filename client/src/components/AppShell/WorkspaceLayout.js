@@ -168,7 +168,7 @@ const WorkspaceLayout = ({
 }) => {
   const [terminalHeight, setTerminalHeight] = useState(() => {
     try {
-      const saved = localStorage.getItem('futurIA_terminalHeight');
+      const saved = localStorage.getItem('code_companion_terminalHeight');
       return saved ? Math.max(MIN_TERMINAL_HEIGHT, Number(saved)) : DEFAULT_TERMINAL_HEIGHT;
     } catch { return DEFAULT_TERMINAL_HEIGHT; }
   });
@@ -179,7 +179,7 @@ const WorkspaceLayout = ({
 
   useEffect(() => {
     try {
-      localStorage.setItem('futurIA_terminalHeight', String(terminalHeight));
+      localStorage.setItem('code_companion_terminalHeight', String(terminalHeight));
     } catch (e) {
       // Ignore localStorage errors
     }

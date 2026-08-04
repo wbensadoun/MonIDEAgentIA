@@ -1,4 +1,4 @@
-# Audit concurrentiel Mon IDE Agent IA vs Claude Code
+# Audit concurrentiel Code companion vs Claude Code
 
 Date: 4 mai 2026
 
@@ -6,7 +6,7 @@ Date: 4 mai 2026
 
 Comparaison entre:
 
-- les capacites actuelles visibles dans Mon IDE Agent IA
+- les capacites actuelles visibles dans Code companion
 - les fonctionnalites officielles de Claude Code verifiees jusqu'au changelog du 1 mai 2026
 
 Code local examine:
@@ -49,7 +49,7 @@ Il vient surtout du fait que Claude Code a transforme l'agent de code en produit
 - plusieurs couches d'extension: plugins, MCP, subagents, hooks, SDK
 - plusieurs couches d'industrialisation: GitHub Actions, auto-fix PR, monitoring, politiques d'entreprise
 
-La bonne nouvelle: Mon IDE Agent IA a deja beaucoup de briques de base.
+La bonne nouvelle: Code companion a deja beaucoup de briques de base.
 
 Vous avez deja:
 

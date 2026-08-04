@@ -3,4 +3,4 @@ Fichier de test créé par Cascade
 Ce fichier a été créé pour tester le système de création automatique de fichiers par l'agent IA.
 
 Date de création: 2025-01-27
-Projet: MonIDEAgentIA
+Projet: code-companion

@@ -9,7 +9,7 @@ const useAppUiState = ({
 }) => {
   const [theme, setTheme] = useState(() => {
     try {
-      return localStorage.getItem('futurIA_theme') || 'midnight';
+      return localStorage.getItem('code_companion_theme') || 'midnight';
     } catch {
       return 'midnight';
     }
@@ -37,7 +37,7 @@ const useAppUiState = ({
 
   useEffect(() => {
     try {
-      localStorage.setItem('futurIA_theme', theme);
+      localStorage.setItem('code_companion_theme', theme);
     } catch {
       // ignore
     }
@@ -54,7 +54,7 @@ const useAppUiState = ({
 
   useEffect(() => {
     try {
-      localStorage.setItem('futurIA_viewMode', viewMode);
+      localStorage.setItem('code_companion_viewMode', viewMode);
     } catch {
       // ignore
     }

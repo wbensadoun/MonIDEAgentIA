@@ -1,4 +1,4 @@
-# Audit du projet Mon IDE Agent IA
+# Audit du projet Code companion
 
 Date: 15 mars 2026
 
@@ -14,7 +14,7 @@ Audit base sur le code du projet Electron/React et sur l'UX visible dans les com
 
 ## Synthese executive
 
-Mon IDE Agent IA n'est pas aujourd'hui un concurrent direct de VS Code sur le terrain "IDE generaliste". Le produit est plus proche d'un poste de travail IA oriente taches, avec un bon angle de differenciation sur:
+Code companion n'est pas aujourd'hui un concurrent direct de VS Code sur le terrain "IDE generaliste". Le produit est plus proche d'un poste de travail IA oriente taches, avec un bon angle de differenciation sur:
 
 - l'edition assistee par IA
 - l'application/rejet de patchs

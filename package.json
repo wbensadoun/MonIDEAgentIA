@@ -1,5 +1,5 @@
 {
-  "name": "monideagentia",
+  "name": "code-companion",
   "version": "1.8.2",
   "main": "main.js",
   "scripts": {
@@ -45,7 +45,7 @@
   },
   "build": {
     "appId": "com.votreentreprise.monide",
-    "productName": "Code Companion",
+    "productName": "Code companion",
     "npmRebuild": false,
     "asarUnpack": [
       "node_modules/node-pty/**/*"
@@ -75,7 +75,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Code Companion"
+      "shortcutName": "Code companion"
     },
     "mac": {
       "icon": "iconeDesktop.png"

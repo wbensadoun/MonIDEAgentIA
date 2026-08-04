@@ -52,6 +52,7 @@ const AppContent = () => {
     qualityGateConfig,
     showOnboarding,
     completeOnboarding,
+    dismissOnboarding,
     isReadOnlyMode,
     resolvedOllamaModel,
     recommendedOllamaModel,
@@ -310,14 +311,14 @@ const AppContent = () => {
   // les memes toggles que la vue IDE (isLeftCollapsed/isRightCollapsed).
   const [isChatSidebarCollapsed, setIsChatSidebarCollapsed] = useState(() => {
     try {
-      return localStorage.getItem('futurIA_chatSidebarCollapsed') === 'true';
+      return localStorage.getItem('code_companion_chatSidebarCollapsed') === 'true';
     } catch {
       return false;
     }
   });
   React.useEffect(() => {
     try {
-      localStorage.setItem('futurIA_chatSidebarCollapsed', String(isChatSidebarCollapsed));
+      localStorage.setItem('code_companion_chatSidebarCollapsed', String(isChatSidebarCollapsed));
     } catch {
       // ignore
     }
@@ -328,14 +329,14 @@ const AppContent = () => {
 
   const [isSwarmPanelOpen, setIsSwarmPanelOpen] = useState(() => {
     try {
-      return localStorage.getItem('futurIA_chatSwarmOpen') === 'true';
+      return localStorage.getItem('code_companion_chatSwarmOpen') === 'true';
     } catch {
       return false;
     }
   });
   React.useEffect(() => {
     try {
-      localStorage.setItem('futurIA_chatSwarmOpen', String(isSwarmPanelOpen));
+      localStorage.setItem('code_companion_chatSwarmOpen', String(isSwarmPanelOpen));
     } catch {
       // ignore
     }
@@ -798,7 +799,10 @@ const AppContent = () => {
       {showOnboarding && (
         <FeatureErrorBoundary feature="onboarding">
           <OnboardingModal
-            onOpenSettings={openSettings}
+            onOpenSettings={() => {
+              openSettings();
+              dismissOnboarding();
+            }}
             onComplete={completeOnboarding}
           />
         </FeatureErrorBoundary>

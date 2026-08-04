@@ -351,6 +351,10 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     }
   }, [saveSettingsPatch]);
 
+  const dismissOnboarding = useCallback(() => {
+    setShowOnboarding(false);
+  }, []);
+
   const aiModelSelection = useMemo(() => ({
     geminiModel,
     claudeModel,
@@ -379,6 +383,7 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     qualityGateConfig,
     showOnboarding,
     completeOnboarding,
+    dismissOnboarding,
     isReadOnlyMode: permissionMode === 'read_only',
     geminiModel,
     claudeModel,

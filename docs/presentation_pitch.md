@@ -102,5 +102,5 @@ Choisissez le plan adapté à la taille de votre ambition.
 | **Prix** | **29€** /mois /utilisateur | **49€** /mois /utilisateur |
 
 🚀 **Prêt à transformer votre façon de développer ?**
-👉 Contactez-nous pour une démo en direct : *contact@monideagentia.com*
+👉 Contactez-nous pour une démo en direct : *contact@codecompanion.com*
 ````

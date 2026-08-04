@@ -50,13 +50,13 @@ afterEach(() => {
 });
 
 test('migrates the legacy sidebar percentage once and persists pixels', async () => {
-  localStorage.setItem('futurIA_chatSidebarWidth', '20');
+  localStorage.setItem('code_companion_chatSidebarWidth', '20');
   renderLayout();
 
   expect(screen.getByTestId('chat-sidebar')).toHaveStyle({ width: '280px' });
   await waitFor(() => {
-    expect(localStorage.getItem('futurIA_chatLayoutVersion')).toBe(String(CHAT_LAYOUT_VERSION));
-    expect(localStorage.getItem('futurIA_chatSidebarWidth')).toBe('280');
+    expect(localStorage.getItem('code_companion_chatLayoutVersion')).toBe(String(CHAT_LAYOUT_VERSION));
+    expect(localStorage.getItem('code_companion_chatSidebarWidth')).toBe('280');
   });
 });
 
@@ -84,7 +84,7 @@ test('pointer drag uses capture semantics and persists the resulting pixels', as
 
   expect(separator.setPointerCapture).toHaveBeenCalled();
   expect(screen.getByTestId('chat-sidebar')).toHaveStyle({ width: '325px' });
-  await waitFor(() => expect(localStorage.getItem('futurIA_chatSidebarWidth')).toBe('325'));
+  await waitFor(() => expect(localStorage.getItem('code_companion_chatSidebarWidth')).toBe('325'));
   expect(document.body.style.cursor).toBe('');
 });
 

@@ -112,7 +112,7 @@ let pricing = [
     ['Prix', '29€ / mois / util.', '49€ / mois / util.']
 ];
 slide7.addTable(pricing, { x: 0.5, y: 1.8, w: 9.0, fill: '112240', color: 'CCD6F6', fontSize: 16, border: { type: 'solid', color: '233554' }, align: 'left', colW: [3, 3, 3] });
-slide7.addText("🚀 Prêt à transformer votre façon de développer ? contact@monideagentia.com", { x: 0.5, y: 4.8, w: '90%', color: '64FFDA', fontSize: 18, bold: true, align: 'center' });
+    slide7.addText("🚀 Prêt à transformer votre façon de développer ? contact@codecompanion.com", { x: 0.5, y: 4.8, w: '90%', color: '64FFDA', fontSize: 18, bold: true, align: 'center' });
 
 // Save the Presentation
 pres.writeFile({ fileName: 'presentation_pitch.pptx' }).then(fileName => {

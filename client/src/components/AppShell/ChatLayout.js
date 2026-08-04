@@ -20,9 +20,9 @@ export const SWARM_DEFAULT_WIDTH = 320;
 export const SWARM_MIN_WIDTH = 260;
 export const SWARM_MAX_WIDTH = 520;
 
-const SIDEBAR_STORAGE_KEY = 'futurIA_chatSidebarWidth';
-const SWARM_STORAGE_KEY = 'futurIA_chatSwarmWidth';
-const VERSION_STORAGE_KEY = 'futurIA_chatLayoutVersion';
+const SIDEBAR_STORAGE_KEY = 'code_companion_chatSidebarWidth';
+const SWARM_STORAGE_KEY = 'code_companion_chatSwarmWidth';
+const VERSION_STORAGE_KEY = 'code_companion_chatLayoutVersion';
 
 const availableViewportWidth = () => (
   typeof window === 'undefined' ? 1280 : Math.max(0, window.innerWidth - 48)

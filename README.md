@@ -1,4 +1,4 @@
-# Mon IDE Agent IA
+# Code companion
 
 Un IDE desktop intelligent avec agent IA intgr (Google Gemini) pour dvelopper plus rapidement.
 
