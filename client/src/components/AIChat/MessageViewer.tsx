@@ -7,9 +7,17 @@
  * that implementation lacks: an `aria-live` region for streaming text so
  * screen reader users get incremental updates, and a pause-on-scroll-up
  * affordance so a user reading earlier history isn't yanked back down.
+ *
+ * Les blocs `text` des messages termines passent par MarkdownRenderer — le
+ * meme moteur que la production (AIChat/index.js:1465), pour que le rendu soit
+ * identique des le branchement. La bulle de streaming reste en texte brut :
+ * voir le commentaire sur la region aria-live plus bas.
  */
 import React, { memo, useEffect, useRef, useState } from 'react';
 import CodeBlock from './CodeBlock';
+// Moteur Markdown partage avec la production (AIChat/index.js:1465). JS non type :
+// tsconfig a allowJs/checkJs=false, l'import resout en `any` sans bruit TS.
+import MarkdownRenderer from './MarkdownRenderer';
 import './MessageViewer.css';
 
 export type MessageRole = 'user' | 'assistant' | 'system';
@@ -39,12 +47,21 @@ export interface MessageViewerProps {
   isStreaming?: boolean;
   emptyState?: React.ReactNode;
   className?: string;
+  /** Transmis aux blocs de code Markdown (bouton « Copier »). */
+  onCopyCode?: (code: string) => void;
+  /** Transmis aux blocs de code Markdown (bouton « Appliquer »), actif
+   *  uniquement quand le bloc porte un marqueur **FICHIER:**. */
+  onApplyCode?: (code: string, language: string, filePath: string) => void;
 }
 
 const formatTime = (ts: number) =>
   new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
-const MessageBubble = memo<{ message: ChatMessage }>(({ message }) => (
+const MessageBubble = memo<{
+  message: ChatMessage;
+  onCopyCode?: MessageViewerProps['onCopyCode'];
+  onApplyCode?: MessageViewerProps['onApplyCode'];
+}>(({ message, onCopyCode, onApplyCode }) => (
   <div
     className={`message-viewer__bubble message-viewer__bubble--${message.role}`}
     role="group"
@@ -65,9 +82,9 @@ const MessageBubble = memo<{ message: ChatMessage }>(({ message }) => (
             pendingApproval={block.pendingApproval}
           />
         ) : (
-          <p key={i} className="message-viewer__text">
-            {block.content}
-          </p>
+          <div key={i} className="message-viewer__text">
+            <MarkdownRenderer text={block.content} onCopy={onCopyCode} onApply={onApplyCode} />
+          </div>
         )
       )}
     </div>
@@ -81,7 +98,9 @@ export const MessageViewer: React.FC<MessageViewerProps> = ({
   streamingText,
   isStreaming = false,
   emptyState,
-  className
+  className,
+  onCopyCode,
+  onApplyCode
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -109,7 +128,14 @@ export const MessageViewer: React.FC<MessageViewerProps> = ({
       {messages.length === 0 && !isStreaming ? (
         <div className="message-viewer__empty">{emptyState ?? 'Aucun message pour le moment.'}</div>
       ) : (
-        messages.map((message) => <MessageBubble key={message.id} message={message} />)
+        messages.map((message) => (
+          <MessageBubble
+            key={message.id}
+            message={message}
+            onCopyCode={onCopyCode}
+            onApplyCode={onApplyCode}
+          />
+        ))
       )}
 
       <div
@@ -119,6 +145,17 @@ export const MessageViewer: React.FC<MessageViewerProps> = ({
         aria-label="Messages streaming"
         aria-atomic="false"
       >
+        {/* Texte brut volontairement, PAS de Markdown ici — contrairement aux
+            messages termines ci-dessus. Deux raisons :
+            1. a11y : c'est une region aria-live. Un noeud texte qui s'allonge
+               produit une annonce incrementale ; re-generer tout l'arbre DOM a
+               chaque token ferait re-annoncer le message entier par le lecteur
+               d'ecran, ce qui annulerait la raison d'etre de ce composant.
+            2. perf : reparser le Markdown a chaque token est quadratique. La
+               production contourne via `throttledStreamingText` (index.js:737).
+               Tant que le throttling n'est pas remonte ici (cf. plan §5.4), on
+               ne prend pas ce cout. Le Markdown apparait des la fin du stream,
+               quand le message rejoint `messages`. */}
         <div className="message-viewer__bubble-content">
           <p className="message-viewer__text">
             {isStreaming && streamingText}
