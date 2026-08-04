@@ -548,6 +548,12 @@
   min-width: 0;
 }
 
+.inline-prompt-input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-xs);
+}
+
 .inline-prompt-input::placeholder {
   color: var(--text-muted);
 }

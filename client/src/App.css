@@ -697,6 +697,11 @@ select option:checked {
   border-color: var(--accent);
 }
 
+.topbar-popover-input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
 .topbar-popover-input::placeholder {
   color: var(--text-muted);
 }
@@ -1576,6 +1581,11 @@ select option:checked {
 
 .input-surface:focus {
   border-color: var(--accent);
+}
+
+.input-surface:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* ============================
