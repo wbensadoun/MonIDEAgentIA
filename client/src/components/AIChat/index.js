@@ -9,6 +9,9 @@ import { EXECUTION_MODES } from '../../utils/agentModes';
 import AIDecisionBadge from './AIDecisionBadge';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AUTONOMY_LEVELS, toLegacyPermission } from './AutonomyControls';
+import MessageViewer from './MessageViewer';
+import { conversationToChatMessages } from '../../utils/chatMessages';
+import { isChatInterfaceSwapEnabled } from '../../utils/featureFlags';
 import { IconAgents } from '../ComponentLibrary/icons';
 import {
   THINKING_MESSAGES,
@@ -1114,6 +1117,16 @@ const AIChat = ({
     return provider ? `${baseLabel} (${provider})` : baseLabel;
   };
 
+  // ─── 1.4c : swap gardé de la liste de messages ────────────────────────────
+  // Éteint par défaut (cf. utils/featureFlags.js). Lu une seule fois au
+  // montage : basculer en cours de session remonterait tout l'historique dans
+  // un autre arbre DOM, ce qui casserait la position de scroll.
+  const [chatInterfaceSwap] = useState(() => isChatInterfaceSwapEnabled());
+  const swapMessages = useMemo(
+    () => conversationToChatMessages(conversationHistory),
+    [conversationHistory]
+  );
+
   const getRoleMeta = (msg) => {
     if (msg.role === 'system') {
       return {
@@ -1412,7 +1425,50 @@ const AIChat = ({
             </div>
           )}
 
-          {conversationHistory.map((msg, index) => {
+          {chatInterfaceSwap ? (
+            <MessageViewer
+              messages={swapMessages}
+              // Volontairement sans streamingText : l'aperçu de streaming
+              // existant (renderStreaming*, index.js:1048) gère trois modes
+              // (fichier / workflow / texte) que MessageViewer ne modélise
+              // pas. Lui passer le flux ici l'afficherait deux fois.
+              actionsDisabled={isLoading}
+              onCopyMessage={(message) =>
+                handleCopyMessage(message.sourceIndex, conversationHistory[message.sourceIndex]?.text)
+              }
+              onRerunMessage={(message) => handleRerunMessage(message.sourceIndex)}
+              onApplyCode={
+                canApplyPending && !isApplyingPending && !isBulkApplyingPending
+                  && Array.isArray(pendingFileChanges) && pendingFileChanges.length > 0
+                  ? handleApplyMarkdownBlock
+                  : undefined
+              }
+              renderMessageExtras={(message) => {
+                const source = conversationHistory[message.sourceIndex];
+                const images = Array.isArray(source?.images) ? source.images : [];
+                const actions = historicalTerminalActions[message.sourceIndex];
+                if (!images.length && !(Array.isArray(actions) && actions.length)) return null;
+                return (
+                  <>
+                    {images.length > 0 && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 26 }}>
+                        {images.map((img, i) => (
+                          <img key={i} src={img.dataUrl} alt="Collé" style={{ width: 48, height: 48, borderRadius: 4, objectFit: 'cover', border: '1px solid var(--border)' }} />
+                        ))}
+                      </div>
+                    )}
+                    {Array.isArray(actions) && actions.length > 0 && (
+                      <div style={{ paddingLeft: 26, marginTop: 4 }}>
+                        {actions.map((action, i) => (
+                          <TerminalActionCard key={i} action={action} />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              }}
+            />
+          ) : conversationHistory.map((msg, index) => {
             const meta = getRoleMeta(msg);
             const isUser = msg.role === 'user';
             return (

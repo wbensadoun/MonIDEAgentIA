@@ -22,8 +22,17 @@ import './MessageViewer.css';
 
 export type MessageRole = 'user' | 'assistant' | 'system';
 
+/**
+ * `text`      — Markdown rendu (reponse assistant).
+ * `plain`     — texte litteral, aucun parsing : ce que l'utilisateur a tape
+ *               doit rester tel quel, asterisques comprises.
+ * `reasoning` — segment <think>, replie par defaut.
+ * `empty`     — garde-fou reponse vide (un provider peut repondre success
+ *               avec zero texte) ; sans lui la bulle s'affiche blanche.
+ * `code`      — bloc de code structure, rendu par CodeBlock.
+ */
 export interface ChatMessageBlock {
-  type: 'text' | 'code';
+  type: 'text' | 'code' | 'plain' | 'reasoning' | 'empty';
   content: string;
   language?: string;
   filename?: string;
@@ -38,6 +47,9 @@ export interface ChatMessage {
   /** Provider/model badge, e.g. "gemini/2.5-pro" — mirrors the existing
    *  badgeClass/bubbleClass convention in AIChat/index.js:772. */
   agentLabel?: string;
+  /** Position dans l'historique brut. Les actions par message d'index.js
+   *  (copier/relancer) sont indexees dessus — cf. utils/chatMessages.js. */
+  sourceIndex?: number;
 }
 
 export interface MessageViewerProps {
@@ -52,16 +64,72 @@ export interface MessageViewerProps {
   /** Transmis aux blocs de code Markdown (bouton « Appliquer »), actif
    *  uniquement quand le bloc porte un marqueur **FICHIER:**. */
   onApplyCode?: (code: string, language: string, filePath: string) => void;
+  /** Action « Copier la réponse » par message assistant. Absent ⇒ pas de bouton. */
+  onCopyMessage?: (message: ChatMessage) => void;
+  /** Action « Relancer cette requête ». Absent ⇒ pas de bouton. */
+  onRerunMessage?: (message: ChatMessage) => void;
+  /** Desactive les actions par message pendant une generation. */
+  actionsDisabled?: boolean;
+  /** Contenu additionnel rendu sous une bulle : images collees et cartes
+   *  terminal archivees sont rattachees au message dans index.js, mais ne
+   *  font pas partie du modele de message. Le conteneur les fournit. */
+  renderMessageExtras?: (message: ChatMessage) => React.ReactNode;
 }
 
 const formatTime = (ts: number) =>
   new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
+const BlockContent: React.FC<{
+  block: ChatMessageBlock;
+  onCopyCode?: MessageViewerProps['onCopyCode'];
+  onApplyCode?: MessageViewerProps['onApplyCode'];
+}> = ({ block, onCopyCode, onApplyCode }) => {
+  if (block.type === 'code') {
+    return (
+      <CodeBlock
+        code={block.content}
+        language={block.language}
+        filename={block.filename}
+        pendingApproval={block.pendingApproval}
+      />
+    );
+  }
+
+  if (block.type === 'reasoning') {
+    // Meme balisage que ReasoningBlock (index.js:33) : replie par defaut, le
+    // raisonnement ne doit pas pousser la reponse hors de l'ecran.
+    return (
+      <details className="ai-reasoning">
+        <summary className="ai-reasoning-summary">Raisonnement du modèle</summary>
+        <pre className="ai-reasoning-body">{block.content.trim()}</pre>
+      </details>
+    );
+  }
+
+  if (block.type === 'empty') {
+    return <p className="ai-message-empty">(réponse vide — le modèle n&apos;a rien renvoyé)</p>;
+  }
+
+  if (block.type === 'plain') {
+    return <p className="message-viewer__text message-viewer__text--plain">{block.content}</p>;
+  }
+
+  return (
+    <div className="message-viewer__text">
+      <MarkdownRenderer text={block.content} onCopy={onCopyCode} onApply={onApplyCode} />
+    </div>
+  );
+};
+
 const MessageBubble = memo<{
   message: ChatMessage;
   onCopyCode?: MessageViewerProps['onCopyCode'];
   onApplyCode?: MessageViewerProps['onApplyCode'];
-}>(({ message, onCopyCode, onApplyCode }) => (
+  onCopyMessage?: MessageViewerProps['onCopyMessage'];
+  onRerunMessage?: MessageViewerProps['onRerunMessage'];
+  actionsDisabled?: boolean;
+  renderMessageExtras?: MessageViewerProps['renderMessageExtras'];
+}>(({ message, onCopyCode, onApplyCode, onCopyMessage, onRerunMessage, actionsDisabled, renderMessageExtras }) => (
   <div
     className={`message-viewer__bubble message-viewer__bubble--${message.role}`}
     role="group"
@@ -72,22 +140,41 @@ const MessageBubble = memo<{
       <span className="message-viewer__time">{formatTime(message.timestamp)}</span>
     </div>
     <div className="message-viewer__bubble-content">
-      {message.blocks.map((block, i) =>
-        block.type === 'code' ? (
-          <CodeBlock
-            key={i}
-            code={block.content}
-            language={block.language}
-            filename={block.filename}
-            pendingApproval={block.pendingApproval}
-          />
-        ) : (
-          <div key={i} className="message-viewer__text">
-            <MarkdownRenderer text={block.content} onCopy={onCopyCode} onApply={onApplyCode} />
-          </div>
-        )
-      )}
+      {message.blocks.map((block, i) => (
+        <BlockContent key={i} block={block} onCopyCode={onCopyCode} onApplyCode={onApplyCode} />
+      ))}
     </div>
+    {/* Actions reservees aux reponses de l'agent : « relancer » n'a pas de
+        sens sur son propre message, et un message systeme n'est pas une
+        reponse a rejouer. */}
+    {message.role === 'assistant' && (onCopyMessage || onRerunMessage) && (
+      <div className="message-viewer__actions">
+        {onCopyMessage && (
+          <button
+            type="button"
+            className="message-viewer__action"
+            data-focus-ring
+            onClick={() => onCopyMessage(message)}
+            aria-label="Copier la réponse"
+          >
+            Copier
+          </button>
+        )}
+        {onRerunMessage && (
+          <button
+            type="button"
+            className="message-viewer__action"
+            data-focus-ring
+            disabled={actionsDisabled}
+            onClick={() => onRerunMessage(message)}
+            aria-label="Relancer cette requête"
+          >
+            Relancer
+          </button>
+        )}
+      </div>
+    )}
+    {renderMessageExtras && renderMessageExtras(message)}
   </div>
 ));
 
@@ -100,7 +187,11 @@ export const MessageViewer: React.FC<MessageViewerProps> = ({
   emptyState,
   className,
   onCopyCode,
-  onApplyCode
+  onApplyCode,
+  onCopyMessage,
+  onRerunMessage,
+  actionsDisabled,
+  renderMessageExtras
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -134,6 +225,10 @@ export const MessageViewer: React.FC<MessageViewerProps> = ({
             message={message}
             onCopyCode={onCopyCode}
             onApplyCode={onApplyCode}
+            onCopyMessage={onCopyMessage}
+            onRerunMessage={onRerunMessage}
+            actionsDisabled={actionsDisabled}
+            renderMessageExtras={renderMessageExtras}
           />
         ))
       )}
