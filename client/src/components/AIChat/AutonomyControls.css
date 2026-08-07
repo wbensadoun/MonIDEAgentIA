@@ -104,3 +104,24 @@
   color: var(--text-muted);
   line-height: var(--leading-snug);
 }
+
+/* Lien discret vers le gestionnaire de personas : action secondaire, elle ne
+   doit pas concurrencer visuellement les segments du radiogroup. */
+.autonomy-controls__manage {
+  background: none;
+  border: none;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.autonomy-controls__manage:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.autonomy-controls__manage:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
