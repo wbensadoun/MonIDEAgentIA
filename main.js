@@ -47,6 +47,10 @@ const { createPtyService } = require('./electron/services/pty.service');
 const { registerProviderHandlers } = require('./electron/ipc/providerHandlers');
 const { ProviderSecretVault } = require('./electron/services/provider-secret-vault.service');
 const { resolveProviderCredential } = require('./electron/services/provider-policy.service');
+const {
+  NevenControlPlaneClient,
+  createNevenAccessResolver
+} = require('./electron/services/neven-control-plane.service');
 
 const isDev =
   process.env.NODE_ENV === 'development' ||
@@ -88,12 +92,24 @@ let mainWindow;
 const providerSecretVault = new ProviderSecretVault({
   filePath: ProviderSecretVault.defaultFilePath(app.getPath('userData'))
 });
+// Le control plane Neven reste dans le main process. Il ne retourne jamais de
+// cle fournisseur au renderer : uniquement un droit court vers la passerelle
+// Neven, conservé en mémoire et destiné aux futures exécutions managed.
+const nevenControlPlane = new NevenControlPlaneClient();
+const resolveNevenAccess = createNevenAccessResolver({ client: nevenControlPlane });
 const resolveManagedProviderCredential = ({ provider, workspaceId, policy }) => resolveProviderCredential({
   provider,
   workspaceId,
   policy,
   vault: providerSecretVault,
   nevenCredentialResolver: async ({ provider: normalizedProvider }) => {
+    if (normalizedProvider === 'neven') {
+      return resolveNevenAccess({
+        workspaceId,
+        profile: policy?.profile,
+        capability: policy?.capability || 'completion'
+      });
+    }
     const environmentKeys = {
       gemini: ['GEMINI_API_KEY'],
       claude: ['CLAUDE_API_KEY', 'ANTHROPIC_API_KEY'],

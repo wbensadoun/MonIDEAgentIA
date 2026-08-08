@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.0] - Control plane Neven côté backend
+
+### Added
+
+- Client du control plane Neven réservé au main process, avec grants courts par workspace et profil interne.
+- Cache mémoire, révocation et refus des réponses sans expiration ou passerelle valide.
+- Préparation de l'interface admin future sans exposer les clés fournisseurs au renderer.
+
 Toutes les évolutions notables de ce projet sont documentées dans ce fichier.
 
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
