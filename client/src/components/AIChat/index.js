@@ -1113,6 +1113,7 @@ const AIChat = ({
   };
 
   const buildAgentBadgeLabel = (msg, baseLabel) => {
+    if (autoRoute) return baseLabel;
     const provider = String(msg?.agentProvider || '').trim();
     return provider ? `${baseLabel} (${provider})` : baseLabel;
   };
@@ -1773,19 +1774,25 @@ const AIChat = ({
               disabled={isLoading}
             />
 
-            <ProviderPill
-              aiProvider={aiProvider}
-              onProviderChange={onProviderChange}
-              disabled={isLoading}
-            />
+            {autoRoute ? (
+              <span className="ai-auto-router-pill" role="status">Neven · Auto</span>
+            ) : (
+              <>
+                <ProviderPill
+                  aiProvider={aiProvider}
+                  onProviderChange={onProviderChange}
+                  disabled={isLoading}
+                />
 
-            <ModelPill
-              aiProvider={aiProvider}
-              activeModelValue={activeModelValue}
-              availableActiveModels={availableActiveModels}
-              onActiveModelChange={onActiveModelChange}
-              disabled={isLoading}
-            />
+                <ModelPill
+                  aiProvider={aiProvider}
+                  activeModelValue={activeModelValue}
+                  availableActiveModels={availableActiveModels}
+                  onActiveModelChange={onActiveModelChange}
+                  disabled={isLoading}
+                />
+              </>
+            )}
 
             {/* Permission Level n'a de sens qu'en mode Agent (Ask/Plan sont
                 lecture seule par construction — aucune confirmation d'écriture

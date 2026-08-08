@@ -1181,6 +1181,18 @@
   opacity: 0.55;
 }
 
+.ai-auto-router-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full, 999px);
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .ai-pill-dot {
   width: 6px;
   height: 6px;

@@ -34,7 +34,6 @@ import { runDynamicMultiAgentFlow } from '../utils/dynamicTeamExecution';
 import { applyCollectiveDepth } from '../utils/collectiveMode';
 import { buildTeamPlan } from '../utils/teamSelector';
 import {
-  classifyPromptLayer1,
   mapRouterModeToExecutionMode,
   mapComplexityToDepth,
   matchAgentByName,
@@ -253,20 +252,7 @@ export const useAI = (
     let routerModelOverride = null;
 
     if (autoRoute) {
-      const layer1 = classifyPromptLayer1(effectivePrompt);
-      if (layer1?.trivial) {
-        effExecutionMode = 'agent';
-        effDepth = 'fast';
-        setRouterDecision({
-          mode: 'single_agent',
-          agent: null,
-          skills: [],
-          complexity: 'light',
-          model: null,
-          source: 'layer1'
-        });
-      } else {
-        try {
+      try {
           const getRouterApiKey = createProviderApiKeyResolver({
             claudeApiKey,
             kimiApiKey,
@@ -300,20 +286,20 @@ export const useAI = (
             if (matchedSkill) effSkill = matchedSkill;
             routerModelOverride = routed.model?.resolved || null;
             setRouterDecision({
-              ...decision,
-              model: routed.model || null,
-              source: routed.source || 'llm'
+              mode: decision.mode,
+              agent: null,
+              skills: [],
+              routed: true
             });
           } else {
             effExecutionMode = 'agent';
             effDepth = 'fast';
             setRouterDecision(createFallbackRouterDecision());
           }
-        } catch {
-          effExecutionMode = 'agent';
-          effDepth = 'fast';
-          setRouterDecision(createFallbackRouterDecision());
-        }
+      } catch {
+        effExecutionMode = 'agent';
+        effDepth = 'fast';
+        setRouterDecision(createFallbackRouterDecision());
       }
     }
 

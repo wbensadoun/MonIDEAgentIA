@@ -4,6 +4,14 @@ Toutes les évolutions notables de ce projet sont documentées dans ce fichier.
 
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
 
+## [2.1.0] — Routeur intelligent invisible
+
+### Added
+
+- Profils internes `haiku`, `luna`, `sol` et `opus`, résolus côté backend selon la complexité et le risque.
+- L1 déterministe pour les signaux forts, L2 pour les demandes ambiguës et cascade de fallback explicite.
+- Parcours chat `Neven · Auto` sans fournisseur, modèle, tier ou source affichés.
+
 ## [2.0.0] — Socle Neven BYOK et agents spécialisés
 
 ### Added
