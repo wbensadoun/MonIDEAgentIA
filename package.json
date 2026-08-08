@@ -1,6 +1,6 @@
 {
   "name": "code-companion",
-  "version": "1.8.2",
+  "version": "2.0.0",
   "main": "main.js",
   "scripts": {
     "start": "concurrently \"npm:start-react\" \"npm:electron-dev\"",
@@ -17,6 +17,7 @@
     "logs-server": "bash scripts/logs-server.sh",
     "postinstall": "node scripts/postinstall.js",
     "test": "npm test --prefix client -- --watchAll=false --runInBand",
+    "test:electron": "node --test electron/services/provider-management.test.js",
     "lint:css": "npm run lint:css --prefix client",
     "check:design-debt": "bash scripts/check-design-debt.sh"
   },
