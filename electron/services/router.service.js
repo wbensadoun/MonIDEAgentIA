@@ -30,6 +30,12 @@ const {
   getDefaultModelForAIProvider
 } = require('./settings.service');
 const {
+  NEVEN_INTERNAL_PROFILES,
+  NEVEN_ROUTER_CONTEXT_LIMITS,
+  buildNevenRouterContext,
+  normalizeProfileName: normalizeNevenProfileName
+} = require('./neven-core.service');
+const {
   OLLAMA_BASE_URL,
   FALLBACK_OLLAMA_MODEL_CANDIDATES,
   normalizeOllamaModelName,
@@ -69,12 +75,7 @@ const PROVIDER_TIER_STATIC_CANDIDATES = Object.freeze({
 // Profils internes Neven. Ils décrivent une capacité, pas un fournisseur et ne
 // doivent jamais être affichés dans le chat. La résolution physique ci-dessous
 // reste entièrement backend : un profil peut changer de modèle sans changer l'UX.
-const ROUTER_PROFILE_DEFINITIONS = Object.freeze({
-  haiku: { fallback: null, complexity: 'light', executionMode: 'agent', depth: 'fast' },
-  luna: { fallback: 'haiku', complexity: 'premium', executionMode: 'agent', depth: 'fast' },
-  sol: { fallback: 'luna', complexity: 'premium', executionMode: 'multi-agent', depth: 'deep' },
-  opus: { fallback: 'sol', complexity: 'premium', executionMode: 'multi-agent', depth: 'deep' }
-});
+const ROUTER_PROFILE_DEFINITIONS = NEVEN_INTERNAL_PROFILES;
 const ROUTER_VALID_PROFILES = new Set(Object.keys(ROUTER_PROFILE_DEFINITIONS));
 const PROFILE_MODEL_PATTERNS = Object.freeze({
   haiku: ['haiku', 'flash-lite', 'flash'],
@@ -84,7 +85,7 @@ const PROFILE_MODEL_PATTERNS = Object.freeze({
 });
 
 const normalizeRouterProfile = (profile) => {
-  const normalized = String(profile || '').trim().toLowerCase();
+  const normalized = normalizeNevenProfileName(profile);
   return ROUTER_VALID_PROFILES.has(normalized) ? normalized : 'haiku';
 };
 
@@ -256,8 +257,8 @@ const resolveModelForProfile = async (provider, profile, ctx = {}) => {
 const ROUTER_SAFE_FALLBACK_DECISION = Object.freeze({ mode: 'single_agent', agent: null, skills: [], complexity: 'light', profile: 'haiku' });
 const ROUTER_VALID_MODES = new Set(['single_agent', 'orchestrator', 'multi_agent']);
 const ROUTER_VALID_COMPLEXITY = new Set(['light', 'premium']);
-const ROUTER_MAX_AGENTS_IN_PROMPT = 130;
-const ROUTER_MAX_SKILLS_IN_PROMPT = 130;
+const ROUTER_MAX_AGENTS_IN_PROMPT = NEVEN_ROUTER_CONTEXT_LIMITS.maxAgents;
+const ROUTER_MAX_SKILLS_IN_PROMPT = NEVEN_ROUTER_CONTEXT_LIMITS.maxSkills;
 const ROUTER_AGENT_DESC_MAX = 60;
 const ROUTER_USER_PROMPT_MAX = 4000;
 const ROUTER_CLASSIFICATION_MAX_TOKENS = 512;
@@ -372,33 +373,26 @@ const resolveClassifierApiKey = (settings, classifierProvider, fallbackApiKey) =
 // Prompt systeme de classification (FR). La demande utilisateur est passee dans le
 // tour utilisateur (voir routeToDecision), pas ici. Ce prompt n'injecte que le contexte
 // (agents + skills reels) et le schema JSON strict.
-const buildRouterSystemPrompt = (agents, skills) => {
-  const agentLines = agents
-    .slice(0, ROUTER_MAX_AGENTS_IN_PROMPT)
-    .map((a) => {
-      const name = String(a?.name || '').trim();
-      if (!name) return '';
-      const desc = truncateText(String(a?.description || '').replace(/\s+/g, ' ').trim(), ROUTER_AGENT_DESC_MAX);
-      return desc ? `- ${name} — ${desc}` : `- ${name}`;
-    })
-    .filter(Boolean);
-  const agentsBlock = agentLines.length > 0
-    ? `AGENTS DISPONIBLES :\n${agentLines.join('\n')}`
-    : 'AGENTS DISPONIBLES : (aucun)';
-
-  const skillNames = skills
-    .map((s) => String(s?.name || '').trim())
-    .filter(Boolean)
-    .slice(0, ROUTER_MAX_SKILLS_IN_PROMPT);
-  const skillsBlock = skillNames.length > 0
-    ? `SKILLS DISPONIBLES :\n${skillNames.join(', ')}`
-    : 'SKILLS DISPONIBLES : (aucun)';
+const buildRouterSystemPrompt = (agentsOrContext, maybeSkills = []) => {
+  const context = Array.isArray(agentsOrContext)
+    ? { agents: agentsOrContext, skills: maybeSkills }
+    : (agentsOrContext && typeof agentsOrContext === 'object' ? agentsOrContext : {});
+  const routerContext = buildNevenRouterContext({
+    prompt: context.userPrompt || '',
+    agents: Array.isArray(context.agents) ? context.agents : [],
+    skills: Array.isArray(context.skills) ? context.skills : [],
+    maxAgents: Number.isFinite(Number(context.maxAgents)) ? Number(context.maxAgents) : ROUTER_MAX_AGENTS_IN_PROMPT,
+    maxSkills: Number.isFinite(Number(context.maxSkills)) ? Number(context.maxSkills) : ROUTER_MAX_SKILLS_IN_PROMPT,
+    maxCapabilities: Number.isFinite(Number(context.maxCapabilities))
+      ? Number(context.maxCapabilities)
+      : NEVEN_ROUTER_CONTEXT_LIMITS.maxCapabilities
+  });
 
   return `Tu es le routeur de classification de Code Companion, un assistant de developpement multi-agents. Analyse la demande de l'utilisateur (fournie dans le message utilisateur) et decide UNIQUEMENT comment la router — tu n'executes JAMAIS la tache toi-meme.
 
-${agentsBlock}
+${routerContext.agentBlock}
 
-${skillsBlock}
+${routerContext.skillBlock}
 
 RÈGLES ABSOLUES :
 1. Réponds UNIQUEMENT avec un objet JSON strict, sans aucun texte avant ou après, sans bloc markdown (pas de \`\`\`).
@@ -560,7 +554,13 @@ const routeToDecision = async ({
     //    d'execution, sinon repli sur la cle transmise pour l'execution courante).
     const classifierTarget = await resolveClassifierTarget(ctx.settings, normalizedProvider, ctx);
     const classifierApiKey = resolveClassifierApiKey(ctx.settings, classifierTarget.provider, apiKey);
-    const systemInstruction = buildRouterSystemPrompt(agents, skills);
+    const systemInstruction = buildRouterSystemPrompt({
+      agents,
+      skills,
+      userPrompt,
+      maxAgents: ROUTER_MAX_AGENTS_IN_PROMPT,
+      maxSkills: ROUTER_MAX_SKILLS_IN_PROMPT
+    });
     const completion = await runSingleCompletionProvider({
       provider: classifierTarget.provider,
       systemInstruction,

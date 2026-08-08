@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.3.0] - Neven Core Lite and prompt compaction
+
+### Added
+
+- Core versionne pour les roles internes Sol, Luna et Terra, avec un manifeste de capacites centralise.
+- Selection compacte du catalogue agents/skills pour le routeur invisible afin de reduire le contexte inutile.
+- Plan interne versionne qui expose l'intention, le role primaire et le profil sans exposer le modele physique.
+- Tests unitaires sur le core, le role et la compaction du prompt.
+
 ## [2.2.0] - Control plane Neven côté backend
 
 ### Added
