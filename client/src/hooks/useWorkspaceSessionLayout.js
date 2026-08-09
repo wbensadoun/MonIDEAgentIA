@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { normalizeOpenTabs } from '../utils/tabs';
 
 export const WORKSPACE_LAYOUT_VERSION = 3;
 export const DEFAULT_LEFT_WIDTH = 280;
@@ -11,9 +12,20 @@ export const KEYBOARD_RESIZE_STEP = 20;
 
 export const clamp = (value, min, max) => Math.min(Math.max(min, max), Math.max(min, value));
 
+// centerView values that still have a pane in the center (plan-ia-onglets.md
+// §④ moved git/ai-changes/brain out to the Activity Bar/Panel; §⑤ added
+// 'chat' for chat tabs).
+const VALID_CENTER_VIEWS = new Set(['code', 'preview', 'workflows', 'chat']);
+
 const viewportWidth = () => (
   typeof window === 'undefined' ? 1280 : Math.max(0, window.innerWidth - 48)
 );
+
+// Stable reference so callers that don't manage chat-tab state (e.g. this
+// hook's own tests) don't hand useEffect a brand-new function every render —
+// that would re-fire the session-load effect on every render, which sets
+// state unconditionally and loops forever.
+const noop = () => {};
 
 export const migrateLegacyWidth = (value, totalWidth, fallback) => {
   const numeric = Number(value);
@@ -129,12 +141,17 @@ export const usePointerResize = ({ onResize, cursor = 'col-resize' }) => {
 
 const useWorkspaceSessionLayout = ({
   currentProjectPath,
-  openFiles,
+  openTabs,
   activeFile,
-  setOpenFiles,
+  setOpenTabs,
   setActiveFile,
   centerView,
-  setCenterView
+  setCenterView,
+  // plan-ia-onglets.md §⑤ 5.5.3 — quel onglet de chat est actif, au même
+  // titre qu'activeFile pour les onglets de fichier : plusieurs onglets
+  // chat peuvent coexister, il faut savoir lequel restaurer après redémarrage.
+  activeChatSessionId = null,
+  setActiveChatSessionId = noop
 }) => {
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
@@ -198,8 +215,12 @@ const useWorkspaceSessionLayout = ({
 
   useEffect(() => {
     if (!activeFile) return;
-    setOpenFiles(prev => (prev.includes(activeFile) ? prev : [...prev, activeFile]));
-  }, [activeFile, setOpenFiles]);
+    setOpenTabs(prev => (
+      prev.some(tab => tab.type === 'file' && tab.path === activeFile)
+        ? prev
+        : [...prev, { type: 'file', path: activeFile }]
+    ));
+  }, [activeFile, setOpenTabs]);
 
   useEffect(() => {
     setLoadedProjectPath(null);
@@ -221,9 +242,19 @@ const useWorkspaceSessionLayout = ({
       if (!raw) return;
       const parsed = JSON.parse(raw);
 
-      if (Array.isArray(parsed.openFiles)) setOpenFiles(parsed.openFiles);
+      // Vigilance point (plan-ia-onglets.md §③): a session saved before this
+      // step persisted openFiles as string[]. normalizeOpenTabs accepts both
+      // that legacy shape and the current Tab[] so an existing user's tabs
+      // restore without error or loss either way.
+      const rawTabs = Array.isArray(parsed.openTabs) ? parsed.openTabs : parsed.openFiles;
+      if (Array.isArray(rawTabs)) setOpenTabs(normalizeOpenTabs(rawTabs));
       if (typeof parsed.activeFile === 'string') setActiveFile(parsed.activeFile);
-      if (typeof parsed.centerView === 'string') setCenterView(parsed.centerView);
+      if (typeof parsed.activeChatSessionId === 'string') setActiveChatSessionId(parsed.activeChatSessionId);
+      // Sessions saved before plan-ia-onglets.md §④ may carry a centerView of
+      // 'git' | 'ai-changes' | 'brain' — those views moved out of the center
+      // and no longer have a pane there. Falling back to 'code' keeps restore
+      // from landing on a blank center instead of erroring.
+      if (VALID_CENTER_VIEWS.has(parsed.centerView)) setCenterView(parsed.centerView);
 
       const savedVersion = Number(parsed.layoutDensityVersion || 0);
       const totalWidth = layoutNodeRef.current?.getBoundingClientRect().width || viewportWidth();
@@ -254,15 +285,16 @@ const useWorkspaceSessionLayout = ({
       // effect therefore cannot overwrite a legacy session with stale values.
       setLoadedProjectPath(currentProjectPath);
     }
-  }, [currentProjectPath, setActiveFile, setCenterView, setOpenFiles]);
+  }, [currentProjectPath, setActiveFile, setCenterView, setOpenTabs, setActiveChatSessionId]);
 
   useEffect(() => {
     if (!currentProjectPath || loadedProjectPath !== currentProjectPath) return;
     try {
       const key = `vibeIDE_session:${currentProjectPath}`;
       const payload = {
-        openFiles,
+        openTabs,
         activeFile,
+        activeChatSessionId,
         centerView,
         leftWidth,
         rightWidth,
@@ -281,8 +313,8 @@ const useWorkspaceSessionLayout = ({
       // localStorage may be unavailable in hardened browser contexts.
     }
   }, [
-    currentProjectPath, loadedProjectPath, openFiles, activeFile, centerView, leftWidth, rightWidth,
-    isLeftCollapsed, isRightCollapsed, isFocusMode, isChatMaximized
+    currentProjectPath, loadedProjectPath, openTabs, activeFile, activeChatSessionId, centerView,
+    leftWidth, rightWidth, isLeftCollapsed, isRightCollapsed, isFocusMode, isChatMaximized
   ]);
 
   const applyResize = useCallback(({ deltaX, data }) => {

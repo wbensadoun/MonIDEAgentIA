@@ -105,11 +105,7 @@
   border-radius: 50%;
   border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
   border-top-color: var(--accent);
-  animation: apf-spin 0.7s linear infinite;
-}
-
-@keyframes apf-spin {
-  to { transform: rotate(360deg); }
+  animation: spin 0.7s linear infinite; /* shared keyframe, styles/motion.css */
 }
 
 /* ── Top bar ─────────────────────────────────────────────── */
@@ -141,11 +137,20 @@
   justify-content: center;
 }
 
+/* 4.2 — this panel could show six concurrent animated cues at once
+   (brain pulse, expanding ring, blinking status dot, bouncing dots,
+   pulsing active-step icon, sliding progress bar) for a single "ça
+   travaille" state. Kept: .ap-progress-fill below (the one real
+   indeterminate progress signal) and .ap-step-spinner (per-step activity,
+   only present when there's an actual multi-agent pipeline) — at most 2
+   animated elements on screen at a time. Everything else here — brain
+   icon, ring, status dot, dots row, active-step glow — is now static;
+   the color/label/border changes that already accompany each state still
+   carry the same information without the extra motion. */
 .ap-brain {
   font-size: 1.25rem;
   position: relative;
   z-index: 2;
-  animation: ap-brain-pulse 2s ease-in-out infinite;
   filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 60%, transparent));
 }
 
@@ -154,18 +159,6 @@
   inset: -4px;
   border-radius: 50%;
   border: 1.5px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  animation: ap-ring-expand 2s ease-out infinite;
-}
-
-@keyframes ap-brain-pulse {
-  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 50%, transparent)); }
-  50%       { transform: scale(1.1); filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 85%, transparent)); }
-}
-
-@keyframes ap-ring-expand {
-  0%   { transform: scale(0.85); opacity: 0.8; }
-  70%  { transform: scale(1.3); opacity: 0; }
-  100% { transform: scale(1.3); opacity: 0; }
 }
 
 /* Info column */
@@ -190,12 +183,6 @@
   background: var(--accent);
   box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 80%, transparent);
   flex-shrink: 0;
-  animation: ap-dot-blink 1.6s ease-in-out infinite;
-}
-
-@keyframes ap-dot-blink {
-  0%, 100% { opacity: 1; box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent); }
-  50%       { opacity: 0.55; box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 90%, transparent); }
 }
 
 .ap-status-text {
@@ -205,12 +192,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  animation: ap-phrase-fade 0.35s ease-out;
-}
-
-@keyframes ap-phrase-fade {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  animation: phrase-fade var(--duration-slow) ease-out; /* shared keyframe, styles/motion.css */
 }
 
 .ap-meta-row {
@@ -228,7 +210,12 @@
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(var(--provider-color, 0, 245, 212), 0.12);
+  /* --provider-color is set inline per element (a real per-provider brand
+     hex, e.g. Gemini blue), so rgba(var(--provider-color, R,G,B), a) was
+     invalid CSS the moment the var actually resolved — rgba() takes
+     numeric channels, not a hex string. color-mix sidesteps that and
+     matches the border/color lines below. */
+  background: color-mix(in srgb, var(--provider-color, #00f5d4) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--provider-color, #00f5d4) 40%, transparent);
   color: var(--provider-color, #00f5d4);
   letter-spacing: 0.04em;
@@ -263,16 +250,10 @@
   height: 5px;
   border-radius: 50%;
   background: var(--accent);
-  animation: ap-dot-bounce 1.4s ease-in-out infinite;
 }
 
-.ap-dot:nth-child(2) { animation-delay: 0.18s; background: var(--accent-2); }
-.ap-dot:nth-child(3) { animation-delay: 0.36s; background: var(--accent-3); }
-
-@keyframes ap-dot-bounce {
-  0%, 80%, 100% { transform: translateY(0); opacity: 0.6; }
-  40%           { transform: translateY(-6px); opacity: 1; }
-}
+.ap-dot:nth-child(2) { background: var(--accent-2); }
+.ap-dot:nth-child(3) { background: var(--accent-3); }
 
 /* ── Step pipeline ───────────────────────────────────────── */
 .ap-pipeline {
@@ -309,7 +290,7 @@
   border: 1.5px solid var(--border);
   background: var(--surface-2);
   color: var(--text-dim);
-  transition: all 0.3s ease;
+  transition: all var(--duration-slow) ease;
 }
 
 .ap-step.is-done .ap-step-icon {
@@ -324,29 +305,22 @@
   border-color: var(--accent);
   color: var(--accent);
   box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 40%, transparent);
-  animation: ap-step-pulse 1.8s ease-in-out infinite;
-}
-
-@keyframes ap-step-pulse {
-  0%, 100% { box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 40%, transparent); }
-  50%       { box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 70%, transparent); }
 }
 
 .ap-step.is-pending .ap-step-icon {
   opacity: 0.45;
 }
 
+/* Real per-step activity indicator (only rendered while a step is
+   active) — kept as one of the panel's 2 animated elements, see the 4.2
+   note above .ap-brain. */
 .ap-step-spinner {
   width: 10px;
   height: 10px;
   border: 1.5px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: ap-spin 0.8s linear infinite;
-}
-
-@keyframes ap-spin {
-  to { transform: rotate(360deg); }
+  animation: spin 0.8s linear infinite; /* shared keyframe, styles/motion.css */
 }
 
 .ap-step-num {
@@ -381,7 +355,7 @@
   min-width: 12px;
   background: var(--border);
   margin-bottom: 20px; /* align with icon center */
-  transition: background 0.4s ease;
+  transition: background var(--duration-slow) ease;
 }
 
 .ap-connector.is-done {
@@ -408,7 +382,7 @@
   gap: 8px;
   font-size: 0.68rem;
   line-height: 1.4;
-  animation: ap-log-in 0.2s ease-out;
+  animation: ap-log-in var(--duration-base) ease-out;
 }
 
 @keyframes ap-log-in {
@@ -451,4 +425,18 @@
 @keyframes ap-progress-slide {
   0%   { background-position: 100% 0; }
   100% { background-position: -100% 0; }
+}
+
+/* 4.3 — this file had zero prefers-reduced-motion coverage. Transitions
+   above were migrated onto --duration-* tokens (already 0ms under
+   reduced motion, tokens.css §6). What remains are the file's
+   `infinite`-looping spinners/progress bar, whose multi-second cadence
+   is semantic to the effect and doesn't fit the short UI-transition
+   token scale — cut explicitly instead. */
+@media (prefers-reduced-motion: reduce) {
+  .apf-spinner,
+  .ap-step-spinner,
+  .ap-progress-fill {
+    animation: none;
+  }
 }

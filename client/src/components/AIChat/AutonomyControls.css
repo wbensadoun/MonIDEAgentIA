@@ -118,7 +118,7 @@
 }
 
 .autonomy-controls__manage:hover:not(:disabled) {
-  color: var(--text-primary);
+  color: var(--text-main);
 }
 
 .autonomy-controls__manage:disabled {

@@ -129,9 +129,19 @@ const MessageBubble = memo<{
   onRerunMessage?: MessageViewerProps['onRerunMessage'];
   actionsDisabled?: boolean;
   renderMessageExtras?: MessageViewerProps['renderMessageExtras'];
-}>(({ message, onCopyCode, onApplyCode, onCopyMessage, onRerunMessage, actionsDisabled, renderMessageExtras }) => (
+  /** 1.4 — la barre d'actions de la derniere reponse assistant reste visible
+   *  en permanence (voir .message-viewer__bubble--pinned-actions), au lieu de
+   *  n'apparaitre qu'au survol/focus comme les messages plus anciens. */
+  isLastAssistant?: boolean;
+}>(({ message, onCopyCode, onApplyCode, onCopyMessage, onRerunMessage, actionsDisabled, renderMessageExtras, isLastAssistant }) => (
   <div
-    className={`message-viewer__bubble message-viewer__bubble--${message.role}`}
+    className={[
+      'message-viewer__bubble',
+      `message-viewer__bubble--${message.role}`,
+      isLastAssistant && 'message-viewer__bubble--pinned-actions'
+    ]
+      .filter(Boolean)
+      .join(' ')}
     role="group"
     aria-label={`Message de ${message.role === 'user' ? "l'utilisateur" : "l'agent"} à ${formatTime(message.timestamp)}`}
   >
@@ -208,6 +218,17 @@ export const MessageViewer: React.FC<MessageViewerProps> = ({
     setAutoFollow(distanceFromBottom < 48);
   };
 
+  // 1.4 — epingle la barre d'actions de la derniere reponse assistant (motif
+  // VS Code / AIChat.css:407-419) : c'est la seule dont les actions restent
+  // visibles sans survol ni focus.
+  let lastAssistantId: string | undefined;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === 'assistant') {
+      lastAssistantId = messages[i].id;
+      break;
+    }
+  }
+
   return (
     <div
       ref={scrollRef}
@@ -229,6 +250,7 @@ export const MessageViewer: React.FC<MessageViewerProps> = ({
             onRerunMessage={onRerunMessage}
             actionsDisabled={actionsDisabled}
             renderMessageExtras={renderMessageExtras}
+            isLastAssistant={message.id === lastAssistantId}
           />
         ))
       )}

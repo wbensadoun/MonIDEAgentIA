@@ -1,11 +1,23 @@
 /* ══════════════════════════════════════════════════════════
    MarkdownRenderer styles
+
+   4.1/4.2 (plan-polish-ui-2026-08.md) — this file used to hardcode a
+   24-hex neon-teal palette (bright cyan / darker teal / near-black
+   code background) that ignored the active theme entirely; on
+   theme-paper it rendered light gray text on white. Every color below
+   now resolves through client/src/styles/
+   tokens.css (--text-*, --accent*, --code-*, --border-*, --success/
+   --warning/--danger), so the five themes — light and dark — all
+   produce a readable result. Where the source alpha did not match an
+   existing --*-soft token exactly, color-mix(in srgb, var(--token) X%,
+   transparent) reproduces the original translucency from a token
+   instead of a new literal color (same pattern Lot 0 used for
+   --code-punctuation/--code-line-number in tokens.css).
    ══════════════════════════════════════════════════════════ */
 
 .md-root {
-  font-size: 0.82rem;
-  line-height: 1.6;
-  color: #e2e8f0;
+  font: var(--type-body);
+  color: var(--text-main);
   word-break: break-word;
 }
 
@@ -14,33 +26,43 @@
   white-space: pre-wrap;
 }
 
+/* 4.2 — heading hierarchy rebuilt on tokens.css roles. The old rule
+   (.md-root at 0.82rem, headings in `em` relative to it) made .md-h1
+   render at ~12.6px — smaller than the 13px app body text. Every level
+   below is now >= --text-base (13px), sized from the type scale and
+   differentiated by weight where two levels share a size step. */
 .md-heading {
-  font-weight: 700;
-  color: #f1f5f9;
+  font-family: var(--font-sans);
+  color: var(--text-main);
   margin: 0.6em 0 0.3em;
-  line-height: 1.3;
+  line-height: var(--leading-tight);
 }
-.md-h1 { font-size: 1.2em; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px; }
-.md-h2 { font-size: 1.1em; }
-.md-h3 { font-size: 1.0em; }
-.md-h4 { font-size: 0.95em; }
-.md-h5 { font-size: 0.9em; }
-.md-h6 { font-size: 0.85em; color: #94a3b8; }
+.md-h1 {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-bold);
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: var(--space-1);
+}
+.md-h2 { font-size: var(--text-md); font-weight: var(--font-weight-bold); }
+.md-h3 { font-size: var(--text-md); font-weight: var(--font-weight-semibold); }
+.md-h4 { font-size: var(--text-base); font-weight: var(--font-weight-semibold); }
+.md-h5 { font-size: var(--text-base); font-weight: var(--font-weight-medium); }
+.md-h6 { font-size: var(--text-base); font-weight: var(--font-weight-medium); color: var(--text-dim); }
 
 .md-hr {
   border: none;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0,245,212,0.3), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent-soft), transparent);
   margin: 0.8em 0;
 }
 
 .md-blockquote {
   margin: 0.5em 0;
   padding: 0.3em 0.8em;
-  border-left: 3px solid rgba(0,245,212,0.5);
-  background: rgba(0,245,212,0.06);
-  border-radius: 0 8px 8px 0;
-  color: #cbd5e1;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  color: var(--text-dim);
   font-style: italic;
 }
 
@@ -51,43 +73,44 @@
 
 .md-li {
   margin: 0.15em 0;
-  color: #e2e8f0;
+  color: var(--text-main);
 }
 
 .md-li::marker {
-  color: #00f5d4;
+  color: var(--accent);
 }
 
 .md-inline-code {
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-family: var(--font-mono);
   font-size: 0.88em;
   padding: 1px 6px;
-  border-radius: 5px;
-  background: rgba(0,245,212,0.1);
-  border: 1px solid rgba(0,245,212,0.2);
-  color: #7ee787;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--code-string);
 }
 
 .md-link {
-  color: #60a5fa;
+  color: var(--info);
   text-decoration: none;
-  border-bottom: 1px solid rgba(96,165,250,0.3);
-  transition: color 0.2s, border-color 0.2s;
+  border-bottom: 1px solid color-mix(in srgb, var(--info) 30%, transparent);
+  transition: color var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard);
 }
 .md-link:hover {
-  color: #93bbfc;
-  border-color: rgba(96,165,250,0.6);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--info) 60%, transparent);
 }
 
 /* ── Code Block ────────────────────────────────────────── */
 
 .md-codeblock {
   margin: 0.6em 0;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--bg);
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  box-shadow: var(--shadow-2);
 }
 
 .md-codeblock-header {
@@ -95,8 +118,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  background: linear-gradient(135deg, rgba(0,245,212,0.08), rgba(0,245,212,0.03));
-  border-bottom: 1px solid rgba(0,245,212,0.1);
+  background: linear-gradient(135deg, var(--accent-soft), transparent);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .md-codeblock-lang {
@@ -106,9 +129,9 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 1px 8px;
-  border-radius: 999px;
-  background: rgba(0,245,212,0.12);
-  border: 1px solid rgba(0,245,212,0.2);
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 .md-codeblock-actions {
@@ -121,30 +144,32 @@
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.04);
-  color: #94a3b8;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-dim);
   font-size: 0.65rem;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard),
+    color var(--duration-base) var(--ease-standard);
 }
 
 .md-codeblock-btn:hover {
-  background: rgba(0,245,212,0.12);
-  border-color: rgba(0,245,212,0.3);
-  color: #00f5d4;
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent);
 }
 
 .md-codeblock-apply {
-  color: #4ade80;
-  border-color: rgba(74,222,128,0.3);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
 }
 
 .md-codeblock-apply:hover {
-  background: rgba(74,222,128,0.15);
-  border-color: rgba(74,222,128,0.5);
-  color: #86efac;
+  background: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 50%, transparent);
+  color: var(--success);
 }
 
 .md-codeblock-body {
@@ -153,10 +178,10 @@
   overflow-x: auto;
   max-height: 420px;
   overflow-y: auto;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 1.55;
-  color: var(--text-main);
+  color: var(--code-fg);
 }
 
 .md-code-line {
@@ -167,7 +192,7 @@
 }
 
 .md-code-line:hover {
-  background: rgba(255,255,255,0.03);
+  background: color-mix(in srgb, var(--text-main) 4%, transparent);
 }
 
 .md-code-ln {
@@ -175,7 +200,7 @@
   min-width: 32px;
   padding: 0 10px 0 12px;
   text-align: right;
-  color: rgba(148,163,184,0.35);
+  color: var(--code-line-number);
   font-size: 10px;
   user-select: none;
   flex-shrink: 0;
@@ -186,12 +211,13 @@
   white-space: pre;
 }
 
-/* Syntax tokens */
-.md-tok-keyword  { color: #ff7b72; }
-.md-tok-string   { color: #a5d6ff; }
-.md-tok-comment  { color: #8b949e; font-style: italic; }
-.md-tok-number   { color: #79c0ff; }
-.md-tok-function { color: #d2a8ff; }
+/* Syntax tokens — resolved against --code-* (Lot 0.1), themed per
+   client/src/styles/tokens.css instead of a fixed dark palette. */
+.md-tok-keyword  { color: var(--code-keyword); }
+.md-tok-string   { color: var(--code-string); }
+.md-tok-comment  { color: var(--code-comment); font-style: italic; }
+.md-tok-number   { color: var(--code-number); }
+.md-tok-function { color: var(--code-function); }
 
 
 /* ══════════════════════════════════════════════════════════
@@ -200,13 +226,13 @@
 
 .sc-block {
   margin: 8px 0;
-  border-radius: 12px;
-  border: 1px solid rgba(0,196,154,0.25);
-  background: #050d0a;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--code-bg);
   overflow: hidden;
   box-shadow:
-    0 4px 24px rgba(0,0,0,0.4),
-    0 0 0 1px rgba(0,196,154,0.08) inset;
+    var(--shadow-3),
+    0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent) inset;
 }
 
 .sc-header {
@@ -215,8 +241,8 @@
   justify-content: space-between;
   gap: 10px;
   padding: 7px 12px;
-  background: linear-gradient(135deg, rgba(0,196,154,0.1), rgba(0,196,154,0.04));
-  border-bottom: 1px solid rgba(0,196,154,0.15);
+  background: linear-gradient(135deg, var(--accent-soft), transparent);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .sc-header-left {
@@ -237,22 +263,20 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  animation: sc-dot-glow 2s ease-in-out infinite;
 }
 
-.sc-dot-1 { background: #ff5f57; animation-delay: 0s; }
-.sc-dot-2 { background: #febc2e; animation-delay: 0.3s; }
-.sc-dot-3 { background: #28c840; animation-delay: 0.6s; }
-
-@keyframes sc-dot-glow {
-  0%, 100% { opacity: 0.7; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.15); }
-}
+/* 4.3 — traffic-light dots kept (they're a real header affordance,
+   recolored onto the semantic danger/warning/success tokens per the
+   plan's mapping table); the `sc-dot-glow` pulse that used to run on
+   them forever was decorative-only and is retired below. */
+.sc-dot-1 { background: var(--danger); }
+.sc-dot-2 { background: var(--warning); }
+.sc-dot-3 { background: var(--success); }
 
 .sc-filename {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: #e0f0e8;
+  color: var(--text-main);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -263,11 +287,11 @@
 .sc-agent {
   font-size: 9px;
   font-weight: 600;
-  color: #a78bfa;
+  color: var(--accent-2);
   padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(167,139,250,0.12);
-  border: 1px solid rgba(167,139,250,0.25);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 25%, transparent);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -275,19 +299,19 @@
 .sc-lang {
   font-size: 9px;
   font-weight: 600;
-  color: #00c49a;
+  color: var(--accent);
   padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(0,196,154,0.12);
-  border: 1px solid rgba(0,196,154,0.22);
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .sc-counter {
   font-size: 9px;
-  color: rgba(0,196,154,0.6);
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
 }
 
 .sc-body {
@@ -296,7 +320,7 @@
   max-height: 300px;
   overflow-y: auto;
   overflow-x: auto;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.6;
 }
@@ -308,7 +332,7 @@
   background: transparent;
 }
 .sc-body::-webkit-scrollbar-thumb {
-  background: rgba(0,196,154,0.2);
+  background: var(--border-strong);
   border-radius: 2px;
 }
 
@@ -321,7 +345,7 @@
   align-items: baseline;
   padding: 0 12px 0 0;
   min-height: 1.6em;
-  animation: sc-line-reveal 0.2s ease-out both;
+  animation: sc-line-reveal var(--duration-base) var(--ease-out) both;
 }
 
 @keyframes sc-line-reveal {
@@ -336,7 +360,7 @@
 }
 
 .sc-line-latest {
-  background: rgba(0,196,154,0.06);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 .sc-ln {
@@ -344,7 +368,7 @@
   min-width: 30px;
   padding: 0 8px 0 10px;
   text-align: right;
-  color: rgba(0,196,154,0.3);
+  color: var(--code-line-number);
   font-size: 9px;
   user-select: none;
   flex-shrink: 0;
@@ -353,17 +377,17 @@
 .sc-content {
   flex: 1;
   white-space: pre;
-  color: #c9ede0;
+  color: var(--code-fg);
 }
 
 /* Syntax tokens */
-.sc-tok-keyword  { color: #ff7b72; }
-.sc-tok-string   { color: #a5d6ff; }
-.sc-tok-comment  { color: #6a9e7e; font-style: italic; }
-.sc-tok-number   { color: #79c0ff; }
-.sc-tok-function { color: #d2a8ff; }
+.sc-tok-keyword  { color: var(--code-keyword); }
+.sc-tok-string   { color: var(--code-string); }
+.sc-tok-comment  { color: var(--code-comment); font-style: italic; }
+.sc-tok-number   { color: var(--code-number); }
+.sc-tok-function { color: var(--code-function); }
 
-/* Glowing cursor */
+/* Glowing cursor — functional streaming feedback, kept per 4.3. */
 .sc-cursor-line {
   display: flex;
   align-items: center;
@@ -376,8 +400,10 @@
   width: 8px;
   height: 1.1em;
   border-radius: 2px;
-  background: #00f5d4;
-  box-shadow: 0 0 12px rgba(0,245,212,0.7), 0 0 4px rgba(0,245,212,0.9);
+  background: var(--accent);
+  box-shadow:
+    0 0 12px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 4px color-mix(in srgb, var(--accent) 90%, transparent);
   animation: sc-cursor-blink 1s steps(1) infinite;
 }
 
@@ -386,63 +412,50 @@
   51%, 100% { opacity: 0; }
 }
 
-/* Scanline */
+/* 4.3 — sc-scanline-sweep and sc-progress-pulse retired: both were
+   purely decorative remnants of the abandoned neon identity (no data
+   they displayed was real — the scanline had no signal to carry, and
+   the progress fill was a static 60% placeholder, not an actual
+   percentage). StreamingCodeBlock.js still mounts these elements
+   (isStreaming gate) — untouched, this is a CSS-only lot — so they are
+   hidden here rather than left frozen mid-animation, which would have
+   read as a stuck/broken indicator. sc-progress-label (the real
+   "N lignes reçues" line count) is left visible.  */
 .sc-scanline {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(0,245,212,0.8), transparent);
-  box-shadow: 0 0 12px rgba(0,245,212,0.6);
-  animation: sc-scanline-sweep 2.5s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 2;
+  display: none;
 }
 
-@keyframes sc-scanline-sweep {
-  0% { top: 0; opacity: 0.8; }
-  80% { top: 100%; opacity: 0.2; }
-  100% { top: 100%; opacity: 0; }
-}
-
-/* Progress bar */
 .sc-progress {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 5px 12px;
-  border-top: 1px solid rgba(0,196,154,0.12);
-  background: rgba(0,196,154,0.04);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .sc-progress-bar {
-  flex: 1;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(0,196,154,0.15);
-  overflow: hidden;
-}
-
-.sc-progress-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #00c49a, #00f5d4);
-  animation: sc-progress-pulse 1.5s ease-in-out infinite;
-  width: 60%;
-}
-
-@keyframes sc-progress-pulse {
-  0% { width: 30%; opacity: 0.6; }
-  50% { width: 70%; opacity: 1; }
-  100% { width: 30%; opacity: 0.6; }
+  display: none;
 }
 
 .sc-progress-label {
   font-size: 9px;
-  color: rgba(0,196,154,0.6);
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
   white-space: nowrap;
+}
+
+/* prefers-reduced-motion (N5 / 4.3 — both kept animations explicitly
+   guarded): sc-cursor-blink loops forever and must be cut outright;
+   sc-line-reveal is a one-shot entrance but the plan calls for a guard
+   on it too, so new streamed lines simply render in their final state. */
+@media (prefers-reduced-motion: reduce) {
+  .sc-cursor {
+    animation: none;
+    opacity: 1;
+  }
+  .sc-line {
+    animation: none;
+  }
 }
 
 /* Copy button icon crossfade */
@@ -454,7 +467,8 @@
   grid-area: 1 / 1;
   opacity: 0;
   transform: scale(0.92);
-  transition: opacity 140ms cubic-bezier(0.2, 0, 0, 1), transform 140ms cubic-bezier(0.2, 0, 0, 1);
+  transition: opacity var(--duration-fast) var(--ease-emphasized),
+    transform var(--duration-fast) var(--ease-emphasized);
 }
 
 .md-copy-icon-stack > svg.is-visible {

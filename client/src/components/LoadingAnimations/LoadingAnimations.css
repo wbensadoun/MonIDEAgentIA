@@ -15,16 +15,20 @@
   gap: 0.75rem;
   padding: 0.5rem;
   border-radius: 0.5rem;
-  transition: background-color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+  transition: background-color var(--duration-slow) ease, box-shadow var(--duration-slow) ease, opacity var(--duration-slow) ease;
 }
 
 .step-completed {
   background: var(--success-soft);
 }
 
+/* 4.2 — the active row used to also pulse its own box-shadow (pulse-glow)
+   on top of the real .step-spinner already spinning inside it: two
+   concurrent animated cues for the same "this one is running" signal.
+   The spinner alone (a real, legible progress indicator) is kept; the
+   ambient glow is dropped. */
 .step-active {
   background: var(--accent-hover);
-  animation: pulse-glow 2s ease-in-out infinite;
 }
 
 .step-pending {
@@ -77,7 +81,7 @@
   border: 2px solid transparent;
   border-top-color: white;
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin 1s linear infinite; /* `spin` — shared keyframe, styles/motion.css */
 }
 
 .step-content {
@@ -120,8 +124,12 @@
   animation: pulse-ring 2s ease-out infinite;
 }
 
+/* 4.2 — two staggered expanding rings + a breathing caption text was 3
+   concurrent animated elements for one "loading" state. The delayed ring
+   is kept as a static halo (still reads as a ring, just doesn't compete
+   with the first one for attention); the lead ring + caption stay animated. */
 .pulse-ring-delayed {
-  animation-delay: 1s;
+  animation: none;
 }
 
 .pulse-center {
@@ -217,7 +225,7 @@
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  transition: background-color var(--duration-base) ease, border-color var(--duration-base) ease, color var(--duration-base) ease, box-shadow var(--duration-base) ease, transform var(--duration-base) ease;
 }
 
 .error-btn.retry {
@@ -278,7 +286,7 @@
   flex: 1;
   background: color-mix(in srgb, var(--text-muted) 30%, transparent);
   border-radius: 0.125rem;
-  transition: background-color 0.3s ease, transform 0.3s ease, opacity 0.3s ease;
+  transition: background-color var(--duration-slow) ease, transform var(--duration-slow) ease, opacity var(--duration-slow) ease;
 }
 
 .voting-bar.voted {
@@ -286,29 +294,12 @@
   animation: bar-fill 0.5s ease-out;
 }
 
-/* Animations */
-@keyframes pulse-glow {
-
-  0%,
-  100% {
-    box-shadow: 0 0 5px color-mix(in srgb, var(--accent) 30%, transparent);
-  }
-
-  50% {
-    box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 60%, transparent);
-  }
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
+/* Animations
+   `spin` and `fade-in-up` used to be redefined here byte-for-byte
+   identical to styles/motion.css (Lot 0) — removed, callers below now
+   resolve those two names against the shared file. `pulse-glow` was only
+   used by `.step-active`, dropped in the 4.2 budget cut above, so its
+   keyframe is dead and removed with it. */
 @keyframes pulse-ring {
   0% {
     transform: scale(1);
@@ -342,18 +333,6 @@
 @keyframes stroke-check {
   to {
     stroke-dashoffset: 0;
-  }
-}
-
-@keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -403,149 +382,19 @@
 }
 
 /* ═══════════════════════════════════════════════════════
-   AI Working Indicator — animated dots + glowing brain
-   ═══════════════════════════════════════════════════════ */
-.ai-working {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 18px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface-2) 94%, transparent));
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
-  border-radius: 14px;
-  margin: 6px 12px;
-  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 8%, transparent);
-}
-
-.ai-working-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-}
-
-.ai-working-icon {
-  font-size: 22px;
-  animation: ai-icon-pulse 2s ease-in-out infinite;
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 50%, transparent));
-}
-
-.ai-working-right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.ai-working-phrase {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent);
-  letter-spacing: 0.03em;
-  animation: phrase-fade 0.4s ease-in-out;
-}
-
-.ai-working-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.ai-working-provider {
-  font-size: 10px;
-  color: var(--text-dim);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
-  border-radius: 20px;
-  padding: 1px 7px;
-  font-weight: 500;
-}
-
-.ai-working-timer {
-  font-size: 10px;
-  color: color-mix(in srgb, var(--accent) 65%, var(--text-dim));
-  font-family: 'Fira Code', monospace;
-}
-
-/* Bouncing dots — three-hue accent triptych, themed per palette */
-.ai-dots {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-}
-
-.ai-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: dot-bounce 1.4s ease-in-out infinite;
-}
-
-.ai-dot:nth-child(2) {
-  animation-delay: 0.2s;
-  background: var(--accent-2);
-}
-
-.ai-dot:nth-child(3) {
-  animation-delay: 0.4s;
-  background: var(--accent-3);
-}
-
-/* Code typewriter styles are defined once below to avoid collisions */
-/* Keyframe animations */
-@keyframes dot-bounce {
-
-  0%,
-  80%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.6;
-  }
-
-  40% {
-    transform: translateY(-7px);
-    opacity: 1;
-  }
-}
-
-@keyframes ai-icon-pulse {
-
-  0%,
-  100% {
-    transform: scale(1);
-    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 40%, transparent));
-  }
-
-  50% {
-    transform: scale(1.12);
-    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 80%, transparent));
-  }
-}
-
-@keyframes phrase-fade {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════
-   Code Typewriter — fast block reveal with scanline
-   Intentionally a fixed dark code palette (like
-   SyntaxHighlightedCode.css) rather than theme tokens —
-   code blocks keep a consistent dark chrome across themes.
+   Code Typewriter — fast block reveal
+   Was a fixed neon-teal palette independent of the active theme (same
+   abandoned identity as the old MarkdownRenderer/SyntaxHighlightedCode —
+   plan §0 bug 1); now reads the themed --code-* tokens (Lot 0.1) like
+   everywhere else code is rendered, so it stays legible on theme-paper
+   instead of going gray-on-white. The permanent top-to-bottom scanline
+   sweep (`scanline-sweep`) was pure leftover decoration from that same
+   identity — removed outright rather than themed, per plan §2.3's
+   precedent for this exact kind of decorative infinite-loop effect.
    ═══════════════════════════════════════════════════════ */
 .code-typewriter {
-  background: #050e0a;
-  border: 1px solid rgba(0, 196, 154, 0.2);
+  background: var(--code-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
   border-radius: 10px;
   overflow: hidden;
   margin: 6px 0;
@@ -558,19 +407,19 @@
   align-items: center;
   gap: 5px;
   padding: 6px 10px;
-  background: rgba(0, 196, 154, 0.07);
-  border-bottom: 1px solid rgba(0, 196, 154, 0.12);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .code-typewriter-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: rgba(0, 196, 154, 0.4);
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .code-typewriter-title {
-  color: rgba(0, 196, 154, 0.7);
+  color: color-mix(in srgb, var(--accent) 70%, transparent);
   font-size: 10px;
   margin-left: 4px;
 }
@@ -581,42 +430,13 @@
   padding: 8px 0;
   opacity: 0;
   transform: translateY(4px);
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity var(--duration-fast) ease, transform var(--duration-fast) ease;
   overflow: hidden;
 }
 
 .code-block-reveal.revealed {
   opacity: 1;
   transform: translateY(0);
-}
-
-/* Glowing scanline that sweeps top-to-bottom */
-.code-scanline {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #00f5d4, transparent);
-  box-shadow: 0 0 8px rgba(0, 245, 212, 0.8);
-  animation: scanline-sweep 1.8s ease-in-out infinite;
-}
-
-@keyframes scanline-sweep {
-  0% {
-    top: 0;
-    opacity: 1;
-  }
-
-  80% {
-    top: 100%;
-    opacity: 0.3;
-  }
-
-  100% {
-    top: 100%;
-    opacity: 0;
-  }
 }
 
 .code-line {
@@ -628,7 +448,7 @@
 }
 
 .code-line-number {
-  color: rgba(0, 196, 154, 0.3);
+  color: var(--code-line-number);
   font-size: 9px;
   min-width: 14px;
   text-align: right;
@@ -636,26 +456,48 @@
 }
 
 .code-line-content {
-  color: #c9d1d9;
+  color: var(--code-fg);
 }
 
 .code-keyword {
-  color: #ff7b72;
+  color: var(--code-keyword);
 }
 
 .code-string {
-  color: #a5d6ff;
+  color: var(--code-string);
 }
 
 .code-comment {
-  color: #8b949e;
+  color: var(--code-comment);
   font-style: italic;
 }
 
 .code-function {
-  color: #d2a8ff;
+  color: var(--code-function);
 }
 
 .code-number {
-  color: #79c0ff;
+  color: var(--code-number);
+}
+
+/* 4.3 — this file had zero prefers-reduced-motion coverage. The
+   transitions above were migrated onto --duration-* tokens, which
+   already collapse to 0ms under reduced motion (tokens.css §6) — no
+   guard needed for those. What's left below are `infinite`-looping (or
+   otherwise multi-second) `animation:` declarations whose cadence is
+   semantic to the effect itself (a 1.4s bounce, a 2s pulse) and doesn't
+   belong on the short UI-transition duration scale, so they need an
+   explicit cut here instead. */
+@media (prefers-reduced-motion: reduce) {
+  .step-spinner,
+  .pulse-ring,
+  .pulse-text,
+  .success-animation,
+  .checkmark-circle,
+  .checkmark-check,
+  .error-animation,
+  .error-icon,
+  .voting-bar.voted {
+    animation: none;
+  }
 }

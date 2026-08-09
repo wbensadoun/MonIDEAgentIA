@@ -5,16 +5,17 @@ import useWorkspaceSessionLayout, {
   migrateLegacyWidth,
   WORKSPACE_LAYOUT_VERSION
 } from './useWorkspaceSessionLayout';
+import { normalizeOpenTabs } from '../utils/tabs';
 
 const Harness = ({ projectPath = 'C:/project' }) => {
-  const [openFiles, setOpenFiles] = useState([]);
+  const [openTabs, setOpenTabs] = useState([]);
   const [activeFile, setActiveFile] = useState('');
   const [centerView, setCenterView] = useState('code');
   const layout = useWorkspaceSessionLayout({
     currentProjectPath: projectPath,
-    openFiles,
+    openTabs,
     activeFile,
-    setOpenFiles,
+    setOpenTabs,
     setActiveFile,
     centerView,
     setCenterView
@@ -31,6 +32,7 @@ const Harness = ({ projectPath = 'C:/project' }) => {
           isChatMaximized: layout.isChatMaximized
         })}
       </output>
+      <output data-testid="open-tabs">{JSON.stringify(openTabs)}</output>
       <button onClick={layout.toggleLeftPanel}>left</button>
       <button onClick={layout.toggleRightPanel}>right</button>
       <button onClick={layout.toggleFocusMode}>focus</button>
@@ -40,6 +42,7 @@ const Harness = ({ projectPath = 'C:/project' }) => {
 };
 
 const readState = () => JSON.parse(screen.getByTestId('layout-state').textContent);
+const readOpenTabs = () => JSON.parse(screen.getByTestId('open-tabs').textContent);
 
 beforeEach(() => {
   localStorage.clear();
@@ -110,6 +113,56 @@ test('loads legacy workspace widths and rewrites the session as versioned pixels
     expect(saved.layoutDensityVersion).toBe(WORKSPACE_LAYOUT_VERSION);
     expect(saved.leftWidth).toBe(240);
     expect(saved.rightWidth).toBe(360);
+  });
+});
+
+// plan-ia-onglets.md §③ vigilance point: sessions saved before this step
+// persisted openFiles as string[]. An existing user must recover valid
+// { type: 'file', path } tabs — no error, no loss.
+test('normalizeOpenTabs maps a legacy openFiles string[] to file tabs', () => {
+  expect(normalizeOpenTabs(['src/App.js', 'src/index.js'])).toEqual([
+    { type: 'file', path: 'src/App.js' },
+    { type: 'file', path: 'src/index.js' }
+  ]);
+});
+
+test('normalizeOpenTabs passes current-format Tab[] through and drops invalid/duplicate entries', () => {
+  expect(normalizeOpenTabs([
+    { type: 'file', path: 'src/App.js' },
+    { type: 'preview' },
+    { type: 'file', path: 'src/App.js' }, // duplicate identity (§2) — collapsed
+    { type: 'unknown' }, // unknown type — dropped
+    '', // blank legacy path — dropped
+    42 // garbage — dropped
+  ])).toEqual([
+    { type: 'file', path: 'src/App.js' },
+    { type: 'preview' }
+  ]);
+});
+
+test('a session persisted with the legacy openFiles: string[] format reloads as valid file tabs', async () => {
+  localStorage.setItem('vibeIDE_session:C:/project', JSON.stringify({
+    openFiles: ['src/App.js', 'src/index.js'],
+    activeFile: 'src/App.js',
+    centerView: 'code',
+    layoutDensityVersion: WORKSPACE_LAYOUT_VERSION
+  }));
+
+  render(<Harness />);
+
+  await waitFor(() => expect(readOpenTabs()).toEqual([
+    { type: 'file', path: 'src/App.js' },
+    { type: 'file', path: 'src/index.js' }
+  ]));
+
+  // The session is rewritten in the current Tab[] format going forward.
+  await waitFor(() => {
+    const saved = JSON.parse(localStorage.getItem('vibeIDE_session:C:/project'));
+    expect(saved.openTabs).toEqual([
+      { type: 'file', path: 'src/App.js' },
+      { type: 'file', path: 'src/index.js' }
+    ]);
+    expect(saved.openFiles).toBeUndefined();
   });
 });
 

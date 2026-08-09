@@ -52,6 +52,22 @@
   --danger-soft: rgba(245, 85, 95, 0.14);
   --info: #4cc3f0;
   --info-soft: rgba(76, 195, 240, 0.14);
+
+  /* Code / syntax highlighting (0.1) — derived entirely from the palette
+     above (--surface-2, --accent*, --text-*), no new literal colors.
+     Each resolved color is >=4.5:1 against --code-bg of this same theme;
+     ratios measured against the underlying hex values, logged in the
+     Lot 0 commit message. */
+  --code-bg: var(--surface-2);
+  --code-fg: var(--text-main);
+  --code-keyword: var(--accent-2);
+  --code-string: var(--success);
+  --code-comment: var(--text-dim);
+  --code-number: var(--warning);
+  --code-function: var(--accent);
+  --code-punctuation: color-mix(in srgb, var(--text-dim) 60%, var(--text-muted) 40%);
+  --code-line-number: color-mix(in srgb, var(--text-dim) 35%, var(--text-muted) 65%);
+
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
   --on-accent: #000000;
@@ -81,6 +97,22 @@
   --danger-soft: rgba(245, 85, 95, 0.14);
   --info: #4cc3f0;
   --info-soft: rgba(76, 195, 240, 0.14);
+
+  /* Code / syntax highlighting (0.1) — derived entirely from the palette
+     above (--surface-2, --accent*, --text-*), no new literal colors.
+     Each resolved color is >=4.5:1 against --code-bg of this same theme;
+     ratios measured against the underlying hex values, logged in the
+     Lot 0 commit message. */
+  --code-bg: var(--surface-2);
+  --code-fg: var(--text-main);
+  --code-keyword: var(--accent-2);
+  --code-string: var(--success);
+  --code-comment: var(--text-dim);
+  --code-number: var(--accent-3);
+  --code-function: var(--info);
+  --code-punctuation: color-mix(in srgb, var(--text-dim) 60%, var(--text-muted) 40%);
+  --code-line-number: color-mix(in srgb, var(--text-dim) 35%, var(--text-muted) 65%);
+
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --on-accent: #000000;
@@ -110,6 +142,22 @@
   --danger-soft: rgba(245, 85, 95, 0.14);
   --info: #4cc3f0;
   --info-soft: rgba(76, 195, 240, 0.14);
+
+  /* Code / syntax highlighting (0.1) — derived entirely from the palette
+     above (--surface-2, --accent*, --text-*), no new literal colors.
+     Each resolved color is >=4.5:1 against --code-bg of this same theme;
+     ratios measured against the underlying hex values, logged in the
+     Lot 0 commit message. */
+  --code-bg: var(--surface-2);
+  --code-fg: var(--text-main);
+  --code-keyword: var(--accent-2);
+  --code-string: var(--success);
+  --code-comment: var(--text-dim);
+  --code-number: var(--warning);
+  --code-function: var(--accent-3);
+  --code-punctuation: color-mix(in srgb, var(--text-dim) 60%, var(--text-muted) 40%);
+  --code-line-number: color-mix(in srgb, var(--text-dim) 35%, var(--text-muted) 65%);
+
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --on-accent: #000000;
@@ -138,6 +186,26 @@
   --danger-soft: rgba(199, 42, 53, 0.1);
   --info: #0369a1;
   --info-soft: rgba(3, 105, 161, 0.08);
+
+  /* Code / syntax highlighting (0.1) — light palette (GitHub Light-style),
+     NOT a lightened version of the dark themes' palette; derived entirely
+     from this theme's own tokens above, no new literal colors. Each
+     resolved color is >=4.5:1 against --code-bg of this same theme
+     (ratios measured against the underlying hex values, logged in the
+     Lot 0 commit). --success/--warning/--accent-2/--accent-3/--text-muted
+     don't clear 4.5:1 on this theme's --surface-2 on their own, so
+     --code-string is darkened toward --text-main via color-mix instead
+     of aliased directly to --success. */
+  --code-bg: var(--surface-2);
+  --code-fg: var(--text-main);
+  --code-keyword: var(--accent);
+  --code-string: color-mix(in srgb, var(--success) 80%, var(--text-main) 20%);
+  --code-comment: var(--text-dim);
+  --code-number: var(--danger);
+  --code-function: var(--info);
+  --code-punctuation: color-mix(in srgb, var(--text-dim) 40%, var(--text-main) 60%);
+  --code-line-number: color-mix(in srgb, var(--text-dim) 50%, var(--text-muted) 50%);
+
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --on-accent: #ffffff;
@@ -166,6 +234,22 @@
   --danger-soft: rgba(245, 85, 95, 0.14);
   --info: #4cc3f0;
   --info-soft: rgba(76, 195, 240, 0.14);
+
+  /* Code / syntax highlighting (0.1) — derived entirely from the palette
+     above (--surface-2, --accent*, --text-*), no new literal colors.
+     Each resolved color is >=4.5:1 against --code-bg of this same theme;
+     ratios measured against the underlying hex values, logged in the
+     Lot 0 commit message. */
+  --code-bg: var(--surface-2);
+  --code-fg: var(--text-main);
+  --code-keyword: var(--accent);
+  --code-string: var(--success);
+  --code-comment: var(--text-dim);
+  --code-number: var(--warning);
+  --code-function: var(--accent-2);
+  --code-punctuation: color-mix(in srgb, var(--text-dim) 60%, var(--text-muted) 40%);
+  --code-line-number: color-mix(in srgb, var(--text-dim) 35%, var(--text-muted) 65%);
+
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --on-accent: #000000;
@@ -180,6 +264,13 @@ body {
   --text-1: var(--text-dim);
   --text-2: var(--text-muted);
   --border-0: var(--border);
+
+  /* Border scale (0.2) — today every file that wants "a bit more subtle
+     than --border" invents its own rgba(255,255,255,0.08). These three
+     roles replace that: separator, interactive-element outline, focus. */
+  --border-subtle: color-mix(in srgb, var(--border) 55%, transparent);
+  --border-strong: var(--border);
+  --border-focus: var(--accent);
 
   /* Legacy variable aliases (tech debt: ~6 CSS files still reference these old names
      instead of the canonical tokens above; these aliases allow gradual migration
@@ -333,6 +424,12 @@ body {
   --ease-out: ease-out;
   --ease-in: ease-in;
   --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  /* 0.3 — entrance/exit curves for floating elements (popovers, toasts,
+     dropdowns). --ease-emphasized covers on-surface transitions but has
+     no equivalent for something entering/leaving the viewport. */
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1); /* entry: fast then settles */
+  --ease-accelerate: cubic-bezier(0.4, 0, 1, 1);  /* exit: leaves quickly    */
 
   --motion-safe: 1; /* flipped to 0 below when reduced motion is requested */
 }

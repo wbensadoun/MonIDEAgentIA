@@ -11,6 +11,11 @@
    owned by App.css, which `@import`s ./styles/tokens.css.
    ========================================================================= */
 
+/* Shared @keyframes (spin/pulse/fade-in-up/shimmer/blink) — canonical
+   definitions consuming CSS files migrate their own duplicates to.
+   See client/src/styles/motion.css and docs/plan-polish-ui-2026-08.md §0.5. */
+@import './styles/motion.css';
+
 *,
 *::before,
 *::after {

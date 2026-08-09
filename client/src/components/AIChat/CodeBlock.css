@@ -17,7 +17,10 @@
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  /* 2.4 — header/body separator uses the dedicated separator role
+     (Lot 0.2) instead of the generic --border used for the outer
+     contour. */
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .code-block__meta {
@@ -54,6 +57,10 @@
   font-weight: var(--font-weight-semibold);
 }
 
+/* 2.4 — action button revealed on hover, same motif as 1.4
+   (MessageViewer): opacity + transition (never `display`) so it stays
+   reachable by keyboard, and `:focus-within`/`:focus-visible` reveal it
+   without requiring a mouse. */
 .code-block__copy {
   flex: 0 0 auto;
   padding: var(--space-1) var(--space-3);
@@ -62,8 +69,16 @@
   color: var(--text-dim);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  opacity: 0;
   transition: color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
+    border-color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+
+.code-block:hover .code-block__copy,
+.code-block:focus-within .code-block__copy,
+.code-block__copy:focus-visible {
+  opacity: 1;
 }
 
 .code-block__copy:hover {

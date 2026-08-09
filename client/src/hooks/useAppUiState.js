@@ -26,14 +26,9 @@ const useAppUiState = ({
   const [workflowManagerOpen, setWorkflowManagerOpen] = useState(false);
   const [centerView, setCenterView] = useState('code');
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  // Which tool the bottom Panel shows — Terminal or Brain (plan-ia-onglets.md §④).
+  const [bottomPanelTab, setBottomPanelTab] = useState('terminal');
   const [runtimeDevPort, setRuntimeDevPort] = useState('');
-  const [viewMode, setViewMode] = useState(() => {
-    try {
-      return localStorage.getItem('futurIA_viewMode') || 'ide';
-    } catch {
-      return 'ide';
-    }
-  });
 
   useEffect(() => {
     try {
@@ -52,24 +47,28 @@ const useAppUiState = ({
     }
   }, [isExpertMode]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('code_companion_viewMode', viewMode);
-    } catch {
-      // ignore
-    }
-  }, [viewMode]);
+  // Paramètres : onglet singleton, plus une modale (plan-ia-onglets.md §④).
+  // L'ouvrir bascule aussi le centre dessus ; le fermer y renonce seulement
+  // s'il y était (sinon on couperait la vue d'un autre onglet).
+  const openSettings = useCallback(() => {
+    setSettingsOpen(true);
+    setCenterView('settings');
+  }, []);
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    setCenterView((prev) => (prev === 'settings' ? 'code' : prev));
+  }, []);
 
   useEffect(() => {
     if (!isElectronApiAvailable) return undefined;
     if (!window.electronAPI || typeof window.electronAPI.onMenuOpenSettings !== 'function') return undefined;
     const offMenuOpenSettings = window.electronAPI.onMenuOpenSettings(() => {
-      setSettingsOpen(true);
+      openSettings();
     });
     return () => {
       if (typeof offMenuOpenSettings === 'function') offMenuOpenSettings();
     };
-  }, [isElectronApiAvailable]);
+  }, [isElectronApiAvailable, openSettings]);
 
   useEffect(() => {
     setRuntimeDevPort('');
@@ -104,7 +103,6 @@ const useAppUiState = ({
   useEffect(() => { useUIStore.getState().setCenterView(centerView); }, [centerView]);
   useEffect(() => { useUIStore.getState().setSettingsOpen(settingsOpen); }, [settingsOpen]);
   useEffect(() => { useUIStore.getState().setIsTerminalOpen(isTerminalOpen); }, [isTerminalOpen]);
-  useEffect(() => { useUIStore.getState().setViewMode(viewMode); }, [viewMode]);
 
   return {
     theme,
@@ -114,8 +112,8 @@ const useAppUiState = ({
     previewStatus,
     settingsOpen,
     setSettingsOpen,
-    openSettings: () => setSettingsOpen(true),
-    closeSettings: () => setSettingsOpen(false),
+    openSettings,
+    closeSettings,
     workflowManagerOpen,
     setWorkflowManagerOpen,
     openWorkflowManager: () => setWorkflowManagerOpen(true),
@@ -125,10 +123,10 @@ const useAppUiState = ({
     isTerminalOpen,
     setIsTerminalOpen,
     toggleTerminal,
+    bottomPanelTab,
+    setBottomPanelTab,
     runtimeDevPort,
     setRuntimeDevPort,
-    viewMode,
-    setViewMode,
     previewUrl: `http://localhost:${previewPort}`,
     handleTogglePreview,
     handlePreviewRefresh

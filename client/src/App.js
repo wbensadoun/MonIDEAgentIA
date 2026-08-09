@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import './App.css';
 import ErrorBoundary from './components/ErrorBoundary';
 import FeatureErrorBoundary from './components/FeatureErrorBoundary';
-import Settings from './components/Settings';
 import useElectronAPI from './hooks/useElectronAPI';
 import useFileOperations from './hooks/useFileOperations';
 import useAI from './hooks/useAI';
@@ -18,11 +17,11 @@ import useAppUiState from './hooks/useAppUiState';
 import useRunConfiguration from './hooks/useRunConfiguration';
 import useExplorerItemActions from './hooks/useExplorerItemActions';
 import useWorkspaceSyncEffects from './hooks/useWorkspaceSyncEffects';
+import { createChatTab, isSameTab } from './utils/tabs';
 import WorkflowManager from './components/WorkflowManager';
 import AppTopbar from './components/AppShell/AppTopbar';
 import ActivityBar from './components/AppShell/ActivityBar';
 import WorkspaceLayout from './components/AppShell/WorkspaceLayout';
-import ChatLayout from './components/AppShell/ChatLayout';
 import AgentsLayout from './components/AppShell/AgentsLayout';
 import StatusBar from './components/AppShell/StatusBar';
 import OnboardingModal from './components/AppShell/OnboardingModal';
@@ -37,6 +36,7 @@ const AppContent = () => {
   // Which content the left sidebar shows in 'ide' viewMode — driven by the
   // ActivityBar rail (Explorer / Search / Source Control).
   const [activeSidebarSection, setActiveSidebarSection] = useState('explorer');
+  const [isAgentverseOpen, setIsAgentverseOpen] = useState(false);
 
   const { isAvailable: isElectronApiAvailable, message, showMessage } = useElectronAPI();
   const {
@@ -74,7 +74,6 @@ const AppContent = () => {
     toggleExpertMode,
     previewStatus,
     settingsOpen,
-    setSettingsOpen,
     openSettings,
     closeSettings,
     workflowManagerOpen,
@@ -86,9 +85,9 @@ const AppContent = () => {
     isTerminalOpen,
     setIsTerminalOpen,
     toggleTerminal,
+    bottomPanelTab,
+    setBottomPanelTab,
     setRuntimeDevPort,
-    viewMode,
-    setViewMode,
     previewUrl,
     handleTogglePreview,
     handlePreviewRefresh
@@ -103,8 +102,8 @@ const AppContent = () => {
     setActiveFile,
     code,
     setCode,
-    openFiles,
-    setOpenFiles,
+    openTabs,
+    setOpenTabs,
     dirtyFiles,
     revealRequest,
     aiDraftPreview,
@@ -131,6 +130,11 @@ const AppContent = () => {
     centerView,
     setCenterView
   });
+  // Quel onglet de chat est actif (plan-ia-onglets.md §⑤ 5.5.3) — au meme
+  // titre qu'activeFile pour les fichiers : plusieurs onglets de chat
+  // peuvent coexister, celui-ci dit lequel le bandeau met en surbrillance.
+  const [activeChatSessionId, setActiveChatSessionId] = useState(null);
+
   const {
     layoutRef,
     leftWidth,
@@ -155,12 +159,14 @@ const AppContent = () => {
     toggleFocusMode
   } = useWorkspaceSessionLayout({
     currentProjectPath,
-    openFiles,
+    openTabs,
     activeFile,
-    setOpenFiles,
+    setOpenTabs,
     setActiveFile,
     centerView,
-    setCenterView
+    setCenterView,
+    activeChatSessionId,
+    setActiveChatSessionId
   });
   const {
     availableAgents,
@@ -265,6 +271,12 @@ const AppContent = () => {
     pendingSnapshotId,
     contextEstimate,
     multiAIState,
+    sessions,
+    activeSessionId,
+    switchSession,
+    renameSession,
+    duplicateSession,
+    deleteSession,
     conversations,
     activeConversationFile,
     isConversationLoading,
@@ -303,13 +315,81 @@ const AppContent = () => {
     routerComplexityThreshold
   );
 
+  // ---- Sessions de chat -> onglets (plan-ia-onglets.md §⑤ 5.5.3) ----------
+  // Les onglets de chat sont des Tab[] { type:'chat', sessionId } comme les
+  // autres (§9 : un seul systeme d'onglets, pas un second pour le chat).
+  // Regle d'identite : ouvrir une session deja presente en onglet bascule
+  // dessus au lieu d'en creer un second (isSameTab compare sessionId).
+  const openChatTab = React.useCallback((sessionId) => {
+    if (!sessionId) return;
+    const tab = createChatTab(sessionId);
+    setOpenTabs((prev) => (prev.some((t) => isSameTab(t, tab)) ? prev : [...prev, tab]));
+    setActiveChatSessionId(sessionId);
+    setCenterView('chat');
+  }, [setOpenTabs, setCenterView]);
+
+  // Fermer un onglet (le x) NE SUPPRIME JAMAIS la session : elle reste dans
+  // `sessions`/l'historique, rouvrable a tout moment. Seule requestDeleteSession
+  // (menu contextuel + confirmation) efface une session pour de bon.
+  const closeChatTab = React.useCallback((sessionId) => {
+    setOpenTabs((prev) => {
+      const idx = prev.findIndex((tab) => tab.type === 'chat' && tab.sessionId === sessionId);
+      if (idx === -1) return prev;
+      const next = prev.filter((_, i) => i !== idx);
+      if (sessionId === activeChatSessionId) {
+        const neighbor = next[idx - 1] || next[idx];
+        if (neighbor?.type === 'chat') {
+          setActiveChatSessionId(neighbor.sessionId);
+        } else {
+          setActiveChatSessionId(null);
+          setCenterView((prevView) => (prevView === 'chat' ? 'code' : prevView));
+        }
+      }
+      return next;
+    });
+  }, [activeChatSessionId, setOpenTabs, setCenterView]);
+
+  // Basculer le panneau droit vers une session (clic sur une ligne de
+  // l'historique, ou bouton "reprendre ici" depuis un onglet). Le panneau ne
+  // suit JAMAIS l'ouverture d'un onglet (5.5.3) : ceci est toujours une
+  // action explicite distincte de openChatTab.
+  const switchPanelToSession = React.useCallback((sessionId) => {
+    switchSession(sessionId);
+  }, [switchSession]);
+
+  const requestRenameSession = React.useCallback((sessionId) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session) return;
+    const nextTitle = window.prompt('Renommer la conversation', session.title);
+    if (nextTitle === null) return; // annule
+    renameSession(sessionId, nextTitle);
+  }, [sessions, renameSession]);
+
+  const requestDuplicateSession = React.useCallback((sessionId) => {
+    duplicateSession(sessionId);
+  }, [duplicateSession]);
+
+  // Supprimer une session : confirmation explicite obligatoire (5.5.3 —
+  // "aucune session n'est perdue sans action explicite"). Si elle est
+  // ouverte en onglet, ferme aussi cet onglet apres confirmation.
+  const requestDeleteSession = React.useCallback((sessionId) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    const label = session?.title || 'cette conversation';
+    if (!window.confirm(`Supprimer definitivement "${label}" ? Cette action est irreversible.`)) {
+      return;
+    }
+    const wasOpenInTab = openTabs.some((t) => t.type === 'chat' && t.sessionId === sessionId);
+    if (wasOpenInTab) closeChatTab(sessionId);
+    deleteSession(sessionId);
+  }, [sessions, openTabs, closeChatTab, deleteSession]);
+
   // ---- Mise en page vue Chat : sidebar gauche (projets) + panneau agents
   // droit. Raisonne en simple visible/masque (les largeurs de la vue IDE sont
   // gerees en pixels par useWorkspaceSessionLayout), donc un etat
   // local ici plutot que dans ce hook partage — remonte au niveau racine
   // (et non laisse local a ChatLayout) pour que la topbar puisse piloter
   // les memes toggles que la vue IDE (isLeftCollapsed/isRightCollapsed).
-  const [isChatSidebarCollapsed, setIsChatSidebarCollapsed] = useState(() => {
+  const [isChatSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem('code_companion_chatSidebarCollapsed') === 'true';
     } catch {
@@ -323,9 +403,7 @@ const AppContent = () => {
       // ignore
     }
   }, [isChatSidebarCollapsed]);
-  const toggleChatSidebar = React.useCallback(() => {
-    setIsChatSidebarCollapsed((prev) => !prev);
-  }, []);
+  // Legacy: toggleChatSidebar no longer used after removing chat-specific viewMode
 
   const [isSwarmPanelOpen, setIsSwarmPanelOpen] = useState(() => {
     try {
@@ -409,7 +487,9 @@ const AppContent = () => {
   useWorkspaceSyncEffects({
     activeAgentRunId,
     agentRunRefreshKey,
-    setCenterView,
+    setActiveSidebarSection,
+    isLeftCollapsed,
+    toggleLeftPanel,
     isDiffMode,
     gitDiffPreview,
     clearGitDiffPreview,
@@ -425,9 +505,11 @@ const AppContent = () => {
     currentProjectPath,
     isElectronApiAvailable,
     showMessage,
-    openFiles,
+    openTabs,
     openFile,
     setCenterView,
+    setActiveSidebarSection,
+    setBottomPanelTab,
     handleOpenFolder,
     isLeftCollapsed,
     isRightCollapsed,
@@ -440,17 +522,25 @@ const AppContent = () => {
     previewStatus,
     handleTogglePreview,
     setWorkflowManagerOpen,
-    setSettingsOpen,
+    openSettings,
+    closeSettings,
+    isSettingsOpen: settingsOpen,
+    activeFile,
+    centerView,
+    closeFileTab,
     startNewConversation,
     saveConversation,
     deepContextEnabled,
-    setDeepContextEnabled
+    setDeepContextEnabled,
+    activeChatSessionId,
+    onActivateChatTab: (sessionId) => { setActiveChatSessionId(sessionId); setCenterView('chat'); },
+    onCloseChatTab: closeChatTab
   });
   const displayedPreviousCode = gitDiffPreview?.originalCode ?? previousCode;
   const activeDiffSource = gitDiffPreview ? 'git' : (isDiffMode ? 'ai' : null);
   const isEditorDiffMode = Boolean(gitDiffPreview) || isDiffMode;
   const editorProps = {
-    openFiles,
+    openTabs,
     dirtyFiles,
     activeFile: displayedActiveFile,
     code: displayedCode,
@@ -498,6 +588,17 @@ const AppContent = () => {
     onOpenProject: handleOpenFolder,
     onRemoveProject: handleRemoveProject,
     onNewConversation: startNewConversation
+  };
+  // Contenu des onglets de chat dans le bandeau central (plan-ia-onglets.md
+  // §⑤ 5.5.3). activePanelSessionId sert a afficher "session active du
+  // panneau" au lieu du bouton "reprendre ici" quand c'est deja le cas.
+  const chatTabsProps = {
+    sessions,
+    activeChatSessionId,
+    activePanelSessionId: activeSessionId,
+    onActivateChatTab: (sessionId) => { setActiveChatSessionId(sessionId); setCenterView('chat'); },
+    onCloseChatTab: closeChatTab,
+    onSwitchPanelToSession: switchPanelToSession
   };
   const gitPanelProps = {
     currentProjectPath,
@@ -568,6 +669,13 @@ const AppContent = () => {
     onDeepContextEnabledChange: setDeepContextEnabled,
     onPasteImage: addImageMessage,
     multiAIState,
+    sessions,
+    activeSessionId,
+    onSwitchSession: switchPanelToSession,
+    onOpenSessionTab: openChatTab,
+    onRenameSession: requestRenameSession,
+    onDuplicateSession: requestDuplicateSession,
+    onDeleteSession: requestDeleteSession,
     conversations,
     activeConversationFile,
     isConversationLoading,
@@ -609,11 +717,28 @@ const AppContent = () => {
     availableActiveModels,
     onActiveModelChange: handleActiveModelChange,
     isExpertMode,
-    onOpenAgentManager: () => setViewMode('agents')
+    onOpenAgentManager: () => setIsAgentverseOpen(true)
+  };
+
+  // Paramètres : contenu d'onglet singleton, hébergé par WorkspaceLayout
+  // (plan-ia-onglets.md §④) — plus une modale rendue à part.
+  const settingsProps = {
+    isElectronApiAvailable,
+    showMessage,
+    theme,
+    onThemeChange: setTheme,
+    autoRoute,
+    onAutoRouteChange: setAutoRoute,
+    routerClassifierProvider,
+    onRouterClassifierProviderChange: setRouterClassifierProvider,
+    routerClassifierModel,
+    onRouterClassifierModelChange: setRouterClassifierModel,
+    routerComplexityThreshold,
+    onRouterComplexityThresholdChange: setRouterComplexityThreshold
   };
 
   return (
-    <div className={`app-shell${viewMode === 'agents' ? ' app-shell--agents' : ''}`}>
+    <div className={`app-shell${isAgentverseOpen ? ' app-shell--agents' : ''}`}>
       {message && (
         <div className="toast">
           <span className="toast-dot"></span>
@@ -661,8 +786,6 @@ const AppContent = () => {
           isRightCollapsed={isRightCollapsed}
           isChatMaximized={isChatMaximized}
           onToggleChatMaximize={toggleChatMaximize}
-          onToggleChatSidebar={toggleChatSidebar}
-          isChatSidebarCollapsed={isChatSidebarCollapsed}
           onToggleSwarmPanel={toggleSwarmPanel}
           isSwarmPanelOpen={isSwarmPanelOpen}
           onOpenWorkflowManager={openWorkflowManager}
@@ -671,23 +794,25 @@ const AppContent = () => {
           onThemeChange={setTheme}
           isTerminalOpen={isTerminalOpen}
           onToggleTerminal={toggleTerminal}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
         />
       </FeatureErrorBoundary>
 
       <div className="app-body">
         <ActivityBar
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
           activeSidebarSection={activeSidebarSection}
           onSidebarSectionChange={setActiveSidebarSection}
           isLeftCollapsed={isLeftCollapsed}
           onExpandLeftPanel={() => { if (isLeftCollapsed) toggleLeftPanel(); }}
           onOpenSettings={openSettings}
+          isAgentverseOpen={isAgentverseOpen}
+          onAgentverseToggle={setIsAgentverseOpen}
+          isRightCollapsed={isRightCollapsed}
+          onToggleRightPanel={toggleRightPanel}
+          centerView={centerView}
+          onOpenWorkflows={() => setCenterView('workflows')}
         />
         <FeatureErrorBoundary feature="workspace">
-        {viewMode === 'ide' && (
+        {!isAgentverseOpen && (
           <WorkspaceLayout
             layoutRef={layoutRef}
             leftWidth={leftWidth}
@@ -733,27 +858,25 @@ const AppContent = () => {
             brainGraphProps={brainGraphPanelProps}
             workflowProps={workflowPanelProps}
             aiChatProps={aiChatProps}
+            chatTabsProps={chatTabsProps}
             workspacePanelProps={workspacePanelProps}
             isTerminalOpen={isTerminalOpen}
             onToggleTerminal={toggleTerminal}
+            bottomPanelTab={bottomPanelTab}
+            onBottomPanelTabChange={setBottomPanelTab}
             activeSidebarSection={activeSidebarSection}
+            settingsProps={settingsProps}
+            isSettingsOpen={settingsOpen}
+            onCloseSettings={closeSettings}
           />
         )}
-        {viewMode === 'chat' && (
-          <ChatLayout
-            workspacePanelProps={workspacePanelProps}
-            aiChatProps={aiChatProps}
-            isSidebarCollapsed={isChatSidebarCollapsed}
-            isSwarmOpen={isSwarmPanelOpen}
-            onToggleSwarmPanel={toggleSwarmPanel}
-          />
-        )}
-        {viewMode === 'agents' && (
+        {isAgentverseOpen && (
           <AgentsLayout
             workspacePanelProps={workspacePanelProps}
             onViewChanges={() => {
-              setCenterView('ai-changes');
-              setViewMode('ide');
+              setActiveSidebarSection('ai-changes');
+              if (isLeftCollapsed) toggleLeftPanel();
+              setIsAgentverseOpen(false);
             }}
             projectItems={projectItems}
             currentProjectPath={currentProjectPath}
@@ -777,7 +900,6 @@ const AppContent = () => {
 
       <FeatureErrorBoundary feature="statusbar">
       <StatusBar
-        viewMode={viewMode}
         centerView={centerView}
         previewStatus={previewStatus}
         isStreamingCodePreview={isStreamingCodePreview}
@@ -804,27 +926,6 @@ const AppContent = () => {
               dismissOnboarding();
             }}
             onComplete={completeOnboarding}
-          />
-        </FeatureErrorBoundary>
-      )}
-
-      {settingsOpen && (
-        <FeatureErrorBoundary feature="settings">
-          <Settings
-            isOpen={settingsOpen}
-            onClose={closeSettings}
-            isElectronApiAvailable={isElectronApiAvailable}
-            showMessage={showMessage}
-            theme={theme}
-            onThemeChange={setTheme}
-            autoRoute={autoRoute}
-            onAutoRouteChange={setAutoRoute}
-            routerClassifierProvider={routerClassifierProvider}
-            onRouterClassifierProviderChange={setRouterClassifierProvider}
-            routerClassifierModel={routerClassifierModel}
-            onRouterClassifierModelChange={setRouterClassifierModel}
-            routerComplexityThreshold={routerComplexityThreshold}
-            onRouterComplexityThresholdChange={setRouterComplexityThreshold}
           />
         </FeatureErrorBoundary>
       )}

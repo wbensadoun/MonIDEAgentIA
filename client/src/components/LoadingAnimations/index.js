@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './LoadingAnimations.css';
 import './AgentProcess.css';
+import {
+  IconDiamond, IconMoon, IconCpu, IconBot, IconDot, IconBrain, IconCheck, IconFile, IconLightning
+} from '../ComponentLibrary/icons';
 
 // ─────────────────────────────────────────────────────────
 // LoadingSteps (unchanged)
@@ -73,11 +76,11 @@ export const LoadingPulse = ({ text, variant = 'default' }) => {
 // Provider metadata
 // ─────────────────────────────────────────────────────────
 const PROVIDER_META = {
-  gemini:       { icon: '🔷', label: 'Gemini',        color: '#4285f4' },
-  kimi:         { icon: '🌙', label: 'Kimi K2.5',     color: '#a78bfa' },
-  ollama:       { icon: '🦙', label: 'Ollama',         color: '#f59e0b' },
-  multi:        { icon: '🤖', label: 'Multi-IA',       color: '#00f5d4' },
-  claude:       { icon: '🟠', label: 'Claude',         color: '#fb923c' },
+  gemini:       { Icon: IconDiamond, label: 'Gemini',        color: '#4285f4' },
+  kimi:         { Icon: IconMoon,    label: 'Kimi K2.5',     color: '#a78bfa' },
+  ollama:       { Icon: IconCpu,     label: 'Ollama',         color: '#f59e0b' },
+  multi:        { Icon: IconBot,     label: 'Multi-IA',       color: '#00f5d4' },
+  claude:       { Icon: IconDot,     label: 'Claude',         color: '#fb923c' },
 };
 
 // Rolling phrases that rotate while the AI thinks
@@ -143,7 +146,7 @@ export const AIWorkingIndicator = ({
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  const meta = PROVIDER_META[provider] || { icon: '🤖', label: provider, color: '#00f5d4' };
+  const meta = PROVIDER_META[provider] || { Icon: IconBot, label: provider, color: '#00f5d4' };
 
   const formatTime = (s) => {
     if (s < 60) return `${s}s`;
@@ -159,7 +162,7 @@ export const AIWorkingIndicator = ({
       <div className="ap-topbar">
         <div className="ap-topbar-left">
           <div className="ap-brain-wrap">
-            <span className="ap-brain">🧠</span>
+            <span className="ap-brain"><IconBrain size={16} /></span>
             <span className="ap-brain-ring" />
           </div>
           <div className="ap-info">
@@ -171,7 +174,7 @@ export const AIWorkingIndicator = ({
             </div>
             <div className="ap-meta-row">
               <span className="ap-provider-chip" style={{ '--provider-color': meta.color }}>
-                {meta.icon} {meta.label}
+                <meta.Icon size={11} /> {meta.label}
               </span>
               <span className="ap-timer">{formatTime(elapsed)}</span>
               {tokenCount > 0 && (
@@ -326,11 +329,11 @@ export const LiveFilesPanel = ({ files = [], commands = [] }) => {
     <div className="apf-panel">
       {hasFiles && (
         <div className="apf-group">
-          <div className="apf-group-title">📝 Fichiers</div>
+          <div className="apf-group-title"><IconFile size={11} /> Fichiers</div>
           {files.map((f, i) => (
             <div key={`${f.path}-${i}`} className={`apf-row ${f.status === 'writing' ? 'is-writing' : 'is-done'}`}>
               <span className="apf-icon">
-                {f.status === 'writing' ? <span className="apf-spinner" /> : '✓'}
+                {f.status === 'writing' ? <span className="apf-spinner" /> : <IconCheck size={10} />}
               </span>
               <span className="apf-path" title={f.path}>{f.path}</span>
               <span className="apf-status">{f.status === 'writing' ? 'écriture…' : 'écrit'}</span>
@@ -340,11 +343,11 @@ export const LiveFilesPanel = ({ files = [], commands = [] }) => {
       )}
       {hasCommands && (
         <div className="apf-group">
-          <div className="apf-group-title">⚡ Commandes</div>
+          <div className="apf-group-title"><IconLightning size={11} /> Commandes</div>
           {commands.map((c, i) => (
             <div key={`cmd-${i}`} className={`apf-row ${c.type === 'done' ? 'is-done' : 'is-writing'}`}>
               <span className="apf-icon">
-                {c.type === 'done' ? '✓' : <span className="apf-spinner" />}
+                {c.type === 'done' ? <IconCheck size={10} /> : <span className="apf-spinner" />}
               </span>
               <span className="apf-path apf-cmd" title={c.command}>{c.command}</span>
               {c.iteration ? <span className="apf-status">#{c.iteration}</span> : null}

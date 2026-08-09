@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './McpSettings.css';
+import {
+  IconPlug, IconDownload, IconX, IconSearch, IconKey, IconCheck,
+  IconCloud, IconWrench, IconDot
+} from '../ComponentLibrary/icons';
 
 const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
   const [servers, setServers] = useState([]);
@@ -49,13 +53,13 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
     try {
       const res = await window.electronAPI.mcpConnect(serverId);
       if (res?.success) {
-        showMessage(`✅ ${serverId} connecté`, 2000);
+        showMessage(`${serverId} connecté`, 2000);
       } else {
-        showMessage(`❌ Erreur: ${res?.error}`, 4000);
+        showMessage(`Erreur: ${res?.error}`, 4000);
       }
       await refreshServers();
     } catch (err) {
-      showMessage(`❌ ${err.message}`, 4000);
+      showMessage(`Erreur: ${err.message}`, 4000);
     } finally {
       setIsLoading(prev => ({ ...prev, [serverId]: false }));
     }
@@ -101,13 +105,13 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
 
       const res = await window.electronAPI.mcpQuickAdd(catalogId, envOverrides);
       if (res?.success) {
-        showMessage(`✅ ${entry?.name || catalogId} ajouté et connecté!`, 3000);
+        showMessage(`${entry?.name || catalogId} ajouté et connecté!`, 3000);
       } else {
-        showMessage(`❌ ${res?.error}`, 4000);
+        showMessage(`Erreur: ${res?.error}`, 4000);
       }
       await refreshServers();
     } catch (err) {
-      showMessage(`❌ ${err.message}`, 4000);
+      showMessage(`Erreur: ${err.message}`, 4000);
     } finally {
       setIsLoading(prev => ({ ...prev, [`catalog-${catalogId}`]: false }));
     }
@@ -123,10 +127,10 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
       if (res?.success) {
         setRegistryResults(res.servers || []);
       } else {
-        showMessage(`❌ ${res?.error}`, 3000);
+        showMessage(`Erreur: ${res?.error}`, 3000);
       }
     } catch (err) {
-      showMessage(`❌ ${err.message}`, 3000);
+      showMessage(`Erreur: ${err.message}`, 3000);
     } finally {
       setRegistryLoading(false);
     }
@@ -157,14 +161,14 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
 
       const res = await window.electronAPI.mcpRegistryImport(registryServer, envValues);
       if (res?.success) {
-        showMessage(`✅ "${registryServer.title}" importé et sauvegardé!`, 3000);
+        showMessage(`"${registryServer.title}" importé et sauvegardé!`, 3000);
         setShowRegistry(false);
         await refreshServers();
       } else {
-        showMessage(`❌ ${res?.error}`, 4000);
+        showMessage(`Erreur: ${res?.error}`, 4000);
       }
     } catch (err) {
-      showMessage(`❌ ${err.message}`, 4000);
+      showMessage(`Erreur: ${err.message}`, 4000);
     } finally {
       setIsLoading(prev => ({ ...prev, [loadKey]: false }));
     }
@@ -223,14 +227,15 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
     }
   };
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'connected': return '🟢';
-      case 'connecting': return '🟡';
-      case 'error': return '🔴';
-      default: return '⚪';
-    }
+  const STATUS_COLORS = {
+    connected: 'var(--success)',
+    connecting: 'var(--warning)',
+    error: 'var(--danger)',
   };
+
+  const getStatusIcon = (status) => (
+    <IconDot size={10} style={{ color: STATUS_COLORS[status] || 'var(--text-muted)' }} />
+  );
 
   const connectedIds = new Set(servers.filter(s => s.status === 'connected').map(s => s.id));
   const configuredIds = new Set(servers.map(s => s.id));
@@ -240,12 +245,12 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
     <div className="mcp-settings">
       <div className="mcp-header">
         <div className="mcp-header-title">
-          <span className="mcp-icon">🔌</span>
+          <span className="mcp-icon"><IconPlug size={18} /></span>
           <span>Intégrations MCP</span>
         </div>
         <div className="mcp-header-actions">
           <button className="mcp-btn mcp-btn-import" onClick={openRegistry}>
-            📥 Importer depuis le registre
+            <IconDownload size={12} /> Importer depuis le registre
           </button>
           <div className="mcp-header-stats">
             <span className="mcp-stat">{servers.length} serveurs</span>
@@ -259,11 +264,11 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
         <div className="mcp-registry-modal">
           <div className="mcp-registry-header">
             <div className="mcp-registry-title">
-              <span>📥</span>
+              <span><IconDownload size={14} /></span>
               <span>Registre MCP Officiel</span>
               <span className="mcp-registry-badge-official">registry.modelcontextprotocol.io</span>
             </div>
-            <button className="mcp-btn mcp-btn-ghost" onClick={() => setShowRegistry(false)}>✕</button>
+            <button className="mcp-btn mcp-btn-ghost" onClick={() => setShowRegistry(false)}><IconX size={12} /></button>
           </div>
 
           <div className="mcp-registry-search">
@@ -282,7 +287,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
               onClick={() => searchRegistry(registrySearch)}
               disabled={registryLoading}
             >
-              {registryLoading ? '...' : '🔍 Rechercher'}
+              {registryLoading ? '...' : <><IconSearch size={12} /> Rechercher</>}
             </button>
           </div>
 
@@ -311,24 +316,24 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
                     <div className="mcp-registry-item-desc">{srv.description}</div>
                     {srv.envVars?.length > 0 && (
                       <div className="mcp-registry-item-env">
-                        🔑 {srv.envVars.map(v => v.name).join(', ')}
+                        <IconKey size={11} /> {srv.envVars.map(v => v.name).join(', ')}
                       </div>
                     )}
                   </div>
                   <div className="mcp-registry-item-actions">
                     {alreadyAdded ? (
-                      <span className="mcp-registry-item-added">✓ Ajouté</span>
+                      <span className="mcp-registry-item-added"><IconCheck size={11} /> Ajouté</span>
                     ) : srv.hasPackage ? (
                       <button
                         className="mcp-btn mcp-btn-import-sm"
                         onClick={() => handleRegistryImport(srv)}
                         disabled={isLoading[loadKey]}
                       >
-                        {isLoading[loadKey] ? '...' : '📥 Importer'}
+                        {isLoading[loadKey] ? '...' : <><IconDownload size={12} /> Importer</>}
                       </button>
                     ) : (
                       <span className="mcp-registry-item-remote" title="Serveur distant (pas de package local)">
-                        ☁️ Remote
+                        <IconCloud size={12} /> Remote
                       </span>
                     )}
                   </div>
@@ -377,7 +382,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
                   onClick={() => handleRemove(server.id)}
                   title="Supprimer"
                 >
-                  ✕
+                  <IconX size={11} />
                 </button>
               </div>
             </div>
@@ -387,7 +392,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
 
       {servers.length === 0 && !showRegistry && (
         <div className="mcp-empty">
-          <span className="mcp-empty-icon">🔌</span>
+          <span className="mcp-empty-icon"><IconPlug size={28} /></span>
           <span>Aucun serveur MCP configuré</span>
           <span className="mcp-empty-hint">Importez depuis le registre ou ajoutez depuis le catalogue</span>
         </div>
@@ -396,7 +401,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
       {/* Outils connectés */}
       {totalTools > 0 && (
         <div className="mcp-tools-summary">
-          <div className="mcp-tools-title">🔧 {totalTools} outils disponibles pour l&apos;IA</div>
+          <div className="mcp-tools-title"><IconWrench size={12} /> {totalTools} outils disponibles pour l&apos;IA</div>
           <div className="mcp-tools-list">
             {servers.filter(s => s.status === 'connected').map(s =>
               (s.tools || []).map(tool => (
@@ -426,7 +431,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
               >
                 <span className="mcp-catalog-icon">{entry.icon}</span>
                 <span className="mcp-catalog-name">{entry.name}</span>
-                {isConnected && <span className="mcp-catalog-badge">✓</span>}
+                {isConnected && <span className="mcp-catalog-badge"><IconCheck size={9} /></span>}
                 {isLoading[`catalog-${entry.id}`] && <span className="mcp-catalog-badge">...</span>}
               </button>
             );
@@ -440,7 +445,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
           className="mcp-btn mcp-btn-add"
           onClick={() => setShowAddForm(!showAddForm)}
         >
-          {showAddForm ? '✕ Fermer' : '+ Ajouter un serveur custom'}
+          {showAddForm ? <><IconX size={11} /> Fermer</> : '+ Ajouter un serveur custom'}
         </button>
 
         {showAddForm && (
