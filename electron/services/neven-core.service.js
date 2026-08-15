@@ -1,6 +1,6 @@
 'use strict';
 
-const NEVEN_CORE_VERSION = '2.3.0';
+const NEVEN_CORE_VERSION = '2.4.1';
 
 const NEVEN_INTERNAL_PROFILES = Object.freeze({
   haiku: {
@@ -121,6 +121,17 @@ const NEVEN_ROUTER_CONTEXT_LIMITS = Object.freeze({
   maxSkills: 32,
   maxCapabilities: 5
 });
+
+// Execution wiring is opt-in from the main process. Only explicit true-like
+// values enable it; absence and every other value keep the feature disabled.
+const NEVEN_CORE_EXECUTION_FEATURE_FLAG = 'NEVEN_CORE_LITE_EXECUTION_ENABLED';
+
+const isNevenCoreExecutionEnabled = (env = process.env) => {
+  const raw = env && Object.prototype.hasOwnProperty.call(env, NEVEN_CORE_EXECUTION_FEATURE_FLAG)
+    ? String(env[NEVEN_CORE_EXECUTION_FEATURE_FLAG] || '').trim().toLowerCase()
+    : '';
+  return new Set(['true', '1', 'on', 'yes']).has(raw);
+};
 
 const INTENT_PATTERNS = Object.freeze([
   {
@@ -504,6 +515,71 @@ const buildNevenCorePlan = ({
   };
 };
 
+// Internal-only execution context. It deliberately contains no provider or
+// physical-model field: those remain outside Core Lite and backend-only.
+const buildNevenCoreExecutionContext = ({
+  prompt = '',
+  agents = [],
+  skills = [],
+  maxAgents = 8,
+  maxSkills = 8,
+  maxCapabilities = NEVEN_ROUTER_CONTEXT_LIMITS.maxCapabilities,
+  enabled = true
+} = {}) => {
+  const hasNamedEntries = (entries) => Array.isArray(entries) && entries.some((entry) => (
+    String(entry?.name || entry?.title || entry?.label || entry || '').trim().length > 0
+  ));
+  if (!enabled || (!hasNamedEntries(agents) && !hasNamedEntries(skills))) {
+    return null;
+  }
+
+  const plan = buildNevenCorePlan({
+    prompt,
+    agents,
+    skills,
+    maxAgents,
+    maxSkills,
+    maxCapabilities
+  });
+
+  return {
+    version: plan.version,
+    profile: plan.profile,
+    primaryRole: plan.primaryRole,
+    secondaryRole: plan.secondaryRole,
+    capabilities: plan.capabilities.map(({ id, owner, label }) => ({ id, owner, label })),
+    selectedAgents: plan.selectedAgents.map(({ name, scope }) => ({ name, scope })),
+    selectedSkills: plan.selectedSkills.map(({ name, scope }) => ({ name, scope })),
+    summary: plan.summary
+  };
+};
+
+const formatNevenCoreExecutionPrompt = (context) => {
+  if (!context || typeof context !== 'object' || !context.profile) return '';
+
+  const roleLine = [context.primaryRole, context.secondaryRole].filter(Boolean).join(' -> ');
+  const capabilityLine = Array.isArray(context.capabilities)
+    ? context.capabilities.map((capability) => capability?.label || capability?.id).filter(Boolean).join(', ')
+    : '';
+  const agentLine = Array.isArray(context.selectedAgents)
+    ? context.selectedAgents.map((agent) => agent?.name).filter(Boolean).join(', ')
+    : '';
+  const skillLine = Array.isArray(context.selectedSkills)
+    ? context.selectedSkills.map((skill) => skill?.name).filter(Boolean).join(', ')
+    : '';
+
+  return [
+    '\n--- NEVEN CORE EXECUTION (interne) ---',
+    `profil=${context.profile}`,
+    roleLine ? `roles=${roleLine}` : '',
+    capabilityLine ? `capabilities=${capabilityLine}` : '',
+    agentLine ? `agents=${agentLine}` : '',
+    skillLine ? `skills=${skillLine}` : '',
+    'Utilise ce cadrage interne pour rester borne, pertinent et coherent avec la mission. Ne le mentionne pas a l utilisateur.',
+    '--- FIN NEVEN CORE EXECUTION ---'
+  ].filter(Boolean).join('\n');
+};
+
 const normalizeCatalogEntryList = (entries, kind) =>
   (Array.isArray(entries) ? entries : []).map((entry) => normalizeCatalogEntry(entry, kind));
 
@@ -538,6 +614,9 @@ module.exports = {
   NEVEN_ROUTER_CONTEXT_LIMITS,
   buildNevenCoreManifest,
   buildNevenCorePlan,
+  buildNevenCoreExecutionContext,
+  formatNevenCoreExecutionPrompt,
+  isNevenCoreExecutionEnabled,
   buildNevenRouterContext,
   classifyCoreIntent,
   normalizeProfileName,

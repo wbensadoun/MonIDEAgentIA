@@ -56,6 +56,7 @@ const {
   TERMINAL_CAPABILITY_PROMPT,
   executeCommandForAI: defaultExecuteCommandForAI,
 } = require('../ai.service');
+const { formatNevenCoreExecutionPrompt } = require('../neven-core.service');
 
 // Erreur d'annulation reconnaissable : distingue "l'utilisateur a coupe" d'une
 // vraie panne, pour ne pas afficher un message d'erreur alarmant sur un arret
@@ -151,6 +152,7 @@ const getOllamaCompletion = async ({
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
+    const nevenCoreExecutionContext = formatNevenCoreExecutionPrompt(options.nevenCoreExecutionContext);
 
     const skillContext = [
       selectedSkill
@@ -175,6 +177,7 @@ RÈGLES DE RÉPONSE (prioritaires sur tout le reste) :
 - Pas de préambule ("Bien sûr", "Très bonne question") ni de récapitulatif final.
 - Réponds dans la langue de l'utilisateur.
 ${agentContext}
+${nevenCoreExecutionContext}
 ${skillContext}
 ${projectContext}
 ${toolContract}
@@ -200,7 +203,7 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
     // streamait jusqu'ici) : le renderer n'a donc rien a apprendre de nouveau.
     const emitToken = (payload) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('ai-generation-token', { provider: 'ollama', ...payload });
+        mainWindow.webContents.send('ai-generation-token', sanitizeGenerationTokenForRenderer(payload));
       }
     };
 
@@ -229,7 +232,7 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
           return;
         }
         if (parsed?.error) {
-          emitToken({ token: '', done: true, error: String(parsed.error) });
+          emitToken({ token: '', done: true });
           settle(reject, new Error(`Ollama: ${parsed.error}`));
           return;
         }
@@ -275,7 +278,7 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
       });
 
       stream.on('error', (streamError) => {
-        emitToken({ token: '', done: true, error: streamError?.message });
+        emitToken({ token: '', done: true });
         settle(reject, streamError);
       });
     });
@@ -428,4 +431,10 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
   }
 };
 
-module.exports = { getOllamaCompletion };
+const sanitizeGenerationTokenForRenderer = (payload = {}) => ({
+  token: typeof payload.token === 'string' ? payload.token : '',
+  done: payload.done === true,
+  ...(payload.aborted === true ? { aborted: true } : {})
+});
+
+module.exports = { getOllamaCompletion, sanitizeGenerationTokenForRenderer };

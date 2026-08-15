@@ -23,6 +23,7 @@ const {
   FILE_EDIT_PROTOCOL,
   executeCommandForAI: defaultExecuteCommandForAI,
 } = require('../ai.service');
+const { formatNevenCoreExecutionPrompt } = require('../neven-core.service');
 
 const listGeminiModels = async (apiKey) => {
   const key = apiKey || process.env.GEMINI_API_KEY;
@@ -212,6 +213,7 @@ const getGeminiCompletion = async ({
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
+    const nevenCoreExecutionContext = formatNevenCoreExecutionPrompt(options.nevenCoreExecutionContext);
 
     const skillContext = [
       globalSkillsContent
@@ -235,6 +237,7 @@ const getGeminiCompletion = async ({
     const prompt = `
       Vous êtes un assistant de développement expert et autonome, comme Cascade AI.
       ${agentContext}
+      ${nevenCoreExecutionContext}
       ${skillContext}
       ${projectContext}
       ${visualWorkflowContext}

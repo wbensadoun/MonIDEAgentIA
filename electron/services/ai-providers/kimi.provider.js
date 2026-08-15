@@ -21,6 +21,7 @@ const {
   TERMINAL_CAPABILITY_PROMPT,
   executeCommandForAI: defaultExecuteCommandForAI,
 } = require('../ai.service');
+const { formatNevenCoreExecutionPrompt } = require('../neven-core.service');
 
 const safeConsoleLog = (...args) => {
   try {
@@ -111,10 +112,7 @@ const getKimiCompletion = async ({
   };
   const emitAIGenerationToken = (payload) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('ai-generation-token', {
-        provider: 'kimi',
-        ...payload
-      });
+      mainWindow.webContents.send('ai-generation-token', sanitizeGenerationTokenForRenderer(payload));
     }
   };
 
@@ -187,6 +185,7 @@ const getKimiCompletion = async ({
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
+    const nevenCoreExecutionContext = formatNevenCoreExecutionPrompt(options.nevenCoreExecutionContext);
 
     const skillContext = [
       globalSkillsContent
@@ -206,6 +205,7 @@ const getKimiCompletion = async ({
     const prompt = `
       Vous êtes un assistant de développement expert et autonome.
       ${agentContext}
+      ${nevenCoreExecutionContext}
       ${skillContext}
       ${projectContext}
       ${visualWorkflowContext}
@@ -322,7 +322,7 @@ const getKimiCompletion = async ({
           const safeReject = (error) => {
             if (settled) return;
             settled = true;
-            emitAIGenerationToken({ token: '', done: true, error: error?.message || String(error) });
+            emitAIGenerationToken({ token: '', done: true });
             reject(error);
           };
 
@@ -515,4 +515,10 @@ const getKimiCompletion = async ({
   }
 };
 
-module.exports = { getKimiCompletion };
+const sanitizeGenerationTokenForRenderer = (payload = {}) => ({
+  token: typeof payload.token === 'string' ? payload.token : '',
+  done: payload.done === true,
+  ...(payload.aborted === true ? { aborted: true } : {})
+});
+
+module.exports = { getKimiCompletion, sanitizeGenerationTokenForRenderer };
