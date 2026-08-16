@@ -291,7 +291,9 @@ const getKimiCompletion = async ({
       if (streamResponse) {
         requestConfig.responseType = 'stream';
       }
+      if (options.signal) requestConfig.signal = options.signal;
       const resp = await axios.post(kimiUrl, requestBody, requestConfig);
+      if (options.signal?.aborted) throw Object.assign(new Error('Generation annulee.'), { name: 'AbortError' });
       if (streamResponse) {
         const stream = resp.data;
         if (!stream || typeof stream.on !== 'function') {

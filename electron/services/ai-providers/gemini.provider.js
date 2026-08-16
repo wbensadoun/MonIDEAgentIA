@@ -315,7 +315,8 @@ const getGeminiCompletion = async ({
 
     try {
       const geminiCallWithContents = async (contents) => {
-        const resp = await axios.post(url, { contents });
+        const resp = await axios.post(url, { contents }, { signal: options.signal });
+        if (options.signal?.aborted) throw Object.assign(new Error('Generation annulee.'), { name: 'AbortError' });
         if (resp.data?.candidates?.[0]?.content?.parts?.[0]?.text === undefined) {
           throw new Error("Réponse de l'API Gemini mal formatée");
         }

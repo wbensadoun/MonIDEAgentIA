@@ -1,21 +1,11 @@
 'use strict';
 
-const { ipcMain: electronIpcMain, dialog } = require('electron');
-const { listGeminiModels, getGeminiCompletion } = require('../services/ai-providers/gemini.provider');
-const { getClaudeCompletion } = require('../services/ai-providers/claude.provider');
-const { getKimiCompletion } = require('../services/ai-providers/kimi.provider');
-const { getOllamaCompletion } = require('../services/ai-providers/ollama.provider');
-const {
-  executeCommandForAI: defaultExecuteCommandForAI,
-  runSingleCompletionProvider
-} = require('../services/ai.service');
-
-const providerHandlers = {
-  gemini: getGeminiCompletion,
-  claude: getClaudeCompletion,
-  kimi: getKimiCompletion,
-  ollama: getOllamaCompletion
-};
+const loadDefaultProviders = () => ({
+  gemini: require('../services/ai-providers/gemini.provider').getGeminiCompletion,
+  claude: require('../services/ai-providers/claude.provider').getClaudeCompletion,
+  kimi: require('../services/ai-providers/kimi.provider').getKimiCompletion,
+  ollama: require('../services/ai-providers/ollama.provider').getOllamaCompletion
+});
 
 // Registre des generations en cours : runId -> AbortController.
 //
@@ -24,6 +14,22 @@ const providerHandlers = {
 // exactement ce qui rendait le bouton "Arreter" decoratif — un AbortController
 // etait bien cree cote React, mais son signal ne quittait jamais le renderer.
 const activeRuns = new Map();
+
+const publishCompletionUsage = ({ publishUsageEvent, provider, startedAt, result }) => {
+  if (typeof publishUsageEvent !== 'function') return;
+  const usage = result?.usage || {};
+  try {
+    Promise.resolve(publishUsageEvent({
+    providerId: provider,
+    inputTokens: usage.inputTokens ?? usage.promptTokens,
+    outputTokens: usage.outputTokens ?? usage.completionTokens,
+    durationMs: Math.max(0, Date.now() - startedAt),
+    success: result?.success === true
+    })).catch(() => {});
+  } catch {
+    // La télémétrie ne doit jamais modifier le résultat de la complétion.
+  }
+};
 
 const registerRun = (runId) => {
   if (!runId) return null;
@@ -43,50 +49,85 @@ const releaseRun = (runId, controller) => {
   if (activeRuns.get(runId) === controller) activeRuns.delete(runId);
 };
 
+const runManagedCompletion = async ({ options = {}, provider, publishUsageEvent, execute, onError }) => {
+  const runId = options?.runId || null;
+  const startedAt = Date.now();
+  const controller = registerRun(runId);
+  try {
+    const result = await execute(controller ? { ...options, signal: controller.signal } : options);
+    const finalResult = controller?.signal?.aborted
+      ? { success: false, aborted: true, error: 'Generation annulee.', provider }
+      : result;
+    publishCompletionUsage({ publishUsageEvent, provider, startedAt, result: finalResult });
+    return finalResult;
+  } catch (error) {
+    const result = controller?.signal?.aborted
+      ? { success: false, aborted: true, error: 'Generation annulee.', provider }
+      : onError(error);
+    publishCompletionUsage({ publishUsageEvent, provider, startedAt, result });
+    return result;
+  } finally {
+    releaseRun(runId, controller);
+  }
+};
+
 const registerProviderCompletionHandler = ({
   ipcMain,
   channel,
   provider,
   getMainWindow,
-  executeCommandForAI
+  executeCommandForAI,
+  publishUsageEvent,
+  dialog,
+  providers
 }) => {
-  const handler = providerHandlers[provider];
+  const handler = providers[provider];
   if (typeof handler !== 'function') {
     throw new Error(`Provider IA non supporte: ${provider}`);
   }
 
   ipcMain.handle(channel, async (_event, history, currentCode, allProjectFiles = null, options = {}) => {
-    const runId = options?.runId || null;
-    const controller = registerRun(runId);
-    try {
-      return await handler({
+    return runManagedCompletion({
+      options,
+      provider,
+      publishUsageEvent,
+      execute: (managedOptions) => handler({
         history,
         currentCode,
         allProjectFiles,
         // Le signal est injecte ici et non cote renderer : un AbortSignal n'est
         // pas serialisable a travers le pont IPC, il doit naitre dans le main.
-        options: controller ? { ...options, signal: controller.signal } : options,
+        options: managedOptions,
         getMainWindow,
         executeCommandForAI,
-        showErrorBox: (title, message) => dialog.showErrorBox(title, message)
-      });
-    } catch (error) {
-      if (controller?.signal?.aborted) {
-        return { success: false, aborted: true, error: 'Generation annulee.', provider };
-      }
-      return { success: false, error: error?.message || String(error), provider };
-    } finally {
-      releaseRun(runId, controller);
-    }
+        showErrorBox: (title, message) => dialog?.showErrorBox?.(title, message)
+      }),
+      onError: (error) => ({ success: false, error: error?.message || String(error), provider })
+    });
   });
 };
 
 const registerAIHandlers = ({
-  ipcMain = electronIpcMain,
+  ipcMain,
+  dialog,
   getMainWindow,
-  executeCommandForAI = defaultExecuteCommandForAI
+  executeCommandForAI,
+  publishUsageEvent,
+  runSingleCompletion,
+  providers,
+  listGeminiModels
 } = {}) => {
-  ipcMain.handle('list-gemini-models', async (_event, apiKey) => listGeminiModels(apiKey));
+  if (!ipcMain || !dialog) {
+    const electron = require('electron');
+    ipcMain ||= electron.ipcMain;
+    dialog ||= electron.dialog;
+  }
+  const aiService = (!executeCommandForAI || !runSingleCompletion) ? require('../services/ai.service') : null;
+  executeCommandForAI ||= aiService.executeCommandForAI;
+  runSingleCompletion ||= aiService.runSingleCompletionProvider;
+  providers ||= loadDefaultProviders();
+  ipcMain.handle('list-gemini-models', async (_event, apiKey) =>
+    (listGeminiModels || require('../services/ai-providers/gemini.provider').listGeminiModels)(apiKey));
 
   ipcMain.handle('cancel-ai-generation', async (_event, runId) => {
     const controller = runId ? activeRuns.get(runId) : null;
@@ -104,28 +145,40 @@ const registerAIHandlers = ({
     channel: 'get-kimi-completion',
     provider: 'kimi',
     getMainWindow,
-    executeCommandForAI
+    executeCommandForAI,
+    publishUsageEvent,
+    dialog,
+    providers
   });
   registerProviderCompletionHandler({
     ipcMain,
     channel: 'get-gemini-completion',
     provider: 'gemini',
     getMainWindow,
-    executeCommandForAI
+    executeCommandForAI,
+    publishUsageEvent,
+    dialog,
+    providers
   });
   registerProviderCompletionHandler({
     ipcMain,
     channel: 'get-claude-completion',
     provider: 'claude',
     getMainWindow,
-    executeCommandForAI
+    executeCommandForAI,
+    publishUsageEvent,
+    dialog,
+    providers
   });
   registerProviderCompletionHandler({
     ipcMain,
     channel: 'get-ollama-completion',
     provider: 'ollama',
     getMainWindow,
-    executeCommandForAI
+    executeCommandForAI,
+    publishUsageEvent,
+    dialog,
+    providers
   });
 
   ipcMain.handle('get-inline-completion', async (_event, prompt, code, options = {}) => {
@@ -135,18 +188,19 @@ RÈGLES ABSOLUES:
 2. N'ajoute AUCUN bloc markdown (\`\`\`), ni préfixe, ni texte explicatif.
 3. Le texte que tu renvoies remplacera EXACTEMENT la sélection de l'utilisateur.`;
 
-    try {
-      return await runSingleCompletionProvider({
+    return runManagedCompletion({
+      options,
+      provider: options.provider || 'unknown',
+      publishUsageEvent,
+      execute: (managedOptions) => runSingleCompletion({
         provider: options.provider,
         systemInstruction,
         userPrompt: `CONTEXTE DU FICHIER:\n${code}\n\nINSTRUCTION OU CODE SELECTIONNE:\n${prompt}`,
-        options,
+        options: managedOptions,
         maxTokens: 2048
-      });
-    } catch (error) {
-      console.error('[AIHandlers] Erreur Inline Completion:', error);
-      return { success: false, error: error.message };
-    }
+      }),
+      onError: (error) => ({ success: false, error: error?.message || String(error) })
+    });
   });
 
   ipcMain.handle('get-ghost-completion', async (_event, prefix, suffix, options = {}) => {
@@ -157,19 +211,20 @@ RÈGLES ABSOLUES:
 2. N'ajoute AUCUN bloc markdown (\`\`\`), ni préfixe, ni explication.
 3. Si aucune complétion n'est logique, renvoie une chaîne vide.`;
 
-    try {
-      return await runSingleCompletionProvider({
+    return runManagedCompletion({
+      options,
+      provider: options.provider || 'unknown',
+      publishUsageEvent,
+      execute: (managedOptions) => runSingleCompletion({
         provider: options.provider,
         systemInstruction,
         userPrompt: `<PREFIX>\n${prefix}\n</PREFIX>\n\n<SUFFIX>\n${suffix}\n</SUFFIX>`,
-        options,
+        options: managedOptions,
         maxTokens: 256,
         trimEndOnly: true
-      });
-    } catch (error) {
-      console.error('[AIHandlers] Erreur Ghost Completion:', error);
-      return { success: false, error: error.message };
-    }
+      }),
+      onError: (error) => ({ success: false, error: error?.message || String(error) })
+    });
   });
 };
 

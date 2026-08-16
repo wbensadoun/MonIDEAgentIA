@@ -51,6 +51,7 @@ const {
   NevenControlPlaneClient,
   createNevenAccessResolver
 } = require('./electron/services/neven-control-plane.service');
+const { createNevenUsagePublisher } = require('./electron/services/neven-usage-publisher.service');
 
 const isDev =
   process.env.NODE_ENV === 'development' ||
@@ -96,6 +97,7 @@ const providerSecretVault = new ProviderSecretVault({
 // cle fournisseur au renderer : uniquement un droit court vers la passerelle
 // Neven, conservé en mémoire et destiné aux futures exécutions managed.
 const nevenControlPlane = new NevenControlPlaneClient();
+const publishNevenUsageEvent = createNevenUsagePublisher({ client: nevenControlPlane });
 const resolveNevenAccess = createNevenAccessResolver({ client: nevenControlPlane });
 const resolveManagedProviderCredential = ({ provider, workspaceId, policy }) => resolveProviderCredential({
   provider,
@@ -205,7 +207,11 @@ registerFileHandlers();
 registerSnapshotHandlers();
 registerAgentHandlers(() => mainWindow);
 registerOllamaHandlers(() => mainWindow);
-registerAIHandlers({ getMainWindow: () => mainWindow, executeCommandForAI });
+registerAIHandlers({
+  getMainWindow: () => mainWindow,
+  executeCommandForAI,
+  publishUsageEvent: publishNevenUsageEvent
+});
 registerSkillHandlers();
 registerRouterHandlers({
   ipcMain,

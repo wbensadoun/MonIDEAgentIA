@@ -669,7 +669,8 @@ const runSingleCompletionProvider = async ({
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      timeout: 60000
+      timeout: 60000,
+      ...(options.signal ? { signal: options.signal } : {})
     });
 
     const text = resp.data?.choices?.[0]?.message?.content || '';
@@ -688,7 +689,7 @@ const runSingleCompletionProvider = async ({
       temperature,
       system: systemInstruction,
       messages: [{ role: 'user', content: userPrompt }]
-    });
+    }, options.signal ? { signal: options.signal } : undefined);
 
     const text = Array.isArray(resp.content)
       ? resp.content.map((part) => part?.text || '').join('')
@@ -722,7 +723,7 @@ const runSingleCompletionProvider = async ({
         temperature,
         num_predict: maxTokens
       }
-    }, { timeout: 90000 });
+    }, { timeout: 90000, ...(options.signal ? { signal: options.signal } : {}) });
 
     const text = stripThinkBlocks(resp.data?.message?.content || '');
     return { success: true, text: stripCompletionMarkdown(text, { trimEndOnly }), provider: 'ollama', requestedModel, model };
@@ -750,8 +751,15 @@ const runSingleCompletionProvider = async ({
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    ...(options.signal ? { signal: options.signal } : {})
   });
+
+  if (options.signal?.aborted) {
+    const error = new Error('Generation annulee.');
+    error.name = 'AbortError';
+    throw error;
+  }
 
   const data = await response.json();
   if (!response.ok) {

@@ -10,6 +10,8 @@ import {
 } from '../../utils/editorSymbols';
 import { buildSingleAIInvocation } from '../../utils/aiProviderRouting';
 
+const buildCompletionRunId = (kind) => `${kind}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+
 const CodeEditor = ({
   openFiles = [],
   dirtyFiles = null,
@@ -36,7 +38,10 @@ const CodeEditor = ({
   const monacoRef = useRef(null);
   const ghostProviderRef = useRef(null);
   const ghostTimeoutRef = useRef(null);
+  const ghostDebounceResolveRef = useRef(null);
   const ghostAbortControllerRef = useRef(null);
+  const ghostRunIdRef = useRef(null);
+  const inlineRunIdRef = useRef(null);
   const cursorListenerRef = useRef(null);
   const completionConfigRef = useRef(null);
 
@@ -75,14 +80,25 @@ const CodeEditor = ({
     }
   }, [showSymbolPicker]);
 
+  const cancelAIGeneration = useCallback((runIdRef) => {
+    const runId = runIdRef.current;
+    runIdRef.current = null;
+    if (runId && typeof window !== 'undefined' && typeof window.electronAPI?.cancelAIGeneration === 'function') {
+      Promise.resolve(window.electronAPI.cancelAIGeneration(runId)).catch(() => {});
+    }
+  }, []);
+
   const handleInlineSubmit = async (e) => {
     if (e.key === 'Escape') {
+      cancelAIGeneration(inlineRunIdRef);
+      setIsInlineThinking(false);
       setInlinePrompt(prev => ({ ...prev, show: false }));
       editorRef.current?.focus();
       return;
     }
     if (e.key === 'Enter') {
       setIsInlineThinking(true);
+      let runId = null;
       try {
         const completionConfig = completionConfigRef.current || editorCompletionConfig;
         if (completionConfig?.disabled) {
@@ -90,11 +106,17 @@ const CodeEditor = ({
           return;
         }
 
+        // Une nouvelle demande inline remplace forcément la précédente.
+        cancelAIGeneration(inlineRunIdRef);
+        runId = buildCompletionRunId('inline');
+        inlineRunIdRef.current = runId;
         const res = await window.electronAPI.getInlineCompletion(inlinePrompt.text, code, {
           ...completionConfig.options,
-          activeFile
+          activeFile,
+          runId
         });
 
+        if (inlineRunIdRef.current !== runId) return;
         if (res && res.success) {
           editorRef.current.executeEdits('inline-ai', [{
             range: inlinePrompt.range,
@@ -113,7 +135,10 @@ const CodeEditor = ({
       } catch (err) {
         console.error(err);
       } finally {
-        setIsInlineThinking(false);
+        if (!runId || inlineRunIdRef.current === runId) {
+          if (inlineRunIdRef.current === runId) inlineRunIdRef.current = null;
+          setIsInlineThinking(false);
+        }
       }
     }
   };
@@ -247,6 +272,9 @@ const CodeEditor = ({
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {
       if (editor.getOption(monaco.editor.EditorOption.readOnly)) return;
 
+      cancelAIGeneration(inlineRunIdRef);
+      setIsInlineThinking(false);
+
       const selection = editor.getSelection();
       let text = editor.getModel().getValueInRange(selection);
 
@@ -284,12 +312,27 @@ const CodeEditor = ({
     ghostProviderRef.current = monaco.languages.registerInlineCompletionsProvider('*', {
       provideInlineCompletions: async (model, position, _context, _token) => {
         // Debounce pour ne pas inonder l'API
-        if (ghostTimeoutRef.current) clearTimeout(ghostTimeoutRef.current);
+        if (ghostDebounceResolveRef.current) {
+          ghostDebounceResolveRef.current({ items: [] });
+          ghostDebounceResolveRef.current = null;
+        }
+        if (ghostTimeoutRef.current) {
+          clearTimeout(ghostTimeoutRef.current);
+          ghostTimeoutRef.current = null;
+        }
         if (ghostAbortControllerRef.current) ghostAbortControllerRef.current.abort();
+        cancelAIGeneration(ghostRunIdRef);
 
         return new Promise(resolve => {
+          ghostDebounceResolveRef.current = resolve;
           ghostTimeoutRef.current = setTimeout(async () => {
-            ghostAbortControllerRef.current = new AbortController();
+            ghostTimeoutRef.current = null;
+            if (ghostDebounceResolveRef.current === resolve) {
+              ghostDebounceResolveRef.current = null;
+            }
+            const ghostAbortController = new AbortController();
+            ghostAbortControllerRef.current = ghostAbortController;
+            let runId = null;
 
             try {
               const textUntilPosition = model.getValueInRange({
@@ -310,11 +353,17 @@ const CodeEditor = ({
               const completionConfig = completionConfigRef.current;
               if (!completionConfig || completionConfig.disabled) return resolve({ items: [] });
 
+              runId = buildCompletionRunId('ghost');
+              ghostRunIdRef.current = runId;
               const res = await window.electronAPI.getGhostCompletion(textUntilPosition, textAfterPosition, {
                 ...(completionConfig?.options || {}),
-                activeFile
+                activeFile,
+                runId
               });
 
+              if (ghostAbortController.signal.aborted || ghostRunIdRef.current !== runId) {
+                return resolve({ items: [] });
+              }
               if (res && res.success && res.text) {
                 resolve({
                   items: [{
@@ -327,6 +376,11 @@ const CodeEditor = ({
               }
             } catch (err) {
               resolve({ items: [] });
+            } finally {
+              if (ghostAbortControllerRef.current === ghostAbortController) {
+                ghostAbortControllerRef.current = null;
+              }
+              if (ghostRunIdRef.current === runId) ghostRunIdRef.current = null;
             }
           }, 350); // 350ms debounce
         });
@@ -344,7 +398,7 @@ const CodeEditor = ({
       setCursorLine(nextLine);
     });
 
-  }, [activeFile]);
+  }, [activeFile, cancelAIGeneration]);
 
   const handleEditorWillUnmount = useCallback((editor, _monaco) => {
     try {
@@ -356,6 +410,12 @@ const CodeEditor = ({
       if (ghostAbortControllerRef.current) {
         ghostAbortControllerRef.current.abort();
         ghostAbortControllerRef.current = null;
+      }
+      cancelAIGeneration(ghostRunIdRef);
+      cancelAIGeneration(inlineRunIdRef);
+      if (ghostDebounceResolveRef.current) {
+        ghostDebounceResolveRef.current({ items: [] });
+        ghostDebounceResolveRef.current = null;
       }
       if (ghostTimeoutRef.current) {
         clearTimeout(ghostTimeoutRef.current);
@@ -386,7 +446,7 @@ const CodeEditor = ({
     } catch (e) {
       console.error("Error during Monaco Editor unmount:", e);
     }
-  }, []);
+  }, [cancelAIGeneration]);
 
   useEffect(() => {
     return () => {

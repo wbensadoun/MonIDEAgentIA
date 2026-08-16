@@ -211,7 +211,8 @@ const getClaudeCompletion = async ({
         temperature: options.temperature || 0.7,
         system: systemPrompt,
         messages: msgs
-      });
+      }, options.signal ? { signal: options.signal } : undefined);
+      if (options.signal?.aborted) throw Object.assign(new Error('Generation annulee.'), { name: 'AbortError' });
       return response.content[0].text;
     };
 
