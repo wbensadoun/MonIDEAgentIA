@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.5.0] - Contrat backend multi-provider
+
+### Added
+
+- Contrat backend commun pour completion, streaming, erreurs, timeout/retry,
+  usage, capacités et santé des adaptateurs Gemini, Claude, Kimi, Ollama et
+  DashScope.
+- Adaptateur DashScope configuré uniquement côté backend, sans secret embarqué.
+
+### Changed
+
+- Chat, inline et ghost utilisent désormais le contrat; un provider inconnu
+  échoue explicitement sans repli implicite vers Gemini.
+
 ## [2.3.0] - Neven Core Lite and prompt compaction
 
 ### Added

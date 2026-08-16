@@ -11,6 +11,9 @@ import {
 import { buildSingleAIInvocation } from '../../utils/aiProviderRouting';
 import { getLanguageForFile } from '../../utils/editorLanguage';
 
+let completionRunSequence = 0;
+const createCompletionRunId = (kind) => `${kind}-${Date.now()}-${++completionRunSequence}`;
+
 const CodeEditor = ({
   activeFile,
   code,
@@ -32,6 +35,8 @@ const CodeEditor = ({
   const ghostProviderRef = useRef(null);
   const ghostTimeoutRef = useRef(null);
   const ghostAbortControllerRef = useRef(null);
+  const ghostRunIdRef = useRef(null);
+  const inlineRunIdRef = useRef(null);
   const cursorListenerRef = useRef(null);
   const completionConfigRef = useRef(null);
 
@@ -72,12 +77,16 @@ const CodeEditor = ({
 
   const handleInlineSubmit = async (e) => {
     if (e.key === 'Escape') {
+      if (inlineRunIdRef.current) window.electronAPI?.cancelAIGeneration?.(inlineRunIdRef.current);
+      inlineRunIdRef.current = null;
       setInlinePrompt(prev => ({ ...prev, show: false }));
       editorRef.current?.focus();
       return;
     }
     if (e.key === 'Enter') {
       setIsInlineThinking(true);
+      const runId = createCompletionRunId('inline');
+      inlineRunIdRef.current = runId;
       try {
         const completionConfig = completionConfigRef.current || editorCompletionConfig;
         if (completionConfig?.disabled) {
@@ -87,7 +96,8 @@ const CodeEditor = ({
 
         const res = await window.electronAPI.getInlineCompletion(inlinePrompt.text, code, {
           ...completionConfig.options,
-          activeFile
+          activeFile,
+          runId
         });
 
         if (res && res.success) {
@@ -108,6 +118,7 @@ const CodeEditor = ({
       } catch (err) {
         console.error(err);
       } finally {
+        if (inlineRunIdRef.current === runId) inlineRunIdRef.current = null;
         setIsInlineThinking(false);
       }
     }
@@ -247,10 +258,14 @@ const CodeEditor = ({
         // Debounce pour ne pas inonder l'API
         if (ghostTimeoutRef.current) clearTimeout(ghostTimeoutRef.current);
         if (ghostAbortControllerRef.current) ghostAbortControllerRef.current.abort();
+        if (ghostRunIdRef.current) window.electronAPI?.cancelAIGeneration?.(ghostRunIdRef.current);
+        ghostRunIdRef.current = null;
 
         return new Promise(resolve => {
           ghostTimeoutRef.current = setTimeout(async () => {
             ghostAbortControllerRef.current = new AbortController();
+            const runId = createCompletionRunId('ghost');
+            ghostRunIdRef.current = runId;
 
             try {
               const textUntilPosition = model.getValueInRange({
@@ -273,7 +288,8 @@ const CodeEditor = ({
 
               const res = await window.electronAPI.getGhostCompletion(textUntilPosition, textAfterPosition, {
                 ...(completionConfig?.options || {}),
-                activeFile
+                activeFile,
+                runId
               });
 
               if (res && res.success && res.text) {
@@ -288,6 +304,8 @@ const CodeEditor = ({
               }
             } catch (err) {
               resolve({ items: [] });
+            } finally {
+              if (ghostRunIdRef.current === runId) ghostRunIdRef.current = null;
             }
           }, 350); // 350ms debounce
         });
@@ -317,6 +335,14 @@ const CodeEditor = ({
       if (ghostAbortControllerRef.current) {
         ghostAbortControllerRef.current.abort();
         ghostAbortControllerRef.current = null;
+      }
+      if (ghostRunIdRef.current) {
+        window.electronAPI?.cancelAIGeneration?.(ghostRunIdRef.current);
+        ghostRunIdRef.current = null;
+      }
+      if (inlineRunIdRef.current) {
+        window.electronAPI?.cancelAIGeneration?.(inlineRunIdRef.current);
+        inlineRunIdRef.current = null;
       }
       if (ghostTimeoutRef.current) {
         clearTimeout(ghostTimeoutRef.current);

@@ -38,6 +38,7 @@ const getKimiCompletion = async ({
   allProjectFiles = null,
   options = {},
   getMainWindow,
+  emitToken: injectedEmitToken,
   executeCommandForAI: injectedExecuteCommandForAI,
 } = {}) => {
   const mainWindow = typeof getMainWindow === 'function' ? getMainWindow() : null;
@@ -46,7 +47,7 @@ const getKimiCompletion = async ({
   if (options.localOnly) {
     return { success: false, error: 'Local-only actif: Kimi/Together interdit.', provider: 'kimi' };
   }
-  const apiKey = options.apiKey || process.env.KIMI_API_KEY || process.env.TOGETHER_API_KEY;
+  const apiKey = options.managedCredential || process.env.KIMI_API_KEY || process.env.TOGETHER_API_KEY;
   const modelFromEnv = process.env.KIMI_MODEL;
   const model = options.model || modelFromEnv || DEFAULT_KIMI_MODEL;
   const thinkingMode = !!options.thinkingMode;
@@ -111,6 +112,10 @@ const getKimiCompletion = async ({
     return error?.message || 'Erreur inconnue lors de l appel Kimi/Together.';
   };
   const emitAIGenerationToken = (payload) => {
+    if (typeof injectedEmitToken === 'function') {
+      injectedEmitToken(sanitizeGenerationTokenForRenderer(payload));
+      return;
+    }
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('ai-generation-token', sanitizeGenerationTokenForRenderer(payload));
     }
@@ -284,6 +289,7 @@ const getKimiCompletion = async ({
       logger.info(`[Kimi Agent API] Timeout HTTP: ${kimiTimeoutMs > 0 ? `${kimiTimeoutMs}ms` : 'disabled'}`);
       const requestConfig = {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        signal: options.signal
       };
       if (kimiTimeoutMs > 0) {
         requestConfig.timeout = kimiTimeoutMs;
@@ -307,7 +313,7 @@ const getKimiCompletion = async ({
           let settled = false;
 
           const appendToken = (token) => {
-            if (typeof token !== 'string' || token.length === 0) return;
+            if (settled || typeof token !== 'string' || token.length === 0) return;
             fullText += token;
             emitAIGenerationToken({ token, done: false });
           };
@@ -322,9 +328,18 @@ const getKimiCompletion = async ({
           const safeReject = (error) => {
             if (settled) return;
             settled = true;
-            emitAIGenerationToken({ token: '', done: true });
+            emitAIGenerationToken({ token: '', done: true, ...(error?.aborted ? { aborted: true } : {}) });
             reject(error);
           };
+
+          const onAbort = () => {
+            try { stream.destroy(); } catch { /* stream already closed */ }
+            const error = new Error('Generation annulee.');
+            error.aborted = true;
+            safeReject(error);
+          };
+          if (options.signal?.aborted) return onAbort();
+          options.signal?.addEventListener?.('abort', onAbort, { once: true });
 
           const processLine = (rawLine) => {
             const line = String(rawLine || '').trim();
@@ -377,6 +392,7 @@ const getKimiCompletion = async ({
           });
 
           stream.on('end', () => {
+            options.signal?.removeEventListener?.('abort', onAbort);
             if (buffer.trim()) processLine(buffer);
             if (!fullText) {
               const preview = rawStreamData.length > 500 ? rawStreamData.slice(0, 500) + '...' : rawStreamData;
@@ -387,6 +403,7 @@ const getKimiCompletion = async ({
           });
 
           stream.on('error', (streamError) => {
+            options.signal?.removeEventListener?.('abort', onAbort);
             safeReject(streamError);
           });
         });

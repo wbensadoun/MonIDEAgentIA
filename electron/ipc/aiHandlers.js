@@ -5,10 +5,12 @@ const { listGeminiModels, getGeminiCompletion } = require('../services/ai-provid
 const { getClaudeCompletion } = require('../services/ai-providers/claude.provider');
 const { getKimiCompletion } = require('../services/ai-providers/kimi.provider');
 const { getOllamaCompletion } = require('../services/ai-providers/ollama.provider');
+const { getDashScopeCompletion } = require('../services/ai-providers/dashscope.provider');
 const {
   executeCommandForAI: defaultExecuteCommandForAI,
   runSingleCompletionProvider,
-  normalizeCompletionProvider
+  normalizeCompletionProvider,
+  injectManagedProviderCredential
 } = require('../services/ai.service');
 const {
   buildNevenCoreExecutionContext,
@@ -20,12 +22,14 @@ const {
   listSkills: defaultListSkills
 } = require('../services/agent.service');
 const { resolveModelForProfile } = require('../services/router.service');
+const { createProviderContract } = require('../services/provider-contract.service');
 
 const providerHandlers = {
   gemini: getGeminiCompletion,
   claude: getClaudeCompletion,
   kimi: getKimiCompletion,
-  ollama: getOllamaCompletion
+  ollama: getOllamaCompletion,
+  dashscope: getDashScopeCompletion
 };
 
 // Registre des generations en cours : runId -> AbortController.
@@ -62,7 +66,12 @@ const isTechnicalResponseKey = (key) => {
     || normalized.includes('profile')
     || normalized.includes('resolved')
     || normalized === 'source'
-    || normalized.includes('metadata');
+    || normalized.includes('metadata')
+    || normalized.includes('usage')
+    || normalized.includes('duration')
+    || normalized.includes('cost')
+    || normalized.includes('retry')
+    || normalized.includes('errorcode');
 };
 
 const isSensitiveResponseKey = (key) => {
@@ -117,7 +126,9 @@ const sanitizeErrorText = (value, sensitiveValues = []) => {
   for (const pattern of SECRET_LIKE_ERROR_PATTERNS) {
     text = text.replace(pattern, (_match, label) => label ? `${label}[metadata masquee]` : '[metadata masquee]');
   }
-  return text.replace(/\b(gemini|claude|kimi|ollama|neven)\b/gi, 'provider IA');
+  return text
+    .replace(/\b(gemini|claude|kimi|ollama|dashscope|neven)\b/gi, 'provider IA')
+    .replace(/\bprovider\b/gi, 'provider IA');
 };
 
 const sanitizeCompletionResponseValue = (value, sensitiveValues) => {
@@ -152,6 +163,9 @@ const cleanRendererCompletionOptions = (options) => {
     : {};
   delete cleaned.nevenCoreExecutionContext;
   delete cleaned.nevenCoreExecutionPrompt;
+  // Les credentials ne traversent jamais IPC : les providers les résolvent
+  // depuis l'environnement ou le vault dans le processus principal.
+  ['apiKey', 'geminiApiKey', 'claudeApiKey', 'kimiApiKey', 'ollamaApiKey', 'dashscopeApiKey', 'apiUrl', 'authorization', 'credential', 'managedCredential', 'secret', 'accessToken'].forEach((key) => delete cleaned[key]);
   return cleaned;
 };
 
@@ -162,8 +176,8 @@ const forceChannelCompletionProvider = (options, provider) => ({
   provider
 });
 
-// Inline/ghost use the shared single-provider flow, whose existing fallback is
-// Gemini. Normalize the renderer value in main before profile/model resolution.
+// Inline/ghost use the same backend contract. An omitted provider keeps the
+// historical Gemini default; an unknown explicit provider is rejected.
 const normalizeInlineCompletionOptions = (options) => ({
   ...cleanRendererCompletionOptions(options),
   provider: normalizeCompletionProvider(options?.provider)
@@ -239,14 +253,9 @@ const registerProviderCompletionHandler = ({
   executeCommandForAI,
   listAgents,
   listSkills,
-  completionHandlers = providerHandlers,
+  completionContract,
   resolveProfileModel = resolveModelForProfile
 }) => {
-  const handler = completionHandlers[provider];
-  if (typeof handler !== 'function') {
-    throw new Error(`Provider IA non supporte: ${provider}`);
-  }
-
   ipcMain.handle(channel, async (_event, history, currentCode, allProjectFiles = null, options = {}) => {
     const runId = options?.runId || null;
     const controller = registerRun(runId);
@@ -259,17 +268,34 @@ const registerProviderCompletionHandler = ({
         listSkills,
         resolveProfileModel
       });
-      const response = await handler({
-        history,
-        currentCode,
-        allProjectFiles,
+      executionOptions = await injectManagedProviderCredential(executionOptions);
+      const request = {
+          kind: 'chat', history, currentCode, allProjectFiles, getMainWindow, executeCommandForAI,
+          emitToken: (payload) => {
+            const window = typeof getMainWindow === 'function' ? getMainWindow() : null;
+            if (window && !window.isDestroyed()) window.webContents.send('ai-generation-token', payload);
+          },
+          showErrorBox: (title, message) => dialog.showErrorBox(title, message)
+        };
+      let response;
+      if (completionContract.capabilities(provider).streaming) {
+        for await (const event of completionContract.stream({
+          provider,
+          request: { ...request, onComplete: (result) => { response = result; } },
+          options: controller ? { ...executionOptions, signal: controller.signal } : executionOptions
+        })) {
+          request.emitToken(event);
+        }
+        if (!response) response = { success: false, error: 'Flux provider interrompu.' };
+      } else {
+        response = await completionContract.complete({
+          provider,
+          request,
         // Le signal est injecte ici et non cote renderer : un AbortSignal n'est
         // pas serialisable a travers le pont IPC, il doit naitre dans le main.
-        options: controller ? { ...executionOptions, signal: controller.signal } : executionOptions,
-        getMainWindow,
-        executeCommandForAI,
-        showErrorBox: (title, message) => dialog.showErrorBox(title, message)
-      });
+          options: controller ? { ...executionOptions, signal: controller.signal } : executionOptions
+        });
+      }
       return sanitizeCompletionResponse(response, executionOptions);
     } catch (error) {
       if (controller?.signal?.aborted) {
@@ -292,7 +318,44 @@ const registerAIHandlers = ({
   completionRunner = runSingleCompletionProvider,
   resolveProfileModel = resolveModelForProfile
 } = {}) => {
-  ipcMain.handle('list-gemini-models', async (_event, apiKey) => listGeminiModels(apiKey));
+  const completionContract = createProviderContract({
+    adapters: Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama', 'dashscope'].map((provider) => [provider, {
+      // Gemini/Claude n'ont pas de stream implémenté dans ce produit; health
+      // non implémenté signifie explicitement unsupported dans le contrat.
+      capabilities: { streaming: provider === 'kimi' || provider === 'ollama', usage: true, cost: 'unpriced', health: false },
+      complete: async ({ kind, options, ...request }) => {
+        if (kind === 'chat') {
+          const handler = completionHandlers[provider];
+          if (typeof handler !== 'function') throw new Error(`Provider IA non supporte: ${provider}`);
+          return handler({ ...request, options });
+        }
+        return completionRunner({ ...request, provider, options });
+      },
+      stream: (provider === 'kimi' || provider === 'ollama') ? async function* ({ options, onComplete, ...request }) {
+        const handler = completionHandlers[provider];
+        if (typeof handler !== 'function') throw new Error(`Provider IA non supporte: ${provider}`);
+        const events = [];
+        let wake = null;
+        let settled = false;
+        let result;
+        const emitToken = (event) => {
+          if (settled) return;
+          events.push(event);
+          wake?.();
+          wake = null;
+        };
+        Promise.resolve(handler({ ...request, emitToken, options: { ...options, streamResponse: true } }))
+          .then((value) => { result = value; settled = true; wake?.(); })
+          .catch((error) => { result = { success: false, error: error?.message || String(error) }; settled = true; wake?.(); });
+        while (!settled || events.length) {
+          if (!events.length) await new Promise((resolve) => { wake = resolve; });
+          while (events.length) yield events.shift();
+        }
+        onComplete?.(result);
+      } : undefined
+    }]))
+  });
+  ipcMain.handle('list-gemini-models', async () => listGeminiModels(process.env.GEMINI_API_KEY));
 
   ipcMain.handle('cancel-ai-generation', async (_event, runId) => {
     const controller = runId ? activeRuns.get(runId) : null;
@@ -313,7 +376,18 @@ const registerAIHandlers = ({
     executeCommandForAI,
     listAgents,
     listSkills,
-    completionHandlers,
+    completionContract,
+    resolveProfileModel
+  });
+  registerProviderCompletionHandler({
+    ipcMain,
+    channel: 'get-dashscope-completion',
+    provider: 'dashscope',
+    getMainWindow,
+    executeCommandForAI,
+    listAgents,
+    listSkills,
+    completionContract,
     resolveProfileModel
   });
   registerProviderCompletionHandler({
@@ -324,7 +398,7 @@ const registerAIHandlers = ({
     executeCommandForAI,
     listAgents,
     listSkills,
-    completionHandlers,
+    completionContract,
     resolveProfileModel
   });
   registerProviderCompletionHandler({
@@ -335,7 +409,7 @@ const registerAIHandlers = ({
     executeCommandForAI,
     listAgents,
     listSkills,
-    completionHandlers,
+    completionContract,
     resolveProfileModel
   });
   registerProviderCompletionHandler({
@@ -346,7 +420,7 @@ const registerAIHandlers = ({
     executeCommandForAI,
     listAgents,
     listSkills,
-    completionHandlers,
+    completionContract,
     resolveProfileModel
   });
 
@@ -357,6 +431,8 @@ RÈGLES ABSOLUES:
 2. N'ajoute AUCUN bloc markdown (\`\`\`), ni préfixe, ni texte explicatif.
 3. Le texte que tu renvoies remplacera EXACTEMENT la sélection de l'utilisateur.`;
 
+    const runId = options?.runId || null;
+    const controller = registerRun(runId);
     let executionOptions = normalizeInlineCompletionOptions(options);
     try {
       executionOptions = await prepareNevenCoreExecutionOptions({
@@ -366,18 +442,22 @@ RÈGLES ABSOLUES:
         listSkills,
         resolveProfileModel
       });
-      const response = await completionRunner({
+      executionOptions = await injectManagedProviderCredential(executionOptions);
+      const response = await completionContract.complete({
         provider: executionOptions.provider,
-        systemInstruction: `${systemInstruction}${formatNevenCoreExecutionPrompt(executionOptions.nevenCoreExecutionContext)}`,
-        userPrompt: `CONTEXTE DU FICHIER:\n${code}\n\nINSTRUCTION OU CODE SELECTIONNE:\n${prompt}`,
-        options: executionOptions,
-        maxTokens: 2048
+        request: {
+          kind: 'compact',
+          systemInstruction: `${systemInstruction}${formatNevenCoreExecutionPrompt(executionOptions.nevenCoreExecutionContext)}`,
+          userPrompt: `CONTEXTE DU FICHIER:\n${code}\n\nINSTRUCTION OU CODE SELECTIONNE:\n${prompt}`,
+          maxTokens: 2048
+        },
+        options: controller ? { ...executionOptions, signal: controller.signal } : executionOptions
       });
       return sanitizeCompletionResponse(response, executionOptions);
     } catch (error) {
       console.warn('[AIHandlers] Inline completion unavailable.');
       return sanitizeCompletionResponse({ success: false, error: error?.message || String(error) }, executionOptions);
-    }
+    } finally { releaseRun(runId, controller); }
   });
 
   ipcMain.handle('get-ghost-completion', async (_event, prefix, suffix, options = {}) => {
@@ -388,6 +468,8 @@ RÈGLES ABSOLUES:
 2. N'ajoute AUCUN bloc markdown (\`\`\`), ni préfixe, ni explication.
 3. Si aucune complétion n'est logique, renvoie une chaîne vide.`;
 
+    const runId = options?.runId || null;
+    const controller = registerRun(runId);
     let executionOptions = normalizeInlineCompletionOptions(options);
     try {
       executionOptions = await prepareNevenCoreExecutionOptions({
@@ -397,19 +479,23 @@ RÈGLES ABSOLUES:
         listSkills,
         resolveProfileModel
       });
-      const response = await completionRunner({
+      executionOptions = await injectManagedProviderCredential(executionOptions);
+      const response = await completionContract.complete({
         provider: executionOptions.provider,
-        systemInstruction: `${systemInstruction}${formatNevenCoreExecutionPrompt(executionOptions.nevenCoreExecutionContext)}`,
-        userPrompt: `<PREFIX>\n${prefix}\n</PREFIX>\n\n<SUFFIX>\n${suffix}\n</SUFFIX>`,
-        options: executionOptions,
-        maxTokens: 256,
-        trimEndOnly: true
+        request: {
+          kind: 'compact',
+          systemInstruction: `${systemInstruction}${formatNevenCoreExecutionPrompt(executionOptions.nevenCoreExecutionContext)}`,
+          userPrompt: `<PREFIX>\n${prefix}\n</PREFIX>\n\n<SUFFIX>\n${suffix}\n</SUFFIX>`,
+          maxTokens: 256,
+          trimEndOnly: true
+        },
+        options: controller ? { ...executionOptions, signal: controller.signal } : executionOptions
       });
       return sanitizeCompletionResponse(response, executionOptions);
     } catch (error) {
       console.warn('[AIHandlers] Ghost completion unavailable.');
       return sanitizeCompletionResponse({ success: false, error: error?.message || String(error) }, executionOptions);
-    }
+    } finally { releaseRun(runId, controller); }
   });
 };
 

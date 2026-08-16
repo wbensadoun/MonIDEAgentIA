@@ -81,7 +81,7 @@ const getGeminiCompletion = async ({
   if (options.localOnly) {
     return { success: false, error: 'Local-only actif: Gemini interdit.', provider: 'gemini' };
   }
-  const apiKey = options.apiKey || process.env.GEMINI_API_KEY; // Clé prioritaire depuis les Settings côté renderer
+  const apiKey = options.managedCredential || process.env.GEMINI_API_KEY;
   const modelFromEnv = process.env.GEMINI_MODEL;
   const modelFromOptions = options.model;
   const model = modelFromOptions || modelFromEnv || DEFAULT_GEMINI_MODEL;
@@ -90,7 +90,7 @@ const getGeminiCompletion = async ({
 
   console.log('[Main] Appel Gemini: Vérification de la clé API...');
   console.log('[Main] Options reçues:', {
-    hasApiKeyOption: !!options.apiKey,
+    hasManagedCredential: !!options.managedCredential,
     hasEnvApiKey: !!process.env.GEMINI_API_KEY,
     model,
     thinkingMode,
@@ -318,7 +318,7 @@ const getGeminiCompletion = async ({
 
     try {
       const geminiCallWithContents = async (contents) => {
-        const resp = await axios.post(url, { contents });
+        const resp = await axios.post(url, { contents }, { signal: options.signal });
         if (resp.data?.candidates?.[0]?.content?.parts?.[0]?.text === undefined) {
           throw new Error("Réponse de l'API Gemini mal formatée");
         }

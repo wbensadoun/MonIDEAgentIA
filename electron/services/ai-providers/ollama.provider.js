@@ -73,6 +73,7 @@ const getOllamaCompletion = async ({
   allProjectFiles = null,
   options = {},
   getMainWindow,
+  emitToken: injectedEmitToken,
   executeCommandForAI: injectedExecuteCommandForAI,
 } = {}) => {
   const mainWindow = typeof getMainWindow === 'function' ? getMainWindow() : null;
@@ -202,6 +203,10 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
     // Meme canal et meme forme de payload que kimi.provider (le seul provider qui
     // streamait jusqu'ici) : le renderer n'a donc rien a apprendre de nouveau.
     const emitToken = (payload) => {
+      if (typeof injectedEmitToken === 'function') {
+        injectedEmitToken(sanitizeGenerationTokenForRenderer(payload));
+        return;
+      }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('ai-generation-token', sanitizeGenerationTokenForRenderer(payload));
       }
@@ -221,6 +226,7 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
       };
 
       const processLine = (rawLine) => {
+        if (settled) return;
         const line = String(rawLine || '').trim();
         if (!line) return;
         let parsed;
@@ -245,11 +251,14 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
 
       if (options.signal) {
         const onAbort = () => {
+          if (settled) return;
           // destroy() coupe le socket : Ollama voit la connexion tomber et
           // arrete l'inference. C'est ce qui libere reellement le CPU.
+          settled = true;
+          removeAbortListener();
           try { stream.destroy(); } catch { /* deja ferme */ }
           emitToken({ token: '', done: true, aborted: true });
-          settle(reject, createAbortError());
+          reject(createAbortError());
         };
         if (options.signal.aborted) {
           onAbort();
@@ -262,6 +271,7 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
       }
 
       stream.on('data', (chunk) => {
+        if (settled) return;
         buffer += chunk.toString('utf8');
         let newlineIndex = buffer.indexOf('\n');
         while (newlineIndex >= 0) {
@@ -272,12 +282,15 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
       });
 
       stream.on('end', () => {
+        if (settled) return;
         if (buffer.trim()) processLine(buffer);
+        if (settled) return;
         emitToken({ token: '', done: true });
         settle(resolve, fullText);
       });
 
       stream.on('error', (streamError) => {
+        if (settled) return;
         emitToken({ token: '', done: true });
         settle(reject, streamError);
       });
