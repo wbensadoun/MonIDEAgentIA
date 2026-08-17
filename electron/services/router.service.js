@@ -481,7 +481,8 @@ const routeToDecision = async ({
   settings,
   listAgents,
   listSkills,
-  runSingleCompletionProvider
+  runSingleCompletionProvider,
+  workspaceContext
 } = {}) => {
   const startedAt = Date.now();
   const normalizedProvider = normalizeAIProviderName(provider);
@@ -566,7 +567,8 @@ const routeToDecision = async ({
       systemInstruction,
       userPrompt: truncateText(String(userPrompt || '').trim(), ROUTER_USER_PROMPT_MAX, '\n[...TRONQUE...]'),
       options: { apiKey: classifierApiKey, model: classifierTarget.resolved, temperature: 0.1 },
-      maxTokens: ROUTER_CLASSIFICATION_MAX_TOKENS
+      maxTokens: ROUTER_CLASSIFICATION_MAX_TOKENS,
+      workspaceContext
     });
 
     let decision = { ...ROUTER_SAFE_FALLBACK_DECISION };

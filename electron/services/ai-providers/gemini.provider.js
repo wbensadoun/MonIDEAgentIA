@@ -81,7 +81,7 @@ const getGeminiCompletion = async ({
   if (options.localOnly) {
     return { success: false, error: 'Local-only actif: Gemini interdit.', provider: 'gemini' };
   }
-  const apiKey = options.managedCredential || process.env.GEMINI_API_KEY;
+  const apiKey = options.credentialMode === 'managed' ? options.managedCredential : process.env.GEMINI_API_KEY;
   const modelFromEnv = process.env.GEMINI_MODEL;
   const modelFromOptions = options.model;
   const model = modelFromOptions || modelFromEnv || DEFAULT_GEMINI_MODEL;

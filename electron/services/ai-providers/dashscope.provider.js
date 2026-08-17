@@ -13,7 +13,7 @@ const stripMarkdown = (value, trimEndOnly = false) => {
 const getDashScopeCredential = (options = {}) => (
   // `managedCredential` est injecté par le main process. Ne jamais accepter
   // `options.apiKey`, qui vient du renderer via IPC.
-  options.managedCredential || process.env.DASHSCOPE_API_KEY || null
+  options.credentialMode === 'managed' ? options.managedCredential : (process.env.DASHSCOPE_API_KEY || null)
 );
 
 const runDashScopePromptCompletion = async ({ systemInstruction, userPrompt, options = {}, maxTokens = 512, trimEndOnly = false } = {}) => {

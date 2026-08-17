@@ -15,9 +15,11 @@ const registerRouterHandlers = ({
   listSkills,
   runSingleCompletionProvider,
   ensureTrustedProjectPath, // fourni par symetrie avec les autres handlers (non utilise directement)
-  resolveOptionalTrustedProjectPath
+  resolveOptionalTrustedProjectPath,
+  resolveWorkspaceContext = async () => null,
+  routeToDecision: routeToDecisionImpl = routeToDecision
 } = {}) => {
-  ipcMain.handle('route-request', async (_event, projectPath, userPrompt, options = {}) => {
+  ipcMain.handle('route-request', async (event, projectPath, userPrompt, options = {}) => {
     let trustedProjectPath = null;
     try {
       trustedProjectPath = typeof resolveOptionalTrustedProjectPath === 'function'
@@ -28,7 +30,14 @@ const registerRouterHandlers = ({
       trustedProjectPath = null;
     }
 
-    return routeToDecision({
+    let workspaceContext = null;
+    try {
+      workspaceContext = await resolveWorkspaceContext(event);
+    } catch {
+      workspaceContext = null;
+    }
+
+    return routeToDecisionImpl({
       projectPath: trustedProjectPath,
       userPrompt,
       provider: options.provider,
@@ -37,7 +46,8 @@ const registerRouterHandlers = ({
       settings: options.settings,
       listAgents,
       listSkills,
-      runSingleCompletionProvider
+      runSingleCompletionProvider,
+      workspaceContext
     });
   });
 };

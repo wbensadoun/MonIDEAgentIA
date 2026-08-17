@@ -10,7 +10,7 @@ const {
   executeCommandForAI: defaultExecuteCommandForAI,
   runSingleCompletionProvider,
   normalizeCompletionProvider,
-  injectManagedProviderCredential
+  runProviderCompletionWithPolicy
 } = require('../services/ai.service');
 const {
   buildNevenCoreExecutionContext,
@@ -183,7 +183,7 @@ const cleanRendererCompletionOptions = (options) => {
   delete cleaned.nevenCoreExecutionPrompt;
   // Les credentials ne traversent jamais IPC : les providers les résolvent
   // depuis l'environnement ou le vault dans le processus principal.
-  ['apiKey', 'geminiApiKey', 'claudeApiKey', 'kimiApiKey', 'ollamaApiKey', 'dashscopeApiKey', 'apiUrl', 'authorization', 'credential', 'managedCredential', 'secret', 'accessToken'].forEach((key) => delete cleaned[key]);
+  ['apiKey', 'geminiApiKey', 'claudeApiKey', 'kimiApiKey', 'ollamaApiKey', 'dashscopeApiKey', 'apiUrl', 'authorization', 'credential', 'managedCredential', 'secret', 'accessToken', 'credentialMode', 'providerPolicy', 'origin', 'providerOrigin'].forEach((key) => delete cleaned[key]);
   return cleaned;
 };
 
@@ -273,9 +273,10 @@ const registerProviderCompletionHandler = ({
   listSkills,
   completionContract,
   publishUsageEvent,
+  resolveWorkspaceContext,
   resolveProfileModel = resolveModelForProfile
 }) => {
-  ipcMain.handle(channel, async (_event, history, currentCode, allProjectFiles = null, options = {}) => {
+  ipcMain.handle(channel, async (event, history, currentCode, allProjectFiles = null, options = {}) => {
     const runId = options?.runId || null;
     const controller = registerRun(runId);
     const startedAt = Date.now();
@@ -289,9 +290,9 @@ const registerProviderCompletionHandler = ({
         listSkills,
         resolveProfileModel
       });
-      executionOptions = await injectManagedProviderCredential(executionOptions);
       const request = {
           kind: 'chat', history, currentCode, allProjectFiles, getMainWindow, executeCommandForAI,
+          workspaceContext: typeof resolveWorkspaceContext === 'function' ? await resolveWorkspaceContext(event) : null,
           emitToken: (payload) => {
             const window = typeof getMainWindow === 'function' ? getMainWindow() : null;
             if (window && !window.isDestroyed()) window.webContents.send('ai-generation-token', payload);
@@ -342,6 +343,7 @@ const registerAIHandlers = ({
   completionHandlers = providerHandlers,
   completionRunner = runSingleCompletionProvider,
   publishUsageEvent,
+  resolveWorkspaceContext,
   resolveProfileModel = resolveModelForProfile
 } = {}) => {
   const completionContract = createProviderContract({
@@ -353,7 +355,12 @@ const registerAIHandlers = ({
         if (kind === 'chat') {
           const handler = completionHandlers[provider];
           if (typeof handler !== 'function') throw new Error(`Provider IA non supporte: ${provider}`);
-          return handler({ ...request, options });
+          return runProviderCompletionWithPolicy({
+            provider,
+            request,
+            options,
+            execute: (executionRequest) => handler({ ...executionRequest, options: executionRequest.options })
+          });
         }
         return completionRunner({ ...request, provider, options });
       },
@@ -370,7 +377,12 @@ const registerAIHandlers = ({
           wake?.();
           wake = null;
         };
-        Promise.resolve(handler({ ...request, emitToken, options: { ...options, streamResponse: true } }))
+        Promise.resolve(runProviderCompletionWithPolicy({
+          provider,
+          request: { ...request, emitToken },
+          options: { ...options, streamResponse: true },
+          execute: (executionRequest) => handler({ ...executionRequest, options: executionRequest.options })
+        }))
           .then((value) => { result = value; settled = true; wake?.(); })
           .catch((error) => { result = { success: false, error: error?.message || String(error) }; settled = true; wake?.(); });
         while (!settled || events.length) {
@@ -404,6 +416,7 @@ const registerAIHandlers = ({
       listSkills,
       completionContract,
       publishUsageEvent,
+      resolveWorkspaceContext,
       resolveProfileModel
   });
   registerProviderCompletionHandler({
@@ -416,6 +429,7 @@ const registerAIHandlers = ({
       listSkills,
       completionContract,
       publishUsageEvent,
+      resolveWorkspaceContext,
       resolveProfileModel
   });
   registerProviderCompletionHandler({
@@ -428,6 +442,7 @@ const registerAIHandlers = ({
       listSkills,
       completionContract,
       publishUsageEvent,
+      resolveWorkspaceContext,
       resolveProfileModel
   });
   registerProviderCompletionHandler({
@@ -440,6 +455,7 @@ const registerAIHandlers = ({
       listSkills,
       completionContract,
       publishUsageEvent,
+      resolveWorkspaceContext,
       resolveProfileModel
   });
   registerProviderCompletionHandler({
@@ -452,10 +468,11 @@ const registerAIHandlers = ({
       listSkills,
       completionContract,
       publishUsageEvent,
+      resolveWorkspaceContext,
       resolveProfileModel
   });
 
-  ipcMain.handle('get-inline-completion', async (_event, prompt, code, options = {}) => {
+  ipcMain.handle('get-inline-completion', async (event, prompt, code, options = {}) => {
     const systemInstruction = `Tu es un assistant de complétion de code ultra-strict.
 RÈGLES ABSOLUES:
 1. Ne renvoie QUE le code complété ou modifié.
@@ -475,14 +492,14 @@ RÈGLES ABSOLUES:
         listSkills,
         resolveProfileModel
       });
-      executionOptions = await injectManagedProviderCredential(executionOptions);
       const response = await completionContract.complete({
         provider: executionOptions.provider,
         request: {
           kind: 'compact',
           systemInstruction: `${systemInstruction}${formatNevenCoreExecutionPrompt(executionOptions.nevenCoreExecutionContext)}`,
           userPrompt: `CONTEXTE DU FICHIER:\n${code}\n\nINSTRUCTION OU CODE SELECTIONNE:\n${prompt}`,
-          maxTokens: 2048
+          maxTokens: 2048,
+          workspaceContext: typeof resolveWorkspaceContext === 'function' ? await resolveWorkspaceContext(event) : null
         },
         options: controller ? { ...executionOptions, signal: controller.signal } : executionOptions
       });
@@ -503,7 +520,7 @@ RÈGLES ABSOLUES:
     }
   });
 
-  ipcMain.handle('get-ghost-completion', async (_event, prefix, suffix, options = {}) => {
+  ipcMain.handle('get-ghost-completion', async (event, prefix, suffix, options = {}) => {
     const systemInstruction = `Tu es une IA ultra-rapide d'autocomplétion de code (Fill-In-The-Middle).
 Ton but est de prédire EXACTEMENT le code qui manque entre le <PREFIX> (avant le curseur) et le <SUFFIX> (après le curseur).
 RÈGLES ABSOLUES:
@@ -524,7 +541,6 @@ RÈGLES ABSOLUES:
         listSkills,
         resolveProfileModel
       });
-      executionOptions = await injectManagedProviderCredential(executionOptions);
       const response = await completionContract.complete({
         provider: executionOptions.provider,
         request: {
@@ -532,7 +548,8 @@ RÈGLES ABSOLUES:
           systemInstruction: `${systemInstruction}${formatNevenCoreExecutionPrompt(executionOptions.nevenCoreExecutionContext)}`,
           userPrompt: `<PREFIX>\n${prefix}\n</PREFIX>\n\n<SUFFIX>\n${suffix}\n</SUFFIX>`,
           maxTokens: 256,
-          trimEndOnly: true
+          trimEndOnly: true,
+          workspaceContext: typeof resolveWorkspaceContext === 'function' ? await resolveWorkspaceContext(event) : null
         },
         options: controller ? { ...executionOptions, signal: controller.signal } : executionOptions
       });

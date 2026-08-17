@@ -8,8 +8,8 @@ const {
   requestProjectPathApproval,
 } = require('../core/security');
 
-const registerProjectHandlers = ({ getMainWindow }) => {
-  ipcMain.handle('open-folder-dialog', async () => {
+const registerProjectHandlers = ({ getMainWindow, setWorkspaceContext = () => {} }) => {
+  ipcMain.handle('open-folder-dialog', async (event) => {
     const { canceled, filePaths } = await dialog.showOpenDialog(getMainWindow(), {
       properties: ['openDirectory']
     });
@@ -18,6 +18,7 @@ const registerProjectHandlers = ({ getMainWindow }) => {
     }
 
     const trustedPath = trustProjectPath(filePaths[0]);
+    setWorkspaceContext(event, trustedPath);
     return { success: true, path: trustedPath };
   });
 
@@ -26,20 +27,23 @@ const registerProjectHandlers = ({ getMainWindow }) => {
   // dialogue natif pour une simple question. Toujours le même dossier
   // (pas d'horodatage) : les sessions "sans projet" successives réutilisent
   // le même espace au lieu d'accumuler des dossiers vides.
-  ipcMain.handle('create-default-project', async () => {
+  ipcMain.handle('create-default-project', async (event) => {
     try {
       const defaultRoot = path.join(app.getPath('documents'), 'Code Companion', 'Sans-titre');
       fs.mkdirSync(defaultRoot, { recursive: true });
       const trustedPath = trustProjectPath(defaultRoot);
+      setWorkspaceContext(event, trustedPath);
       return { success: true, path: trustedPath };
     } catch (error) {
       return { success: false, error: error.message };
     }
   });
 
-  ipcMain.handle('authorize-project-path', async (_event, projectPath) => {
+  ipcMain.handle('authorize-project-path', async (event, projectPath) => {
     try {
-      return await requestProjectPathApproval(projectPath, { dialog, getMainWindow });
+      const result = await requestProjectPathApproval(projectPath, { dialog, getMainWindow });
+      if (result.success && result.path) setWorkspaceContext(event, result.path);
+      return result;
     } catch (error) {
       return { success: false, error: error.message };
     }
