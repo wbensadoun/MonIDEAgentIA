@@ -108,7 +108,12 @@ const executeProviderPolicy = async ({ provider, workspaceId, policy, resolveCre
     }
     let attempted;
     try {
-      attempted = await attempt({ origin, provider: normalizedProvider, workspaceId, credential });
+      attempted = typeof credential?.withActiveSecret === 'function'
+        ? await credential.withActiveSecret(({ credential: leasedCredential, signal }) => attempt({ origin, provider: normalizedProvider, workspaceId, credential: leasedCredential, signal }))
+        : await attempt({ origin, provider: normalizedProvider, workspaceId, credential });
+      if (attempted?.outcome) attempted = attempted.outcome === 'active'
+        ? attempted.value
+        : { success: false, error: { code: 'credential_unavailable' } };
     } catch (error) {
       attempted = { success: false, error, retryable: error?.retryable === true };
     }

@@ -330,15 +330,6 @@ const isPromptTrivialForL1 = (userPrompt, settings) => {
   return complexity <= (1 - threshold);
 };
 
-// Cles Settings contenant la cle API de chaque provider cloud (miroir de
-// ROUTER_CLASSIFIER_API_KEY_FIELDS dans client/src/components/Settings/index.js).
-// Ollama n'a pas besoin de cle API.
-const CLASSIFIER_API_KEY_FIELD_BY_PROVIDER = Object.freeze({
-  gemini: 'geminiApiKey',
-  claude: 'claudeApiKey',
-  kimi: 'kimiApiKey'
-});
-
 // Resout le provider + modele a utiliser pour l'appel de classification L2.
 // Repli sur le provider d'execution courant + resolveModelForTier('light') des que
 // `routerClassifierProvider`/`routerClassifierModel` sont absents/invalides (comportement
@@ -356,18 +347,6 @@ const resolveClassifierTarget = async (settings, normalizedProvider, ctx) => {
 
   const resolved = await resolveModelForTier(classifierProvider, 'light', ctx);
   return { provider: classifierProvider, resolved: resolved.resolved, source: resolved.source };
-};
-
-// Resout la cle API a utiliser pour l'appel de classification L2. Si le classifieur
-// utilise un provider different du provider d'execution, on prefere la cle dediee a ce
-// provider (persistee dans Settings > Cles API — voir ROUTER_CLASSIFIER_API_KEY_FIELDS
-// cote UI) ; a defaut, repli sur la cle transmise pour l'execution courante (correct
-// quand le classifieur reutilise le meme provider, ou par securite si aucune cle dediee
-// n'est configuree).
-const resolveClassifierApiKey = (settings, classifierProvider, fallbackApiKey) => {
-  const field = CLASSIFIER_API_KEY_FIELD_BY_PROVIDER[classifierProvider];
-  const dedicatedKey = field ? settings?.[field] : null;
-  return dedicatedKey || fallbackApiKey;
 };
 
 // Prompt systeme de classification (FR). La demande utilisateur est passee dans le
@@ -475,20 +454,27 @@ const buildExecution = (decision) => {
 const routeToDecision = async ({
   projectPath,
   userPrompt,
-  provider,
-  apiKey,
-  hardwareProfile,
-  settings,
   listAgents,
   listSkills,
   runSingleCompletionProvider,
-  workspaceContext
+  workspaceContext,
+  trustedRouterConfiguration = {}
 } = {}) => {
   const startedAt = Date.now();
-  const normalizedProvider = normalizeAIProviderName(provider);
+  // Built by the main process from trusted settings/workspace state. Legacy
+  // provider/apiKey/settings inputs are deliberately ignored if callers send them.
+  const trustedConfiguration = trustedRouterConfiguration && typeof trustedRouterConfiguration === 'object'
+    ? trustedRouterConfiguration
+    : {};
+  const trustedSettings = trustedConfiguration.settings && typeof trustedConfiguration.settings === 'object'
+    ? trustedConfiguration.settings
+    : {};
+  const normalizedProvider = normalizeAIProviderName(trustedConfiguration.provider || trustedSettings.defaultProvider);
   const ctx = {
-    hardwareProfile: hardwareProfile && typeof hardwareProfile === 'object' ? hardwareProfile : {},
-    settings: settings && typeof settings === 'object' ? settings : {}
+    hardwareProfile: trustedConfiguration.hardwareProfile && typeof trustedConfiguration.hardwareProfile === 'object'
+      ? trustedConfiguration.hardwareProfile
+      : {},
+    settings: trustedSettings
   };
 
   try {
@@ -551,10 +537,9 @@ const routeToDecision = async ({
     //    Provider/modele du classifieur configurables via Settings > Routeur Intelligent
     //    (routerClassifierProvider/routerClassifierModel) ; repli sur le provider d'execution
     //    courant + resolveModelForTier('light') si non configures (comportement historique).
-    //    La cle API suit le meme provider (cle dediee si le classifieur differe du provider
-    //    d'execution, sinon repli sur la cle transmise pour l'execution courante).
+    //    Credential and policy resolution remains at the trusted main/workspace
+    //    execution boundary of runSingleCompletionProvider.
     const classifierTarget = await resolveClassifierTarget(ctx.settings, normalizedProvider, ctx);
-    const classifierApiKey = resolveClassifierApiKey(ctx.settings, classifierTarget.provider, apiKey);
     const systemInstruction = buildRouterSystemPrompt({
       agents,
       skills,
@@ -566,7 +551,7 @@ const routeToDecision = async ({
       provider: classifierTarget.provider,
       systemInstruction,
       userPrompt: truncateText(String(userPrompt || '').trim(), ROUTER_USER_PROMPT_MAX, '\n[...TRONQUE...]'),
-      options: { apiKey: classifierApiKey, model: classifierTarget.resolved, temperature: 0.1 },
+      options: { model: classifierTarget.resolved, temperature: 0.1 },
       maxTokens: ROUTER_CLASSIFICATION_MAX_TOKENS,
       workspaceContext
     });
@@ -625,7 +610,6 @@ module.exports = {
   resolveModelForProfile,
   resolveComplexityThreshold,
   resolveClassifierTarget,
-  resolveClassifierApiKey,
   estimatePromptComplexity,
   classifyPromptProfile,
   isPromptTrivialForL1,
@@ -635,7 +619,6 @@ module.exports = {
   ROUTER_PROFILE_DEFINITIONS,
   ROUTER_VALID_PROFILES,
   PROVIDER_TIER_PROFILES,
-  CLASSIFIER_API_KEY_FIELD_BY_PROVIDER,
   ROUTER_COMPLEXITY_THRESHOLD_FALLBACK,
   DEFAULT_CLAUDE_LIGHT_MODEL
 };

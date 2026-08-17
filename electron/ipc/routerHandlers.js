@@ -17,6 +17,7 @@ const registerRouterHandlers = ({
   ensureTrustedProjectPath, // fourni par symetrie avec les autres handlers (non utilise directement)
   resolveOptionalTrustedProjectPath,
   resolveWorkspaceContext = async () => null,
+  resolveTrustedRouterConfiguration = async () => ({}),
   routeToDecision: routeToDecisionImpl = routeToDecision
 } = {}) => {
   ipcMain.handle('route-request', async (event, projectPath, userPrompt, options = {}) => {
@@ -37,17 +38,23 @@ const registerRouterHandlers = ({
       workspaceContext = null;
     }
 
+    let trustedRouterConfiguration = {};
+    try {
+      trustedRouterConfiguration = await resolveTrustedRouterConfiguration({ event, workspaceContext });
+    } catch {
+      trustedRouterConfiguration = {};
+    }
+
     return routeToDecisionImpl({
       projectPath: trustedProjectPath,
       userPrompt,
-      provider: options.provider,
-      apiKey: options.apiKey,
-      hardwareProfile: options.hardwareProfile,
-      settings: options.settings,
+      // Kept for IPC compatibility only: renderer options must never select a
+      // provider/model, alter policy, or inject a credential into BYOK routing.
       listAgents,
       listSkills,
       runSingleCompletionProvider,
-      workspaceContext
+      workspaceContext,
+      trustedRouterConfiguration
     });
   });
 };
