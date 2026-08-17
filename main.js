@@ -46,7 +46,8 @@ const { registerPtyHandlers } = require('./electron/ipc/ptyHandlers');
 const { createPtyService } = require('./electron/services/pty.service');
 const { registerProviderHandlers } = require('./electron/ipc/providerHandlers');
 const { ProviderSecretVault } = require('./electron/services/provider-secret-vault.service');
-const { resolveProviderCredential } = require('./electron/services/provider-policy.service');
+const { getCredentialId, normalizePolicy } = require('./electron/services/provider-policy.service');
+const { ProviderUsageLedger } = require('./electron/services/provider-usage-ledger.service');
 const {
   NevenControlPlaneClient,
   createNevenAccessResolver
@@ -99,28 +100,26 @@ const providerSecretVault = new ProviderSecretVault({
 const nevenControlPlane = new NevenControlPlaneClient();
 const publishNevenUsageEvent = createNevenUsagePublisher({ client: nevenControlPlane });
 const resolveNevenAccess = createNevenAccessResolver({ client: nevenControlPlane });
-const resolveManagedProviderCredential = ({ provider, workspaceId, policy }) => resolveProviderCredential({
-  provider,
-  workspaceId,
-  policy,
-  vault: providerSecretVault,
-  nevenCredentialResolver: async ({ provider: normalizedProvider }) => {
-    if (normalizedProvider === 'neven') {
-      return resolveNevenAccess({
-        workspaceId,
-        profile: policy?.profile,
-        capability: policy?.capability || 'completion'
-      });
-    }
-    const environmentKeys = {
-      gemini: ['GEMINI_API_KEY'],
-      claude: ['CLAUDE_API_KEY', 'ANTHROPIC_API_KEY'],
-      kimi: ['KIMI_API_KEY', 'TOGETHER_API_KEY'],
-      dashscope: ['DASHSCOPE_API_KEY']
-    }[normalizedProvider] || [];
-    return environmentKeys.map((key) => process.env[key]).find(Boolean) || null;
-  }
-});
+const providerUsageLedger = new ProviderUsageLedger({ filePath: ProviderUsageLedger.defaultFilePath(app.getPath('userData')) });
+const workspaceContexts = new Map();
+const setWorkspaceContext = (event, workspaceId) => {
+  const sender = event?.sender;
+  if (!sender?.id || !sender.session || !workspaceId) return;
+  workspaceContexts.set(sender.id, { workspaceId });
+};
+const resolveWorkspaceContext = async (event) => {
+  const sender = event?.sender;
+  if (!sender?.id || !sender.session) return null;
+  return workspaceContexts.get(sender.id) || null;
+};
+const resolveManagedProviderCredential = async ({ origin, provider, workspaceId, context }) => {
+  if (!context?.access || context.workspaceId !== workspaceId) return null;
+  if (origin === 'local') return null;
+  if (origin === 'byok') return providerSecretVault.get(getCredentialId({ workspaceId, provider }));
+  // A Neven grant is not a provider API key. Until COD-26 wires the gateway,
+  // fail closed without consulting provider environment variables.
+  return { unavailable: true };
+};
 configureAIService({ dialog, getMainWindow: () => mainWindow });
 const processService = createProcessService({ getMainWindow: () => mainWindow });
 const ptyService = createPtyService({ getMainWindow: () => mainWindow });
@@ -128,7 +127,22 @@ const ptyService = createPtyService({ getMainWindow: () => mainWindow });
 // Deuxieme passe de configuration : configureAIService fusionne ses deps, et
 // ptyService n'existe pas encore ligne 85. Donne a l'outil <read_terminal> des
 // providers un acces LECTURE SEULE au tampon du terminal partage.
-configureAIService({ ptyService, resolveProviderCredential: resolveManagedProviderCredential });
+configureAIService({
+  ptyService,
+  resolveProviderCredential: resolveManagedProviderCredential,
+  resolveProviderPolicy: async ({ access }) => {
+    if (!access?.providerPolicy) throw new Error('Policy provider absente.');
+    return normalizePolicy(access.providerPolicy);
+  },
+  resolveProviderExecutionContext: async ({ request }) => {
+    const context = request?.workspaceContext;
+    const workspaceId = context?.workspaceId;
+    if (!workspaceId) return null;
+    const access = await resolveNevenAccess({ workspaceId, capability: 'completion' });
+    return access ? { workspaceId, access } : null;
+  },
+  providerUsageLedger
+});
 
 // Des shells reels doivent etre tues explicitement : contrairement aux
 // process.service (spawn de commandes ponctuelles, deja termines pour la
@@ -198,7 +212,7 @@ registerGitHandlers({
 
 // Handlers extraits dans leurs modules respectifs
 registerLogHandlers({ getLogsDir, getLatestLogPath });
-registerProjectHandlers({ getMainWindow: () => mainWindow });
+registerProjectHandlers({ getMainWindow: () => mainWindow, setWorkspaceContext });
 registerProcessHandlers(processService);
 registerQualityHandlers(processService);
 registerSystemHandlers();
@@ -211,7 +225,8 @@ registerOllamaHandlers(() => mainWindow);
 registerAIHandlers({
   getMainWindow: () => mainWindow,
   executeCommandForAI,
-  publishUsageEvent: publishNevenUsageEvent
+  publishUsageEvent: publishNevenUsageEvent,
+  resolveWorkspaceContext
 });
 registerSkillHandlers();
 registerRouterHandlers({
@@ -221,7 +236,8 @@ registerRouterHandlers({
   listSkills,
   runSingleCompletionProvider,
   ensureTrustedProjectPath,
-  resolveOptionalTrustedProjectPath
+  resolveOptionalTrustedProjectPath,
+  resolveWorkspaceContext
 });
 registerPtyHandlers(ptyService);
-registerProviderHandlers({ app, vault: providerSecretVault });
+registerProviderHandlers({ app, vault: providerSecretVault, resolveWorkspaceContext });

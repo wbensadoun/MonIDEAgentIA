@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const axios = require('axios');
 const Anthropic = require('@anthropic-ai/sdk');
 const { createProviderContract, isKnownProvider } = require('./provider-contract.service');
+const { executeProviderPolicy, normalizePolicy } = require('./provider-policy.service');
 const { runDashScopePromptCompletion } = require('./ai-providers/dashscope.provider');
 const { sanitizeVisualWorkflowPayload } = require('../workflows/visualWorkflowSchema');
 const {
@@ -54,7 +55,10 @@ let serviceDeps = {
   dialog: null,
   getMainWindow: null,
   ptyService: null,
-  resolveProviderCredential: null
+  resolveProviderCredential: null,
+  resolveProviderPolicy: null,
+  resolveProviderExecutionContext: null,
+  providerUsageLedger: null
 };
 
 const configureAIService = (deps = {}) => {
@@ -622,6 +626,42 @@ const injectManagedProviderCredential = async (options = {}) => {
   return { ...options, managedCredential: resolved?.credential || null };
 };
 
+// This boundary is used by chat, inline and ghost completions. Renderer input
+// never selects the policy, workspace or credential origin.
+const runProviderCompletionWithPolicy = async ({ provider, request = {}, options = {}, execute } = {}) => {
+  if (typeof execute !== 'function') throw new Error('Execution provider requise.');
+  if (typeof serviceDeps.resolveProviderExecutionContext !== 'function' || typeof serviceDeps.resolveProviderPolicy !== 'function' || typeof serviceDeps.resolveProviderCredential !== 'function') {
+    // Only non-Electron/unit callers can use the legacy execution path. Main
+    // configures all managed dependencies before it registers IPC handlers.
+    return execute({ ...request, options });
+  }
+  const context = await serviceDeps.resolveProviderExecutionContext({ request, options, provider });
+  if (!context?.workspaceId) return { success: false, error: 'Accès workspace fournisseur refusé.' };
+  let policy;
+  try {
+    policy = normalizePolicy(await serviceDeps.resolveProviderPolicy({ ...context, provider }));
+  } catch {
+    return { success: false, error: 'Policy fournisseur refusée.' };
+  }
+  return executeProviderPolicy({
+    provider,
+    workspaceId: context.workspaceId,
+    policy,
+    resolveCredential: ({ origin, ...identity }) => serviceDeps.resolveProviderCredential({ ...identity, origin, context, policy }),
+    attempt: async ({ origin, credential }) => execute({
+      ...request,
+      options: { ...options, credentialMode: 'managed', credentialOrigin: origin, managedCredential: credential }
+    }),
+    ledger: serviceDeps.providerUsageLedger,
+    usage: (result) => ({
+      runId: context.runId || null,
+      inputTokens: result?.usage?.inputTokens ?? result?.usage?.promptTokens,
+      outputTokens: result?.usage?.outputTokens ?? result?.usage?.completionTokens,
+      durationMs: result?.durationMs
+    })
+  });
+};
+
 const stripCompletionMarkdown = (value, { trimEndOnly = false } = {}) => {
   const source = String(value || '')
     .replace(/^```[a-z]*\n/i, '')
@@ -644,16 +684,11 @@ const runLegacySingleCompletionProvider = async ({
   }
   const normalizedProvider = normalizeCompletionProvider(provider);
   const managedCredentials = options.credentialMode === 'managed';
-  let managedCredential = null;
-  if (managedCredentials && typeof serviceDeps.resolveProviderCredential === 'function') {
-    managedCredential = await serviceDeps.resolveProviderCredential({
-      provider: normalizedProvider,
-      workspaceId: options.projectPath,
-      policy: options.providerPolicy
-    });
-  }
+  // The policy executor selected this credential and origin already. Resolving
+  // again here can select a different origin and must never happen.
+  const managedCredential = managedCredentials ? options.managedCredential || null : null;
   const resolveApiKey = (legacyKey, ...environmentKeys) => {
-    if (managedCredentials) return managedCredential?.credential || null;
+    if (managedCredentials) return managedCredential;
     return legacyKey || environmentKeys.map((key) => process.env[key]).find(Boolean) || null;
   };
   const temperature = Number.isFinite(Number(options.temperature)) ? Number(options.temperature) : 0.1;
@@ -751,7 +786,7 @@ const runLegacySingleCompletionProvider = async ({
     return runDashScopePromptCompletion({
       systemInstruction,
       userPrompt,
-      options: { ...options, managedCredential: managedCredential?.credential || null },
+      options: { ...options, managedCredential },
       maxTokens,
       trimEndOnly
     });
@@ -806,7 +841,13 @@ const runSingleCompletionProvider = async (request = {}) => {
       complete: ({ options, ...payload }) => runLegacySingleCompletionProvider({ ...payload, provider: id, options })
     }]))
   });
-  return contract.complete({ provider, request: { ...request, provider }, options: request.options || {} });
+  const options = request.options || {};
+  return runProviderCompletionWithPolicy({
+    provider,
+    request: { ...request, provider },
+    options,
+    execute: (executionRequest) => contract.complete({ provider, request: executionRequest, options: executionRequest.options || options })
+  });
 };
 
 // ---------------------------------------------------------------------------
@@ -1255,6 +1296,7 @@ const executeCommandForAI = (cmd, projectPath, deps = serviceDeps, runContext = 
 module.exports = {
   configureAIService,
   injectManagedProviderCredential,
+  runProviderCompletionWithPolicy,
   runLegacySingleCompletionProvider,
   buildContextPrompt,
   buildProjectIndexContext,

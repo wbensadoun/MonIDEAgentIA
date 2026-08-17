@@ -47,7 +47,7 @@ const getKimiCompletion = async ({
   if (options.localOnly) {
     return { success: false, error: 'Local-only actif: Kimi/Together interdit.', provider: 'kimi' };
   }
-  const apiKey = options.managedCredential || process.env.KIMI_API_KEY || process.env.TOGETHER_API_KEY;
+  const apiKey = options.credentialMode === 'managed' ? options.managedCredential : (process.env.KIMI_API_KEY || process.env.TOGETHER_API_KEY);
   const modelFromEnv = process.env.KIMI_MODEL;
   const model = options.model || modelFromEnv || DEFAULT_KIMI_MODEL;
   const thinkingMode = !!options.thinkingMode;

@@ -138,7 +138,9 @@ const normalizeAccess = (payload, {
     gatewayUrl,
     accessToken,
     expiresAt,
-    scopes: Array.isArray(source?.scopes) ? source.scopes.map((scope) => String(scope)).slice(0, 32) : []
+    scopes: Array.isArray(source?.scopes) ? source.scopes.map((scope) => String(scope)).slice(0, 32) : [],
+    // This is authorization metadata from the control plane, not renderer input.
+    providerPolicy: source?.providerPolicy && typeof source.providerPolicy === 'object' ? source.providerPolicy : null
   });
 };
 

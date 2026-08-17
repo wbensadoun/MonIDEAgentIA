@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.7.0] — Policy BYOK backend
+
+### Added
+
+- Enum BYOK, décision pure d'origines ordonnées, exécuteur injectable et ledger par tentative.
+
+### Security
+
+- Tombstone de révocation sans ciphertext et suppression des policy/origin/credentials issus du renderer.
+
 ## [2.6.1] — Durcissement Neven
 
 ### Security

@@ -137,9 +137,12 @@ class ProviderSecretVault {
     const state = await this._load();
     const record = state.secrets[id];
     if (!record) return false;
+    // Keep only a tombstone; a revoked credential must not remain recoverable.
+    const timestamp = this.now();
+    delete record.ciphertext;
     record.status = 'revoked';
-    record.revokedAt = this.now();
-    record.updatedAt = this.now();
+    record.revokedAt = timestamp;
+    record.updatedAt = timestamp;
     await this._save();
     return true;
   }
