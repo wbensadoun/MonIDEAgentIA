@@ -26,10 +26,16 @@ test('completion IPC strips technical metadata and rejects forged Core context',
     const forgedOptions = {
       provider: 'gemini',
       model: 'forged-model',
+      apiKey: 'renderer-must-not-reach-provider',
+      managedCredential: 'renderer-must-not-reach-provider',
+      apiUrl: 'https://hostile.invalid/credential-exfiltration',
       projectPath: null,
       nevenCoreExecutionContext: { profile: 'opus', capabilities: ['forged'] }
     };
     const completionHandler = async ({ options }) => {
+      assert.equal(Object.prototype.hasOwnProperty.call(options, 'apiKey'), false);
+      assert.equal(Object.prototype.hasOwnProperty.call(options, 'managedCredential'), false);
+      assert.equal(Object.prototype.hasOwnProperty.call(options, 'apiUrl'), false);
       assert.equal(options.nevenCoreExecutionContext.profile, 'luna');
       assert.equal(options.nevenCoreExecutionContext.capabilities.includes('forged'), false);
       return {
@@ -53,6 +59,9 @@ test('completion IPC strips technical metadata and rejects forged Core context',
       };
     };
     const completionRunner = async ({ options, systemInstruction }) => {
+      assert.equal(Object.prototype.hasOwnProperty.call(options, 'apiKey'), false);
+      assert.equal(Object.prototype.hasOwnProperty.call(options, 'managedCredential'), false);
+      assert.equal(Object.prototype.hasOwnProperty.call(options, 'apiUrl'), false);
       assert.equal(options.nevenCoreExecutionContext.profile, 'luna');
       assert.equal(systemInstruction.includes('profil=luna'), true);
       assert.equal(systemInstruction.includes('internal-runtime-model'), false);
@@ -114,7 +123,8 @@ test('completion IPC strips technical metadata and rejects forged Core context',
       assert.equal(resolved.nevenCoreExecutionContext.profile, 'luna');
 
       const normalCalls = [];
-      const normalHandlers = Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama'].map((channelProvider) => [channelProvider, async ({ options }) => {
+      const normalHandlers = Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama', 'dashscope'].map((channelProvider) => [channelProvider, async ({ options }) => {
+        assert.equal(Object.prototype.hasOwnProperty.call(options, 'apiUrl'), false);
         normalCalls.push({ channelProvider, provider: options.provider, model: options.model });
         return { success: true, text: channelProvider, provider: channelProvider, model: options.model };
       }]));
@@ -136,12 +146,13 @@ test('completion IPC strips technical metadata and rejects forged Core context',
         ['get-claude-completion', 'claude'],
         ['get-kimi-completion', 'kimi'],
         ['get-ollama-completion', 'ollama']
+        ,['get-dashscope-completion', 'dashscope']
       ];
       for (const [channel, channelProvider] of normalChannels) {
         for (const rendererProvider of [undefined, channelProvider === 'gemini' ? 'claude' : 'gemini']) {
           const response = await handlers[channel](
             {}, [{ role: 'user', text: 'corrige ce bug' }], '', null,
-            { model: 'renderer-model', ...(rendererProvider ? { provider: rendererProvider } : {}) }
+            { model: 'renderer-model', apiUrl: 'https://hostile.invalid/credential-exfiltration', ...(rendererProvider ? { provider: rendererProvider } : {}) }
           );
           assert.deepEqual(response, { success: true, text: channelProvider });
         }
@@ -155,12 +166,15 @@ test('completion IPC strips technical metadata and rejects forged Core context',
         ['get-inline-completion', ['corrige ce bug', 'const x = 1;']],
         ['get-ghost-completion', ['bug ', ' = 1;']]
       ]) {
-        for (const options of [{}, { provider: 'renderer-invalide' }]) {
+        for (const options of [{}]) {
           const response = await handlers[channel]({}, ...args, { model: 'renderer-model', ...options });
           assert.deepEqual(response, { success: true, text: 'normalized' });
         }
+        const invalid = await handlers[channel]({}, ...args, { model: 'renderer-model', provider: 'renderer-invalide' });
+        assert.equal(invalid.success, false);
+        assert.equal(invalid.error.includes('provider IA'), true);
       }
-      assert.deepEqual(inlineCalls, Array.from({ length: 4 }, () => ({
+      assert.deepEqual(inlineCalls, Array.from({ length: 2 }, () => ({
         provider: 'gemini', optionProvider: 'gemini', model: 'resolved-gemini-luna'
       })));
 
@@ -198,6 +212,7 @@ test('completion IPC strips technical metadata and rejects forged Core context',
       assert.equal(error.error.includes('sk-error-secret-123456789'), false);
       assert.equal(error.error.includes('qwen3:8b'), false);
       assert.equal(error.error.includes('provider IA'), true);
+
     })().catch((error) => { console.error(error); process.exitCode = 1; });
   `;
 
@@ -236,5 +251,46 @@ test('Kimi and Ollama streaming events have a renderer-safe fixed shape', () => 
     cwd: process.cwd(),
     encoding: 'utf8'
   });
+  assert.equal(output.trim(), '');
+});
+
+test('inline and ghost runs are abortable in main and never receive renderer credentials', () => {
+  const script = String.raw`
+    const assert = require('node:assert/strict');
+    const electronId = require.resolve('electron');
+    require.cache[electronId] = { id: electronId, filename: electronId, loaded: true, exports: {
+      ipcMain: { handle() {} }, dialog: { showErrorBox() {} }, app: { getPath: () => 'C:/codex-test-user-data' }
+    } };
+    const handlers = {};
+    const emitted = [];
+    const { registerAIHandlers } = require('./electron/ipc/aiHandlers');
+    const completionRunner = ({ options }) => new Promise((resolve, reject) => {
+      assert.equal(Object.prototype.hasOwnProperty.call(options, 'apiKey'), false);
+      options.signal.addEventListener('abort', () => {
+        const error = new Error('cancelled'); error.aborted = true; reject(error);
+      }, { once: true });
+    });
+    registerAIHandlers({
+      ipcMain: { handle: (channel, handler) => { handlers[channel] = handler; } },
+      getMainWindow: () => ({ isDestroyed: () => false, webContents: { send: (_channel, payload) => emitted.push(payload) } }),
+      completionRunner,
+      listAgents: async () => ({ agents: [] }), listSkills: async () => ({ skills: [] })
+    });
+    (async () => {
+      for (const [channel, args, runId] of [
+        ['get-inline-completion', ['x', 'const x = 1;'], 'inline-run'],
+        ['get-ghost-completion', ['x', ';'], 'ghost-run']
+      ]) {
+        const pending = handlers[channel]({}, ...args, { provider: 'gemini', apiKey: 'renderer-secret', runId });
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.deepEqual(await handlers['cancel-ai-generation']({}, runId), { success: true });
+        const result = await pending;
+        assert.equal(result.aborted, true);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      assert.deepEqual(emitted, []);
+    })().catch((error) => { console.error(error); process.exitCode = 1; });
+  `;
+  const output = execFileSync(process.execPath, ['-e', script], { cwd: process.cwd(), encoding: 'utf8' });
   assert.equal(output.trim(), '');
 });

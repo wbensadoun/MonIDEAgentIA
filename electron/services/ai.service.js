@@ -5,6 +5,8 @@ const fs = require('fs').promises;
 const { spawn } = require('child_process');
 const axios = require('axios');
 const Anthropic = require('@anthropic-ai/sdk');
+const { createProviderContract, isKnownProvider } = require('./provider-contract.service');
+const { runDashScopePromptCompletion } = require('./ai-providers/dashscope.provider');
 const { sanitizeVisualWorkflowPayload } = require('../workflows/visualWorkflowSchema');
 const {
   assertSafePath,
@@ -604,8 +606,20 @@ const buildContextPrompt = (projectFiles, agents) => {
 
 const normalizeCompletionProvider = (value) => {
   const provider = String(value || '').trim().toLowerCase();
-  if (provider === 'claude' || provider === 'kimi' || provider === 'ollama') return provider;
-  return 'gemini';
+  if (!provider) return 'gemini'; // défaut explicite historique, jamais pour une valeur inconnue.
+  return isKnownProvider(provider) ? provider : null;
+};
+
+const injectManagedProviderCredential = async (options = {}) => {
+  if (options.credentialMode !== 'managed' || typeof serviceDeps.resolveProviderCredential !== 'function') return options;
+  const provider = normalizeCompletionProvider(options.provider);
+  if (!provider) return options;
+  const resolved = await serviceDeps.resolveProviderCredential({
+    provider,
+    workspaceId: options.projectPath,
+    policy: options.providerPolicy
+  });
+  return { ...options, managedCredential: resolved?.credential || null };
 };
 
 const stripCompletionMarkdown = (value, { trimEndOnly = false } = {}) => {
@@ -615,7 +629,7 @@ const stripCompletionMarkdown = (value, { trimEndOnly = false } = {}) => {
   return trimEndOnly ? source.trimEnd() : source.trim();
 };
 
-const runSingleCompletionProvider = async ({
+const runLegacySingleCompletionProvider = async ({
   provider,
   systemInstruction,
   userPrompt,
@@ -623,8 +637,9 @@ const runSingleCompletionProvider = async ({
   maxTokens = 512,
   trimEndOnly = false
 }) => {
+  if (options.signal?.aborted) return { success: false, aborted: true, error: 'Generation annulee.' };
   const rawProvider = String(provider || '').trim().toLowerCase();
-  if (options.disallowProviderFallback && !['gemini', 'claude', 'kimi', 'ollama'].includes(rawProvider)) {
+  if (!isKnownProvider(rawProvider)) {
     return { success: false, error: `Provider completion non pris en charge: ${provider || 'aucun'}` };
   }
   const normalizedProvider = normalizeCompletionProvider(provider);
@@ -652,7 +667,7 @@ const runSingleCompletionProvider = async ({
   }
 
   if (normalizedProvider === 'kimi') {
-    const apiKey = resolveApiKey(options.apiKey, 'KIMI_API_KEY', 'TOGETHER_API_KEY');
+    const apiKey = resolveApiKey(null, 'KIMI_API_KEY', 'TOGETHER_API_KEY');
     const model = options.model || process.env.KIMI_MODEL || DEFAULT_KIMI_MODEL;
     if (!apiKey) return { success: false, error: 'La cle API Together/Kimi est requise.', provider: 'kimi', model };
 
@@ -669,15 +684,17 @@ const runSingleCompletionProvider = async ({
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      timeout: 60000
+      timeout: 60000,
+      signal: options.signal
     });
+    if (options.signal?.aborted) return { success: false, aborted: true, error: 'Generation annulee.', provider: 'kimi', model };
 
     const text = resp.data?.choices?.[0]?.message?.content || '';
     return { success: true, text: stripCompletionMarkdown(text, { trimEndOnly }), provider: 'kimi', model };
   }
 
   if (normalizedProvider === 'claude') {
-    const apiKey = resolveApiKey(options.apiKey, 'CLAUDE_API_KEY', 'ANTHROPIC_API_KEY');
+    const apiKey = resolveApiKey(null, 'CLAUDE_API_KEY', 'ANTHROPIC_API_KEY');
     const model = options.model || process.env.CLAUDE_MODEL || DEFAULT_CLAUDE_MODEL;
     if (!apiKey) return { success: false, error: 'La cle API Claude est requise.', provider: 'claude', model };
 
@@ -688,7 +705,8 @@ const runSingleCompletionProvider = async ({
       temperature,
       system: systemInstruction,
       messages: [{ role: 'user', content: userPrompt }]
-    });
+    }, { signal: options.signal });
+    if (options.signal?.aborted) return { success: false, aborted: true, error: 'Generation annulee.', provider: 'claude', model };
 
     const text = Array.isArray(resp.content)
       ? resp.content.map((part) => part?.text || '').join('')
@@ -722,13 +740,24 @@ const runSingleCompletionProvider = async ({
         temperature,
         num_predict: maxTokens
       }
-    }, { timeout: 90000 });
+    }, { timeout: 90000, signal: options.signal });
+    if (options.signal?.aborted) return { success: false, aborted: true, error: 'Generation annulee.', provider: 'ollama', requestedModel, model };
 
     const text = stripThinkBlocks(resp.data?.message?.content || '');
     return { success: true, text: stripCompletionMarkdown(text, { trimEndOnly }), provider: 'ollama', requestedModel, model };
   }
 
-  const apiKey = resolveApiKey(options.apiKey, 'GEMINI_API_KEY');
+  if (normalizedProvider === 'dashscope') {
+    return runDashScopePromptCompletion({
+      systemInstruction,
+      userPrompt,
+      options: { ...options, managedCredential: managedCredential?.credential || null },
+      maxTokens,
+      trimEndOnly
+    });
+  }
+
+  const apiKey = resolveApiKey(null, 'GEMINI_API_KEY');
   const model = options.model || process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
   if (!apiKey) return { success: false, error: 'La cle API Gemini est requise.', provider: 'gemini', model };
 
@@ -750,8 +779,11 @@ const runSingleCompletionProvider = async ({
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: options.signal
   });
+
+  if (options.signal?.aborted) return { success: false, aborted: true, error: 'Generation annulee.', provider: 'gemini', model };
 
   const data = await response.json();
   if (!response.ok) {
@@ -760,6 +792,21 @@ const runSingleCompletionProvider = async ({
 
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
   return { success: true, text: stripCompletionMarkdown(text, { trimEndOnly }), provider: 'gemini', model };
+};
+
+// Les complétions inline et ghost passent elles aussi par le même contrat que
+// le chat. Les appels SDK existants restent ici: aucun secret ni SDK n'est
+// déplacé vers le renderer, et aucune logique provider n'est dupliquée.
+const runSingleCompletionProvider = async (request = {}) => {
+  const provider = normalizeCompletionProvider(request.provider ?? request.options?.provider);
+  if (!provider) return { success: false, error: `Provider completion non pris en charge: ${request.provider || request.options?.provider || 'aucun'}` };
+  const contract = createProviderContract({
+    adapters: Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama', 'dashscope'].map((id) => [id, {
+      capabilities: { streaming: false, usage: true, cost: 'unpriced' },
+      complete: ({ options, ...payload }) => runLegacySingleCompletionProvider({ ...payload, provider: id, options })
+    }]))
+  });
+  return contract.complete({ provider, request: { ...request, provider }, options: request.options || {} });
 };
 
 // ---------------------------------------------------------------------------
@@ -1207,6 +1254,8 @@ const executeCommandForAI = (cmd, projectPath, deps = serviceDeps, runContext = 
 
 module.exports = {
   configureAIService,
+  injectManagedProviderCredential,
+  runLegacySingleCompletionProvider,
   buildContextPrompt,
   buildProjectIndexContext,
   buildFullProjectContext,

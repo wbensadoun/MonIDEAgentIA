@@ -113,7 +113,8 @@ const resolveManagedProviderCredential = ({ provider, workspaceId, policy }) => 
     const environmentKeys = {
       gemini: ['GEMINI_API_KEY'],
       claude: ['CLAUDE_API_KEY', 'ANTHROPIC_API_KEY'],
-      kimi: ['KIMI_API_KEY', 'TOGETHER_API_KEY']
+      kimi: ['KIMI_API_KEY', 'TOGETHER_API_KEY'],
+      dashscope: ['DASHSCOPE_API_KEY']
     }[normalizedProvider] || [];
     return environmentKeys.map((key) => process.env[key]).find(Boolean) || null;
   }

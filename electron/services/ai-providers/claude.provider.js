@@ -42,7 +42,7 @@ const getClaudeCompletion = async ({
   if (options.localOnly) {
     return { success: false, error: 'Local-only actif: Claude interdit.', provider: 'claude' };
   }
-  const apiKey = options.apiKey || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
+  const apiKey = options.managedCredential || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
   const modelFromEnv = process.env.CLAUDE_MODEL;
   const model = options.model || modelFromEnv || DEFAULT_CLAUDE_MODEL;
   const thinkingMode = !!options.thinkingMode;
@@ -214,6 +214,8 @@ const getClaudeCompletion = async ({
         temperature: options.temperature || 0.7,
         system: systemPrompt,
         messages: msgs
+      }, {
+        signal: options.signal
       });
       return response.content[0].text;
     };
