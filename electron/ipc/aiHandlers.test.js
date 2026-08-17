@@ -224,6 +224,36 @@ test('completion IPC strips technical metadata and rejects forged Core context',
   assert.equal(output.trim(), '');
 });
 
+test('chat IPC keeps BYOK available without a managed gateway grant', async () => {
+  const { configureAIService } = require('../services/ai.service');
+  const handlers = {};
+  let gatewayCalls = 0;
+  configureAIService({
+    resolveProviderExecutionContext: async () => ({ workspaceId: 'workspace-local', profile: 'haiku', access: null }),
+    resolveProviderPolicy: async () => ({ byok: 'priority' }),
+    resolveProviderCredential: async ({ origin }) => origin === 'byok' ? 'workspace-byok-key' : { unavailable: true },
+    executeManagedGateway: async () => { gatewayCalls += 1; throw new Error('gateway must stay disabled'); },
+    providerUsageLedger: { append: async () => {} }
+  });
+  registerAIHandlers({
+    ipcMain: { handle: (channel, handler) => { handlers[channel] = handler; } },
+    resolveWorkspaceContext: async () => ({ workspaceId: 'workspace-local' }),
+    completionHandlers: {
+      claude: async ({ options }) => {
+        assert.equal(options.credentialOrigin, 'byok');
+        assert.equal(options.managedCredential, 'workspace-byok-key');
+        return { success: true, text: 'byok-chat' };
+      }
+    }
+  });
+  assert.deepEqual(await handlers['get-claude-completion']({}, [{ role: 'user', text: 'bonjour' }], '', null, {}), {
+    success: true,
+    text: 'byok-chat',
+    origin: 'byok'
+  });
+  assert.equal(gatewayCalls, 0);
+});
+
 test('Kimi and Ollama streaming events have a renderer-safe fixed shape', () => {
   const script = String.raw`
     const assert = require('node:assert/strict');

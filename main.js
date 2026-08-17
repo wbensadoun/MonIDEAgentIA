@@ -52,6 +52,11 @@ const {
   NevenControlPlaneClient,
   createNevenAccessResolver
 } = require('./electron/services/neven-control-plane.service');
+const {
+  NevenManagedGatewayClient,
+  createManagedGatewayCompletion,
+  isNevenManagedGatewayEnabled
+} = require('./electron/services/neven-managed-gateway.service');
 const { createNevenUsagePublisher } = require('./electron/services/neven-usage-publisher.service');
 
 const isDev =
@@ -100,6 +105,12 @@ const providerSecretVault = new ProviderSecretVault({
 const nevenControlPlane = new NevenControlPlaneClient();
 const publishNevenUsageEvent = createNevenUsagePublisher({ client: nevenControlPlane });
 const resolveNevenAccess = createNevenAccessResolver({ client: nevenControlPlane });
+const nevenManagedGatewayEnabled = isNevenManagedGatewayEnabled();
+const completeManagedGateway = createManagedGatewayCompletion({
+  accessResolver: resolveNevenAccess,
+  gatewayClient: new NevenManagedGatewayClient(),
+  enabled: nevenManagedGatewayEnabled
+});
 const providerUsageLedger = new ProviderUsageLedger({ filePath: ProviderUsageLedger.defaultFilePath(app.getPath('userData')) });
 const workspaceContexts = new Map();
 const setWorkspaceContext = (event, workspaceId) => {
@@ -113,12 +124,11 @@ const resolveWorkspaceContext = async (event) => {
   return workspaceContexts.get(sender.id) || null;
 };
 const resolveManagedProviderCredential = async ({ origin, provider, workspaceId, context }) => {
-  if (!context?.access || context.workspaceId !== workspaceId) return null;
+  if (!context || context.workspaceId !== workspaceId) return null;
   if (origin === 'local') return null;
   if (origin === 'byok') return providerSecretVault.get(getCredentialId({ workspaceId, provider }));
-  // A Neven grant is not a provider API key. Until COD-26 wires the gateway,
-  // fail closed without consulting provider environment variables.
-  return { unavailable: true };
+  // The grant stays inside the managed gateway path; it is never an API key.
+  return nevenManagedGatewayEnabled && context.access ? { managedGateway: true } : { unavailable: true };
 };
 configureAIService({ dialog, getMainWindow: () => mainWindow });
 const processService = createProcessService({ getMainWindow: () => mainWindow });
@@ -131,16 +141,20 @@ configureAIService({
   ptyService,
   resolveProviderCredential: resolveManagedProviderCredential,
   resolveProviderPolicy: async ({ access }) => {
-    if (!access?.providerPolicy) throw new Error('Policy provider absente.');
-    return normalizePolicy(access.providerPolicy);
+    // Without a managed grant, only local/BYOK origins can execute. Prefer a
+    // stored BYOK credential and never use a provider environment credential.
+    return normalizePolicy(access?.providerPolicy || { byok: 'priority' });
   },
   resolveProviderExecutionContext: async ({ request }) => {
     const context = request?.workspaceContext;
     const workspaceId = context?.workspaceId;
     if (!workspaceId) return null;
-    const access = await resolveNevenAccess({ workspaceId, capability: 'completion' });
-    return access ? { workspaceId, access } : null;
+    const profile = 'haiku';
+    if (!nevenManagedGatewayEnabled) return { workspaceId, profile, access: null };
+    const access = await resolveNevenAccess({ workspaceId, profile, capability: 'completion' });
+    return { workspaceId, profile, access };
   },
+  executeManagedGateway: completeManagedGateway,
   providerUsageLedger
 });
 

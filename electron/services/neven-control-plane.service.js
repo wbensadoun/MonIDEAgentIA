@@ -314,26 +314,52 @@ const createNevenAccessResolver = ({ client, cacheSkewMs = DEFAULT_CACHE_SKEW_MS
   if (!client || typeof client.resolveAccess !== 'function') throw new Error('Client control plane Neven requis.');
   const cache = new Map();
 
+  const getCacheKey = ({ workspaceId, profile = 'haiku', capability = 'completion' } = {}) =>
+    JSON.stringify([normalizeWorkspaceId(workspaceId), normalizeProfile(profile), String(capability || 'completion')]);
+
   const resolve = async ({ workspaceId, profile = 'haiku', capability = 'completion' } = {}) => {
-    const key = JSON.stringify([String(workspaceId || ''), normalizeProfile(profile), String(capability || 'completion')]);
+    let key;
+    try {
+      key = getCacheKey({ workspaceId, profile, capability });
+    } catch {
+      return null;
+    }
     const cached = cache.get(key);
     if (cached && Date.parse(cached.expiresAt) > Date.now() + cacheSkewMs) return cached;
 
     const result = await client.resolveAccess({ workspaceId, profile, capability });
     if (!result?.success || !result.access) return null;
+    // A newly resolved grant is not usable when it cannot outlive the same
+    // safety margin used by the cache. Never hand it to the gateway bearer.
+    if (Date.parse(result.access.expiresAt) <= Date.now() + cacheSkewMs) return null;
     cache.set(key, result.access);
     return result.access;
   };
 
   resolve.clear = () => cache.clear();
-  resolve.revoke = async ({ workspaceId } = {}) => {
-    const result = await client.revokeAccess({ workspaceId });
-    if (result?.success) {
-      for (const key of cache.keys()) {
-        if (key.startsWith(`[\"${String(workspaceId || '')}\"`)) cache.delete(key);
-      }
+  resolve.invalidate = ({ workspaceId, profile = 'haiku', capability = 'completion' } = {}) => {
+    try {
+      cache.delete(getCacheKey({ workspaceId, profile, capability }));
+    } catch {
+      // Invalid input must not affect unrelated grants.
     }
-    return result;
+  };
+  resolve.revoke = async ({ workspaceId } = {}) => {
+    let normalizedWorkspaceId;
+    try {
+      normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
+    } catch (error) {
+      return failure('invalid_workspace', error.message);
+    }
+    // Purge first: a remote revoke failure must never leave a usable local grant.
+    for (const key of cache.keys()) {
+      if (JSON.parse(key)[0] === normalizedWorkspaceId) cache.delete(key);
+    }
+    try {
+      return await client.revokeAccess({ workspaceId: normalizedWorkspaceId });
+    } catch {
+      return failure('revoke_unavailable', 'Révocation Neven indisponible.');
+    }
   };
   return resolve;
 };
@@ -342,6 +368,7 @@ module.exports = {
   DEFAULT_ACCESS_PATH,
   DEFAULT_REVOKE_PATH,
   DEFAULT_EVENTS_PATH,
+  DEFAULT_CACHE_SKEW_MS,
   NevenControlPlaneClient,
   createNevenAccessResolver,
   normalizeAccess,

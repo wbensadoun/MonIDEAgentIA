@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.8.0] — Passerelle managed Neven (COD-26A)
+
+### Added
+
+- Contrat backend injectable resolve/revoke/complete pour les grants Neven et la passerelle managed.
+- Rejeu unique après expiration d’un grant, sans conversion du grant en clé fournisseur.
+
+### Security
+
+- Requêtes gateway HTTPS sous allowlist, redirections refusées, bearer main process et payload sans provider.
+- Cache mémoire purgé localement avant toute révocation distante, y compris en cas d’échec réseau.
+
 ## [2.7.0] — Policy BYOK backend
 
 ### Added

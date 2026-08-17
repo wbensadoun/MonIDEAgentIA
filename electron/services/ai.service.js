@@ -58,6 +58,7 @@ let serviceDeps = {
   resolveProviderCredential: null,
   resolveProviderPolicy: null,
   resolveProviderExecutionContext: null,
+  executeManagedGateway: null,
   providerUsageLedger: null
 };
 
@@ -648,10 +649,24 @@ const runProviderCompletionWithPolicy = async ({ provider, request = {}, options
     workspaceId: context.workspaceId,
     policy,
     resolveCredential: ({ origin, ...identity }) => serviceDeps.resolveProviderCredential({ ...identity, origin, context, policy }),
-    attempt: async ({ origin, credential }) => execute({
-      ...request,
-      options: { ...options, credentialMode: 'managed', credentialOrigin: origin, managedCredential: credential }
-    }),
+    attempt: async ({ origin, credential }) => {
+      if (origin === 'neven' && typeof serviceDeps.executeManagedGateway === 'function') {
+        // A Neven grant authorizes the gateway; it is never injected as a
+        // provider API key or passed to a provider adapter.
+        return serviceDeps.executeManagedGateway({
+          workspaceId: context.workspaceId,
+          profile: context.profile || 'haiku',
+          capability: 'completion',
+          access: context.access,
+          request,
+          options
+        });
+      }
+      return execute({
+        ...request,
+        options: { ...options, credentialMode: 'managed', credentialOrigin: origin, managedCredential: credential }
+      });
+    },
     ledger: serviceDeps.providerUsageLedger,
     usage: (result) => ({
       runId: context.runId || null,

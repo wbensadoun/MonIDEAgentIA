@@ -118,6 +118,37 @@ test('resolver caches grants in memory and clears them on revoke', async () => {
   assert.equal(resolveCount, 2);
 });
 
+test('resolver rejects a newly resolved grant inside its expiry safety margin', async () => {
+  let resolves = 0;
+  const resolve = createNevenAccessResolver({
+    cacheSkewMs: 1000,
+    client: {
+      resolveAccess: async () => ({ success: true, access: {
+        kind: 'neven-gateway', workspaceId: 'workspace-1', gatewayUrl: 'https://gateway.neven.test',
+        accessToken: `grant-${++resolves}`, expiresAt: new Date(Date.now() + 500).toISOString()
+      } })
+    }
+  });
+  assert.equal(await resolve({ workspaceId: 'workspace-1' }), null);
+  assert.equal(resolves, 1);
+});
+
+test('resolver purges local grants before a failing remote revoke', async () => {
+  let resolved = 0;
+  const resolve = createNevenAccessResolver({ client: {
+    resolveAccess: async () => ({ success: true, access: {
+      kind: 'neven-gateway', workspaceId: 'workspace-1', gatewayUrl: 'https://gateway.neven.test',
+      accessToken: `grant-${++resolved}`, expiresAt: new Date(Date.now() + 60000).toISOString()
+    } }),
+    revokeAccess: async () => { throw new Error('offline'); }
+  } });
+  await resolve({ workspaceId: 'workspace-1', profile: 'luna' });
+  assert.deepEqual(await resolve.revoke({ workspaceId: 'workspace-1' }), {
+    success: false, code: 'revoke_unavailable', error: 'Révocation Neven indisponible.'
+  });
+  assert.equal((await resolve({ workspaceId: 'workspace-1', profile: 'luna' })).accessToken, 'grant-2');
+});
+
 test('invalid grants never become usable access', async () => {
   const client = new NevenControlPlaneClient({
     baseUrl: 'https://api.neven.test',
