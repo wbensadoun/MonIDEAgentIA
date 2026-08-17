@@ -44,6 +44,13 @@ const { registerAIHandlers } = require('./electron/ipc/aiHandlers');
 const { registerRouterHandlers } = require('./electron/ipc/routerHandlers');
 const { registerPtyHandlers } = require('./electron/ipc/ptyHandlers');
 const { createPtyService } = require('./electron/services/pty.service');
+const { registerProviderHandlers } = require('./electron/ipc/providerHandlers');
+const { ProviderSecretVault } = require('./electron/services/provider-secret-vault.service');
+const { resolveProviderCredential } = require('./electron/services/provider-policy.service');
+const {
+  NevenControlPlaneClient,
+  createNevenAccessResolver
+} = require('./electron/services/neven-control-plane.service');
 
 const isDev =
   process.env.NODE_ENV === 'development' ||
@@ -82,6 +89,35 @@ const installStdioBrokenPipeGuards = () => {
 installStdioBrokenPipeGuards();
 
 let mainWindow;
+const providerSecretVault = new ProviderSecretVault({
+  filePath: ProviderSecretVault.defaultFilePath(app.getPath('userData'))
+});
+// Le control plane Neven reste dans le main process. Il ne retourne jamais de
+// cle fournisseur au renderer : uniquement un droit court vers la passerelle
+// Neven, conservé en mémoire et destiné aux futures exécutions managed.
+const nevenControlPlane = new NevenControlPlaneClient();
+const resolveNevenAccess = createNevenAccessResolver({ client: nevenControlPlane });
+const resolveManagedProviderCredential = ({ provider, workspaceId, policy }) => resolveProviderCredential({
+  provider,
+  workspaceId,
+  policy,
+  vault: providerSecretVault,
+  nevenCredentialResolver: async ({ provider: normalizedProvider }) => {
+    if (normalizedProvider === 'neven') {
+      return resolveNevenAccess({
+        workspaceId,
+        profile: policy?.profile,
+        capability: policy?.capability || 'completion'
+      });
+    }
+    const environmentKeys = {
+      gemini: ['GEMINI_API_KEY'],
+      claude: ['CLAUDE_API_KEY', 'ANTHROPIC_API_KEY'],
+      kimi: ['KIMI_API_KEY', 'TOGETHER_API_KEY']
+    }[normalizedProvider] || [];
+    return environmentKeys.map((key) => process.env[key]).find(Boolean) || null;
+  }
+});
 configureAIService({ dialog, getMainWindow: () => mainWindow });
 const processService = createProcessService({ getMainWindow: () => mainWindow });
 const ptyService = createPtyService({ getMainWindow: () => mainWindow });
@@ -89,7 +125,7 @@ const ptyService = createPtyService({ getMainWindow: () => mainWindow });
 // Deuxieme passe de configuration : configureAIService fusionne ses deps, et
 // ptyService n'existe pas encore ligne 85. Donne a l'outil <read_terminal> des
 // providers un acces LECTURE SEULE au tampon du terminal partage.
-configureAIService({ ptyService });
+configureAIService({ ptyService, resolveProviderCredential: resolveManagedProviderCredential });
 
 // Des shells reels doivent etre tues explicitement : contrairement aux
 // process.service (spawn de commandes ponctuelles, deja termines pour la
@@ -181,3 +217,4 @@ registerRouterHandlers({
   resolveOptionalTrustedProjectPath
 });
 registerPtyHandlers(ptyService);
+registerProviderHandlers({ app, vault: providerSecretVault });

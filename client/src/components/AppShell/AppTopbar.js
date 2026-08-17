@@ -12,6 +12,8 @@ import {
   IconLayoutSidebarRightOff,
   IconLayoutCustomize,
   IconCheck,
+  IconMaximize2,
+  IconMinimize2,
 } from '../ComponentLibrary/icons';
 import { Toolbar, ToolbarGroup, ToolbarSeparator, IconButton } from '../ComponentLibrary/Toolbar';
 
@@ -68,67 +70,45 @@ const AppTopbar = ({
   isLeftCollapsed,
   onToggleRightPanel,
   isRightCollapsed,
-  onToggleChatSidebar,
-  isChatSidebarCollapsed,
-  onToggleSwarmPanel,
-  isSwarmPanelOpen,
+  isChatMaximized,
+  onToggleChatMaximize,
+  _onToggleChatSidebar,
+  _isChatSidebarCollapsed,
+  _onToggleSwarmPanel,
+  _isSwarmPanelOpen,
   isTerminalOpen,
   onToggleTerminal,
-  viewMode = 'ide',
 }) => {
   const layoutMenu = useLayoutMenu();
-  const isChat = viewMode === 'chat';
 
   // Les trois zones de la barre de titre VS Code (Primary Side Bar / Panel /
-  // Secondary Side Bar) mappent sur des cibles differentes selon la vue :
-  // en IDE ce sont explorateur/terminal/chat, en Chat ce sont projets/—/agents.
-  // Le glyphe reste identique — c'est la region de l'ecran qu'il designe, pas
-  // la fonctionnalite — pour que la position spatiale garde son sens.
-  const layoutControls = isChat
-    ? [
-      {
-        id: 'primary',
-        Icon: isChatSidebarCollapsed ? IconLayoutSidebarLeftOff : IconLayoutSidebarLeft,
-        isActive: !isChatSidebarCollapsed,
-        label: isChatSidebarCollapsed ? 'Afficher les projets' : 'Masquer les projets',
-        menuLabel: 'Panneau des projets',
-        onClick: onToggleChatSidebar,
-      },
-      {
-        id: 'secondary',
-        Icon: isSwarmPanelOpen ? IconLayoutSidebarRight : IconLayoutSidebarRightOff,
-        isActive: Boolean(isSwarmPanelOpen),
-        label: isSwarmPanelOpen ? 'Masquer les agents' : 'Afficher les agents',
-        menuLabel: 'Panneau des agents',
-        onClick: onToggleSwarmPanel,
-      },
-    ]
-    : [
-      {
-        id: 'primary',
-        Icon: isLeftCollapsed ? IconLayoutSidebarLeftOff : IconLayoutSidebarLeft,
-        isActive: !isLeftCollapsed,
-        label: isLeftCollapsed ? "Afficher l'explorateur" : "Masquer l'explorateur",
-        menuLabel: "Panneau de l'explorateur",
-        onClick: onToggleLeftPanel,
-      },
-      {
-        id: 'panel',
-        Icon: isTerminalOpen ? IconLayoutPanel : IconLayoutPanelOff,
-        isActive: Boolean(isTerminalOpen),
-        label: isTerminalOpen ? 'Masquer le terminal' : 'Afficher le terminal',
-        menuLabel: 'Panneau du terminal',
-        onClick: onToggleTerminal,
-      },
-      {
-        id: 'secondary',
-        Icon: isRightCollapsed ? IconLayoutSidebarRightOff : IconLayoutSidebarRight,
-        isActive: !isRightCollapsed,
-        label: isRightCollapsed ? 'Afficher le chat IA' : 'Masquer le chat IA',
-        menuLabel: 'Panneau du chat IA',
-        onClick: onToggleRightPanel,
-      },
-    ];
+  // Secondary Side Bar) : explorateur/terminal/chat en mode IDE.
+  const layoutControls = [
+    {
+      id: 'primary',
+      Icon: isLeftCollapsed ? IconLayoutSidebarLeftOff : IconLayoutSidebarLeft,
+      isActive: !isLeftCollapsed,
+      label: isLeftCollapsed ? "Afficher l'explorateur" : "Masquer l'explorateur",
+      menuLabel: "Panneau de l'explorateur",
+      onClick: onToggleLeftPanel,
+    },
+    {
+      id: 'panel',
+      Icon: isTerminalOpen ? IconLayoutPanel : IconLayoutPanelOff,
+      isActive: Boolean(isTerminalOpen),
+      label: isTerminalOpen ? 'Masquer le terminal' : 'Afficher le terminal',
+      menuLabel: 'Panneau du terminal',
+      onClick: onToggleTerminal,
+    },
+    {
+      id: 'secondary',
+      Icon: isRightCollapsed ? IconLayoutSidebarRightOff : IconLayoutSidebarRight,
+      isActive: !isRightCollapsed,
+      label: isRightCollapsed ? 'Afficher le chat IA' : 'Masquer le chat IA',
+      menuLabel: 'Panneau du chat IA',
+      onClick: onToggleRightPanel,
+    },
+  ];
 
   return (
     <header style={{ display: 'flex', flexDirection: 'column' }}>
@@ -137,12 +117,12 @@ const AppTopbar = ({
           dans l'ActivityBar persistante (voir App.js), plus dans cette
           barre : elle ne mélange plus navigation de vue et actions. */}
       <div className="topbar-shell">
-        {/* Marque FuturIA */}
+        {/* Marque Code Companion */}
         <div className="topbar-brand">
           <div className="topbar-brand-icon">
             <IconBot />
           </div>
-          <span className="topbar-brand-name">FuturIA</span>
+          <span className="topbar-brand-name">Code Companion</span>
         </div>
 
         <span className="topbar-separator">|</span>
@@ -183,29 +163,27 @@ const AppTopbar = ({
 
         {/* Actions droite — structured with Toolbar */}
         <Toolbar className="topbar-actions">
-          {/* Project group: Folder, Preview, Expert mode (visible in IDE only) */}
-          {viewMode === 'ide' && (
-            <ToolbarGroup label="Projet">
-              <IconButton
-                icon={<IconFolder size={16} />}
-                disabled={!isElectronApiAvailable}
-                title="Ouvrir un dossier"
-                onClick={onOpenFolder}
-              />
-              <IconButton
-                icon={previewStatus === 'running' ? <IconStop size={16} /> : <IconPlay size={16} />}
-                isActive={previewStatus === 'running'}
-                title={previewStatus === 'running' ? 'Arrêter le preview' : 'Lancer le preview'}
-                onClick={onTogglePreview}
-              />
-              <IconButton
-                label={isExpertMode ? 'Avancé' : 'Simple'}
-                isActive={isExpertMode}
-                title={isExpertMode ? 'Mode IA avancé actif' : 'Activer le mode IA avancé'}
-                onClick={onToggleExpertMode}
-              />
-            </ToolbarGroup>
-          )}
+          {/* Project group: Folder, Preview, Expert mode */}
+          <ToolbarGroup label="Projet">
+            <IconButton
+              icon={<IconFolder size={16} />}
+              disabled={!isElectronApiAvailable}
+              title="Ouvrir un dossier"
+              onClick={onOpenFolder}
+            />
+            <IconButton
+              icon={previewStatus === 'running' ? <IconStop size={16} /> : <IconPlay size={16} />}
+              isActive={previewStatus === 'running'}
+              title={previewStatus === 'running' ? 'Arrêter le preview' : 'Lancer le preview'}
+              onClick={onTogglePreview}
+            />
+            <IconButton
+              label={isExpertMode ? 'Avancé' : 'Simple'}
+              isActive={isExpertMode}
+              title={isExpertMode ? 'Mode IA avancé actif' : 'Activer le mode IA avancé'}
+              onClick={onToggleExpertMode}
+            />
+          </ToolbarGroup>
 
           {/* Layout controls — isolated at the far right edge, always in the
               same place, so their position spatially maps to what they
@@ -214,9 +192,8 @@ const AppTopbar = ({
               among 9 other icons in a single crowded group. Same glyph
               vocabulary as VS Code's title bar: a panel frame with the
               active region filled in. */}
-          {(viewMode === 'ide' || isChat) && (
-            <>
-              <ToolbarSeparator />
+          <>
+            <ToolbarSeparator />
               <ToolbarGroup label="Disposition">
                 <div className="topbar-layout-menu-wrap" ref={layoutMenu.wrapRef}>
                   <IconButton
@@ -261,9 +238,18 @@ const AppTopbar = ({
                     onClick={onClick}
                   />
                 ))}
+                {!isRightCollapsed && (
+                  <IconButton
+                    icon={isChatMaximized ? <IconMinimize2 size={16} /> : <IconMaximize2 size={16} />}
+                    isActive={Boolean(isChatMaximized)}
+                    title={isChatMaximized ? 'Restaurer le chat' : 'Maximiser le chat'}
+                    aria-label={isChatMaximized ? 'Restaurer le chat' : 'Maximiser le chat'}
+                    onClick={onToggleChatMaximize}
+                  />
+                )}
               </ToolbarGroup>
             </>
-          )}
+
         </Toolbar>
       </div>
     </header>

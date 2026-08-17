@@ -51,7 +51,8 @@ const {
 let serviceDeps = {
   dialog: null,
   getMainWindow: null,
-  ptyService: null
+  ptyService: null,
+  resolveProviderCredential: null
 };
 
 const configureAIService = (deps = {}) => {
@@ -326,7 +327,7 @@ const fetchN8nBranchCommitSha = async (branch, timeoutMs = 12000) => {
   const response = await axios.get(url, {
     headers: {
       Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'MonIDEAgentIA'
+      'User-Agent': 'Code Companion'
     },
     timeout: timeoutMs
   });
@@ -353,7 +354,7 @@ const fetchN8nCatalogFromGitTree = async (timeoutMs = 12000) => {
       const response = await axios.get(url, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'MonIDEAgentIA'
+          'User-Agent': 'Code Companion'
         },
         timeout: timeoutMs
       });
@@ -392,7 +393,7 @@ const fetchN8nCatalogFromContents = async (timeoutMs = 12000) => {
       const response = await axios.get(url, {
         headers: {
           Accept: 'application/vnd.github.v3+json',
-          'User-Agent': 'MonIDEAgentIA'
+          'User-Agent': 'Code Companion'
         },
         timeout: timeoutMs
       });
@@ -627,6 +628,19 @@ const runSingleCompletionProvider = async ({
     return { success: false, error: `Provider completion non pris en charge: ${provider || 'aucun'}` };
   }
   const normalizedProvider = normalizeCompletionProvider(provider);
+  const managedCredentials = options.credentialMode === 'managed';
+  let managedCredential = null;
+  if (managedCredentials && typeof serviceDeps.resolveProviderCredential === 'function') {
+    managedCredential = await serviceDeps.resolveProviderCredential({
+      provider: normalizedProvider,
+      workspaceId: options.projectPath,
+      policy: options.providerPolicy
+    });
+  }
+  const resolveApiKey = (legacyKey, ...environmentKeys) => {
+    if (managedCredentials) return managedCredential?.credential || null;
+    return legacyKey || environmentKeys.map((key) => process.env[key]).find(Boolean) || null;
+  };
   const temperature = Number.isFinite(Number(options.temperature)) ? Number(options.temperature) : 0.1;
 
   if (options.localOnly && normalizedProvider !== 'ollama') {
@@ -638,7 +652,7 @@ const runSingleCompletionProvider = async ({
   }
 
   if (normalizedProvider === 'kimi') {
-    const apiKey = options.apiKey || process.env.KIMI_API_KEY || process.env.TOGETHER_API_KEY;
+    const apiKey = resolveApiKey(options.apiKey, 'KIMI_API_KEY', 'TOGETHER_API_KEY');
     const model = options.model || process.env.KIMI_MODEL || DEFAULT_KIMI_MODEL;
     if (!apiKey) return { success: false, error: 'La cle API Together/Kimi est requise.', provider: 'kimi', model };
 
@@ -663,7 +677,7 @@ const runSingleCompletionProvider = async ({
   }
 
   if (normalizedProvider === 'claude') {
-    const apiKey = options.apiKey || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
+    const apiKey = resolveApiKey(options.apiKey, 'CLAUDE_API_KEY', 'ANTHROPIC_API_KEY');
     const model = options.model || process.env.CLAUDE_MODEL || DEFAULT_CLAUDE_MODEL;
     if (!apiKey) return { success: false, error: 'La cle API Claude est requise.', provider: 'claude', model };
 
@@ -714,7 +728,7 @@ const runSingleCompletionProvider = async ({
     return { success: true, text: stripCompletionMarkdown(text, { trimEndOnly }), provider: 'ollama', requestedModel, model };
   }
 
-  const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
+  const apiKey = resolveApiKey(options.apiKey, 'GEMINI_API_KEY');
   const model = options.model || process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
   if (!apiKey) return { success: false, error: 'La cle API Gemini est requise.', provider: 'gemini', model };
 

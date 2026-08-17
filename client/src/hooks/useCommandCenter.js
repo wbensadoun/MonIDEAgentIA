@@ -4,9 +4,11 @@ const useCommandCenter = ({
   currentProjectPath,
   isElectronApiAvailable,
   showMessage,
-  openFiles,
+  openTabs,
   openFile,
   setCenterView,
+  setActiveSidebarSection,
+  setBottomPanelTab,
   handleOpenFolder,
   isLeftCollapsed,
   isRightCollapsed,
@@ -19,11 +21,22 @@ const useCommandCenter = ({
   previewStatus,
   handleTogglePreview,
   setWorkflowManagerOpen,
-  setSettingsOpen,
+  openSettings,
+  closeSettings,
+  isSettingsOpen,
+  activeFile,
+  centerView,
+  closeFileTab,
   startNewConversation,
   saveConversation,
   deepContextEnabled,
-  setDeepContextEnabled
+  setDeepContextEnabled,
+  // Onglets de chat (plan-ia-onglets.md §⑤ 5.5.3) : entrent dans le meme
+  // bandeau/systeme de raccourcis que les fichiers (§9 — pas de second
+  // systeme d'onglets pour le chat).
+  activeChatSessionId = null,
+  onActivateChatTab,
+  onCloseChatTab
 }) => {
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
@@ -166,12 +179,18 @@ const useCommandCenter = ({
     {
       id: 'view-git',
       label: 'Vue Git',
-      action: () => setCenterView('git')
+      action: () => {
+        setActiveSidebarSection('git');
+        if (isLeftCollapsed) toggleLeftPanel();
+      }
     },
     {
       id: 'view-brain',
       label: 'Vue Brain Graph',
-      action: () => setCenterView('brain')
+      action: () => {
+        setBottomPanelTab('brain');
+        setIsTerminalOpen(true);
+      }
     },
     {
       id: 'mode-plan',
@@ -191,7 +210,7 @@ const useCommandCenter = ({
     {
       id: 'settings',
       label: 'Ouvrir Settings',
-      action: () => setSettingsOpen(true)
+      action: () => openSettings()
     },
     {
       id: 'new-conv',
@@ -223,12 +242,14 @@ const useCommandCenter = ({
     toggleRightPanel,
     toggleFocusMode,
     setCenterView,
+    setActiveSidebarSection,
+    setBottomPanelTab,
     setIsTerminalOpen,
     setExecutionMode,
     previewStatus,
     handleTogglePreview,
     setWorkflowManagerOpen,
-    setSettingsOpen,
+    openSettings,
     startNewConversation,
     saveConversation,
     deepContextEnabled,
@@ -260,8 +281,9 @@ const useCommandCenter = ({
       const seen = new Set();
       const items = [];
 
-      for (let i = openFiles.length - 1; i >= 0; i -= 1) {
-        const filePath = openFiles[i];
+      for (let i = openTabs.length - 1; i >= 0; i -= 1) {
+        const tab = openTabs[i];
+        const filePath = tab && tab.type === 'file' ? tab.path : null;
         if (!filePath || seen.has(filePath)) continue;
         seen.add(filePath);
         items.push({ id: filePath, label: String(filePath), hint: 'tab' });
@@ -310,7 +332,7 @@ const useCommandCenter = ({
 
     scored.sort((a, b) => a.score - b.score);
     return scored.slice(0, 180);
-  }, [filePaletteQuery, projectFileList, openFiles]);
+  }, [filePaletteQuery, projectFileList, openTabs]);
 
   useEffect(() => {
     if (!filePaletteOpen) return;
@@ -452,6 +474,65 @@ const useCommandCenter = ({
     };
   }, [symbolQuery, symbolOpen, currentProjectPath, isElectronApiAvailable, showMessage]);
 
+  // Onglets du bandeau (plan-ia-onglets.md §7) : fichiers ouverts, puis
+  // Aperçu (toujours présent), puis Paramètres quand il est ouvert — même
+  // ordre que le bandeau visuel dans WorkspaceLayout.js.
+  const shortcutTabs = useMemo(() => {
+    const fileTabs = openTabs
+      .filter((tab) => tab.type === 'file')
+      .map((tab) => ({ kind: 'file', path: tab.path }));
+    const chatTabs = openTabs
+      .filter((tab) => tab.type === 'chat')
+      .map((tab) => ({ kind: 'chat', sessionId: tab.sessionId }));
+    const tabs = [...fileTabs, { kind: 'preview' }, ...chatTabs];
+    if (isSettingsOpen) tabs.push({ kind: 'settings' });
+    return tabs;
+  }, [openTabs, isSettingsOpen]);
+
+  const activeShortcutIndex = useMemo(() => {
+    if (centerView === 'preview') return shortcutTabs.findIndex((tab) => tab.kind === 'preview');
+    if (centerView === 'settings') return shortcutTabs.findIndex((tab) => tab.kind === 'settings');
+    if (centerView === 'chat') {
+      return shortcutTabs.findIndex((tab) => tab.kind === 'chat' && tab.sessionId === activeChatSessionId);
+    }
+    return shortcutTabs.findIndex((tab) => tab.kind === 'file' && tab.path === activeFile);
+  }, [shortcutTabs, centerView, activeFile, activeChatSessionId]);
+
+  // Lus depuis le gestionnaire de clavier : evite de re-souscrire l'ecouteur
+  // a chaque frappe (meme raison que settingsRef dans Settings/index.js).
+  const shortcutTabsRef = useRef(shortcutTabs);
+  shortcutTabsRef.current = shortcutTabs;
+  const activeShortcutIndexRef = useRef(activeShortcutIndex);
+  activeShortcutIndexRef.current = activeShortcutIndex;
+
+  const activateShortcutTab = useCallback((tab) => {
+    if (!tab) return;
+    if (tab.kind === 'file') {
+      openFile(tab.path);
+      setCenterView('code');
+    } else if (tab.kind === 'settings') {
+      openSettings();
+    } else if (tab.kind === 'chat') {
+      onActivateChatTab && onActivateChatTab(tab.sessionId);
+    } else {
+      setCenterView('preview');
+    }
+  }, [openFile, setCenterView, openSettings, onActivateChatTab]);
+
+  const closeShortcutTab = useCallback((tab) => {
+    if (!tab) return;
+    if (tab.kind === 'file') {
+      closeFileTab(tab.path);
+    } else if (tab.kind === 'settings') {
+      closeSettings();
+    } else if (tab.kind === 'chat') {
+      // Ctrl+W sur un onglet de chat ferme l'onglet, jamais la session
+      // (plan-ia-onglets.md §⑤ 5.5.3 — meme regle que le bouton ×).
+      onCloseChatTab && onCloseChatTab(tab.sessionId);
+    }
+    // 'preview' n'a pas de fermeture dans l'UI actuelle (§③) : Ctrl+W ne fait rien dessus.
+  }, [closeFileTab, closeSettings, onCloseChatTab]);
+
   useEffect(() => {
     const handleGlobalKeys = (event) => {
       const target = event?.target;
@@ -461,9 +542,12 @@ const useCommandCenter = ({
 
       // Exception ciblée : Ctrl+B et Ctrl+J s'exécutent même dans les zones éditables
       const isLayoutToggle = ((event.ctrlKey || event.metaKey) && !event.shiftKey && (key === 'b' || key === 'j'));
+      // Ctrl+W / Ctrl+Tab / Ctrl+1..9 : gestion des onglets (plan-ia-onglets.md §7),
+      // même exception — ce sont des raccourcis de navigation, pas de saisie.
+      const isTabManagementKey = (event.ctrlKey || event.metaKey) && (key === 'w' || key === 'tab' || /^[1-9]$/.test(key));
       const isInEditableZone = target?.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
 
-      if (isInEditableZone && !isLayoutToggle) {
+      if (isInEditableZone && !isLayoutToggle && !isTabManagementKey) {
         return;
       }
 
@@ -503,6 +587,26 @@ const useCommandCenter = ({
         event.preventDefault();
         setIsTerminalOpen && setIsTerminalOpen((prev) => !prev);
       }
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && key === 'w') {
+        event.preventDefault();
+        closeShortcutTab(shortcutTabsRef.current[activeShortcutIndexRef.current]);
+      }
+      if ((event.ctrlKey || event.metaKey) && key === 'tab') {
+        event.preventDefault();
+        const tabs = shortcutTabsRef.current;
+        if (tabs.length) {
+          const current = activeShortcutIndexRef.current;
+          const base = current === -1 ? 0 : current;
+          const delta = event.shiftKey ? -1 : 1;
+          activateShortcutTab(tabs[(base + delta + tabs.length) % tabs.length]);
+        }
+      }
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && /^[1-9]$/.test(key)) {
+        event.preventDefault();
+        const tabs = shortcutTabsRef.current;
+        const nthTab = tabs[Number(key) - 1];
+        if (nthTab) activateShortcutTab(nthTab);
+      }
       if (key === 'escape') {
         setCommandOpen(false);
         setFilePaletteOpen(false);
@@ -513,7 +617,7 @@ const useCommandCenter = ({
 
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, [toggleLeftPanel, setIsTerminalOpen]);
+  }, [toggleLeftPanel, setIsTerminalOpen, activateShortcutTab, closeShortcutTab]);
 
   const runCommand = useCallback((cmd) => {
     if (!cmd || typeof cmd.action !== 'function') return;

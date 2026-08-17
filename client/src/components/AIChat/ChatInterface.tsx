@@ -23,7 +23,7 @@
  * props. No component subclasses another.
  */
 import React from 'react';
-import AutonomyControls, { AutonomyLevel, ExecutionModeId } from './AutonomyControls';
+import AutonomyControls, { AgentPersona, AutonomyLevel, ExecutionModeId } from './AutonomyControls';
 import MessageViewer, { ChatMessage } from './MessageViewer';
 import InputArea, { AttachedFile } from './InputArea';
 import './ChatInterface.css';
@@ -34,12 +34,29 @@ export interface ChatInterfaceProps {
   onExecutionModeChange: (mode: ExecutionModeId) => void;
   autonomyLevel: AutonomyLevel;
   onAutonomyLevelChange: (level: AutonomyLevel) => void;
+  agents?: AgentPersona[];
+  activeAgent?: AgentPersona | null;
+  onActiveAgentChange?: (agent: AgentPersona | null) => void;
+  onOpenAgentManager?: () => void;
 
   // Messages
   messages: ChatMessage[];
   streamingText?: string;
   isStreaming?: boolean;
   emptyState?: React.ReactNode;
+  onCopyCode?: (code: string) => void;
+  onApplyCode?: (code: string, language: string, filePath: string) => void;
+  onCopyMessage?: (message: ChatMessage) => void;
+  onRerunMessage?: (message: ChatMessage) => void;
+
+  /** Emplacements d'extension. Le conteneur existant (AIChat/index.js) porte
+   *  des surfaces que ChatInterface ne modelise pas — pills provider/modele,
+   *  cartes terminal, panneau de modifications en attente. Plutot que de les
+   *  absorber (et de recreer un composant monolithique), ChatInterface les
+   *  accepte comme enfants a placer, ce qui rend le swap possible sans perte
+   *  de fonctionnalite. Voir docs/1.4c-swap-gard.md. */
+  toolbarExtra?: React.ReactNode;
+  aboveInput?: React.ReactNode;
 
   // Input
   inputValue: string;
@@ -60,10 +77,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onExecutionModeChange,
   autonomyLevel,
   onAutonomyLevelChange,
+  agents,
+  activeAgent,
+  onActiveAgentChange,
+  onOpenAgentManager,
   messages,
   streamingText,
   isStreaming = false,
   emptyState,
+  onCopyCode,
+  onApplyCode,
+  onCopyMessage,
+  onRerunMessage,
+  toolbarExtra,
+  aboveInput,
   inputValue,
   onInputChange,
   onSubmit,
@@ -81,8 +108,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         onExecutionModeChange={onExecutionModeChange}
         autonomyLevel={autonomyLevel}
         onAutonomyLevelChange={onAutonomyLevelChange}
+        agents={agents}
+        activeAgent={activeAgent}
+        onActiveAgentChange={onActiveAgentChange}
+        onOpenAgentManager={onOpenAgentManager}
         disabled={isBusy}
       />
+
+      {toolbarExtra}
 
       <MessageViewer
         messages={messages}
@@ -90,7 +123,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         isStreaming={isStreaming}
         emptyState={emptyState}
         className="chat-interface__viewer"
+        onCopyCode={onCopyCode}
+        onApplyCode={onApplyCode}
+        onCopyMessage={onCopyMessage}
+        onRerunMessage={onRerunMessage}
+        actionsDisabled={isBusy}
       />
+
+      {aboveInput}
 
       <InputArea
         value={inputValue}

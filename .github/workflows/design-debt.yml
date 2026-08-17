@@ -1,0 +1,60 @@
+name: Design system guard-rails
+
+# Phase 1 of docs/plan-refonte-ui-90j.md (§2.6). Two blocking gates:
+#
+# 1. design-debt: the distinct-hex-color count in client/src CSS must
+#    never exceed the current budget (regressive, not absolute — see
+#    scripts/check-design-debt.sh for the milestone schedule).
+# 2. stylelint-diff: CSS files touched by this PR must not introduce
+#    NEW hardcoded colors or !important — enforced only on the diff so
+#    Phase 1 doesn't require fixing the entire pre-existing 259 at once.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  design-debt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check hex color budget
+        run: bash scripts/check-design-debt.sh
+
+  stylelint-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install client deps
+        run: npm ci --prefix client --legacy-peer-deps
+      - name: Lint changed CSS files
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          CHANGED=$(git diff --name-only --diff-filter=ACM "$BASE" -- 'client/src/**/*.css' \
+            | grep -v 'client/src/styles/tokens.css' || true)
+          if [ -z "$CHANGED" ]; then
+            echo "No changed CSS files — skipping stylelint."
+            exit 0
+          fi
+          echo "Linting:"
+          echo "$CHANGED"
+          (cd client && npx stylelint $(echo "$CHANGED" | sed 's#^client/##'))
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install client deps
+        run: npm ci --prefix client --legacy-peer-deps
+      - name: Run client test suite
+        run: npm run test --prefix client -- --watchAll=false --runInBand

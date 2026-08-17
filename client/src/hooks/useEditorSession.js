@@ -4,6 +4,7 @@ import {
   isSameNavigatorPath,
   replaceNavigatorPathPrefix
 } from '../utils/navigatorPaths';
+import { createFileTab, tabIdentity } from '../utils/tabs';
 
 const normalizeDraftPreview = (draft) => ({
   filePath: String(draft.filePath || '').trim(),
@@ -22,7 +23,8 @@ const useEditorSession = ({
 }) => {
   const [activeFile, setActiveFile] = useState('');
   const [code, setCode] = useState('');
-  const [openFiles, setOpenFiles] = useState([]);
+  // Tab[] (plan-ia-onglets.md §2/§③) — for now every entry is { type: 'file', path }.
+  const [openTabs, setOpenTabs] = useState([]);
   const [revealRequest, setRevealRequest] = useState(null);
   const [aiDraftPreview, setAiDraftPreview] = useState(null);
   const [gitDiffPreview, setGitDiffPreview] = useState(null);
@@ -163,7 +165,7 @@ const useEditorSession = ({
   }, []);
 
   const resetEditorSession = useCallback(() => {
-    setOpenFiles([]);
+    setOpenTabs([]);
     setActiveFile('');
     setRevealRequest(null);
     setAiDraftPreview(null);
@@ -175,7 +177,11 @@ const useEditorSession = ({
     if (!opts?.preserveGitPreview) {
       clearGitDiffPreview();
     }
-    setOpenFiles((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]));
+    setOpenTabs((prev) => (
+      prev.some((tab) => tab.type === 'file' && tab.path === filePath)
+        ? prev
+        : [...prev, createFileTab(filePath)]
+    ));
     setActiveFile(filePath);
 
     if (opts && typeof opts === 'object' && opts.reveal) {
@@ -260,9 +266,20 @@ const useEditorSession = ({
   const syncNavigatorReferences = useCallback((previousPath, nextPath) => {
     if (!previousPath || !nextPath) return;
 
-    setOpenFiles((prev) => {
-      const mapped = prev.map((filePath) => replaceNavigatorPathPrefix(filePath, previousPath, nextPath));
-      return Array.from(new Set(mapped));
+    setOpenTabs((prev) => {
+      const mapped = prev.map((tab) => (
+        tab.type === 'file'
+          ? createFileTab(replaceNavigatorPathPrefix(tab.path, previousPath, nextPath))
+          : tab
+      ));
+      // Identity rule (§2): collapse any file tabs that now share a path.
+      const seen = new Set();
+      return mapped.filter((tab) => {
+        const identity = tabIdentity(tab);
+        if (seen.has(identity)) return false;
+        seen.add(identity);
+        return true;
+      });
     });
     setActiveFile((prev) => replaceNavigatorPathPrefix(prev, previousPath, nextPath));
     setRevealRequest((prev) => {
@@ -285,10 +302,11 @@ const useEditorSession = ({
   const removeNavigatorReferences = useCallback((deletedPath) => {
     if (!deletedPath) return;
 
-    setOpenFiles((prev) => {
-      const next = prev.filter((filePath) => (
-        !isSameNavigatorPath(filePath, deletedPath) &&
-        !isNavigatorDescendant(filePath, deletedPath)
+    setOpenTabs((prev) => {
+      const next = prev.filter((tab) => (
+        tab.type !== 'file' ||
+        (!isSameNavigatorPath(tab.path, deletedPath) &&
+          !isNavigatorDescendant(tab.path, deletedPath))
       ));
 
       setActiveFile((currentActiveFile) => {
@@ -299,7 +317,8 @@ const useEditorSession = ({
         ) {
           return currentActiveFile;
         }
-        return next[0] || '';
+        const fallback = next.find((tab) => tab.type === 'file');
+        return fallback?.path || '';
       });
 
       return next;
@@ -335,13 +354,14 @@ const useEditorSession = ({
       clearGitDiffPreview();
     }
     clearFileDirty(filePath);
-    setOpenFiles((prev) => {
-      const idx = prev.indexOf(filePath);
+    setOpenTabs((prev) => {
+      const idx = prev.findIndex((tab) => tab.type === 'file' && tab.path === filePath);
       if (idx === -1) return prev;
-      const next = prev.filter((f) => f !== filePath);
+      const next = prev.filter((_, i) => i !== idx);
 
       if (String(filePath) === String(activeFile)) {
-        const fallback = next[idx - 1] || next[idx] || '';
+        const neighbor = next[idx - 1] || next[idx];
+        const fallback = neighbor?.type === 'file' ? neighbor.path : '';
         setActiveFile(fallback);
         if (!fallback) {
           setCode('');
@@ -357,8 +377,8 @@ const useEditorSession = ({
     setActiveFile,
     code,
     setCode,
-    openFiles,
-    setOpenFiles,
+    openTabs,
+    setOpenTabs,
     dirtyFiles,
     revealRequest,
     aiDraftPreview,

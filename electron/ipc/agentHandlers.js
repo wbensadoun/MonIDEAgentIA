@@ -123,7 +123,7 @@ const registerAgentHandlers = (getMainWindow) => {
         return key.startsWith('workspace');
       };
 
-      const pack = { version: 1, exportedAt: new Date().toISOString(), app: 'MonIDEAgentIA', scope, sections: {} };
+      const pack = { version: 1, exportedAt: new Date().toISOString(), app: 'Code Companion', scope, sections: {} };
 
       for (const [section, dirPath] of Object.entries(targets)) {
         if (!dirPath || !includeTarget(section)) continue;

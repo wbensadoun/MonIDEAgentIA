@@ -27,13 +27,14 @@ const renderTopbar = (props = {}) => {
     isLeftCollapsed: false,
     onToggleRightPanel: jest.fn(),
     isRightCollapsed: false,
+    isChatMaximized: false,
+    onToggleChatMaximize: jest.fn(),
     onToggleChatSidebar: jest.fn(),
     isChatSidebarCollapsed: false,
     onToggleSwarmPanel: jest.fn(),
     isSwarmPanelOpen: false,
     isTerminalOpen: false,
     onToggleTerminal: jest.fn(),
-    viewMode: 'ide',
     ...props
   };
 
@@ -42,7 +43,7 @@ const renderTopbar = (props = {}) => {
 };
 
 test('IDE view exposes the three layout region toggles', () => {
-  renderTopbar({ viewMode: 'ide' });
+  renderTopbar();
 
   expect(screen.getByTitle("Masquer l'explorateur")).toBeInTheDocument();
   expect(screen.getByTitle('Afficher le terminal')).toBeInTheDocument();
@@ -50,25 +51,16 @@ test('IDE view exposes the three layout region toggles', () => {
   expect(screen.getByTitle('Personnaliser la disposition')).toBeInTheDocument();
 });
 
-test('Chat view swaps the layout toggles to its own panels', () => {
-  renderTopbar({ viewMode: 'chat' });
+test('layout toggles call their handlers in IDE mode', () => {
+  const props = renderTopbar({ isTerminalOpen: true });
 
-  expect(screen.getByTitle('Masquer les projets')).toBeInTheDocument();
-  expect(screen.getByTitle('Afficher les agents')).toBeInTheDocument();
-  expect(screen.queryByTitle('Afficher le terminal')).not.toBeInTheDocument();
-});
+  fireEvent.click(screen.getByTitle('Masquer le terminal'));
 
-test('layout toggles call the handler for the active view', () => {
-  const props = renderTopbar({ viewMode: 'chat' });
-
-  fireEvent.click(screen.getByTitle('Afficher les agents'));
-
-  expect(props.onToggleSwarmPanel).toHaveBeenCalled();
-  expect(props.onToggleRightPanel).not.toHaveBeenCalled();
+  expect(props.onToggleTerminal).toHaveBeenCalled();
 });
 
 test('toggle titles reflect the collapsed state', () => {
-  renderTopbar({ viewMode: 'ide', isLeftCollapsed: true, isTerminalOpen: true });
+  renderTopbar({ isLeftCollapsed: true, isTerminalOpen: true });
 
   expect(screen.getByTitle("Afficher l'explorateur")).toBeInTheDocument();
   expect(screen.getByTitle('Masquer le terminal')).toBeInTheDocument();
@@ -77,7 +69,7 @@ test('toggle titles reflect the collapsed state', () => {
 // Comme VS Code, la region masquee prend le glyphe "-off" (trait de
 // separation) et non la zone pleine : l'etat ne se lit pas qu'a la couleur.
 test('a visible region uses the filled glyph', () => {
-  renderTopbar({ viewMode: 'ide', isLeftCollapsed: false });
+  renderTopbar({ isLeftCollapsed: false });
   const btn = screen.getByTitle("Masquer l'explorateur");
 
   expect(btn.querySelectorAll('rect')).toHaveLength(2);
@@ -85,7 +77,7 @@ test('a visible region uses the filled glyph', () => {
 });
 
 test('a hidden region swaps to the outline glyph', () => {
-  renderTopbar({ viewMode: 'ide', isLeftCollapsed: true });
+  renderTopbar({ isLeftCollapsed: true });
   const btn = screen.getByTitle("Afficher l'explorateur");
 
   expect(btn.querySelectorAll('rect')).toHaveLength(1);
@@ -93,7 +85,7 @@ test('a hidden region swaps to the outline glyph', () => {
 });
 
 test('customize menu lists each region with its visibility state', () => {
-  renderTopbar({ viewMode: 'ide', isRightCollapsed: true });
+  renderTopbar({ isRightCollapsed: true });
 
   fireEvent.click(screen.getByTitle('Personnaliser la disposition'));
 
@@ -104,7 +96,7 @@ test('customize menu lists each region with its visibility state', () => {
 });
 
 test('customize menu item toggles its panel and closes the menu', () => {
-  const props = renderTopbar({ viewMode: 'ide' });
+  const props = renderTopbar();
 
   fireEvent.click(screen.getByTitle('Personnaliser la disposition'));
   fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Panneau du terminal' }));
@@ -114,7 +106,7 @@ test('customize menu item toggles its panel and closes the menu', () => {
 });
 
 test('Escape closes the customize menu', () => {
-  renderTopbar({ viewMode: 'ide' });
+  renderTopbar();
 
   fireEvent.click(screen.getByTitle('Personnaliser la disposition'));
   expect(screen.getByRole('menu')).toBeInTheDocument();
@@ -122,4 +114,21 @@ test('Escape closes the customize menu', () => {
   fireEvent.keyDown(document, { key: 'Escape' });
 
   expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+});
+
+test('chat maximize has a dedicated topbar control and restores through the same control', () => {
+  const props = renderTopbar();
+  const maximizeButton = screen.getByTitle('Maximiser le chat');
+  maximizeButton.focus();
+  fireEvent.click(maximizeButton);
+  expect(props.onToggleChatMaximize).toHaveBeenCalledTimes(1);
+
+  // The focused topbar control remains mounted, so keyboard focus is not lost
+  // when the workspace swaps from three columns to the chat-only region.
+  expect(maximizeButton).toHaveFocus();
+});
+
+test('chat maximize control is hidden when the chat region is collapsed', () => {
+  renderTopbar({ isRightCollapsed: true });
+  expect(screen.queryByTitle('Maximiser le chat')).not.toBeInTheDocument();
 });

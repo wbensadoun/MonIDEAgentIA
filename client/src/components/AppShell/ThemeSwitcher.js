@@ -28,7 +28,7 @@ const THEMES = [
   },
 ];
 
-const STORAGE_KEY = 'futurIA_theme';
+const STORAGE_KEY = 'code_companion_theme';
 
 const ThemeSwitcher = ({ theme, onThemeChange }) => {
   const [open, setOpen] = useState(false);

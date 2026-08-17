@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './Settings.css';
 import ThemeSwitcher from '../AppShell/ThemeSwitcher';
+import McpSettings from './McpSettings';
 import {
   IconSettings,
+  IconMoon,
   IconPackage,
   IconAgents,
   IconLightning,
   IconShield,
-  IconFolder
+  IconFolder,
+  IconPlug,
+  IconLayoutCustomize,
+  IconCompass
 } from '../ComponentLibrary/icons';
 import {
   DEFAULT_OLLAMA_MODEL,
@@ -32,13 +37,36 @@ import {
   refreshProviderModel
 } from '../../utils/providerModelsStore';
 
+// Liste cible plan-ia-onglets.md §④. MCP debloque McpSettings.js (jusque-la
+// orphelin) ; Extensions/Raccourcis sont nouveaux, coquilles annoncees pour
+// la premiere, alimentee par les raccourcis clavier du §7 pour la seconde.
 const SETTINGS_TABS = [
   { id: 'general', Icon: IconSettings, label: 'Général' },
+  { id: 'appearance', Icon: IconMoon, label: 'Apparence' },
   { id: 'providers', Icon: IconPackage, label: 'Fournisseurs' },
   { id: 'agents', Icon: IconAgents, label: 'Agents' },
   { id: 'execution', Icon: IconLightning, label: 'Exécution' },
   { id: 'permissions', Icon: IconShield, label: 'Permissions' },
-  { id: 'context', Icon: IconFolder, label: 'Contexte' }
+  { id: 'context', Icon: IconFolder, label: 'Contexte' },
+  { id: 'mcp', Icon: IconPlug, label: 'MCP' },
+  { id: 'extensions', Icon: IconLayoutCustomize, label: 'Extensions' },
+  { id: 'shortcuts', Icon: IconCompass, label: 'Raccourcis' }
+];
+
+// plan-ia-onglets.md §7 — un seul endroit a tenir a jour : le gestionnaire de
+// raccourcis (useCommandCenter.js) applique exactement cette liste.
+const SHORTCUT_LIST = [
+  { keys: 'Ctrl+K', action: 'Palette de commandes' },
+  { keys: 'Ctrl+P', action: 'Ouvrir un fichier' },
+  { keys: 'Ctrl+O', action: 'Ouvrir un dossier' },
+  { keys: 'Ctrl+Shift+F', action: 'Recherche globale' },
+  { keys: 'Ctrl+T', action: 'Recherche de symboles' },
+  { keys: 'Ctrl+B', action: 'Basculer le panneau de gauche' },
+  { keys: 'Ctrl+J', action: 'Basculer le terminal' },
+  { keys: 'Ctrl+W', action: "Fermer l'onglet actif" },
+  { keys: 'Ctrl+Tab', action: 'Onglet suivant' },
+  { keys: 'Ctrl+Shift+Tab', action: 'Onglet précédent' },
+  { keys: 'Ctrl+1..9', action: "Aller au n-ième onglet" }
 ];
 
 const Settings = ({
@@ -379,15 +407,16 @@ const Settings = ({
   };
 
   return (
-    <div className="settings-overlay">
-      <div className="settings-modal">
-        <div className="settings-header">
-          <div>
-            <div className="settings-title">Settings</div>
-            <div className="settings-subtitle">Configuration IA et projet</div>
-          </div>
-          <button onClick={onClose} className="settings-close">X</button>
+    // Hôte : contenu d'onglet (plan-ia-onglets.md §④), plus une modale — le
+    // contenu interne (onglets, sections, formulaires) est inchangé.
+    <div className="settings-pane">
+      <div className="settings-header">
+        <div>
+          <div className="settings-title">Settings</div>
+          <div className="settings-subtitle">Configuration IA et projet</div>
         </div>
+        <button onClick={onClose} className="settings-close" title="Fermer l'onglet Paramètres">X</button>
+      </div>
 
         <div className="settings-tabs">
           {SETTINGS_TABS.map(({ id, Icon, label }) => (
@@ -405,14 +434,6 @@ const Settings = ({
 
         <div className="settings-body custom-scrollbar">
           {activeTab === 'general' && (<>
-          <div className="settings-section">
-            <label className="settings-label">Apparence</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span className="settings-hint" style={{ margin: 0 }}>Thème :</span>
-              <ThemeSwitcher theme={theme} onThemeChange={onThemeChange} />
-            </div>
-          </div>
-
           <div className="settings-section">
             <label className="settings-label">Fournisseur par défaut</label>
             <select
@@ -442,6 +463,16 @@ const Settings = ({
               className="settings-input"
               aria-label="Port serveur dev"
             />
+          </div>
+          </>)}
+
+          {activeTab === 'appearance' && (<>
+          <div className="settings-section">
+            <label className="settings-label">Thème</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="settings-hint" style={{ margin: 0 }}>Thème :</span>
+              <ThemeSwitcher theme={theme} onThemeChange={onThemeChange} />
+            </div>
           </div>
           </>)}
 
@@ -885,6 +916,39 @@ const Settings = ({
             </label>
           </div>
           </>)}
+
+          {activeTab === 'mcp' && (
+            <McpSettings isElectronApiAvailable={isElectronApiAvailable} showMessage={showMessage} />
+          )}
+
+          {activeTab === 'extensions' && (
+            <div className="settings-section settings-empty-section">
+              <label className="settings-label">Extensions</label>
+              <p className="settings-hint">
+                Aucune extension pour le moment. Cette section est prête à accueillir un futur
+                système d&apos;extensions — rien à configurer ici pour l&apos;instant.
+              </p>
+            </div>
+          )}
+
+          {activeTab === 'shortcuts' && (
+            <div className="settings-section">
+              <label className="settings-label">Raccourcis clavier</label>
+              <div className="settings-hint">
+                Ces raccourcis sont globaux et fonctionnent depuis n&apos;importe quel onglet.
+              </div>
+              <table className="settings-shortcuts-table">
+                <tbody>
+                  {SHORTCUT_LIST.map((shortcut) => (
+                    <tr key={shortcut.keys}>
+                      <td><kbd>{shortcut.keys}</kbd></td>
+                      <td>{shortcut.action}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="settings-footer">
@@ -899,7 +963,6 @@ const Settings = ({
             {loading ? 'Sauvegarde...' : 'Sauvegarder'}
           </button>
         </div>
-      </div>
     </div>
   );
 };

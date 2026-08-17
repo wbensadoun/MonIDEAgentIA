@@ -1,8 +1,46 @@
 # Changelog
 
+## [2.3.0] - Neven Core Lite and prompt compaction
+
+### Added
+
+- Core versionne pour les roles internes Sol, Luna et Terra, avec un manifeste de capacites centralise.
+- Selection compacte du catalogue agents/skills pour le routeur invisible afin de reduire le contexte inutile.
+- Plan interne versionne qui expose l'intention, le role primaire et le profil sans exposer le modele physique.
+- Tests unitaires sur le core, le role et la compaction du prompt.
+
+## [2.2.0] - Control plane Neven côté backend
+
+### Added
+
+- Client du control plane Neven réservé au main process, avec grants courts par workspace et profil interne.
+- Cache mémoire, révocation et refus des réponses sans expiration ou passerelle valide.
+- Préparation de l'interface admin future sans exposer les clés fournisseurs au renderer.
+
 Toutes les évolutions notables de ce projet sont documentées dans ce fichier.
 
 Le format s'inspire de [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/).
+
+## [2.1.0] — Routeur intelligent invisible
+
+### Added
+
+- Profils internes `haiku`, `luna`, `sol` et `opus`, résolus côté backend selon la complexité et le risque.
+- L1 déterministe pour les signaux forts, L2 pour les demandes ambiguës et cascade de fallback explicite.
+- Parcours chat `Neven · Auto` sans fournisseur, modèle, tier ou source affichés.
+
+## [2.0.0] — Socle Neven BYOK et agents spécialisés
+
+### Added
+
+- Coffre de credentials fournisseurs chiffré via Electron `safeStorage`, avec révocation et métadonnées sans valeur secrète.
+- Politique de routage Neven / BYOK / local par workspace et ledger d'usage par origine de facturation.
+- Handlers IPC dédiés aux fournisseurs et agents persistants Sol, Luna et Terra.
+
+### Security
+
+- Le mode géré (`credentialMode: managed`) résout les credentials dans le processus principal et ne dépend plus des clés passées par le renderer.
+- BYOK reste désactivé par défaut tant que la migration des anciens champs `*ApiKey` de `settings.json` et le parcours UI avancé ne sont pas livrés.
 
 ## [1.9.0] — Barre de navigation 3 modes (IDE / Chat / Agents)
 

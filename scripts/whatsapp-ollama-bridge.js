@@ -190,7 +190,7 @@ const runExecCommand = (commandLine) => {
 
 // ─── Help ────────────────────────────────────────────────────────────────────
 const helpMessage = (autopilot) => [
-  '🤖 *Mon IDE Agent IA — Commandes disponibles*',
+  '🤖 *Code companion — Commandes disponibles*',
   '',
   '*Tâches (langage naturel)*',
   'Exemple: "Pour le Projet 67, crée un bouton sur la page d\'accueil"',

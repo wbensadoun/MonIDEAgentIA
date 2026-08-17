@@ -5,6 +5,23 @@
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border);
   background: var(--surface);
+  /* 1.6 — sans elevation, les messages passent sous le composer sans
+     separation lisible pendant le defilement. Le degrade doit remonter DANS
+     la zone de messages, donc l'ombre est portee par un ::before retourne
+     (voir plus bas) plutot que par un box-shadow classique vers le bas. */
+  position: relative;
+}
+
+.input-area::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  box-shadow: var(--shadow-1);
+  transform: scaleY(-1);
+  pointer-events: none;
 }
 
 .input-area__warning {
@@ -79,7 +96,15 @@
 
 .input-area__send-btn {
   background: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
+}
+
+.input-area__send-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.input-area__send-btn:active:not(:disabled) {
+  filter: brightness(0.92);
 }
 
 .input-area__send-btn:disabled {
@@ -99,13 +124,14 @@
   color: var(--text-main);
   font-size: var(--text-base);
   line-height: var(--leading-normal);
-  transition: border-color var(--duration-fast) var(--ease-standard);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    height var(--duration-fast) var(--ease-standard);
 }
 
 .input-area__textarea::placeholder {
   color: var(--text-muted);
 }
 
-.input-area__textarea:focus {
+.input-area__textarea:focus-visible {
   border-color: var(--accent);
 }

@@ -20,8 +20,7 @@ describe('AgentVerse scene switcher', () => {
     expect(town).toHaveAttribute('aria-pressed', 'true');
     expect(cyber).toHaveAttribute('aria-pressed', 'false');
 
-    cyber.focus();
-    fireEvent.keyDown(cyber, { key: 'Enter' });
+    fireEvent.click(cyber);
     expect(onThemeChange).toHaveBeenCalledWith('cyberpunk');
   });
 });

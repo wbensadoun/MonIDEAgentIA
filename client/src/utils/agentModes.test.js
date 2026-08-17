@@ -17,8 +17,8 @@ describe('agentModes', () => {
     expect(shouldProcessFileModifications('agent')).toBe(true);
   });
 
-  test('multi-agent mode always routes to unified multi router', () => {
-    expect(resolveProviderForExecutionMode('ollama', 'multi-agent')).toBe('multi');
-    expect(resolveProviderForExecutionMode('gemini', 'multi-agent')).toBe('multi');
+  test('removed multi-agent mode no longer overrides the selected provider', () => {
+    expect(resolveProviderForExecutionMode('ollama', 'multi-agent')).toBe('ollama');
+    expect(resolveProviderForExecutionMode('gemini', 'multi-agent')).toBe('gemini');
   });
 });

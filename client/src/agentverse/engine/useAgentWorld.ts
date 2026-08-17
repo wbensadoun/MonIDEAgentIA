@@ -90,6 +90,7 @@ export function useAgentWorld(theme: ThemeMeta, client: AgentClient): AgentWorld
   const themeRef = useRef<ThemeMeta>(theme);
   const clientRef = useRef<AgentClient>(client);
   const delegationTimeouts = useRef<Set<number>>(new Set());
+  const reducedMotionRef = useRef(false);
 
   themeRef.current = theme;
   clientRef.current = client;
@@ -97,6 +98,17 @@ export function useAgentWorld(theme: ThemeMeta, client: AgentClient): AgentWorld
   const [agents, setAgents] = useState<Agent[]>(() => agentsRef.current);
   const [tasks, setTasks] = useState<Task[]>(() => tasksRef.current);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // CSS alone cannot stop the world engine: without this listener the canvas
+  // still receives a new agent position every tick when motion is reduced.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => { reducedMotionRef.current = media.matches; };
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
 
   const getMeta = useCallback((id: string): RuntimeMeta => {
     let meta = metaRef.current.get(id);
@@ -159,6 +171,7 @@ export function useAgentWorld(theme: ThemeMeta, client: AgentClient): AgentWorld
       for (const agent of agentsRef.current) {
         tickAgent(agent, th, now, getMeta(agent.id), tasksRef.current, selectedRef.current, {
           agents: agentsRef.current,
+          reducedMotion: reducedMotionRef.current,
           delegate: (sub, roleKey, objective) => {
             const target = agentsRef.current.find((a) => a.roleKey === roleKey);
             if (!target || target.status === 'working') return;
@@ -354,6 +367,7 @@ function subTaskFor(roleKey: AgentRoleKey, objective: string): string {
 
 interface TickHooks {
   agents: Agent[];
+  reducedMotion: boolean;
   delegate: (subTask: string, roleKey: AgentRoleKey, objective: string) => void;
   schedule: (fn: () => void, delay: number) => void;
 }
@@ -381,7 +395,14 @@ function tickAgent(
   if (agent.status === 'working') {
     // Return to the desk before "working".
     if (!samePos(agent.pos, agent.home)) {
-      moveToward(agent, agent.home, theme);
+      if (hooks.reducedMotion) {
+        // Keep the real task lifecycle running, but never animate an agent
+        // travelling back to its desk for people who opted out of motion.
+        agent.pos = { ...agent.home };
+        agent.target = { ...agent.home };
+      } else {
+        moveToward(agent, agent.home, theme);
+      }
       return;
     }
     agent.facing = 'down';
@@ -432,6 +453,14 @@ function tickAgent(
   }
 
   // idle / walking
+  if (hooks.reducedMotion) {
+    // Decorative wandering is the part users asked to suppress. Keep the
+    // current position stable while leaving task completion and messages live.
+    if (agent.status === 'walking') agent.status = 'idle';
+    agent.target = { ...agent.pos };
+    return;
+  }
+
   if (theme.movement === 'grid') {
     if (samePos(agent.pos, agent.target)) {
       if (agent.status === 'walking') agent.status = 'idle';

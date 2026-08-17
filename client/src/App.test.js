@@ -8,7 +8,7 @@ beforeEach(() => {
 
 test('renders app without crashing', () => {
   render(<App />);
-  const brandElement = screen.getByText(/FuturIA/i);
+  const brandElement = screen.getByText(/Code Companion/i);
   expect(brandElement).toBeInTheDocument();
 });
 
@@ -60,7 +60,7 @@ test('toggles between IDE and Chat views via the ActivityBar rail', async () => 
 
   // Initially should show IDE view
   await waitFor(() => {
-    const brandElement = screen.getByText(/FuturIA/i);
+    const brandElement = screen.getByText(/Code Companion/i);
     expect(brandElement).toBeInTheDocument();
   });
 

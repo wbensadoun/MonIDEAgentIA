@@ -9,10 +9,9 @@ import {
   getEditorSymbolKindLabel
 } from '../../utils/editorSymbols';
 import { buildSingleAIInvocation } from '../../utils/aiProviderRouting';
+import { getLanguageForFile } from '../../utils/editorLanguage';
 
 const CodeEditor = ({
-  openFiles = [],
-  dirtyFiles = null,
   activeFile,
   code,
   previousCode,
@@ -21,11 +20,7 @@ const CodeEditor = ({
   onAcceptDiff, // Nouvelle prop pour accepter les changements
   isDiffMode = false, // Nouvelle prop pour forcer le mode Diff
   diffSource = null,
-  diffOriginalLabel = '',
-  diffModifiedLabel = '',
   onCloseDiff,
-  onSelectFile,
-  onCloseFile,
   revealRequest,
   forceReadOnly = false,
   currentProjectPath = '',
@@ -118,45 +113,11 @@ const CodeEditor = ({
     }
   };
 
-  const activeLabel = useMemo(() => {
-    if (!activeFile) return 'Aucun fichier ouvert';
-    return String(activeFile);
-  }, [activeFile]);
-
-  const language = useMemo(() => {
-    if (!activeFile) return 'plaintext';
-    const lower = String(activeFile).toLowerCase();
-    if (lower.endsWith('.ts') || lower.endsWith('.tsx')) return 'typescript';
-    if (lower.endsWith('.js') || lower.endsWith('.jsx')) return 'javascript';
-    if (lower.endsWith('.json')) return 'json';
-    if (lower.endsWith('.css') || lower.endsWith('.scss') || lower.endsWith('.sass') || lower.endsWith('.less')) return 'css';
-    if (lower.endsWith('.html')) return 'html';
-    if (lower.endsWith('.md')) return 'markdown';
-    if (lower.endsWith('.yml') || lower.endsWith('.yaml')) return 'yaml';
-    if (lower.endsWith('.xml')) return 'xml';
-    if (lower.endsWith('.sql')) return 'sql';
-    if (lower.endsWith('.py')) return 'python';
-    if (lower.endsWith('.sh') || lower.endsWith('.ps1') || lower.endsWith('.bat')) return 'shell';
-    if (lower.endsWith('.go')) return 'go';
-    if (lower.endsWith('.rs')) return 'rust';
-    if (lower.endsWith('.java')) return 'java';
-    if (lower.endsWith('.cpp') || lower.endsWith('.c') || lower.endsWith('.h') || lower.endsWith('.hpp')) return 'cpp';
-    return 'plaintext';
-  }, [activeFile]);
+  const language = useMemo(() => getLanguageForFile(activeFile), [activeFile]);
 
   const editorSymbols = useMemo(() => extractEditorSymbols(activeFile, code), [activeFile, code]);
   const filteredEditorSymbols = useMemo(() => filterEditorSymbols(editorSymbols, symbolQuery), [editorSymbols, symbolQuery]);
   const activeEditorSymbol = useMemo(() => findActiveEditorSymbol(editorSymbols, cursorLine), [editorSymbols, cursorLine]);
-  const lineCount = useMemo(() => String(code || '').split('\n').length, [code]);
-  const diffHeaderLabel = useMemo(() => {
-    if (!isDiffMode) return '';
-    if (diffSource === 'git') {
-      const base = String(diffOriginalLabel || 'before').trim();
-      const target = String(diffModifiedLabel || 'after').trim();
-      return `${base} -> ${target}`;
-    }
-    return 'Diff IA';
-  }, [diffModifiedLabel, diffOriginalLabel, diffSource, isDiffMode]);
 
   useEffect(() => {
     if (symbolIndex >= filteredEditorSymbols.length) {
@@ -427,51 +388,13 @@ const CodeEditor = ({
   return (
     <div className="code-editor-root">
       <div className="code-editor-top">
-        <div className="editor-tabs custom-scrollbar">
-          {openFiles.length === 0 && (
-            <div className="editor-tabs-empty">Ouvrez un fichier (Ctrl+P)</div>
-          )}
-          {openFiles.map((filePath) => {
-            const fileName = String(filePath).split(/[\\/]/).pop() || String(filePath);
-            const isActive = String(filePath) === String(activeFile);
-            const isDirty = Boolean(dirtyFiles && typeof dirtyFiles.has === 'function' && dirtyFiles.has(filePath));
-            return (
-              <button
-                key={filePath}
-                type="button"
-                className={`editor-tab ${isActive ? 'is-active' : ''}`}
-                onClick={() => onSelectFile && onSelectFile(filePath)}
-                title={String(filePath)}
-              >
-                <span className="editor-tab-name">{fileName}</span>
-                {isDirty && (
-                  <span className="editor-tab-dot" aria-label="Modifications non enregistrees" title="Modifications non enregistrees" />
-                )}
-                <span
-                  className="editor-tab-close"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onCloseFile && onCloseFile(filePath);
-                  }}
-                  role="button"
-                  aria-label={`Fermer ${fileName}`}
-                >
-                  ×
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
+        {/* Onglets de fichiers + fil d'Ariane : remontés au niveau de la
+            coquille (WorkspaceLayout) — ils décrivent le document actif au
+            niveau de l'IDE, pas seulement de cet éditeur. Ce qui reste ici
+            est spécifique à Monaco : symbole sous le curseur, Outline,
+            bascule Diff, Accepter/Rejeter IA. */}
         <div className="editor-breadcrumb">
-          <span className="editor-breadcrumb-seg">Éditeur</span>
-          <span className="editor-breadcrumb-sep">›</span>
-          <span className="editor-breadcrumb-seg is-active">{activeLabel}</span>
           <div className="editor-breadcrumb-right">
-            <span>{language}</span>
-            <span>{lineCount} lignes</span>
-            {diffHeaderLabel && <span className="editor-breadcrumb-diff">{diffHeaderLabel}</span>}
             {activeEditorSymbol && (
               <span>{getEditorSymbolKindIcon(activeEditorSymbol.kind)} {activeEditorSymbol.symbol}</span>
             )}

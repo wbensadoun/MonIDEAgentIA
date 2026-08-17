@@ -1,10 +1,15 @@
 import React from 'react';
+import Dialog from '../ComponentLibrary/Dialog';
 
 const OnboardingModal = ({ onOpenSettings, onComplete }) => (
-  <div className="command-overlay" onClick={onComplete}>
-    <div className="command-modal is-wide" onClick={(event) => event.stopPropagation()}>
+  <Dialog
+    onClose={onComplete}
+    ariaLabelledBy="onboarding-dialog-title"
+    overlayClassName="command-overlay"
+    className="command-modal is-wide"
+  >
       <div className="command-input-row" style={{ justifyContent: 'space-between' }}>
-        <strong>Bienvenue dans Vibe IDE</strong>
+        <strong id="onboarding-dialog-title">Bienvenue dans Vibe IDE</strong>
         <span className="command-hint">Onboarding</span>
       </div>
       <div className="command-list custom-scrollbar is-tall" style={{ padding: '14px' }}>
@@ -17,8 +22,7 @@ const OnboardingModal = ({ onOpenSettings, onComplete }) => (
           <button className="btn btn-ghost" onClick={onComplete}>Terminer</button>
         </div>
       </div>
-    </div>
-  </div>
+  </Dialog>
 );
 
 export default OnboardingModal;

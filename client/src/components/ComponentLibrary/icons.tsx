@@ -378,6 +378,198 @@ export const IconShield: React.FC<IconProps> = (props) => (
   </SvgIcon>
 );
 
+/* ============================================================
+   WORKFLOW / NODE ICONS (VisualWorkflowEditor catalogue)
+   ============================================================ */
+
+export const IconClock: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <polyline points="12 7 12 12 16 14" />
+  </SvgIcon>
+);
+
+export const IconGlobe: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <circle cx="12" cy="12" r="10" />
+    <line x1="2" y1="12" x2="22" y2="12" />
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+  </SvgIcon>
+);
+
+export const IconSparkle: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z" fill="currentColor" stroke="none" />
+  </SvgIcon>
+);
+
+export const IconFile: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+  </SvgIcon>
+);
+
+export const IconEdit: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </SvgIcon>
+);
+
+export const IconLink: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </SvgIcon>
+);
+
+export const IconShuffle: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <polyline points="16 3 21 3 21 8" />
+    <line x1="4" y1="20" x2="21" y2="3" />
+    <polyline points="21 16 21 21 16 21" />
+    <line x1="15" y1="15" x2="21" y2="21" />
+    <line x1="4" y1="4" x2="9" y2="9" />
+  </SvgIcon>
+);
+
+export const IconRepeat: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <polyline points="17 1 21 5 17 9" />
+    <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+    <polyline points="7 23 3 19 7 15" />
+    <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+  </SvgIcon>
+);
+
+export const IconHourglass: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M6 2h12v6l-6 4-6-4V2z" />
+    <path d="M6 22h12v-6l-6-4-6 4v6z" />
+  </SvgIcon>
+);
+
+export const IconBell: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+  </SvgIcon>
+);
+
+export const IconMail: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+    <polyline points="22 6 12 13 2 6" />
+  </SvgIcon>
+);
+
+export const IconSend: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <line x1="22" y1="2" x2="11" y2="13" />
+    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+  </SvgIcon>
+);
+
+/* ============================================================
+   MCP / TOOLING ICONS (McpSettings)
+   ============================================================ */
+
+export const IconPlug: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M9 2v6" />
+    <path d="M15 2v6" />
+    <rect x="6" y="8" width="12" height="6" rx="2" />
+    <path d="M12 14v8" />
+  </SvgIcon>
+);
+
+export const IconKey: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <circle cx="7" cy="15" r="4" />
+    <path d="M10.5 11.5L21 1" />
+    <path d="M17 5l3 3" />
+    <path d="M14 8l3 3" />
+  </SvgIcon>
+);
+
+export const IconCloud: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
+  </SvgIcon>
+);
+
+export const IconWrench: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+  </SvgIcon>
+);
+
+export const IconDot: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <circle cx="12" cy="12" r="6" fill="currentColor" stroke="none" />
+  </SvgIcon>
+);
+
+/* ============================================================
+   PROVIDER MARKS (LoadingAnimations — abstract, non-branded glyphs)
+   ============================================================ */
+
+export const IconDiamond: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <polygon points="12 2 22 12 12 22 2 12" fill="currentColor" stroke="none" />
+  </SvgIcon>
+);
+
+export const IconMoon: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor" stroke="none" />
+  </SvgIcon>
+);
+
+export const IconCpu: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <rect x="5" y="5" width="14" height="14" rx="2" />
+    <rect x="9" y="9" width="6" height="6" />
+    <path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" />
+  </SvgIcon>
+);
+
+export const IconUser: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </SvgIcon>
+);
+
+/* ============================================================
+   SESSIONS / CHAT TABS ICONS (plan-ia-onglets.md §⑤)
+   ============================================================ */
+
+export const IconMoreVertical: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <circle cx="12" cy="5" r="1" />
+    <circle cx="12" cy="12" r="1" />
+    <circle cx="12" cy="19" r="1" />
+  </SvgIcon>
+);
+
+export const IconCopy: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <rect x="9" y="9" width="12" height="12" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </SvgIcon>
+);
+
+export const IconExpand: React.FC<IconProps> = (props) => (
+  <SvgIcon {...props}>
+    <polyline points="15 3 21 3 21 9" />
+    <polyline points="9 21 3 21 3 15" />
+    <line x1="21" y1="3" x2="14" y2="10" />
+    <line x1="3" y1="21" x2="10" y2="14" />
+  </SvgIcon>
+);
+
 /**
  * Export all icons as a namespace for easier consumption:
  * import { Icons } from './icons';
@@ -426,6 +618,30 @@ export const Icons = {
   Download: IconDownload,
   Package: IconPackage,
   Shield: IconShield,
+  Clock: IconClock,
+  Globe: IconGlobe,
+  Sparkle: IconSparkle,
+  File: IconFile,
+  Edit: IconEdit,
+  Link: IconLink,
+  Shuffle: IconShuffle,
+  Repeat: IconRepeat,
+  Hourglass: IconHourglass,
+  Bell: IconBell,
+  Mail: IconMail,
+  Send: IconSend,
+  Plug: IconPlug,
+  Key: IconKey,
+  Cloud: IconCloud,
+  Wrench: IconWrench,
+  Dot: IconDot,
+  Diamond: IconDiamond,
+  Moon: IconMoon,
+  Cpu: IconCpu,
+  User: IconUser,
+  MoreVertical: IconMoreVertical,
+  Copy: IconCopy,
+  Expand: IconExpand,
 };
 
 export default Icons;

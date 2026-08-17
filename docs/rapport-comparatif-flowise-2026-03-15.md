@@ -9,7 +9,7 @@ Version: 2.0 — enrichie avec recommandations P0-P5 et analyse du code réel
 
 Comparaison entre :
 
-- la fonctionnalité de workflow visuel actuelle de **Mon IDE Agent IA**
+- la fonctionnalité de workflow visuel actuelle de **Code companion**
 - **FlowiseAI**, outil spécialisé dans la construction de flows IA et agentiques
 
 Sources utilisées :
@@ -35,7 +35,7 @@ Sources utilisées :
 
 ## Synthèse exécutive
 
-FlowiseAI est aujourd'hui nettement plus mature que Mon IDE Agent IA sur la fonction "workflow IA visuel" elle-même.
+FlowiseAI est aujourd'hui nettement plus mature que Code companion sur la fonction "workflow IA visuel" elle-même.
 
 Il est plus fort sur :
 
@@ -47,7 +47,7 @@ Il est plus fort sur :
 - la mise en production
 - la multi-équipe
 
-En revanche, Mon IDE Agent IA garde un avantage structurel sur un autre terrain :
+En revanche, Code companion garde un avantage structurel sur un autre terrain :
 
 - orchestration locale orientée code
 - intégration native avec éditeur, terminal, git, preview, pending changes

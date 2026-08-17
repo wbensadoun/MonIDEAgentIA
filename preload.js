@@ -140,6 +140,9 @@ try {
     getSystemAIProfile: (options) => ipcRenderer.invoke('get-system-ai-profile', options),
     validateApiKey: (provider, apiKey) => ipcRenderer.invoke('validate-api-key', provider, apiKey),
     listProviderModels: (provider, apiKey) => ipcRenderer.invoke('list-provider-models', provider, apiKey),
+    listProviderCredentials: () => ipcRenderer.invoke('provider:list-credentials'),
+    connectProviderCredential: (payload) => ipcRenderer.invoke('provider:connect', payload),
+    revokeProviderCredential: (payload) => ipcRenderer.invoke('provider:revoke', payload),
 
     // Terminal / Process Runner
     startProcess: (payload) => ipcRenderer.invoke('start-process', payload),

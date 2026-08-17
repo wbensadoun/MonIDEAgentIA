@@ -1,6 +1,6 @@
 {
-  "name": "monideagentia",
-  "version": "1.8.0",
+  "name": "code-companion",
+  "version": "2.4.1",
   "main": "main.js",
   "scripts": {
     "start": "concurrently \"npm:start-react\" \"npm:electron-dev\"",
@@ -16,7 +16,10 @@
     "stop-server": "bash scripts/stop-server.sh",
     "logs-server": "bash scripts/logs-server.sh",
     "postinstall": "node scripts/postinstall.js",
-    "test": "npm test --prefix client -- --watchAll=false --runInBand"
+    "test": "npm test --prefix client -- --watchAll=false --runInBand",
+    "test:electron": "node --test electron/services/provider-management.test.js electron/services/router.service.test.js electron/services/neven-control-plane.service.test.js electron/services/neven-core.service.test.js electron/ipc/aiHandlers.test.js",
+    "lint:css": "npm run lint:css --prefix client",
+    "check:design-debt": "bash scripts/check-design-debt.sh"
   },
   "keywords": [],
   "author": "",
@@ -45,7 +48,7 @@
   },
   "build": {
     "appId": "com.votreentreprise.monide",
-    "productName": "Mon IDE Agent IA",
+    "productName": "Code companion",
     "npmRebuild": false,
     "asarUnpack": [
       "node_modules/node-pty/**/*"
@@ -75,7 +78,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Mon IDE Agent IA"
+      "shortcutName": "Code companion"
     },
     "mac": {
       "icon": "iconeDesktop.png"

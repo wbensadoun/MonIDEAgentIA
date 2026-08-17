@@ -2,35 +2,49 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import WorkspaceSidebar from './WorkspaceSidebar';
 import AIChat from '../AIChat';
 import AgentSwarmPanel from '../AgentSwarmPanel';
+import {
+  clamp,
+  KEYBOARD_RESIZE_STEP,
+  migrateLegacyWidth,
+  RESIZER_WIDTH,
+  fitSideWidths,
+  usePointerResize
+} from '../../hooks/useWorkspaceSessionLayout';
 
-const DEFAULT_SIDEBAR_WIDTH = 20;
-const MIN_SIDEBAR_WIDTH = 15;
-const MAX_SIDEBAR_WIDTH = 45;
-const STORAGE_KEY = 'futurIA_chatSidebarWidth';
+export const CHAT_LAYOUT_VERSION = 2;
+export const CHAT_SIDEBAR_DEFAULT_WIDTH = 280;
+export const CHAT_SIDEBAR_MIN_WIDTH = 200;
+export const CHAT_SIDEBAR_MAX_WIDTH = 480;
+export const CHAT_MAIN_MIN_WIDTH = 350;
+export const SWARM_DEFAULT_WIDTH = 320;
+export const SWARM_MIN_WIDTH = 260;
+export const SWARM_MAX_WIDTH = 520;
 
-// Panneau des agents (droite) : largeur en pixels (pas en %), le panneau
-// gauche est déjà en %, mais un panneau étroit type "sidebar d'outil" se
-// raisonne mieux en px fixes qu'en fraction de l'écran.
-const SWARM_DEFAULT_WIDTH = 320;
-const SWARM_MIN_WIDTH = 260;
-const SWARM_MAX_WIDTH = 520;
-const SWARM_WIDTH_KEY = 'futurIA_chatSwarmWidth';
+const SIDEBAR_STORAGE_KEY = 'code_companion_chatSidebarWidth';
+const SWARM_STORAGE_KEY = 'code_companion_chatSwarmWidth';
+const VERSION_STORAGE_KEY = 'code_companion_chatLayoutVersion';
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const availableViewportWidth = () => (
+  typeof window === 'undefined' ? 1280 : Math.max(0, window.innerWidth - 48)
+);
 
-/**
- * ChatLayout — Full-page flex row layout for chat-focused UI
- *
- * Structure:
- * - Left sidebar: WorkspaceSidebar (projects only, no file explorer),
- *   resizable via drag/keyboard just like WorkspaceLayout's left panel
- *   (previously hardcoded to a fixed 20% with no resizer at all).
- * - Right main: Full-screen AIChat interface, fills the remaining space.
- *
- * Props:
- *   - workspacePanelProps: Object with WorkspacePanel configuration
- *   - aiChatProps: Object with AIChat configuration
- */
+const readInitialWidth = (key, fallback, minimum, maximum, migratePercentage = false) => {
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved == null) return fallback;
+    const version = Number(localStorage.getItem(VERSION_STORAGE_KEY) || 0);
+    const numeric = migratePercentage && version < CHAT_LAYOUT_VERSION
+      ? migrateLegacyWidth(saved, availableViewportWidth(), fallback)
+      : Number(saved);
+    return Number.isFinite(numeric) && numeric > 0
+      ? clamp(Math.round(numeric), minimum, maximum)
+      : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+/** Chat-focused workbench with pixel-sized, persistent side regions. */
 const ChatLayout = ({
   workspacePanelProps,
   aiChatProps,
@@ -39,148 +53,140 @@ const ChatLayout = ({
   onToggleSwarmPanel
 }) => {
   const layoutRef = useRef(null);
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    try {
-      const saved = Number(localStorage.getItem(STORAGE_KEY));
-      return Number.isFinite(saved) && saved > 0
-        ? clamp(saved, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH)
-        : DEFAULT_SIDEBAR_WIDTH;
-    } catch {
-      return DEFAULT_SIDEBAR_WIDTH;
-    }
-  });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ startX: 0, startWidth: DEFAULT_SIDEBAR_WIDTH });
+  const [layoutWidth, setLayoutWidth] = useState(availableViewportWidth);
+  const [sidebarWidth, setSidebarWidth] = useState(() => readInitialWidth(
+    SIDEBAR_STORAGE_KEY,
+    CHAT_SIDEBAR_DEFAULT_WIDTH,
+    CHAT_SIDEBAR_MIN_WIDTH,
+    CHAT_SIDEBAR_MAX_WIDTH,
+    true
+  ));
+  const [swarmWidth, setSwarmWidth] = useState(() => readInitialWidth(
+    SWARM_STORAGE_KEY,
+    SWARM_DEFAULT_WIDTH,
+    SWARM_MIN_WIDTH,
+    SWARM_MAX_WIDTH
+  ));
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, String(sidebarWidth));
-    } catch {
-      // ignore
+    const node = layoutRef.current;
+    if (!node) return undefined;
+    const measure = () => {
+      const width = node.getBoundingClientRect().width || node.clientWidth;
+      if (width > 0) setLayoutWidth(Math.round(width));
+    };
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(measure);
+      observer.observe(node);
+      return () => observer.disconnect();
     }
-  }, [sidebarWidth]);
-
-  useEffect(() => {
-    if (!isDragging) return undefined;
-
-    const handleMouseMove = (e) => {
-      if (e.buttons === 0) {
-        setIsDragging(false);
-        return;
-      }
-      if (!layoutRef.current) return;
-      const totalWidth = layoutRef.current.getBoundingClientRect().width;
-      if (!totalWidth) return;
-
-      const deltaPercent = ((e.clientX - dragStartRef.current.startX) / totalWidth) * 100;
-      setSidebarWidth(clamp(dragStartRef.current.startWidth + deltaPercent, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH));
-    };
-    const handleMouseUp = () => setIsDragging(false);
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging]);
-
-  const handleDragStart = useCallback((e) => {
-    e.preventDefault();
-    dragStartRef.current = { startX: e.clientX, startWidth: sidebarWidth };
-    setIsDragging(true);
-  }, [sidebarWidth]);
-
-  const handleResizeStep = useCallback((deltaPercent) => {
-    setSidebarWidth((w) => clamp(w + deltaPercent, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH));
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
   }, []);
 
-  // ---- Panneau des agents (droite) : largeur uniquement — l'etat
-  // ouvert/ferme vit maintenant dans App.js (isSwarmOpen/onToggleSwarmPanel
-  // props) pour que la topbar puisse piloter le meme toggle. ----
-  const [swarmWidth, setSwarmWidth] = useState(() => {
+  useEffect(() => {
     try {
-      const saved = Number(localStorage.getItem(SWARM_WIDTH_KEY));
-      return Number.isFinite(saved) && saved > 0
-        ? clamp(saved, SWARM_MIN_WIDTH, SWARM_MAX_WIDTH)
-        : SWARM_DEFAULT_WIDTH;
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, String(sidebarWidth));
+      localStorage.setItem(SWARM_STORAGE_KEY, String(swarmWidth));
+      localStorage.setItem(VERSION_STORAGE_KEY, String(CHAT_LAYOUT_VERSION));
     } catch {
-      return SWARM_DEFAULT_WIDTH;
+      // localStorage may be disabled.
     }
+  }, [sidebarWidth, swarmWidth]);
+
+  const resizerCount = Number(!isSidebarCollapsed) + Number(isSwarmOpen);
+  const fittedWidths = fitSideWidths({
+    availableWidth: layoutWidth - CHAT_MAIN_MIN_WIDTH - resizerCount * RESIZER_WIDTH,
+    leftWidth: isSidebarCollapsed ? 0 : sidebarWidth,
+    rightWidth: isSwarmOpen ? swarmWidth : 0,
+    leftMin: isSidebarCollapsed ? 0 : CHAT_SIDEBAR_MIN_WIDTH,
+    rightMin: isSwarmOpen ? SWARM_MIN_WIDTH : 0
   });
-  const [isSwarmDragging, setIsSwarmDragging] = useState(false);
-  const swarmDragStartRef = useRef({ startX: 0, startWidth: SWARM_DEFAULT_WIDTH });
+  const renderedSidebarWidth = isSidebarCollapsed ? sidebarWidth : fittedWidths.leftWidth;
+  const renderedSwarmWidth = isSwarmOpen ? fittedWidths.rightWidth : swarmWidth;
+  const sidebarMaxWidth = Math.max(
+    CHAT_SIDEBAR_MIN_WIDTH,
+    Math.min(
+      CHAT_SIDEBAR_MAX_WIDTH,
+      layoutWidth - CHAT_MAIN_MIN_WIDTH - (isSwarmOpen ? renderedSwarmWidth : 0) - resizerCount * RESIZER_WIDTH
+    )
+  );
+  const swarmMaxWidth = Math.max(
+    SWARM_MIN_WIDTH,
+    Math.min(
+      SWARM_MAX_WIDTH,
+      layoutWidth - CHAT_MAIN_MIN_WIDTH - (isSidebarCollapsed ? 0 : renderedSidebarWidth) - resizerCount * RESIZER_WIDTH
+    )
+  );
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(SWARM_WIDTH_KEY, String(swarmWidth));
-    } catch {
-      // ignore
-    }
-  }, [swarmWidth]);
-
-  useEffect(() => {
-    if (!isSwarmDragging) return undefined;
-
-    const handleMouseMove = (e) => {
-      if (e.buttons === 0) {
-        setIsSwarmDragging(false);
-        return;
-      }
-      // Le panneau est à droite : glisser la poignée vers la GAUCHE doit
-      // l'agrandir, donc le delta de largeur est l'inverse du delta de souris.
-      const deltaPx = swarmDragStartRef.current.startX - e.clientX;
-      setSwarmWidth(clamp(swarmDragStartRef.current.startWidth + deltaPx, SWARM_MIN_WIDTH, SWARM_MAX_WIDTH));
-    };
-    const handleMouseUp = () => setIsSwarmDragging(false);
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isSwarmDragging]);
-
-  const handleSwarmDragStart = useCallback((e) => {
-    e.preventDefault();
-    swarmDragStartRef.current = { startX: e.clientX, startWidth: swarmWidth };
-    setIsSwarmDragging(true);
-  }, [swarmWidth]);
-
-  const handleSwarmResizeStep = useCallback((deltaPx) => {
-    setSwarmWidth((w) => clamp(w + deltaPx, SWARM_MIN_WIDTH, SWARM_MAX_WIDTH));
+  const resizeSidebar = useCallback(({ deltaX, data }) => {
+    setSidebarWidth(clamp(
+      Math.round(data.startWidth + deltaX),
+      CHAT_SIDEBAR_MIN_WIDTH,
+      data.maxWidth
+    ));
   }, []);
+  const sidebarResize = usePointerResize({ onResize: resizeSidebar });
+
+  const resizeSwarm = useCallback(({ deltaX, data }) => {
+    setSwarmWidth(clamp(
+      Math.round(data.startWidth - deltaX),
+      SWARM_MIN_WIDTH,
+      data.maxWidth
+    ));
+  }, []);
+  const swarmResize = usePointerResize({ onResize: resizeSwarm });
+
+  const handleSidebarResizeKey = useCallback((delta) => {
+    setSidebarWidth(width => clamp(
+      width + delta,
+      CHAT_SIDEBAR_MIN_WIDTH,
+      sidebarMaxWidth
+    ));
+  }, [sidebarMaxWidth]);
+
+  const handleSwarmResizeKey = useCallback((delta) => {
+    setSwarmWidth(width => clamp(width + delta, SWARM_MIN_WIDTH, swarmMaxWidth));
+  }, [swarmMaxWidth]);
 
   return (
     <div ref={layoutRef} className="workspace">
-      {/* Left Sidebar: Projects/Workspace Panel */}
       {!isSidebarCollapsed && (
         <>
           <WorkspaceSidebar
             sidebarVisibility="projectsOnly"
-            style={{ width: `${sidebarWidth}%` }}
+            style={{ width: `${renderedSidebarWidth}px`, minWidth: `${CHAT_SIDEBAR_MIN_WIDTH}px` }}
             workspacePanelProps={workspacePanelProps}
           />
-
-          {/* Resizer — same visual/interaction pattern as WorkspaceLayout's left panel */}
           <div
-            className={`panel-resizer ${isDragging ? 'panel-resizer-active' : ''}`}
-            onMouseDown={handleDragStart}
+            className={`panel-resizer ${sidebarResize.isResizing ? 'panel-resizer-active' : ''}`}
             role="separator"
             aria-orientation="vertical"
             aria-label="Redimensionner le panneau de gauche"
+            aria-valuemin={CHAT_SIDEBAR_MIN_WIDTH}
+            aria-valuemax={Math.max(renderedSidebarWidth, sidebarMaxWidth)}
+            aria-valuenow={renderedSidebarWidth}
             tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowLeft') { e.preventDefault(); handleResizeStep(-2); }
-              else if (e.key === 'ArrowRight') { e.preventDefault(); handleResizeStep(2); }
+            onPointerDown={(event) => sidebarResize.beginPointerResize(event, {
+              startWidth: renderedSidebarWidth,
+              maxWidth: sidebarMaxWidth
+            })}
+            {...sidebarResize.resizeHandleProps}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                handleSidebarResizeKey(-KEYBOARD_RESIZE_STEP);
+              } else if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                handleSidebarResizeKey(KEYBOARD_RESIZE_STEP);
+              }
             }}
           />
         </>
       )}
 
-      {/* Right Main: Full-screen Chat */}
-      <main className="chat-fullscreen">
+      <main className="chat-fullscreen" style={{ minWidth: `${CHAT_MAIN_MIN_WIDTH}px` }}>
         <div className="chat-fullscreen-inner">
           <AIChat
             {...aiChatProps}
@@ -192,22 +198,33 @@ const ChatLayout = ({
 
       {isSwarmOpen && (
         <>
-          {/* Resizer miroir de celui de gauche, mais inversé (voir handleSwarmDragStart) */}
           <div
-            className={`panel-resizer ${isSwarmDragging ? 'panel-resizer-active' : ''}`}
-            onMouseDown={handleSwarmDragStart}
+            className={`panel-resizer ${swarmResize.isResizing ? 'panel-resizer-active' : ''}`}
             role="separator"
             aria-orientation="vertical"
             aria-label="Redimensionner le panneau des agents"
+            aria-valuemin={SWARM_MIN_WIDTH}
+            aria-valuemax={Math.max(renderedSwarmWidth, swarmMaxWidth)}
+            aria-valuenow={renderedSwarmWidth}
             tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowLeft') { e.preventDefault(); handleSwarmResizeStep(20); }
-              else if (e.key === 'ArrowRight') { e.preventDefault(); handleSwarmResizeStep(-20); }
+            onPointerDown={(event) => swarmResize.beginPointerResize(event, {
+              startWidth: renderedSwarmWidth,
+              maxWidth: swarmMaxWidth
+            })}
+            {...swarmResize.resizeHandleProps}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                handleSwarmResizeKey(KEYBOARD_RESIZE_STEP);
+              } else if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                handleSwarmResizeKey(-KEYBOARD_RESIZE_STEP);
+              }
             }}
           />
           <AgentSwarmPanel
             multiAIState={aiChatProps?.multiAIState}
-            width={swarmWidth}
+            width={renderedSwarmWidth}
             onClose={onToggleSwarmPanel}
           />
         </>

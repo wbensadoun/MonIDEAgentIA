@@ -106,7 +106,7 @@ const requestProjectPathApproval = async (projectPath, { dialog, getMainWindow }
   const result = await dialog.showMessageBox(targetWindow, {
     type: 'question',
     title: 'Autoriser le projet',
-    message: 'Autoriser Mon IDE Agent IA a rouvrir ce dossier ?',
+    message: 'Autoriser Code companion à rouvrir ce dossier ?',
     detail: normalized,
     buttons: ['Autoriser', 'Refuser'],
     defaultId: 0,

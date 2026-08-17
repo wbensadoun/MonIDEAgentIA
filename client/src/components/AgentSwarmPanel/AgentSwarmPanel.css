@@ -264,11 +264,7 @@
   width: 6px;
   height: 6px;
   color: var(--accent);
-  animation: swarm-spin 800ms linear infinite;
-}
-
-@keyframes swarm-spin {
-  to { transform: rotate(360deg); }
+  animation: spin 800ms linear infinite; /* shared keyframe, styles/motion.css */
 }
 
 /* Header : label + chevron optionnel */
@@ -321,17 +317,6 @@
 
 .swarm-step-pending .swarm-step-label {
   color: var(--text-muted);
-}
-
-/* Shimmer doux : opacity pulse au lieu de background-clip:text */
-.swarm-step-label-shimmer {
-  color: var(--text-main);
-  animation: swarm-shimmer-pulse 3s ease-in-out infinite;
-}
-
-@keyframes swarm-shimmer-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
 }
 
 /* Meta (provider · model) très discret, aligné à droite */
@@ -550,10 +535,5 @@
 
   .swarm-spinner-small {
     animation: none !important;
-  }
-
-  .swarm-step-label-shimmer {
-    animation: none !important;
-    opacity: 1;
   }
 }

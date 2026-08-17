@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// MCP Server — Mon IDE Agent IA
+// MCP Server — Code companion
 // Expose les capacités de l'IDE via le Model Context Protocol (stdio transport)
 
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');

@@ -1,3 +1,23 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ======================================================================
+   Code Companion — base reset
+   ======================================================================
+   Formerly `@tailwind base/components/utilities` (Tailwind was a phantom
+   dependency: never in package.json, zero utility classes used anywhere
+   in client/src — see docs/plan-refonte-ui-90j.md §2.0). Removed in
+   Phase 1 (1.1) in favor of doubling down on styles/tokens.css.
+
+   This file only needs a minimal, framework-agnostic box-model reset.
+   The full design-system reset (colors, fonts, focus rings, tokens) is
+   owned by App.css, which `@import`s ./styles/tokens.css.
+   ========================================================================= */
+
+/* Shared @keyframes (spin/pulse/fade-in-up/shimmer/blink) — canonical
+   definitions consuming CSS files migrate their own duplicates to.
+   See client/src/styles/motion.css and docs/plan-polish-ui-2026-08.md §0.5. */
+@import './styles/motion.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}

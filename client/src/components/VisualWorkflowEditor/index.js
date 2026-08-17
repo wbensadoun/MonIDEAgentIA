@@ -15,34 +15,70 @@ import useWorkflowRunner from '../../hooks/useWorkflowRunner';
 import { buildSingleAIInvocation, normalizeSingleAIProvider } from '../../utils/aiProviderRouting';
 import {
     IconLightning, IconPlay, IconStop, IconSave, IconFolder,
-    IconPackage, IconBot, IconTrash, IconUpload, IconDownload, IconX, IconAudit
+    IconPackage, IconBot, IconTrash, IconUpload, IconDownload, IconX, IconAudit,
+    IconClock, IconGlobe, IconSearch, IconSparkle, IconTerminal, IconFile, IconEdit,
+    IconLink, IconGit, IconShuffle, IconRepeat, IconHourglass, IconBell, IconMail,
+    IconChat, IconSend
 } from '../ComponentLibrary/icons';
+
+/* Résout la clé d'icône d'un nœud (catalogue local ou import n8n) vers un
+   glyphe tracé de icons.tsx. Les valeurs inconnues (ex: anciens workflows
+   sauvegardés avec un emoji) retombent sur IconLightning plutôt que de
+   rendre le caractère brut. */
+const NODE_ICON_COMPONENTS = {
+    play: IconPlay,
+    clock: IconClock,
+    globe: IconGlobe,
+    bot: IconBot,
+    search: IconSearch,
+    sparkle: IconSparkle,
+    terminal: IconTerminal,
+    file: IconFile,
+    edit: IconEdit,
+    link: IconLink,
+    git: IconGit,
+    shuffle: IconShuffle,
+    repeat: IconRepeat,
+    hourglass: IconHourglass,
+    bell: IconBell,
+    save: IconSave,
+    mail: IconMail,
+    chat: IconChat,
+    send: IconSend,
+    lightning: IconLightning,
+};
+
+const renderNodeIcon = (iconKey, size = 14) => {
+    const Component = NODE_ICON_COMPONENTS[iconKey];
+    if (Component) return <Component size={size} />;
+    return <IconLightning size={size} />;
+};
 
 /* ═══════════════════════════════════════════
    Catalogue de nœuds disponibles
    ═══════════════════════════════════════════ */
 const NODE_CATALOG = [
     // Déclencheurs
-    { category: 'Déclencheurs', type: 'trigger', label: 'Déclencheur Manuel', icon: '▶️', desc: 'Démarre le flux manuellement' },
-    { category: 'Déclencheurs', type: 'trigger', label: 'Cron / Planifié', icon: '⏰', desc: 'Exécution planifiée' },
-    { category: 'Déclencheurs', type: 'trigger', label: 'Webhook', icon: '🌐', desc: 'Réception HTTP' },
+    { category: 'Déclencheurs', type: 'trigger', label: 'Déclencheur Manuel', icon: 'play', desc: 'Démarre le flux manuellement' },
+    { category: 'Déclencheurs', type: 'trigger', label: 'Cron / Planifié', icon: 'clock', desc: 'Exécution planifiée' },
+    { category: 'Déclencheurs', type: 'trigger', label: 'Webhook', icon: 'globe', desc: 'Réception HTTP' },
     // IA
-    { category: 'Intelligence Artificielle', type: 'ai', label: 'Prompt IA', icon: '🤖', desc: 'Envoyer un prompt au LLM' },
-    { category: 'Intelligence Artificielle', type: 'ai', label: 'Analyser Code', icon: '🔍', desc: 'Analyse IA du code source' },
-    { category: 'Intelligence Artificielle', type: 'ai', label: 'Générer Code', icon: '✨', desc: 'Génération de code par IA' },
+    { category: 'Intelligence Artificielle', type: 'ai', label: 'Prompt IA', icon: 'bot', desc: 'Envoyer un prompt au LLM' },
+    { category: 'Intelligence Artificielle', type: 'ai', label: 'Analyser Code', icon: 'search', desc: 'Analyse IA du code source' },
+    { category: 'Intelligence Artificielle', type: 'ai', label: 'Générer Code', icon: 'sparkle', desc: 'Génération de code par IA' },
     // Actions
-    { category: 'Actions', type: 'action', label: 'Commande Terminal', icon: '💻', desc: 'Exécuter une commande shell' },
-    { category: 'Actions', type: 'action', label: 'Lire Fichier', icon: '📄', desc: 'Lire un fichier du projet' },
-    { category: 'Actions', type: 'action', label: 'Écrire Fichier', icon: '✏️', desc: 'Écrire dans un fichier' },
-    { category: 'Actions', type: 'action', label: 'Requête HTTP', icon: '🔗', desc: 'Appel API externe' },
-    { category: 'Actions', type: 'action', label: 'Git Commit', icon: '📦', desc: 'Commit automatique' },
+    { category: 'Actions', type: 'action', label: 'Commande Terminal', icon: 'terminal', desc: 'Exécuter une commande shell' },
+    { category: 'Actions', type: 'action', label: 'Lire Fichier', icon: 'file', desc: 'Lire un fichier du projet' },
+    { category: 'Actions', type: 'action', label: 'Écrire Fichier', icon: 'edit', desc: 'Écrire dans un fichier' },
+    { category: 'Actions', type: 'action', label: 'Requête HTTP', icon: 'link', desc: 'Appel API externe' },
+    { category: 'Actions', type: 'action', label: 'Git Commit', icon: 'git', desc: 'Commit automatique' },
     // Logique
-    { category: 'Logique', type: 'logic', label: 'Condition Si/Sinon', icon: '🔀', desc: 'Branchement conditionnel' },
-    { category: 'Logique', type: 'logic', label: 'Boucle', icon: '🔁', desc: 'Répéter N fois' },
-    { category: 'Logique', type: 'logic', label: 'Délai', icon: '⏳', desc: 'Attendre X secondes' },
+    { category: 'Logique', type: 'logic', label: 'Condition Si/Sinon', icon: 'shuffle', desc: 'Branchement conditionnel' },
+    { category: 'Logique', type: 'logic', label: 'Boucle', icon: 'repeat', desc: 'Répéter N fois' },
+    { category: 'Logique', type: 'logic', label: 'Délai', icon: 'hourglass', desc: 'Attendre X secondes' },
     // Sorties
-    { category: 'Sorties', type: 'output', label: 'Notification', icon: '🔔', desc: 'Afficher un message' },
-    { category: 'Sorties', type: 'output', label: 'Enregistrer Résultat', icon: '💾', desc: 'Sauvegarder les données' },
+    { category: 'Sorties', type: 'output', label: 'Notification', icon: 'bell', desc: 'Afficher un message' },
+    { category: 'Sorties', type: 'output', label: 'Enregistrer Résultat', icon: 'save', desc: 'Sauvegarder les données' },
 ];
 
 const VALID_NODE_TYPES = new Set(['trigger', 'ai', 'action', 'logic', 'output']);
@@ -74,7 +110,7 @@ const CustomNode = ({ id, data, selected }) => {
             <Handle type="target" position={Position.Left} />
             <div className="vw-node-header">
                 <div className={`vw-node-icon ${nodeType}`}>
-                    {data.icon || '⚡'}
+                    {renderNodeIcon(data.icon, 16)}
                 </div>
                 <div className="vw-node-title">{data.label}</div>
             </div>
@@ -888,23 +924,23 @@ const VisualWorkflowEditor = ({
     };
 
     const guessNodeIcon = (n8nType) => {
-        if (!n8nType) return '⚡';
+        if (!n8nType) return 'lightning';
         const t = n8nType.toLowerCase();
-        if (t.includes('trigger') || t.includes('manual')) return '▶️';
-        if (t.includes('cron') || t.includes('schedule')) return '⏰';
-        if (t.includes('webhook')) return '🌐';
-        if (t.includes('openai') || t.includes('ai') || t.includes('gpt')) return '🤖';
-        if (t.includes('http')) return '🔗';
-        if (t.includes('git')) return '📦';
-        if (t.includes('if') || t.includes('switch')) return '🔀';
-        if (t.includes('loop') || t.includes('merge')) return '🔁';
-        if (t.includes('wait')) return '⏳';
-        if (t.includes('email') || t.includes('gmail')) return '📧';
-        if (t.includes('slack')) return '💬';
-        if (t.includes('telegram')) return '✈️';
-        if (t.includes('file') || t.includes('read') || t.includes('write')) return '📄';
-        if (t.includes('notification')) return '🔔';
-        return '⚡';
+        if (t.includes('trigger') || t.includes('manual')) return 'play';
+        if (t.includes('cron') || t.includes('schedule')) return 'clock';
+        if (t.includes('webhook')) return 'globe';
+        if (t.includes('openai') || t.includes('ai') || t.includes('gpt')) return 'bot';
+        if (t.includes('http')) return 'link';
+        if (t.includes('git')) return 'git';
+        if (t.includes('if') || t.includes('switch')) return 'shuffle';
+        if (t.includes('loop') || t.includes('merge')) return 'repeat';
+        if (t.includes('wait')) return 'hourglass';
+        if (t.includes('email') || t.includes('gmail')) return 'mail';
+        if (t.includes('slack')) return 'chat';
+        if (t.includes('telegram')) return 'send';
+        if (t.includes('file') || t.includes('read') || t.includes('write')) return 'file';
+        if (t.includes('notification')) return 'bell';
+        return 'lightning';
     };
 
     // ── Grouper le catalogue par catégorie ──
@@ -959,7 +995,7 @@ const VisualWorkflowEditor = ({
                     : prev
             ));
         }, 480);
-        if (showMessage) showMessage('🤖 Génération du workflow...', 2000);
+        if (showMessage) showMessage('Génération du workflow...', 2000);
 
         const request = buildSingleAIInvocation({
             aiProvider,
@@ -1235,7 +1271,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                                         className="vw-add-item"
                                         onClick={() => addNode(item)}
                                     >
-                                        <span className="vw-add-item-icon">{item.icon}</span>
+                                        <span className="vw-add-item-icon">{renderNodeIcon(item.icon, 16)}</span>
                                         <div className="vw-add-item-info">
                                             <span className="vw-add-item-name">{item.label}</span>
                                             <span className="vw-add-item-desc">{item.desc}</span>

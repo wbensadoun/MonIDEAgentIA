@@ -30,6 +30,12 @@ const {
   getDefaultModelForAIProvider
 } = require('./settings.service');
 const {
+  NEVEN_INTERNAL_PROFILES,
+  NEVEN_ROUTER_CONTEXT_LIMITS,
+  buildNevenRouterContext,
+  normalizeProfileName: normalizeNevenProfileName
+} = require('./neven-core.service');
+const {
   OLLAMA_BASE_URL,
   FALLBACK_OLLAMA_MODEL_CANDIDATES,
   normalizeOllamaModelName,
@@ -65,6 +71,68 @@ const PROVIDER_TIER_STATIC_CANDIDATES = Object.freeze({
   claude: [DEFAULT_CLAUDE_LIGHT_MODEL, DEFAULT_CLAUDE_MODEL],
   kimi: [DEFAULT_KIMI_MODEL]
 });
+
+// Profils internes Neven. Ils décrivent une capacité, pas un fournisseur et ne
+// doivent jamais être affichés dans le chat. La résolution physique ci-dessous
+// reste entièrement backend : un profil peut changer de modèle sans changer l'UX.
+const ROUTER_PROFILE_DEFINITIONS = NEVEN_INTERNAL_PROFILES;
+const ROUTER_VALID_PROFILES = new Set(Object.keys(ROUTER_PROFILE_DEFINITIONS));
+const PROFILE_MODEL_PATTERNS = Object.freeze({
+  haiku: ['haiku', 'flash-lite', 'flash'],
+  luna: ['sonnet', 'pro', 'k2'],
+  sol: ['sonnet', 'pro', 'k2'],
+  opus: ['opus', 'ultra', 'pro', 'sonnet', 'k2']
+});
+
+const normalizeRouterProfile = (profile) => {
+  const normalized = normalizeNevenProfileName(profile);
+  return ROUTER_VALID_PROFILES.has(normalized) ? normalized : 'haiku';
+};
+
+const deriveProfileFromDecision = ({ mode, complexity }) => {
+  if (mode === 'multi_agent') return 'opus';
+  if (mode === 'orchestrator') return 'sol';
+  return complexity === 'premium' ? 'luna' : 'haiku';
+};
+
+const buildProfileDecision = (profile) => {
+  const normalizedProfile = normalizeRouterProfile(profile);
+  const definition = ROUTER_PROFILE_DEFINITIONS[normalizedProfile];
+  return {
+    mode: definition.executionMode === 'agent'
+      ? 'single_agent'
+      : (normalizedProfile === 'opus' ? 'multi_agent' : 'orchestrator'),
+    agent: null,
+    skills: [],
+    complexity: definition.complexity,
+    profile: normalizedProfile
+  };
+};
+
+// L1 ne tranche que les signaux forts. Les demandes ambiguës passent au L2,
+// afin d'éviter qu'une simple heuristique ne choisisse un profil trop faible.
+const classifyPromptProfile = (prompt) => {
+  const text = String(prompt || '').trim();
+  const lower = text.toLowerCase();
+  if (!text) return { profile: 'haiku', confidence: 'high', reason: 'empty' };
+  if (/^(bonjour|bonsoir|salut|hello|hi|merci|thanks|ok|oui|non|ping)\b/i.test(lower)
+    && text.split(/\s+/).length <= 5) {
+    return { profile: 'haiku', confidence: 'high', reason: 'small-talk' };
+  }
+  if (/(production|sécurité|security|vulnér|vulnerab|migration critique|perte de données|data loss|authentification|paiement|compliance|menace|threat)/i.test(text)) {
+    return { profile: 'opus', confidence: 'high', reason: 'critical-risk' };
+  }
+  if (/(architecture|architect|repository|repo|refactor.*(complet|global|entier)|multi[- ]?étapes|multi[- ]?steps|planifie|planifier|débogage.*(complexe|profond)|debug.*(complex|deep)|plusieurs fichiers|multiple files)/i.test(text)) {
+    return { profile: 'sol', confidence: 'high', reason: 'multi-step' };
+  }
+  if (/(bug|erreur|error|fix|corrige|ajoute|add|crée|create|implémente|implement|code|fonction|function|composant|component|test|fichier|file|endpoint|api)/i.test(text)) {
+    return { profile: 'luna', confidence: 'medium', reason: 'coding-task' };
+  }
+  if (text.split(/\s+/).filter(Boolean).length <= 3) {
+    return { profile: 'haiku', confidence: 'medium', reason: 'short-request' };
+  }
+  return null;
+};
 
 // Choisit le premier candidat contenant un motif, motifs essayes dans l'ordre de
 // preference (pattern[0] contre tous les candidats avant de tenter pattern[1]).
@@ -163,17 +231,34 @@ const resolveModelForTier = async (provider, tier, ctx = {}) => {
   return { resolved: getDefaultModelForAIProvider(normalizedProvider), source: 'static' };
 };
 
+const resolveModelForProfile = async (provider, profile, ctx = {}) => {
+  const normalizedProfile = normalizeRouterProfile(profile);
+  if (normalizedProfile === 'haiku') return resolveModelForTier(provider, 'light', ctx);
+
+  const normalizedProvider = normalizeAIProviderName(provider);
+  if (normalizedProvider === 'ollama') return resolveModelForTier(provider, 'premium', ctx);
+
+  const patterns = PROFILE_MODEL_PATTERNS[normalizedProfile] || PROFILE_MODEL_PATTERNS.luna;
+  const candidates = Array.isArray(ctx?.liveModels) && ctx.liveModels.length > 0
+    ? ctx.liveModels
+    : (PROVIDER_TIER_STATIC_CANDIDATES[normalizedProvider] || [getDefaultModelForAIProvider(normalizedProvider)]);
+  const picked = pickCandidateByTierPatterns(candidates, patterns);
+  if (picked) return { resolved: picked, source: Array.isArray(ctx?.liveModels) && ctx.liveModels.length > 0 ? 'live' : 'static' };
+
+  return resolveModelForTier(provider, 'premium', ctx);
+};
+
 // ---------------------------------------------------------------------------
 // Classification : prompt, parsing defensif, validation stricte
 // ---------------------------------------------------------------------------
 
 // Decision de repli SURE : strictement identique au comportement actuel par defaut
 // (agent unique, sans routage) — aucune regression possible en cas d'echec.
-const ROUTER_SAFE_FALLBACK_DECISION = Object.freeze({ mode: 'single_agent', agent: null, skills: [], complexity: 'light' });
+const ROUTER_SAFE_FALLBACK_DECISION = Object.freeze({ mode: 'single_agent', agent: null, skills: [], complexity: 'light', profile: 'haiku' });
 const ROUTER_VALID_MODES = new Set(['single_agent', 'orchestrator', 'multi_agent']);
 const ROUTER_VALID_COMPLEXITY = new Set(['light', 'premium']);
-const ROUTER_MAX_AGENTS_IN_PROMPT = 130;
-const ROUTER_MAX_SKILLS_IN_PROMPT = 130;
+const ROUTER_MAX_AGENTS_IN_PROMPT = NEVEN_ROUTER_CONTEXT_LIMITS.maxAgents;
+const ROUTER_MAX_SKILLS_IN_PROMPT = NEVEN_ROUTER_CONTEXT_LIMITS.maxSkills;
 const ROUTER_AGENT_DESC_MAX = 60;
 const ROUTER_USER_PROMPT_MAX = 4000;
 const ROUTER_CLASSIFICATION_MAX_TOKENS = 512;
@@ -288,43 +373,37 @@ const resolveClassifierApiKey = (settings, classifierProvider, fallbackApiKey) =
 // Prompt systeme de classification (FR). La demande utilisateur est passee dans le
 // tour utilisateur (voir routeToDecision), pas ici. Ce prompt n'injecte que le contexte
 // (agents + skills reels) et le schema JSON strict.
-const buildRouterSystemPrompt = (agents, skills) => {
-  const agentLines = agents
-    .slice(0, ROUTER_MAX_AGENTS_IN_PROMPT)
-    .map((a) => {
-      const name = String(a?.name || '').trim();
-      if (!name) return '';
-      const desc = truncateText(String(a?.description || '').replace(/\s+/g, ' ').trim(), ROUTER_AGENT_DESC_MAX);
-      return desc ? `- ${name} — ${desc}` : `- ${name}`;
-    })
-    .filter(Boolean);
-  const agentsBlock = agentLines.length > 0
-    ? `AGENTS DISPONIBLES :\n${agentLines.join('\n')}`
-    : 'AGENTS DISPONIBLES : (aucun)';
+const buildRouterSystemPrompt = (agentsOrContext, maybeSkills = []) => {
+  const context = Array.isArray(agentsOrContext)
+    ? { agents: agentsOrContext, skills: maybeSkills }
+    : (agentsOrContext && typeof agentsOrContext === 'object' ? agentsOrContext : {});
+  const routerContext = buildNevenRouterContext({
+    prompt: context.userPrompt || '',
+    agents: Array.isArray(context.agents) ? context.agents : [],
+    skills: Array.isArray(context.skills) ? context.skills : [],
+    maxAgents: Number.isFinite(Number(context.maxAgents)) ? Number(context.maxAgents) : ROUTER_MAX_AGENTS_IN_PROMPT,
+    maxSkills: Number.isFinite(Number(context.maxSkills)) ? Number(context.maxSkills) : ROUTER_MAX_SKILLS_IN_PROMPT,
+    maxCapabilities: Number.isFinite(Number(context.maxCapabilities))
+      ? Number(context.maxCapabilities)
+      : NEVEN_ROUTER_CONTEXT_LIMITS.maxCapabilities
+  });
 
-  const skillNames = skills
-    .map((s) => String(s?.name || '').trim())
-    .filter(Boolean)
-    .slice(0, ROUTER_MAX_SKILLS_IN_PROMPT);
-  const skillsBlock = skillNames.length > 0
-    ? `SKILLS DISPONIBLES :\n${skillNames.join(', ')}`
-    : 'SKILLS DISPONIBLES : (aucun)';
+  return `Tu es le routeur de classification de Code Companion, un assistant de developpement multi-agents. Analyse la demande de l'utilisateur (fournie dans le message utilisateur) et decide UNIQUEMENT comment la router — tu n'executes JAMAIS la tache toi-meme.
 
-  return `Tu es le routeur de classification de FuturIA, un assistant de developpement multi-agents. Analyse la demande de l'utilisateur (fournie dans le message utilisateur) et decide UNIQUEMENT comment la router — tu n'executes JAMAIS la tache toi-meme.
+${routerContext.agentBlock}
 
-${agentsBlock}
-
-${skillsBlock}
+${routerContext.skillBlock}
 
 RÈGLES ABSOLUES :
 1. Réponds UNIQUEMENT avec un objet JSON strict, sans aucun texte avant ou après, sans bloc markdown (pas de \`\`\`).
 2. Le JSON doit correspondre EXACTEMENT à ce schéma :
-{"mode":"single_agent"|"orchestrator"|"multi_agent","agent":"<nom exact d'un agent ci-dessus ou null>","skills":["<noms exacts de skills ci-dessus>"],"complexity":"light"|"premium"}
+{"mode":"single_agent"|"orchestrator"|"multi_agent","agent":"<nom exact d'un agent ci-dessus ou null>","skills":["<noms exacts de skills ci-dessus>"],"complexity":"light"|"premium","profile":"haiku"|"luna"|"sol"|"opus"}
 3. "mode" : "single_agent" pour une tâche simple confiée à un seul agent (ou aucun agent particulier) ; "orchestrator" si une tâche complexe nécessite une coordination multi-étapes par un chef d'orchestre ; "multi_agent" si plusieurs agents spécialisés doivent collaborer.
 4. "agent" doit être le nom EXACT d'un agent listé ci-dessus, ou null si aucun agent spécifique n'est pertinent.
 5. "skills" est un tableau des noms EXACTS de skills listés ci-dessus pertinents pour la tâche (tableau vide si aucun).
 6. "complexity" = "light" pour une tâche simple/rapide, "premium" pour une tâche complexe qui bénéficierait d'un modèle plus puissant.
-7. Si aucun agent ou skill listé n'est pertinent, utilise agent: null et skills: [].`;
+7. "profile" est interne à Neven : haiku pour rapide, luna pour coding courant, sol pour planification/orchestration, opus pour risque critique ou multi-agent réel.
+8. Si aucun agent ou skill listé n'est pertinent, utilise agent: null et skills: [].`;
 };
 
 // Parsing defensif : retire les fences markdown eventuelles puis extrait le premier
@@ -347,7 +426,7 @@ const parseRouterClassificationResponse = (text) => {
 // Validation STRICTE contre les vrais noms sur disque : mode/complexity inconnus ->
 // valeur par defaut sure ; agent absent du Set -> null ; skills absents du Set -> filtres.
 const validateRouterDecision = (raw, agentNameSet, skillNameSet) => {
-  const mode = ROUTER_VALID_MODES.has(raw?.mode) ? raw.mode : 'single_agent';
+  const requestedMode = ROUTER_VALID_MODES.has(raw?.mode) ? raw.mode : 'single_agent';
 
   const agentCandidate = raw?.agent != null ? String(raw.agent).trim() : '';
   const agent = agentCandidate && agentNameSet.has(agentCandidate) ? agentCandidate : null;
@@ -357,9 +436,21 @@ const validateRouterDecision = (raw, agentNameSet, skillNameSet) => {
     .map((s) => String(s || '').trim())
     .filter((s) => s && skillNameSet.has(s));
 
-  const complexity = ROUTER_VALID_COMPLEXITY.has(raw?.complexity) ? raw.complexity : 'light';
+  const requestedComplexity = ROUTER_VALID_COMPLEXITY.has(raw?.complexity) ? raw.complexity : 'light';
+  const profile = ROUTER_VALID_PROFILES.has(String(raw?.profile || '').trim().toLowerCase())
+    ? String(raw.profile).trim().toLowerCase()
+    : deriveProfileFromDecision({ mode: requestedMode, complexity: requestedComplexity });
+  const profileDefinition = ROUTER_PROFILE_DEFINITIONS[profile];
 
-  return { mode, agent, skills, complexity };
+  return {
+    mode: profileDefinition.executionMode === 'agent'
+      ? 'single_agent'
+      : (profile === 'opus' ? 'multi_agent' : 'orchestrator'),
+    agent,
+    skills,
+    complexity: profileDefinition.complexity,
+    profile
+  };
 };
 
 // CONVERGENCE des concepts d'execution a partir de la decision :
@@ -367,10 +458,15 @@ const validateRouterDecision = (raw, agentNameSet, skillNameSet) => {
 //  - depth         : complexity 'light' -> 'fast' ; 'premium' -> 'deep'
 // Le routeur ne renvoie plus de drapeau localPrivate : le Roster multi-agents
 // gère lui-même le provider de chaque agent (Ollama local ou cloud).
-const buildExecution = (decision) => ({
-  executionMode: decision.mode === 'single_agent' ? 'agent' : 'multi-agent',
-  depth: decision.complexity === 'light' ? 'fast' : 'deep'
-});
+const buildExecution = (decision) => {
+  const profile = normalizeRouterProfile(decision?.profile || deriveProfileFromDecision(decision || {}));
+  const definition = ROUTER_PROFILE_DEFINITIONS[profile];
+  return {
+    executionMode: definition.executionMode,
+    depth: definition.depth,
+    profile
+  };
+};
 
 // ---------------------------------------------------------------------------
 // Point d'entree : routeToDecision
@@ -418,13 +514,13 @@ const routeToDecision = async ({
 
     // 2) Rien sur disque -> rien a router : repli direct, sans appel LLM inutile.
     if (agentNameSet.size === 0 && skillNameSet.size === 0) {
-      const fallbackModel = await resolveModelForTier(normalizedProvider, 'light', ctx);
+      const fallbackModel = await resolveModelForProfile(normalizedProvider, 'haiku', ctx);
       const decision = { ...ROUTER_SAFE_FALLBACK_DECISION };
       return {
         success: true,
         decision,
         execution: buildExecution(decision),
-        model: { provider: normalizedProvider, tier: 'light', resolved: fallbackModel.resolved, source: fallbackModel.source },
+        model: { provider: normalizedProvider, profile: 'haiku', resolved: fallbackModel.resolved, source: fallbackModel.source },
         source: 'fallback',
         timingMs: Date.now() - startedAt
       };
@@ -434,14 +530,16 @@ const routeToDecision = async ({
     //       configurable via `routerComplexityThreshold` (Settings > Routeur Intelligent,
     //       repli 0.5). Aucun appel reseau ici : si le prompt est juge trivial, repli
     //       direct sur la decision sure, tier 'light'.
-    if (isPromptTrivialForL1(userPrompt, ctx.settings)) {
-      const fallbackModel = await resolveModelForTier(normalizedProvider, 'light', ctx);
-      const decision = { ...ROUTER_SAFE_FALLBACK_DECISION };
+    const localProfile = classifyPromptProfile(userPrompt);
+    if (localProfile?.confidence === 'high' || isPromptTrivialForL1(userPrompt, ctx.settings)) {
+      const profile = localProfile?.profile || 'haiku';
+      const fallbackModel = await resolveModelForProfile(normalizedProvider, profile, ctx);
+      const decision = buildProfileDecision(profile);
       return {
         success: true,
         decision,
         execution: buildExecution(decision),
-        model: { provider: normalizedProvider, tier: 'light', resolved: fallbackModel.resolved, source: fallbackModel.source },
+        model: { provider: normalizedProvider, profile, resolved: fallbackModel.resolved, source: fallbackModel.source },
         source: 'fallback',
         timingMs: Date.now() - startedAt
       };
@@ -456,7 +554,13 @@ const routeToDecision = async ({
     //    d'execution, sinon repli sur la cle transmise pour l'execution courante).
     const classifierTarget = await resolveClassifierTarget(ctx.settings, normalizedProvider, ctx);
     const classifierApiKey = resolveClassifierApiKey(ctx.settings, classifierTarget.provider, apiKey);
-    const systemInstruction = buildRouterSystemPrompt(agents, skills);
+    const systemInstruction = buildRouterSystemPrompt({
+      agents,
+      skills,
+      userPrompt,
+      maxAgents: ROUTER_MAX_AGENTS_IN_PROMPT,
+      maxSkills: ROUTER_MAX_SKILLS_IN_PROMPT
+    });
     const completion = await runSingleCompletionProvider({
       provider: classifierTarget.provider,
       systemInstruction,
@@ -475,8 +579,10 @@ const routeToDecision = async ({
       }
     }
 
-    // 4) Resout le modele FINAL pour la complexite decidee.
-    const finalModel = await resolveModelForTier(normalizedProvider, decision.complexity, ctx);
+    // 4) Résout le modèle FINAL depuis le profil interne, jamais depuis une
+    // préférence visible dans le chat.
+    const finalProfile = normalizeRouterProfile(decision.profile);
+    const finalModel = await resolveModelForProfile(normalizedProvider, finalProfile, ctx);
 
     return {
       success: true,
@@ -484,7 +590,7 @@ const routeToDecision = async ({
       execution: buildExecution(decision),
       model: {
         provider: normalizedProvider,
-        tier: decision.complexity,
+        profile: finalProfile,
         resolved: finalModel.resolved,
         source: finalModel.source
       },
@@ -501,7 +607,7 @@ const routeToDecision = async ({
       execution: buildExecution(decision),
       model: {
         provider: normalizedProvider,
-        tier: 'light',
+        profile: 'haiku',
         resolved: getDefaultModelForAIProvider(normalizedProvider),
         source: 'static'
       },
@@ -514,14 +620,18 @@ const routeToDecision = async ({
 module.exports = {
   routeToDecision,
   resolveModelForTier,
+  resolveModelForProfile,
   resolveComplexityThreshold,
   resolveClassifierTarget,
   resolveClassifierApiKey,
   estimatePromptComplexity,
+  classifyPromptProfile,
   isPromptTrivialForL1,
   buildRouterSystemPrompt,
   parseRouterClassificationResponse,
   validateRouterDecision,
+  ROUTER_PROFILE_DEFINITIONS,
+  ROUTER_VALID_PROFILES,
   PROVIDER_TIER_PROFILES,
   CLASSIFIER_API_KEY_FIELD_BY_PROVIDER,
   ROUTER_COMPLEXITY_THRESHOLD_FALLBACK,

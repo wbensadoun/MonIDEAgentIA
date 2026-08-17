@@ -1,5 +1,5 @@
 /* ================================================
-   AIChat — Design FuturIA (Midnight Blue)
+   AIChat — Design Code Companion (Midnight Blue)
    Panneau droit : Agent IA, swarm multi-agents,
    messages, saisie, actions rapides
    ================================================ */
@@ -127,7 +127,7 @@
   justify-content: center;
   border-radius: 4px;
   color: var(--text-dim);
-  transition: background 0.1s, color 0.1s;
+  transition: background var(--duration-fast), color var(--duration-fast);
 }
 
 .ai-header-btn:hover:not(:disabled) {
@@ -265,7 +265,7 @@
   padding: 8px 14px;
   gap: 6px;
   transition: background var(--duration-fast, 100ms) var(--ease-emphasized, ease);
-  animation: view-fade-in 200ms ease both;
+  animation: view-fade-in var(--duration-base, 200ms) ease both;
 }
 
 .ai-message:hover {
@@ -500,7 +500,7 @@
   font-family: var(--font-mono);
   color: var(--accent);
   cursor: pointer;
-  transition: border-color 0.1s;
+  transition: border-color var(--duration-fast);
 }
 
 .ai-message-file-ref:hover {
@@ -592,8 +592,8 @@
   animation: ai-pulse 1.2s ease-in-out infinite;
 }
 
-.ai-terminal-card-status.is-success { background: var(--success, #4ade80); }
-.ai-terminal-card-status.is-error   { background: var(--danger,  #f87171); }
+.ai-terminal-card-status.is-success { background: var(--success); }
+.ai-terminal-card-status.is-error   { background: var(--danger); }
 
 .ai-terminal-card-exit {
   font-family: var(--font-mono);
@@ -603,8 +603,8 @@
   border: 1px solid transparent;
   flex-shrink: 0;
 }
-.ai-terminal-card-exit.is-success { color: var(--success, #4ade80); border-color: rgba(74,222,128,0.35); }
-.ai-terminal-card-exit.is-error   { color: var(--danger,  #f87171); border-color: rgba(248,113,113,0.35); }
+.ai-terminal-card-exit.is-success { color: var(--success); border-color: var(--success-soft); }
+.ai-terminal-card-exit.is-error   { color: var(--danger); border-color: var(--danger-soft); }
 
 .ai-terminal-card-command {
   font-family: var(--font-mono);
@@ -664,7 +664,7 @@
   left: 0;
   right: 0;
   z-index: 30;
-  animation: ai-suggest-in 120ms ease-out both;
+  animation: ai-suggest-in var(--duration-fast, 100ms) ease-out both;
 }
 @keyframes ai-suggest-in {
   from { opacity: 0; transform: translateY(-4px); }
@@ -859,11 +859,6 @@
 .wf-step-item.is-current .wf-step-bullet {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
-  animation: wf-step-pulse 1.2s ease-in-out infinite;
-}
-@keyframes wf-step-pulse {
-  0%, 100% { box-shadow: 0 0 0 3px var(--accent-soft); }
-  50% { box-shadow: 0 0 0 5px var(--accent-soft); }
 }
 
 .wf-step-copy {
@@ -1037,8 +1032,6 @@
 
 /* Bloc composer unifié : un seul cadre arrondi contenant le textarea et la
    rangée basse [+] [mode] [modèle] [autonomie] [Envoyer]. */
-@property --ai-composer-angle { syntax: '<angle>'; inherits: false; initial-value: 135deg; }
-@keyframes ai-composer-beam { from { --ai-composer-angle: 135deg; } to { --ai-composer-angle: 495deg; } }
 
 .ai-composer {
   position: relative;
@@ -1049,37 +1042,6 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.ai-composer::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1px;
-  background: conic-gradient(from var(--ai-composer-angle),
-    transparent 0deg,
-    color-mix(in srgb, var(--accent) 90%, transparent) 20deg,
-    var(--accent) 30deg,
-    color-mix(in srgb, var(--accent) 60%, transparent) 50deg,
-    transparent 90deg, transparent 360deg);
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  -webkit-mask-composite: xor;
-  opacity: 0;
-  transition: opacity 350ms ease;
-  pointer-events: none;
-}
-
-.ai-composer.is-working::before {
-  opacity: 1;
-  animation: ai-composer-beam 4s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ai-composer.is-working::before {
-    animation: none;
-  }
 }
 
 .ai-composer:focus-within {
@@ -1136,7 +1098,7 @@
   justify-content: center;
   flex-shrink: 0;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
 }
 
 .ai-plus-btn:hover {
@@ -1179,6 +1141,18 @@
 .ai-pill:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.ai-auto-router-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full, 999px);
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .ai-pill-dot {
@@ -1281,7 +1255,7 @@
   font-size: 12px;
   font-weight: 600;
   background: var(--accent);
-  color: var(--on-accent, #fff);
+  color: var(--on-accent);
   border: 1px solid var(--accent);
   flex-shrink: 0;
   cursor: pointer;
@@ -1409,7 +1383,7 @@
   font-size: 11px;
   color: var(--text-dim);
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background var(--duration-fast);
   gap: 6px;
 }
 
@@ -1451,7 +1425,7 @@
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: all 0.1s;
+  transition: all var(--duration-fast);
 }
 
 .ai-agent-chip:hover {
@@ -1622,27 +1596,13 @@
   color: var(--accent);
 }
 
-/* Shimmer animation for thinking label */
-.ai-loading-label {
-  background: linear-gradient(90deg,
-    var(--text-dim) 0%, var(--text-dim) 30%,
-    var(--text-main) 50%,
-    var(--text-dim) 70%, var(--text-dim) 100%);
-  background-size: 400% 100%;
-  background-clip: text; -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: ai-shimmer 2s linear infinite;
-  will-change: background-position;
-}
-
-@keyframes ai-shimmer {
-  0% { background-position: 120% 0; }
-  100% { background-position: -120% 0; }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .ai-loading-label {
+  /* 4.3 — the remaining infinite-loop animations in this file (multi-second
+     cadences that don't map onto the --duration-* scale, so they can't
+     self-neutralize the way the token-driven transitions above do). */
+  .ai-loading-dot,
+  .ai-terminal-card-status.is-running,
+  .ai-stream-anim-title::after {
     animation: none;
-    -webkit-text-fill-color: currentColor;
   }
 }

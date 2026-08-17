@@ -127,7 +127,7 @@ export const ComponentLibrary: React.FC = () => {
     <div className={`component-library ${theme}`}>
       <header className="component-library__header">
         <div>
-          <h1>MonIDEAgentIA — Design System</h1>
+          <h1>Code Companion — Design System</h1>
           <p>Thème actif : {activeThemeLabel}</p>
         </div>
         <div className="component-library__header-controls">

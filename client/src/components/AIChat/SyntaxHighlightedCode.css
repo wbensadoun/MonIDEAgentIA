@@ -1,8 +1,17 @@
+/* 4.1 (plan-polish-ui-2026-08.md) — was a fixed "VS Code Dark" palette
+   (12 literal hex) applied regardless of the active theme; on light
+   themes it forced a dark code panel inside a light chat. Recolored
+   onto --code-* (Lot 0.1, themed per client/src/styles/tokens.css).
+   Token roles are reused across the 7 original classes since --code-*
+   only defines 5 syntax slots: .sh-type shares --code-keyword (types
+   read as structural, same family as keywords in most minimal
+   highlighters) and .sh-operator uses --code-punctuation. */
+
 .shc-root {
   display: flex;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #0c0c0e;
+  border-radius: var(--radius-sm);
+  background: var(--code-bg);
   overflow: auto;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -10,8 +19,8 @@
 }
 
 .shc-gutter {
-  background: #0f0f11;
-  color: #4a4a4e;
+  background: var(--code-bg);
+  color: var(--code-line-number);
   padding: 12px 4px 12px 8px;
   text-align: right;
   border-right: 1px solid var(--border);
@@ -32,8 +41,8 @@
   flex: 1;
   margin: 0;
   padding: 12px 16px;
-  background: #0c0c0e;
-  color: #e1e1e6;
+  background: var(--code-bg);
+  color: var(--code-fg);
   overflow: visible;
   white-space: pre;
   word-break: normal;
@@ -42,15 +51,15 @@
 
 .shc-line { display: block; }
 
-/* Token colors — VS Code Dark */
-.sh-keyword  { color: #569cd6; font-weight: 500; }
-.sh-string   { color: #ce9178; }
-.sh-comment  { color: #6a9955; font-style: italic; }
-.sh-type     { color: #4ec9b0; }
-.sh-fn       { color: #dcdcaa; }
-.sh-number   { color: #b5cea8; }
-.sh-operator { color: #d4d4d4; }
+/* Token colors */
+.sh-keyword  { color: var(--code-keyword); font-weight: 500; }
+.sh-string   { color: var(--code-string); }
+.sh-comment  { color: var(--code-comment); font-style: italic; }
+.sh-type     { color: var(--code-keyword); }
+.sh-fn       { color: var(--code-function); }
+.sh-number   { color: var(--code-number); }
+.sh-operator { color: var(--code-punctuation); }
 
 .shc-root::-webkit-scrollbar { width: 6px; height: 6px; }
-.shc-root::-webkit-scrollbar-track { background: #0c0c0e; }
-.shc-root::-webkit-scrollbar-thumb { background: #3a3a3c; border-radius: 3px; }
+.shc-root::-webkit-scrollbar-track { background: var(--code-bg); }
+.shc-root::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }

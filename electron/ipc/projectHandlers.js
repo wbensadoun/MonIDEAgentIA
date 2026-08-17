@@ -28,7 +28,7 @@ const registerProjectHandlers = ({ getMainWindow }) => {
   // le même espace au lieu d'accumuler des dossiers vides.
   ipcMain.handle('create-default-project', async () => {
     try {
-      const defaultRoot = path.join(app.getPath('documents'), 'MonIDEAgentIA', 'Sans-titre');
+      const defaultRoot = path.join(app.getPath('documents'), 'Code Companion', 'Sans-titre');
       fs.mkdirSync(defaultRoot, { recursive: true });
       const trustedPath = trustProjectPath(defaultRoot);
       return { success: true, path: trustedPath };

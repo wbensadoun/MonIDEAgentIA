@@ -1,0 +1,152 @@
+/* ======================================================================
+   Code Companion — Shared motion keyframes (Lot 0.5)
+   ======================================================================
+   Canonical definitions meant to replace the duplicated implementations
+   scattered across the tree (6 `spin`, 13 `pulse`, plus one-off
+   `fade-in-up` / `shimmer` / `blink` variants — see
+   docs/plan-polish-ui-2026-08.md §0.5 for the inventory).
+
+   This file only DECLARES the keyframes. It does not apply them to any
+   selector and does not touch durations/easing — callers still choose
+   their own `animation:` shorthand (ideally using the --duration-* /
+   --ease-* tokens from tokens.css) and their own reduced-motion guard.
+   Consuming lots migrate their own duplicate @keyframes to point here;
+   this file does not delete anyone else's animation declarations.
+
+   No color values here on purpose: keyframes below only touch transform,
+   opacity and background-position, so this file has nothing for the
+   `declaration-property-value-disallowed-list` stylelint rule to catch,
+   and it stays inert regardless of which theme is active.
+   ========================================================================= */
+
+/* Full rotation, e.g. loading spinners. Pair with `linear infinite`. */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Gentle opacity breathing, e.g. "working" indicators. Pair with
+   `ease-in-out infinite`. */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Entrance for content appearing in place, e.g. new chat messages,
+   toasts. Pair with a single run (not `infinite`). */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Sweep highlight across a surface, e.g. skeleton loading placeholders.
+   Requires the caller to set a gradient `background` and
+   `background-size: 200% 100%` on the element. Pair with
+   `linear infinite`. */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Hard on/off flicker, e.g. a text-insertion caret. Pair with
+   `steps(1) infinite` for a hard blink or `ease-in-out infinite` for a
+   soft fade. */
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ----------------------------------------------------------------------
+   Lot 4 additions (plan §4.1). These two were NOT in the Lot 0 seed set
+   but were literal (byte-identical) duplicates found across two files
+   this lot owns — LoadingAnimations.css and AgentProcess.css both had
+   their own copy of a "small dot bouncing" and a "status phrase fading
+   up" keyframe, under different local names. Consolidated here instead
+   of picking a winner arbitrarily and leaving the other file to drift.
+   ------------------------------------------------------------------- */
+
+/* Small indicator dot bouncing in place, e.g. a 3-dot "typing/streaming"
+   row. Pair with `ease-in-out infinite` and a per-dot `animation-delay`. */
+@keyframes dot-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.6;
+  }
+
+  40% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+/* Status text/phrase easing up into place when its content changes.
+   Pair with a single run (not `infinite`), e.g. `0.35s ease-out`. */
+@keyframes phrase-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* T4 — global reduced-motion backstop.
+   tokens.css zeroes the --duration-* tokens under reduced motion, but that
+   only reaches declarations that actually use those tokens; 15 infinite
+   loops across 7 files (CodeEditor, LivePreview, UpdateChecker,
+   VisualWorkflow, WorkspacePanel ×2, ErrorBoundary) hardcode their own
+   durations and bypass it entirely. Guarding each file separately would be
+   7 places to keep in sync and to forget in the 8th file; one universal
+   rule here covers every current and future caller.
+
+   `!important` is required and deliberate: `*` has zero specificity, so any
+   class selector would otherwise win. This is the canonical accessibility
+   exception to declaration-no-important, hence the scoped disable rather
+   than a config change.
+
+   Durations collapse to 0.01ms instead of `animation: none` on purpose:
+   animations run instantly to their FINAL state. `animation: none` would
+   strand any element whose resting style is opacity:0 and which only
+   becomes visible through its entrance animation — that turns a motion
+   preference into invisible content. */
+@media (prefers-reduced-motion: reduce) {
+  /* stylelint-disable declaration-no-important */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* stylelint-enable declaration-no-important */
+}

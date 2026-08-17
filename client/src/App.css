@@ -1,5 +1,5 @@
 /* ======================================================
-   FuturIA — Design System
+   Code Companion — Design System
    Basé sur le design "assist-a-file" (Midnight Blue)
    ====================================================== */
 
@@ -128,7 +128,7 @@ select option:checked {
   min-height: 40px;
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   background: var(--surface);
   flex-shrink: 0;
   padding: 0 8px;
@@ -168,7 +168,7 @@ select option:checked {
 }
 
 .topbar-separator {
-  color: var(--border);
+  color: var(--border-subtle);
   font-size: 16px;
   font-weight: 300;
   margin: 0 2px;
@@ -182,7 +182,7 @@ select option:checked {
   padding: 2px 8px;
   border-radius: var(--radius-xs);
   background: var(--surface-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   font-size: var(--text-xs);
   color: var(--text-dim);
   flex-shrink: 0;
@@ -235,7 +235,7 @@ select option:checked {
   padding: 4px 10px;
   border-radius: var(--radius-sm);
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   flex-shrink: 0;
 }
 
@@ -260,7 +260,7 @@ select option:checked {
 .app-view-switcher__select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .app-view-switcher__icon {
@@ -300,7 +300,8 @@ select option:checked {
   justify-content: center;
   border-radius: var(--radius-xs);
   color: var(--text-dim);
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
   flex-shrink: 0;
 }
 
@@ -334,7 +335,7 @@ select option:checked {
   min-width: 210px;
   padding: 6px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md, 8px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   z-index: 60;
@@ -365,7 +366,7 @@ select option:checked {
   width: 100%;
   padding: 6px 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text-main);
   font-size: 11px;
@@ -413,8 +414,8 @@ select option:checked {
   padding: 0 4px;
   height: 100%;
   flex-shrink: 0;
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
 }
 
 .topbar-model-pill {
@@ -422,7 +423,7 @@ select option:checked {
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   background: var(--surface-2);
   border-radius: var(--radius-xs);
   font-size: var(--text-xs);
@@ -466,14 +467,14 @@ select option:checked {
 
 .topbar-select {
   background: var(--surface-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   color: var(--text-main);
   border-radius: var(--radius-xs);
   padding: 3px 6px;
   font-size: var(--text-xs);
   font-family: var(--font-sans);
   cursor: pointer;
-  transition: border-color 0.15s;
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
 .topbar-select:hover,
@@ -529,7 +530,7 @@ select option:checked {
 
 .topbar-autoroute-badge.is-muted {
   background: var(--surface-2);
-  border-color: var(--border);
+  border-color: var(--border-strong);
   color: var(--text-muted);
 }
 
@@ -566,12 +567,13 @@ select option:checked {
   gap: 5px;
   padding: 3px 8px;
   border-radius: var(--radius-xs);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   background: var(--surface-2);
   font-size: var(--text-xs);
   color: var(--text-dim);
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
 }
 
 .topbar-theme-chip:hover {
@@ -606,7 +608,7 @@ select option:checked {
   top: calc(100% + 4px);
   left: 0;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   padding: 8px 0;
   display: flex;
@@ -615,7 +617,7 @@ select option:checked {
   z-index: var(--z-dropdown);
   box-shadow: var(--shadow-2);
   min-width: 220px;
-  animation: popover-in 0.15s ease-out;
+  animation: popover-in var(--duration-fast) var(--ease-out);
 }
 
 @keyframes popover-in {
@@ -628,7 +630,7 @@ select option:checked {
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .topbar-popover-section:last-child {
@@ -682,7 +684,7 @@ select option:checked {
 .topbar-popover-input {
   width: 100%;
   padding: 4px 6px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   background: var(--surface-2);
   border-radius: var(--radius-xs);
   font-size: var(--text-xs);
@@ -694,7 +696,12 @@ select option:checked {
 }
 
 .topbar-popover-input:focus {
-  border-color: var(--accent);
+  border-color: var(--border-focus);
+}
+
+.topbar-popover-input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .topbar-popover-input::placeholder {
@@ -712,12 +719,12 @@ select option:checked {
   padding: 8px 14px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   color: var(--text-main);
   font-size: var(--text-sm);
   z-index: var(--z-toast);
   box-shadow: var(--shadow-3);
-  animation: toast-in 0.2s ease-out;
+  animation: toast-in var(--duration-base) var(--ease-out);
 }
 
 /* AgentVerse owns the top of its viewport; keep global browser/Electron
@@ -753,7 +760,7 @@ select option:checked {
   display: flex;
   min-height: 0;
   overflow: hidden;
-  animation: view-fade-in 240ms ease both;
+  animation: view-fade-in var(--duration-view) var(--ease-standard) both;
 }
 
 /* Sidebar gauche */
@@ -776,7 +783,7 @@ select option:checked {
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: none;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   background: var(--bg);
   color: var(--text-dim);
   font-size: var(--text-xs);
@@ -813,7 +820,7 @@ select option:checked {
   padding: 1px 6px;
   border-radius: var(--radius-full);
   background: var(--surface-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   color: var(--text-dim);
   font-size: 10px;
   font-weight: 600;
@@ -825,7 +832,7 @@ select option:checked {
    (previously the two top-level flat tabs — now subordinate to it). */
 .sidebar-subnav {
   display: flex;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   background: var(--bg);
   flex-shrink: 0;
 }
@@ -843,7 +850,8 @@ select option:checked {
   border: none;
   border-bottom: 2px solid transparent;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
 }
 
 .sidebar-subnav-btn:hover {
@@ -877,7 +885,7 @@ select option:checked {
   width: 100%;
   padding: 6px var(--space-3);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   background: var(--surface-2);
   color: var(--text-main);
   font-size: var(--text-sm);
@@ -974,7 +982,7 @@ select option:checked {
   min-height: 0;
   background: var(--bg);
   overflow: hidden;
-  animation: view-fade-in 240ms ease both;
+  animation: view-fade-in var(--duration-view) var(--ease-standard) both;
 }
 
 .chat-fullscreen-inner {
@@ -1007,7 +1015,7 @@ select option:checked {
 }
 
 /* Resizer entre colonnes — hit-area élargie (8-10px) avec un liseré visible
-   au repos (1-2px, var(--border)) plus un repère à 3 points, pour que le
+   au repos (1-2px, var(--border-subtle)) plus un repère à 3 points, pour que le
    panneau se lise comme redimensionnable sans nécessiter un hover pour le
    découvrir (parité avec le sash de VS Code). */
 .panel-resizer {
@@ -1030,7 +1038,7 @@ select option:checked {
   left: 50%;
   width: 1px;
   transform: translateX(-50%);
-  background: var(--border);
+  background: var(--border-subtle);
   transition: background var(--duration-fast) var(--ease-standard),
               width var(--duration-fast) var(--ease-standard);
 }
@@ -1084,78 +1092,130 @@ select option:checked {
 }
 
 /* ============================
-   TABS DU CENTRE (Code, Terminal, Git, etc.)
+   ONGLETS DU DOCUMENT ACTIF (fichiers + Aperçu)
+   Remontés de CodeEditor/CodeEditor.css au niveau de la coquille : un seul
+   bandeau d'onglets pour toute l'IDE (plan-ia-onglets.md §②). Git/AI
+   Changes/Flux vivent dans l'Activity Bar, Brain dans le Panel du bas —
+   ce ne sont plus des onglets du centre.
    ============================ */
-.center-tabs {
+.editor-tabs {
   height: 36px;
   min-height: 36px;
   display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
+  align-items: flex-end;
+  border-bottom: 1px solid var(--border-subtle);
   background: var(--surface);
-  padding: 0 8px;
-  gap: 2px;
-  flex-shrink: 0;
   overflow-x: auto;
-  min-width: 0;
+  flex-shrink: 0;
 }
 
-.center-tab {
+.editor-tabs::-webkit-scrollbar {
+  height: 0;
+}
+
+.editor-tabs-empty {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.editor-tab {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
-  font-size: var(--text-sm);
+  padding: 0 12px;
+  height: 34px;
+  font-size: 12px;
   color: var(--text-dim);
-  border-radius: var(--radius-xs);
-  border: 1px solid transparent;
-  transition: background var(--duration-fast) var(--ease-standard),
-              color var(--duration-fast) var(--ease-standard),
-              border-color var(--duration-fast) var(--ease-standard);
+  border-right: 1px solid var(--border-subtle);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
   flex-shrink: 0;
+  position: relative;
+  background: var(--surface);
 }
 
-.center-tab:hover {
+.editor-tab:hover {
   color: var(--text-main);
   background: var(--surface-2);
 }
 
-.center-tab.is-active {
-  color: var(--text-main);
-  background: var(--bg);
-  border-color: var(--border);
+.editor-tab-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.center-tab svg {
+.editor-tab.is-active {
+  color: var(--text-main);
+  background: var(--bg);
+  border-bottom: 2px solid var(--accent);
+  margin-bottom: -1px;
+}
+
+.editor-tab svg {
   width: 13px;
   height: 13px;
 }
 
-.center-tab-spacer {
+.editor-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+  flex-shrink: 0;
+}
+
+.editor-tab-close {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.editor-tab-close:hover {
+  background: var(--surface-2);
+  color: var(--text-main);
+}
+
+.editor-tabs-spacer {
   flex: 1;
 }
 
-.center-tab-action {
+.editor-tabs-action {
   display: flex;
   align-items: center;
   gap: var(--space-1);
   padding: 3px 8px;
+  margin: 0 8px;
   font-size: var(--text-xs);
   color: var(--text-dim);
   border-radius: var(--radius-xs);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   background: var(--surface-2);
   transition: background var(--duration-fast) var(--ease-standard),
               color var(--duration-fast) var(--ease-standard),
               border-color var(--duration-fast) var(--ease-standard);
 }
 
-.center-tab-action:hover {
+.editor-tabs-action:hover {
   color: var(--text-main);
   border-color: var(--accent);
 }
 
-.center-tab-action.is-active {
+.editor-tabs-action.is-active {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -1170,9 +1230,11 @@ select option:checked {
   overflow: hidden;
 }
 
-/* D3 — always-mounted center-tab panes (code/preview/brain/workflows),
+/* D3 — always-mounted center-view panes (code/preview/workflows),
    overlaid and cross-faded instead of remounted on every tab switch, so
-   Monaco/iframe/graph/React-Flow state and viewport survive.
+   Monaco/iframe/React-Flow state and viewport survive. Brain moved to the
+   bottom Panel (see .bottom-terminal-content below) but reuses this exact
+   pane mechanism for the same reason.
    Positioned absolute + opacity-toggled (never display:none) so its size
    never collapses to 0 — display:none/block cycling here previously fired
    every child's internal ResizeObserver (Monaco, React Flow, BrainGraph)
@@ -1212,6 +1274,92 @@ select option:checked {
   z-index: 1;
 }
 
+.ide-sidebar-right.is-maximized {
+  flex: 1 1 auto;
+}
+
+/* Onglet de chat (plan-ia-onglets.md §⑤ 5.5.3) — vue de lecture epinglee
+   d'une session, distincte du composeur du panneau droit (AIChat/index.js). */
+.chat-tab-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--surface-1, var(--bg));
+}
+
+.chat-tab-pane--empty {
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  padding: 30px;
+  text-align: center;
+}
+
+.chat-tab-pane-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.chat-tab-pane-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.chat-tab-pane-badge {
+  font-size: 10px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.chat-tab-pane-switch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 10px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.chat-tab-pane-switch:hover {
+  color: var(--text-main);
+  border-color: var(--accent);
+}
+
+.chat-tab-pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.center-transient-pane {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.center-transient-pane.is-active {
+  display: flex;
+}
+
 /* ============================
    BOTTOM TERMINAL PANEL (VS Code style)
    ============================ */
@@ -1219,7 +1367,7 @@ select option:checked {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-subtle);
   background: var(--surface);
   overflow: hidden;
 }
@@ -1243,7 +1391,7 @@ select option:checked {
   left: 0;
   right: 0;
   height: 1px;
-  background: var(--border);
+  background: var(--border-subtle);
   transition: background var(--duration-fast) var(--ease-standard),
               height var(--duration-fast) var(--ease-standard);
 }
@@ -1301,7 +1449,7 @@ select option:checked {
   align-items: center;
   justify-content: space-between;
   padding: 0 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   background: var(--surface);
   flex-shrink: 0;
 }
@@ -1324,7 +1472,7 @@ select option:checked {
   border: none;
   background: none;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--duration-fast) var(--ease-standard);
   font-family: var(--font-ui);
 }
 
@@ -1336,7 +1484,7 @@ select option:checked {
 .bottom-terminal-title-btn.is-active {
   color: var(--text-main);
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
 }
 
 .bottom-terminal-title-btn svg {
@@ -1372,6 +1520,7 @@ select option:checked {
 }
 
 .bottom-terminal-content {
+  position: relative;
   flex: 1;
   overflow: hidden;
   display: flex;
@@ -1387,7 +1536,7 @@ select option:checked {
   min-height: 24px;
   display: flex;
   align-items: center;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-subtle);
   background: var(--surface);
   padding: 0;
   font-size: var(--text-xs);
@@ -1403,7 +1552,7 @@ select option:checked {
   gap: var(--space-1);
   padding: 0 10px;
   height: 100%;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--border-subtle);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -1461,7 +1610,7 @@ select option:checked {
   cursor: pointer;
   color: var(--text-dim);
   background: var(--surface-2);
-  border-color: var(--border);
+  border-color: var(--border-strong);
 }
 
 .btn:hover:not(:disabled) {
@@ -1476,7 +1625,7 @@ select option:checked {
 
 /* Retour tactile pressé */
 .topbar-icon-btn:active,
-.center-tab:active,
+.editor-tab:active,
 .sidebar-tab:active,
 .btn:active:not(:disabled),
 .bottom-terminal-action:active {
@@ -1530,7 +1679,7 @@ select option:checked {
 
 .btn-icon:hover:not(:disabled) {
   background: var(--surface-2);
-  border-color: var(--border);
+  border-color: var(--border-strong);
 }
 
 .btn-icon svg {
@@ -1545,13 +1694,13 @@ select option:checked {
   width: 100%;
   padding: 6px 10px;
   border-radius: var(--radius-xs);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   background: var(--surface-2);
   color: var(--text-main);
   font-size: var(--text-sm);
   font-family: var(--font-sans);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
 .input-surface::placeholder {
@@ -1559,7 +1708,12 @@ select option:checked {
 }
 
 .input-surface:focus {
-  border-color: var(--accent);
+  border-color: var(--border-focus);
+}
+
+.input-surface:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* ============================
@@ -1581,7 +1735,7 @@ select option:checked {
   width: min(580px, 90vw);
   border-radius: var(--radius-md);
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-4);
   display: flex;
   flex-direction: column;
@@ -1598,7 +1752,7 @@ select option:checked {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .command-input-row svg {
@@ -1651,9 +1805,9 @@ select option:checked {
   justify-content: space-between;
   color: var(--text-dim);
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background var(--duration-fast) var(--ease-standard);
   font-size: var(--text-sm);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .command-item:hover,
@@ -1718,7 +1872,7 @@ select option:checked {
 .search-snippet mark {
   background: var(--accent-soft);
   color: var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   padding: 0 2px;
 }
 
@@ -1741,7 +1895,7 @@ select option:checked {
   max-height: 85vh;
   border-radius: var(--radius-md);
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-4);
   display: flex;
   flex-direction: column;
@@ -1750,7 +1904,7 @@ select option:checked {
 
 .modal-header {
   padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1771,7 +1925,7 @@ select option:checked {
   justify-content: center;
   border-radius: var(--radius-xs);
   color: var(--text-dim);
-  transition: all 0.15s;
+  transition: all var(--duration-fast) var(--ease-standard);
 }
 
 .modal-close:hover {
@@ -1803,8 +1957,8 @@ select option:checked {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+  background: var(--border-strong);
+  border-radius: var(--radius-xs);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
@@ -1819,7 +1973,7 @@ select option:checked {
   align-items: center;
   gap: 3px;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -1880,11 +2034,11 @@ select option:checked {
   z-index: var(--z-panel-overlay);
   width: 200px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-2);
   overflow: hidden;
-  animation: dropdown-in 0.1s ease-out;
+  animation: dropdown-in var(--duration-fast) var(--ease-out);
 }
 
 @keyframes dropdown-in {
@@ -1899,7 +2053,7 @@ select option:checked {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .theme-option {
@@ -1908,7 +2062,7 @@ select option:checked {
   gap: var(--space-2);
   padding: 8px 12px;
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background var(--duration-fast) var(--ease-standard);
   border: none;
   width: 100%;
   text-align: left;

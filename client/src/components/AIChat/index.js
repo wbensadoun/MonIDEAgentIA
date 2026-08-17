@@ -9,139 +9,28 @@ import { EXECUTION_MODES } from '../../utils/agentModes';
 import AIDecisionBadge from './AIDecisionBadge';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AUTONOMY_LEVELS, toLegacyPermission } from './AutonomyControls';
-import { IconAgents } from '../ComponentLibrary/icons';
-
-const THINKING_MESSAGES = ['Réflexion', 'Analyse', 'Évaluation', 'Examen', 'Travail en cours'];
-const TERMINAL_MESSAGES = ['Exécution', 'Traitement'];
-
-const WORKFLOW_STREAM_REGEX = /\*\*WORKFLOW:/i;
-const DIFF_STREAM_REGEX = /<<<<\s*SEARCH/i;
-const FILE_STREAM_REGEX = /(?:^|\n)FILE:\s*.+/i;
-const FILE_BLOCK_STREAM_REGEX = /\*\*FICHIER:\s*(.+?)\*\*\s*```([\w-]*)?\s*([\s\S]*?)(?:```|$)/gi;
-const WORKFLOW_BLOCK_STREAM_REGEX = /\*\*WORKFLOW:\s*(.+?)\*\*\s*```(?:json)?\s*([\s\S]*?)(?:```|$)/gi;
-const WORKFLOW_STREAM_STEPS = [
-  { key: 'analysis', label: 'Analyse du besoin', detail: 'Lecture du prompt et extraction des actions' },
-  { key: 'nodes', label: 'Creation des noeuds', detail: 'Placement trigger, actions et sorties' },
-  { key: 'links', label: 'Cablage des liens', detail: 'Connexion des transitions entre etapes' },
-  { key: 'checks', label: 'Verification', detail: 'Controle de coherence du flux' },
-  { key: 'final', label: 'Finalisation', detail: 'Workflow pret pour import visuel' }
-];
-
-const extractLastStreamingMatch = (regex, text) => {
-  if (!text) return null;
-  const safeText = String(text);
-  const nextRegex = new RegExp(regex.source, regex.flags);
-  let lastMatch = null;
-  let match;
-  while ((match = nextRegex.exec(safeText)) !== null) {
-    lastMatch = match;
-    if (match.index === nextRegex.lastIndex) {
-      nextRegex.lastIndex += 1;
-    }
-  }
-  return lastMatch;
-};
-
-const extractStreamingFileDraft = (text) => {
-  const match = extractLastStreamingMatch(FILE_BLOCK_STREAM_REGEX, text);
-  if (!match) return null;
-  return {
-    filePath: String(match[1] || '').trim(),
-    language: String(match[2] || '').trim(),
-    code: String(match[3] || '').replace(/^\s*\n/, '')
-  };
-};
-
-// Liste tous les fichiers cités dans le stream pour l'affichage live.
-// Le dernier est en cours d'écriture, les précédents sont écrits.
-const FILE_HEADER_STREAM_REGEX = /\*\*FICHIER:\s*(.+?)\*\*/gi;
-const extractStreamingFiles = (text) => {
-  if (!text) return [];
-  const re = new RegExp(FILE_HEADER_STREAM_REGEX.source, FILE_HEADER_STREAM_REGEX.flags);
-  const paths = [];
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    const p = String(m[1] || '').trim();
-    if (p && paths[paths.length - 1] !== p) paths.push(p);
-  }
-  return paths.map((p, i) => ({ path: p, status: i === paths.length - 1 ? 'writing' : 'done' }));
-};
-
-// Normalisation miroir de sanitizeProposedFilePath (useAIPendingChanges.js:32)
-// pour pouvoir rapprocher un marqueur **FICHIER:** d'une entrée pendingFileChanges.
-const normalizeMarkerPath = (value) => String(value || '')
-  .trim()
-  .replace(/\\/g, '/')
-  .split('/')
-  .map((segment) => segment.trim())
-  .filter(Boolean)
-  .join('/');
-
-// Miroir front de stripThinkBlocks() (electron/services/ollama.service.js).
-// Couvre <think> ET <thinking>, bloc fermé ou non — un flux coupé en plein
-// raisonnement laisse la balise ouverte, et l'ancien filtre (paire complète
-// uniquement) laissait alors tout le raisonnement à l'écran.
-const REASONING_BLOCK_REGEX = /<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>\n*/gi;
-const REASONING_OPEN_REGEX = /<(?:think|thinking)>[\s\S]*$/i;
-
-const stripReasoningBlocks = (text) => {
-  if (!text) return '';
-  return String(text)
-    .replace(REASONING_BLOCK_REGEX, '')
-    .replace(REASONING_OPEN_REGEX, '')
-    .trim();
-};
-
-// Découpe un message en segments raisonnement / réponse. Le backend ne laisse
-// les balises que si le mode Raisonnement est actif (sinon il a déjà strippé),
-// donc ce parseur donne le bon résultat dans les deux cas sans avoir à
-// connaître le réglage. Le bloc non fermé (génération coupée) est capturé
-// aussi, sinon il repartirait en texte visible.
-const REASONING_SEGMENT_REGEX = /<(?:think|thinking)>([\s\S]*?)(?:<\/(?:think|thinking)>|$)/gi;
-
-const splitReasoningSegments = (text) => {
-  const source = String(text || '');
-  if (!source) return [];
-
-  const segments = [];
-  const regex = new RegExp(REASONING_SEGMENT_REGEX.source, REASONING_SEGMENT_REGEX.flags);
-  let cursor = 0;
-  let match;
-
-  while ((match = regex.exec(source)) !== null) {
-    if (match.index > cursor) {
-      segments.push({ type: 'text', content: source.slice(cursor, match.index) });
-    }
-    segments.push({ type: 'reasoning', content: match[1] });
-    cursor = match.index + match[0].length;
-    if (match.index === regex.lastIndex) regex.lastIndex += 1;
-  }
-  if (cursor < source.length) {
-    segments.push({ type: 'text', content: source.slice(cursor) });
-  }
-
-  return segments.filter((segment) => segment.content.trim());
-};
-
-const extractStreamingWorkflowDraft = (text) => {
-  const match = extractLastStreamingMatch(WORKFLOW_BLOCK_STREAM_REGEX, text);
-  if (!match) return null;
-  return {
-    name: String(match[1] || '').trim(),
-    json: String(match[2] || '').replace(/^\s*\n/, '')
-  };
-};
-
-// Inverse of AutonomyControls' toLegacyPermission() adapter — lets the
-// legacy read_only/edit_only/edit_terminal permissionMode prop (the real
-// source of truth read by useFileOperations/useAIPendingChanges) drive the
-// new restricted/normal/permissive AutonomyControls UI without introducing
-// a second, disconnected state.
-const fromLegacyPermission = (mode) => {
-  if (mode === 'read_only') return 'restricted';
-  if (mode === 'edit_only') return 'normal';
-  return 'permissive'; // edit_terminal (and default)
-};
+import MessageViewer from './MessageViewer';
+import { conversationToChatMessages } from '../../utils/chatMessages';
+import { isChatInterfaceSwapEnabled } from '../../utils/featureFlags';
+import {
+  IconAgents, IconUser, IconWrench, IconCheck, IconX, IconHourglass,
+  IconExpand, IconMoreVertical, IconEdit, IconCopy, IconTrash
+} from '../ComponentLibrary/icons';
+import {
+  THINKING_MESSAGES,
+  TERMINAL_MESSAGES,
+  WORKFLOW_STREAM_REGEX,
+  DIFF_STREAM_REGEX,
+  FILE_STREAM_REGEX,
+  WORKFLOW_STREAM_STEPS,
+  extractStreamingFileDraft,
+  extractStreamingFiles,
+  normalizeMarkerPath,
+  stripReasoningBlocks,
+  splitReasoningSegments,
+  extractStreamingWorkflowDraft,
+  fromLegacyPermission
+} from '../../utils/streamParsing';
 
 // ─── ReasoningBlock ─────────────────────────────────────────────────────────
 // Le raisonnement du modèle, replié par défaut. Visible seulement quand le
@@ -341,7 +230,7 @@ const AgentModePill = ({
   const { open, setOpen, wrapRef } = usePillMenu();
   const currentMode = EXECUTION_MODES.find((m) => m.id === executionMode) || EXECUTION_MODES[0];
   const label = activeAgent ? activeAgent.name : (currentMode?.label || 'Agent');
-  const icon = activeAgent ? '👤' : (currentMode?.icon || '🔧');
+  const icon = activeAgent ? <IconUser size={13} /> : (currentMode?.icon || <IconWrench size={13} />);
 
   const selectMode = (modeId) => {
     if (typeof onExecutionModeChange === 'function') onExecutionModeChange(modeId);
@@ -400,7 +289,7 @@ const AgentModePill = ({
                   onClick={() => selectAgent(agent)}
                   title={agent.description}
                 >
-                  <span aria-hidden="true">👤</span> {agent.name}
+                  <span aria-hidden="true"><IconUser size={13} /></span> {agent.name}
                 </button>
               ))}
             </>
@@ -573,6 +462,17 @@ const AIChat = ({
   onNewConversation,
   onSelectConversation,
   onStopGeneration,
+  // Sessions de chat (plan-ia-onglets.md §⑤ 5.5.1/5.5.2) : sessions[] +
+  // activeSessionId remplacent la conversation plate. `conversationHistory`
+  // ci-dessus reste la vue de la session active — inchangee pour le pipeline
+  // de generation, qui ignore tout du modele multi-session.
+  sessions = [],
+  activeSessionId = null,
+  onSwitchSession,
+  onOpenSessionTab,
+  onRenameSession,
+  onDuplicateSession,
+  onDeleteSession,
   workflows = [],
   // eslint-disable-next-line no-unused-vars
   findWorkflow,
@@ -629,6 +529,25 @@ const AIChat = ({
   const conversationHistoryRef = useRef(null);
   const promptInputRef = useRef(null);
   const [showConversations, setShowConversations] = useState(false);
+  // Session dont le menu contextuel (Ouvrir dans un onglet / Renommer /
+  // Dupliquer / Supprimer) est ouvert — plan-ia-onglets.md §⑤ 5.5.3.
+  const [sessionMenuId, setSessionMenuId] = useState(null);
+  const sessionMenuRef = useRef(null);
+  useEffect(() => {
+    if (!sessionMenuId) return undefined;
+    const onPointerDown = (event) => {
+      if (sessionMenuRef.current && !sessionMenuRef.current.contains(event.target)) setSessionMenuId(null);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setSessionMenuId(null);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [sessionMenuId]);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showWorkflowSuggestions, setShowWorkflowSuggestions] = useState(false);
@@ -1227,9 +1146,20 @@ const AIChat = ({
   };
 
   const buildAgentBadgeLabel = (msg, baseLabel) => {
+    if (autoRoute) return baseLabel;
     const provider = String(msg?.agentProvider || '').trim();
     return provider ? `${baseLabel} (${provider})` : baseLabel;
   };
+
+  // ─── 1.4c : swap gardé de la liste de messages ────────────────────────────
+  // Éteint par défaut (cf. utils/featureFlags.js). Lu une seule fois au
+  // montage : basculer en cours de session remonterait tout l'historique dans
+  // un autre arbre DOM, ce qui casserait la position de scroll.
+  const [chatInterfaceSwap] = useState(() => isChatInterfaceSwapEnabled());
+  const swapMessages = useMemo(
+    () => conversationToChatMessages(conversationHistory),
+    [conversationHistory]
+  );
 
   const getRoleMeta = (msg) => {
     if (msg.role === 'system') {
@@ -1268,7 +1198,10 @@ const AIChat = ({
   };
 
   const activeConversation = conversations.find(c => c.fileName === activeConversationFile) || null;
-  const headerTitle = activeConversation ? activeConversation.title : 'Nouvelle conversation';
+  const activeSessionForTitle = sessions.find((s) => s.id === activeSessionId) || null;
+  const headerTitle = activeConversation
+    ? activeConversation.title
+    : (activeSessionForTitle?.title || 'Nouvelle conversation');
   const filteredConversations = conversations.filter((conv) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -1340,6 +1273,17 @@ const AIChat = ({
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
             </button>
+            {typeof onOpenSessionTab === 'function' && (
+              <button
+                type="button"
+                onClick={() => { onOpenSessionTab(activeSessionId); setShowConversations(false); }}
+                className="ai-header-btn"
+                disabled={!activeSessionId}
+                title="Ouvrir cette conversation dans un onglet"
+              >
+                <IconExpand size={16} />
+              </button>
+            )}
             <button
               onClick={onSaveConversation}
               className="ai-header-btn"
@@ -1395,9 +1339,78 @@ const AIChat = ({
         </div>
       </div>
 
-      {/* ===== CONVERSATIONS DROPDOWN ===== */}
+      {/* ===== SESSIONS + CONVERSATIONS DROPDOWN (plan-ia-onglets.md §⑤ 5.5.2) ===== */}
       {showConversations && (
         <div className="ai-suggest-overlay">
+          {/* Historique des SESSIONS (en memoire, 5.5.1) — distinct des
+              "Conversations" ci-dessous qui restent les sauvegardes explicites
+              sur disque (bouton Sauvegarder), une fonctionnalite existante et
+              non touchee par ce chantier. */}
+          <div ref={sessionMenuRef} className="ai-chat-dropdown" style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', maxHeight: 220, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Sessions</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{sessions.length}</span>
+            </div>
+            <div>
+              {sessions.length === 0 && (
+                <div style={{ padding: '8px 14px', fontSize: 10, color: 'var(--text-muted)' }}>Aucune</div>
+              )}
+              {sessions.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map((session) => (
+                <div
+                  key={session.id}
+                  className={`ai-history-item ${session.id === activeSessionId ? 'is-active' : ''}`}
+                  style={{ position: 'relative', gap: 4 }}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => { if (onSwitchSession) onSwitchSession(session.id); setShowConversations(false); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { if (onSwitchSession) onSwitchSession(session.id); setShowConversations(false); } }}
+                  onContextMenu={(e) => { e.preventDefault(); setSessionMenuId(session.id); }}
+                >
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.title}</span>
+                  {typeof onOpenSessionTab === 'function' && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onOpenSessionTab(session.id); }}
+                      title="Ouvrir dans un onglet"
+                      aria-label={`Ouvrir "${session.title}" dans un onglet`}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 2, display: 'flex', flexShrink: 0 }}
+                    >
+                      <IconExpand size={12} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setSessionMenuId((prev) => (prev === session.id ? null : session.id)); }}
+                    title="Plus d'actions"
+                    aria-label={`Actions pour "${session.title}"`}
+                    aria-haspopup="menu"
+                    aria-expanded={sessionMenuId === session.id}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 2, display: 'flex', flexShrink: 0 }}
+                  >
+                    <IconMoreVertical size={12} />
+                  </button>
+                  {sessionMenuId === session.id && (
+                    <div className="ai-pill-menu" role="menu" style={{ position: 'absolute', top: '100%', right: 4, zIndex: 20 }}>
+                      <button type="button" role="menuitem" className="ai-pill-menu-item" onClick={(e) => { e.stopPropagation(); onOpenSessionTab && onOpenSessionTab(session.id); setSessionMenuId(null); }}>
+                        <IconExpand size={13} /> Ouvrir dans un onglet
+                      </button>
+                      <button type="button" role="menuitem" className="ai-pill-menu-item" onClick={(e) => { e.stopPropagation(); onRenameSession && onRenameSession(session.id); setSessionMenuId(null); }}>
+                        <IconEdit size={13} /> Renommer
+                      </button>
+                      <button type="button" role="menuitem" className="ai-pill-menu-item" onClick={(e) => { e.stopPropagation(); onDuplicateSession && onDuplicateSession(session.id); setSessionMenuId(null); }}>
+                        <IconCopy size={13} /> Dupliquer
+                      </button>
+                      <div className="ai-pill-menu-separator" />
+                      <button type="button" role="menuitem" className="ai-pill-menu-item" onClick={(e) => { e.stopPropagation(); onDeleteSession && onDeleteSession(session.id); setSessionMenuId(null); }}>
+                        <IconTrash size={13} /> Supprimer
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="ai-chat-dropdown" style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', maxHeight: 200, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: '1px solid var(--border)' }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Conversations</span>
@@ -1445,7 +1458,7 @@ const AIChat = ({
                 disabled={!canApplyPending || isApplyingPending || isBulkApplyingPending}
                 title={!canApplyPending ? 'Mode lecture seule' : 'Appliquer tous'}
               >
-                ✓ Appliquer tout
+<IconCheck size={11} /> Appliquer tout
               </button>
               <button
                 type="button"
@@ -1484,13 +1497,13 @@ const AIChat = ({
                     onClick={(e) => { e.stopPropagation(); handleApplyPending(index); }}
                     disabled={!canApplyPending || isApplyingPending || isBulkApplyingPending}
                     style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 2, padding: '1px 6px', fontSize: 9, fontWeight: 600, cursor: 'pointer' }}
-                  >✓</button>
+                  ><IconCheck size={10} /></button>
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); handleRejectPending(index); }}
                     disabled={isApplyingPending || isBulkApplyingPending}
                     style={{ background: 'transparent', color: 'var(--text-dim)', border: '1px solid var(--border)', borderRadius: 2, padding: '1px 6px', fontSize: 9, cursor: 'pointer' }}
-                  >✕</button>
+                  ><IconX size={10} /></button>
                 </div>
               </div>
             ))}
@@ -1529,7 +1542,50 @@ const AIChat = ({
             </div>
           )}
 
-          {conversationHistory.map((msg, index) => {
+          {chatInterfaceSwap ? (
+            <MessageViewer
+              messages={swapMessages}
+              // Volontairement sans streamingText : l'aperçu de streaming
+              // existant (renderStreaming*, index.js:1048) gère trois modes
+              // (fichier / workflow / texte) que MessageViewer ne modélise
+              // pas. Lui passer le flux ici l'afficherait deux fois.
+              actionsDisabled={isLoading}
+              onCopyMessage={(message) =>
+                handleCopyMessage(message.sourceIndex, conversationHistory[message.sourceIndex]?.text)
+              }
+              onRerunMessage={(message) => handleRerunMessage(message.sourceIndex)}
+              onApplyCode={
+                canApplyPending && !isApplyingPending && !isBulkApplyingPending
+                  && Array.isArray(pendingFileChanges) && pendingFileChanges.length > 0
+                  ? handleApplyMarkdownBlock
+                  : undefined
+              }
+              renderMessageExtras={(message) => {
+                const source = conversationHistory[message.sourceIndex];
+                const images = Array.isArray(source?.images) ? source.images : [];
+                const actions = historicalTerminalActions[message.sourceIndex];
+                if (!images.length && !(Array.isArray(actions) && actions.length)) return null;
+                return (
+                  <>
+                    {images.length > 0 && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 26 }}>
+                        {images.map((img, i) => (
+                          <img key={i} src={img.dataUrl} alt="Collé" style={{ width: 48, height: 48, borderRadius: 4, objectFit: 'cover', border: '1px solid var(--border)' }} />
+                        ))}
+                      </div>
+                    )}
+                    {Array.isArray(actions) && actions.length > 0 && (
+                      <div style={{ paddingLeft: 26, marginTop: 4 }}>
+                        {actions.map((action, i) => (
+                          <TerminalActionCard key={i} action={action} />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              }}
+            />
+          ) : conversationHistory.map((msg, index) => {
             const meta = getRoleMeta(msg);
             const isUser = msg.role === 'user';
             return (
@@ -1709,7 +1765,7 @@ const AIChat = ({
               background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
               borderRadius: 4, fontSize: 10, color: 'var(--warning)',
             }}>
-              <span>⏳</span>
+              <span><IconHourglass size={11} /></span>
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 En attente&#x202F;: <em>{pendingMessage.text}</em>
               </span>
@@ -1834,19 +1890,25 @@ const AIChat = ({
               disabled={isLoading}
             />
 
-            <ProviderPill
-              aiProvider={aiProvider}
-              onProviderChange={onProviderChange}
-              disabled={isLoading}
-            />
+            {autoRoute ? (
+              <span className="ai-auto-router-pill" role="status">Neven · Auto</span>
+            ) : (
+              <>
+                <ProviderPill
+                  aiProvider={aiProvider}
+                  onProviderChange={onProviderChange}
+                  disabled={isLoading}
+                />
 
-            <ModelPill
-              aiProvider={aiProvider}
-              activeModelValue={activeModelValue}
-              availableActiveModels={availableActiveModels}
-              onActiveModelChange={onActiveModelChange}
-              disabled={isLoading}
-            />
+                <ModelPill
+                  aiProvider={aiProvider}
+                  activeModelValue={activeModelValue}
+                  availableActiveModels={availableActiveModels}
+                  onActiveModelChange={onActiveModelChange}
+                  disabled={isLoading}
+                />
+              </>
+            )}
 
             {/* Permission Level n'a de sens qu'en mode Agent (Ask/Plan sont
                 lecture seule par construction — aucune confirmation d'écriture

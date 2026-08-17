@@ -1,5 +1,5 @@
 /* ================================================
-   CodeEditor — Design FuturIA (Midnight Blue)
+   CodeEditor — Design Code Companion (Midnight Blue)
    ================================================ */
 
 .code-editor-root {
@@ -33,93 +33,9 @@
   position: relative;
 }
 
-/* ---- Barre d'onglets ---- */
-.editor-tabs {
-  height: 36px;
-  min-height: 36px;
-  display: flex;
-  align-items: flex-end;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  overflow-x: auto;
-  flex-shrink: 0;
-}
-
-.editor-tabs::-webkit-scrollbar {
-  height: 0;
-}
-
-.editor-tab {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 12px;
-  height: 34px;
-  font-size: 12px;
-  color: var(--text-dim);
-  border-right: 1px solid var(--border);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.1s, color 0.1s;
-  flex-shrink: 0;
-  position: relative;
-  background: var(--surface);
-}
-
-.editor-tab:hover {
-  color: var(--text-main);
-  background: var(--surface-2);
-}
-
-.editor-tab-name {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.editor-tab.is-active {
-  color: var(--text-main);
-  background: var(--bg);
-  border-bottom: 2px solid var(--accent);
-  margin-bottom: -1px;
-}
-
-.editor-tab-icon {
-  width: 13px;
-  height: 13px;
-  flex-shrink: 0;
-  color: var(--accent);
-}
-
-.editor-tab-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--warning);
-  flex-shrink: 0;
-}
-
-.editor-tab-close {
-  width: 14px;
-  height: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 3px;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1;
-  transition: background 0.1s, color 0.1s;
-  flex-shrink: 0;
-}
-
-.editor-tab-close:hover {
-  background: var(--surface-2);
-  color: var(--text-main);
-}
-
-/* ---- Breadcrumb ---- */
+/* ---- Breadcrumb (résiduel — symbole sous le curseur + actions Monaco;
+   les onglets de fichiers et l'info du document actif vivent maintenant
+   dans WorkspaceLayout/App.css, voir plan-ia-onglets.md §②) ---- */
 .editor-breadcrumb {
   height: 28px;
   min-height: 28px;
@@ -546,6 +462,12 @@
   font-family: var(--font-sans);
   placeholder-color: var(--text-muted);
   min-width: 0;
+}
+
+.inline-prompt-input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-xs);
 }
 
 .inline-prompt-input::placeholder {
