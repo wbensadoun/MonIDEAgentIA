@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.9.0] — Cycle de vie sécurisé des credentials (COD-19)
+
+### Added
+
+- Service main-process de création, remplacement, rotation, révocation et test de connectivité des credentials, avec registre de fournisseurs fermé.
+- Journal d’audit credential séparé du ledger d’usage, limité à un `operationId` et des codes de résultat bornés.
+
+### Security
+
+- Métadonnées publiques en whitelist stricte ; aucune clé, token, mot de passe ou valeur chiffrée ne traverse l’IPC.
+- Mutations sérialisées et CASées sur la révision attendue ; rollback limité à la révision écrite par l’opération, sans réactivation d’un tombstone concurrent.
+- Les IPC de liste, révocation et connectivité utilisent exclusivement le contexte workspace dérivé du main process et un `credentialId`.
+- La connectivité relit et utilise le secret sous verrou du coffre ; une révocation concurrente ou un cache périmé bloque tout appel réseau.
+- Azure et Ollama local sont gérables dans le coffre (cycle de vie et audit), mais restent non résolubles par le runtime : le contrat refuse explicitement Azure et Ollama local, y compris via l’alias `ollama`, avant toute résolution ou invocation d’adaptateur. Ils retournent `unsupported` en connectivité, sans appel réseau, tant qu’un adaptateur sûr n’existe pas.
+- Les alias runtime `claude`/`gemini` sont canoniquement résolus vers `anthropic`/`google`; les coffres v1 sans index sont migrés explicitement au premier chargement.
+- L’audit et les tombstones du coffre utilisent une écriture temporaire synchronisée puis renommée atomiquement; l’audit se verrouille entre processus, nettoie son acquisition partielle et ne récupère qu’un lock dont le processus propriétaire est prouvé mort.
+- `lastUsedAt` et les quotas `maxRequestsPerMinute`/`maxRequestsPerDay` sont appliqués à la résolution BYOK. La planification de rotation reste hors périmètre COD-19 (elle relève de Neven).
+
 ## [2.8.0] — Passerelle managed Neven (COD-26A)
 
 ### Added

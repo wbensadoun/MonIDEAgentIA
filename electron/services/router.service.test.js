@@ -52,7 +52,7 @@ test('route decision uses the internal profile while the UI-facing decision stay
   const result = await routeToDecision({
     projectPath: null,
     userPrompt: 'bonjour',
-    provider: 'claude',
+    trustedRouterConfiguration: { provider: 'claude' },
     listAgents: async () => ({ agents: [{ name: 'neven-coder' }] }),
     listSkills: async () => ({ skills: [] }),
     runSingleCompletionProvider: async () => ({ success: false })
@@ -68,7 +68,7 @@ test('route fallback does not call an LLM when agents and skills are absent', as
   const result = await routeToDecision({
     projectPath: null,
     userPrompt: 'refactor the complete repository architecture',
-    provider: 'claude',
+    trustedRouterConfiguration: { provider: 'claude' },
     listAgents: async () => ({ agents: [] }),
     listSkills: async () => ({ skills: [] }),
     runSingleCompletionProvider: async () => {

@@ -31,6 +31,7 @@ const {
 const { listAgents, listSkills } = require('./electron/services/agent.service');
 const {
   ensureEditPermission,
+  readSettingsSafe,
 } = require('./electron/services/settings.service');
 const { createProcessService } = require('./electron/services/process.service');
 const { runGit } = require('./electron/services/git.service');
@@ -45,8 +46,8 @@ const { registerRouterHandlers } = require('./electron/ipc/routerHandlers');
 const { registerPtyHandlers } = require('./electron/ipc/ptyHandlers');
 const { createPtyService } = require('./electron/services/pty.service');
 const { registerProviderHandlers } = require('./electron/ipc/providerHandlers');
-const { ProviderSecretVault } = require('./electron/services/provider-secret-vault.service');
-const { getCredentialId, normalizePolicy } = require('./electron/services/provider-policy.service');
+const { createProviderCredentialComposition } = require('./electron/services/provider-credential-composition.service');
+const { normalizePolicy } = require('./electron/services/provider-policy.service');
 const { ProviderUsageLedger } = require('./electron/services/provider-usage-ledger.service');
 const {
   NevenControlPlaneClient,
@@ -96,8 +97,8 @@ const installStdioBrokenPipeGuards = () => {
 installStdioBrokenPipeGuards();
 
 let mainWindow;
-const providerSecretVault = new ProviderSecretVault({
-  filePath: ProviderSecretVault.defaultFilePath(app.getPath('userData'))
+const { vault: providerSecretVault, credentialService: providerCredentialService } = createProviderCredentialComposition({
+  userDataPath: app.getPath('userData')
 });
 // Le control plane Neven reste dans le main process. Il ne retourne jamais de
 // cle fournisseur au renderer : uniquement un droit court vers la passerelle
@@ -123,10 +124,30 @@ const resolveWorkspaceContext = async (event) => {
   if (!sender?.id || !sender.session) return null;
   return workspaceContexts.get(sender.id) || null;
 };
+const resolveTrustedRouterConfiguration = async () => {
+  const settings = await readSettingsSafe();
+  // Do not pass persisted credential fields to the router. Provider credentials
+  // and policies are resolved later by the main/workspace execution boundary.
+  return {
+    provider: settings.defaultProvider,
+    settings: {
+      defaultProvider: settings.defaultProvider,
+      geminiModel: settings.geminiModel,
+      claudeModel: settings.claudeModel,
+      kimiModel: settings.kimiModel,
+      ollamaModel: settings.ollamaModel,
+      routerClassifierProvider: settings.routerClassifierProvider,
+      routerClassifierModel: settings.routerClassifierModel,
+      routerComplexityThreshold: settings.routerComplexityThreshold
+    }
+  };
+};
 const resolveManagedProviderCredential = async ({ origin, provider, workspaceId, context }) => {
   if (!context || context.workspaceId !== workspaceId) return null;
   if (origin === 'local') return null;
-  if (origin === 'byok') return providerSecretVault.get(getCredentialId({ workspaceId, provider }));
+  if (origin === 'byok') return {
+    withActiveSecret: (operation) => providerCredentialService.withActiveCredential({ workspaceId, provider }, operation)
+  };
   // The grant stays inside the managed gateway path; it is never an API key.
   return nevenManagedGatewayEnabled && context.access ? { managedGateway: true } : { unavailable: true };
 };
@@ -251,7 +272,8 @@ registerRouterHandlers({
   runSingleCompletionProvider,
   ensureTrustedProjectPath,
   resolveOptionalTrustedProjectPath,
-  resolveWorkspaceContext
+  resolveWorkspaceContext,
+  resolveTrustedRouterConfiguration
 });
 registerPtyHandlers(ptyService);
-registerProviderHandlers({ app, vault: providerSecretVault, resolveWorkspaceContext });
+registerProviderHandlers({ app, credentialService: providerCredentialService, resolveWorkspaceContext });

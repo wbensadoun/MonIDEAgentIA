@@ -649,7 +649,7 @@ const runProviderCompletionWithPolicy = async ({ provider, request = {}, options
     workspaceId: context.workspaceId,
     policy,
     resolveCredential: ({ origin, ...identity }) => serviceDeps.resolveProviderCredential({ ...identity, origin, context, policy }),
-    attempt: async ({ origin, credential }) => {
+    attempt: async ({ origin, credential, signal }) => {
       if (origin === 'neven' && typeof serviceDeps.executeManagedGateway === 'function') {
         // A Neven grant authorizes the gateway; it is never injected as a
         // provider API key or passed to a provider adapter.
@@ -662,9 +662,20 @@ const runProviderCompletionWithPolicy = async ({ provider, request = {}, options
           options
         });
       }
+      const managedOptions = {
+        ...options,
+        signal: signal && options.signal ? AbortSignal.any([options.signal, signal]) : signal || options.signal,
+        credentialMode: 'managed',
+        credentialOrigin: origin,
+        managedCredential: credential
+      };
+      // A lease is scoped to the selected provider. Provider fallback must
+      // resolve a new target-provider lease before it can ever be supported.
+      delete managedOptions.allowProviderFallback;
+      delete managedOptions.fallbackProvider;
       return execute({
         ...request,
-        options: { ...options, credentialMode: 'managed', credentialOrigin: origin, managedCredential: credential }
+        options: managedOptions
       });
     },
     ledger: serviceDeps.providerUsageLedger,
@@ -807,6 +818,42 @@ const runLegacySingleCompletionProvider = async ({
     });
   }
 
+  if (normalizedProvider === 'openai') {
+    const apiKey = resolveApiKey(null, 'OPENAI_API_KEY');
+    const model = options.model || process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    if (!apiKey) return { success: false, error: 'La cle API OpenAI est requise.', provider: 'openai', model };
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: userPrompt }
+        ],
+        max_tokens: maxTokens,
+        temperature
+      }),
+      signal: options.signal
+    });
+
+    if (options.signal?.aborted) return { success: false, aborted: true, error: 'Generation annulee.', provider: 'openai', model };
+
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.error?.message || `Erreur HTTP: ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
+
+    const text = data.choices?.[0]?.message?.content || '';
+    return { success: true, text: stripCompletionMarkdown(text, { trimEndOnly }), provider: 'openai', model, usage: data.usage };
+  }
+
   const apiKey = resolveApiKey(null, 'GEMINI_API_KEY');
   const model = options.model || process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
   if (!apiKey) return { success: false, error: 'La cle API Gemini est requise.', provider: 'gemini', model };
@@ -851,7 +898,7 @@ const runSingleCompletionProvider = async (request = {}) => {
   const provider = normalizeCompletionProvider(request.provider ?? request.options?.provider);
   if (!provider) return { success: false, error: `Provider completion non pris en charge: ${request.provider || request.options?.provider || 'aucun'}` };
   const contract = createProviderContract({
-    adapters: Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama', 'dashscope'].map((id) => [id, {
+    adapters: Object.fromEntries(['gemini', 'claude', 'openai', 'kimi', 'ollama', 'dashscope'].map((id) => [id, {
       capabilities: { streaming: false, usage: true, cost: 'unpriced' },
       complete: ({ options, ...payload }) => runLegacySingleCompletionProvider({ ...payload, provider: id, options })
     }]))

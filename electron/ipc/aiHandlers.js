@@ -183,7 +183,7 @@ const cleanRendererCompletionOptions = (options) => {
   delete cleaned.nevenCoreExecutionPrompt;
   // Les credentials ne traversent jamais IPC : les providers les résolvent
   // depuis l'environnement ou le vault dans le processus principal.
-  ['apiKey', 'geminiApiKey', 'claudeApiKey', 'kimiApiKey', 'ollamaApiKey', 'dashscopeApiKey', 'apiUrl', 'authorization', 'credential', 'managedCredential', 'secret', 'accessToken', 'credentialMode', 'providerPolicy', 'origin', 'providerOrigin'].forEach((key) => delete cleaned[key]);
+  ['apiKey', 'geminiApiKey', 'claudeApiKey', 'kimiApiKey', 'ollamaApiKey', 'dashscopeApiKey', 'apiUrl', 'authorization', 'credential', 'managedCredential', 'secret', 'accessToken', 'credentialMode', 'providerPolicy', 'origin', 'providerOrigin', 'allowProviderFallback', 'fallbackProvider'].forEach((key) => delete cleaned[key]);
   return cleaned;
 };
 

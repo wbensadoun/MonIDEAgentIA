@@ -1,11 +1,14 @@
 'use strict';
 
+const { normalizeCredentialProviderId, toRuntimeProviderId } = require('./provider-id.service');
+
 // Contrat unique pour les fournisseurs IA. Les adaptateurs restent responsables
 // du protocole HTTP/SDK propre au fournisseur; cette couche ne connait ni clé
 // ni détail de modèle et standardise uniquement l'orchestration backend.
-const PROVIDER_IDS = Object.freeze(['gemini', 'claude', 'kimi', 'ollama', 'dashscope']);
+const PROVIDER_IDS = Object.freeze(['gemini', 'claude', 'openai', 'kimi', 'ollama', 'dashscope']);
+const RUNTIME_UNSUPPORTED_PROVIDER_IDS = new Set(['azure', 'ollama-local']);
 
-const isKnownProvider = (value) => PROVIDER_IDS.includes(String(value || '').trim().toLowerCase());
+const isKnownProvider = (value) => PROVIDER_IDS.includes(toRuntimeProviderId(value) || String(value || '').trim().toLowerCase());
 
 const createProviderError = (provider) => {
   const error = new Error(`Provider completion non pris en charge: ${provider || 'aucun'}`);
@@ -64,7 +67,9 @@ const invokeWithTimeout = async (invoke, { timeoutMs = 0, signal } = {}) => {
 
 const createProviderContract = ({ adapters = {}, now = () => Date.now() } = {}) => {
   const getAdapter = (provider) => {
-    const normalized = String(provider || '').trim().toLowerCase();
+    const credentialProvider = normalizeCredentialProviderId(provider);
+    if (RUNTIME_UNSUPPORTED_PROVIDER_IDS.has(credentialProvider)) throw createProviderError(provider);
+    const normalized = toRuntimeProviderId(provider) || String(provider || '').trim().toLowerCase();
     if (!isKnownProvider(normalized) || !adapters[normalized]) throw createProviderError(provider);
     return { provider: normalized, adapter: adapters[normalized] };
   };
@@ -85,7 +90,10 @@ const createProviderContract = ({ adapters = {}, now = () => Date.now() } = {}) 
         if (normalizedResult.success !== false) return normalizedResult;
         if (!normalizedResult.retryable || attempt === retries) {
           const fallback = String(options.fallbackProvider || '').trim().toLowerCase();
-          if (options.allowProviderFallback === true && fallback && fallback !== normalized && isKnownProvider(fallback) && adapters[fallback]) {
+          // A managed credential is leased for the source provider only. A
+          // fallback would otherwise forward it to a different adapter.
+          const canFallback = options.credentialMode !== 'managed' && options.managedCredential == null;
+          if (canFallback && options.allowProviderFallback === true && fallback && fallback !== normalized && isKnownProvider(fallback) && adapters[fallback]) {
             return complete({ provider: fallback, request, options: { ...options, allowProviderFallback: false } });
           }
           return normalizedResult;
@@ -101,7 +109,8 @@ const createProviderContract = ({ adapters = {}, now = () => Date.now() } = {}) 
     }
     const failure = normalizeResult({ success: false, error: lastError?.message || 'Erreur provider.', retryable: !!lastError?.retryable, errorCode: lastError?.code }, normalized, 0);
     const fallback = String(options.fallbackProvider || '').trim().toLowerCase();
-    if (options.allowProviderFallback === true && fallback && fallback !== normalized && isKnownProvider(fallback) && adapters[fallback]) {
+    const canFallback = options.credentialMode !== 'managed' && options.managedCredential == null;
+    if (canFallback && options.allowProviderFallback === true && fallback && fallback !== normalized && isKnownProvider(fallback) && adapters[fallback]) {
       return complete({ provider: fallback, request, options: { ...options, allowProviderFallback: false } });
     }
     return failure;

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { createProviderContract } = require('./provider-contract.service');
 
-const providerIds = ['gemini', 'claude', 'kimi', 'ollama', 'dashscope'];
+const providerIds = ['gemini', 'claude', 'kimi', 'dashscope'];
 
 test('provider contract normalizes completion, capabilities and health for every adapter', async () => {
   const adapters = Object.fromEntries(providerIds.map((id) => [id, {
@@ -43,18 +43,54 @@ test('provider contract rejects unknown providers and only retries controlled re
   assert.equal(controlledFallback.provider, 'claude');
 });
 
+test('provider contract never falls back with a managed source credential', async () => {
+  let openaiCalls = 0;
+  const contract = createProviderContract({ adapters: {
+    gemini: { complete: async () => ({ success: false, error: 'Google timeout', retryable: true }) },
+    openai: { complete: async () => { openaiCalls += 1; return { success: true, text: 'must not run' }; } }
+  } });
+
+  const result = await contract.complete({
+    provider: 'gemini',
+    request: {},
+    options: {
+      credentialMode: 'managed',
+      managedCredential: 'fixture-not-a-secret',
+      allowProviderFallback: true,
+      fallbackProvider: 'openai'
+    }
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.provider, 'gemini');
+  assert.equal(openaiCalls, 0);
+});
+
+test('provider contract rejects managed-only Azure and local Ollama before adapter resolution', async () => {
+  let adapterCalls = 0;
+  const contract = createProviderContract({ adapters: {
+    azure: { complete: async () => { adapterCalls += 1; return { success: true }; } },
+    ollama: { complete: async () => { adapterCalls += 1; return { success: true }; } }
+  } });
+
+  for (const provider of ['azure', 'ollama-local', 'ollama']) {
+    await assert.rejects(() => contract.complete({ provider, request: {} }), { code: 'PROVIDER_UNSUPPORTED' });
+  }
+  assert.equal(adapterCalls, 0);
+});
+
 test('provider contract handles timeout, cancellation and renderer-safe streaming', async () => {
   const adapters = Object.fromEntries(providerIds.map((id) => [id, { complete: async () => ({ success: true, text: id }) }]));
-  adapters.ollama.complete = async ({ options }) => new Promise((resolve) => options.signal.addEventListener('abort', () => resolve({ success: false, aborted: true, error: 'cancelled' }), { once: true }));
-  adapters.ollama.stream = async function* () { yield { token: 'first' }; yield { token: 'late-chunk', done: true }; };
+  adapters.dashscope.complete = async ({ options }) => new Promise((resolve) => options.signal.addEventListener('abort', () => resolve({ success: false, aborted: true, error: 'cancelled' }), { once: true }));
+  adapters.dashscope.stream = async function* () { yield { token: 'first' }; yield { token: 'late-chunk', done: true }; };
   adapters.kimi.stream = async function* () { yield { token: 'a', provider: 'kimi' }; yield { token: 'b', done: true, model: 'hidden' }; };
   const contract = createProviderContract({ adapters });
-  const timeout = await contract.complete({ provider: 'ollama', request: {}, options: { timeoutMs: 5 } });
+  const timeout = await contract.complete({ provider: 'dashscope', request: {}, options: { timeoutMs: 5 } });
   assert.equal(timeout.success, false);
   assert.equal(timeout.errorCode, 'PROVIDER_TIMEOUT');
   const controller = new AbortController();
   controller.abort();
-  const cancelled = await contract.complete({ provider: 'ollama', request: {}, options: { signal: controller.signal } });
+  const cancelled = await contract.complete({ provider: 'dashscope', request: {}, options: { signal: controller.signal } });
   assert.equal(cancelled.aborted, true);
   const events = [];
   for await (const event of contract.stream({ provider: 'kimi', request: {} })) events.push(event);
@@ -67,10 +103,10 @@ test('provider contract handles timeout, cancellation and renderer-safe streamin
   streamAbort.abort();
   lateEvents.push((await iterator.next()).value);
   assert.deepEqual(lateEvents, [{ token: 'a', done: false }, { token: '', done: true, aborted: true }]);
-  const ollamaAbort = new AbortController();
-  const ollamaIterator = contract.stream({ provider: 'ollama', request: {}, options: { signal: ollamaAbort.signal } })[Symbol.asyncIterator]();
-  assert.deepEqual((await ollamaIterator.next()).value, { token: 'first', done: false });
-  ollamaAbort.abort();
-  assert.deepEqual((await ollamaIterator.next()).value, { token: '', done: true, aborted: true });
+  const dashscopeAbort = new AbortController();
+  const dashscopeIterator = contract.stream({ provider: 'dashscope', request: {}, options: { signal: dashscopeAbort.signal } })[Symbol.asyncIterator]();
+  assert.deepEqual((await dashscopeIterator.next()).value, { token: 'first', done: false });
+  dashscopeAbort.abort();
+  assert.deepEqual((await dashscopeIterator.next()).value, { token: '', done: true, aborted: true });
   assert.deepEqual(await contract.health('gemini'), { provider: 'gemini', healthy: false, reason: 'health-not-implemented' });
 });

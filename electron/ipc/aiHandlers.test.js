@@ -23,7 +23,7 @@ test('completion IPC strips technical metadata and rejects forged Core context',
 
     const handlers = {};
     const ipcMain = { handle: (channel, handler) => { handlers[channel] = handler; } };
-    const { registerAIHandlers, prepareNevenCoreExecutionOptions, sanitizeCompletionResponse } = require('./electron/ipc/aiHandlers');
+      const { registerAIHandlers, prepareNevenCoreExecutionOptions, sanitizeCompletionResponse, cleanRendererCompletionOptions } = require('./electron/ipc/aiHandlers');
     const forgedOptions = {
       provider: 'gemini',
       model: 'forged-model',
@@ -146,8 +146,7 @@ test('completion IPC strips technical metadata and rejects forged Core context',
         ['get-gemini-completion', 'gemini'],
         ['get-claude-completion', 'claude'],
         ['get-kimi-completion', 'kimi'],
-        ['get-ollama-completion', 'ollama']
-        ,['get-dashscope-completion', 'dashscope']
+        ['get-dashscope-completion', 'dashscope']
       ];
       for (const [channel, channelProvider] of normalChannels) {
         for (const rendererProvider of [undefined, channelProvider === 'gemini' ? 'claude' : 'gemini']) {
@@ -162,6 +161,12 @@ test('completion IPC strips technical metadata and rejects forged Core context',
         { channelProvider, provider: channelProvider, model: 'resolved-' + channelProvider + '-luna' },
         { channelProvider, provider: channelProvider, model: 'resolved-' + channelProvider + '-luna' }
       ])));
+      const ollamaResponse = await handlers['get-ollama-completion'](
+        {}, [{ role: 'user', text: 'corrige ce bug' }], '', null, { model: 'renderer-model' }
+      );
+      assert.equal(ollamaResponse.success, false);
+      assert.equal(ollamaResponse.error.includes('provider IA'), true);
+      assert.equal(normalCalls.some(({ channelProvider }) => channelProvider === 'ollama'), false);
 
       for (const [channel, args] of [
         ['get-inline-completion', ['corrige ce bug', 'const x = 1;']],
@@ -178,6 +183,9 @@ test('completion IPC strips technical metadata and rejects forged Core context',
       assert.deepEqual(inlineCalls, Array.from({ length: 2 }, () => ({
         provider: 'gemini', optionProvider: 'gemini', model: 'resolved-gemini-luna'
       })));
+      assert.deepEqual(cleanRendererCompletionOptions({ allowProviderFallback: true, fallbackProvider: 'openai', model: 'safe-model' }), {
+        model: 'safe-model'
+      });
 
       const failingCompletionRunner = async ({ options }) => {
         assert.equal(options.model, 'internal-runtime-model');
