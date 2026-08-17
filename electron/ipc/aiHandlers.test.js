@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const test = require('node:test');
+const { registerAIHandlers } = require('./aiHandlers');
 
 test('completion IPC strips technical metadata and rejects forged Core context', () => {
   const script = String.raw`
@@ -293,4 +294,31 @@ test('inline and ghost runs are abortable in main and never receive renderer cre
   `;
   const output = execFileSync(process.execPath, ['-e', script], { cwd: process.cwd(), encoding: 'utf8' });
   assert.equal(output.trim(), '');
+});
+
+test('chat, inline and ghost publish bounded usage without delaying their result', async () => {
+  const handlers = {};
+  const events = [];
+  registerAIHandlers({
+    ipcMain: { handle: (channel, handler) => { handlers[channel] = handler; } },
+    completionHandlers: Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama', 'dashscope'].map((provider) => [provider,
+      async () => ({ success: true, text: 'completion', usage: { inputTokens: 3, outputTokens: 2 } })
+    ])),
+    completionRunner: async () => ({ success: true, text: 'completion', usage: { promptTokens: 4, completionTokens: 1 } }),
+    listAgents: async () => ({ agents: [] }),
+    listSkills: async () => ({ skills: [] }),
+    publishUsageEvent: async (event) => { events.push(event); throw new Error('telemetry unavailable'); }
+  });
+
+  assert.equal((await handlers['get-gemini-completion']({}, [], '', null, { runId: 'chat-usage' })).success, true);
+  assert.equal((await handlers['get-inline-completion']({}, 'prompt', 'code', { provider: 'gemini' })).success, true);
+  assert.equal((await handlers['get-ghost-completion']({}, 'prefix', 'suffix', { provider: 'gemini' })).success, true);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(events.length, 3);
+  for (const event of events) {
+    assert.deepEqual(Object.keys(event).sort(), ['durationMs', 'inputTokens', 'outputTokens', 'providerId', 'success']);
+    assert.equal(event.success, true);
+    assert.equal(event.providerId, 'gemini');
+  }
 });

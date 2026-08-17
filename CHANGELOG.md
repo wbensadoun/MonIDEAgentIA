@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.6.1] — Durcissement Neven
+
+### Security
+
+- Allowlist appliquée au control plane et à chaque passerelle Neven reçue dans un grant.
+- Configuration Neven distante non migrée désactivée sans bloquer le démarrage.
+
+### Changed
+
+- Cycle d’annulation et télémétrie non bloquante communs aux flux chat, inline et ghost.
+
+## [2.6.0] — Contrat d’usage Neven v1
+
+### Added
+
+- Publication non bloquante de métriques bornées depuis les completions main process vers Neven.
+- `eventId` et clé d’idempotence pour éviter les doublons.
+- Refus des URLs HTTP distantes pour les échanges internes et métadonnées de version synchronisées.
+
 ## [2.5.0] - Contrat backend multi-provider
 
 ### Added

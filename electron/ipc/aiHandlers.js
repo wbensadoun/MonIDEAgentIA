@@ -58,6 +58,24 @@ const releaseRun = (runId, controller) => {
   if (activeRuns.get(runId) === controller) activeRuns.delete(runId);
 };
 
+// La télémétrie est strictement secondaire : ni le réseau ni une erreur de
+// publication ne doivent retarder ou modifier la réponse IPC.
+const publishCompletionUsage = ({ publishUsageEvent, provider, startedAt, result }) => {
+  if (typeof publishUsageEvent !== 'function') return;
+  const usage = result?.usage || {};
+  try {
+    Promise.resolve(publishUsageEvent({
+      providerId: provider,
+      inputTokens: usage.inputTokens ?? usage.promptTokens,
+      outputTokens: usage.outputTokens ?? usage.completionTokens,
+      durationMs: Math.max(0, Date.now() - startedAt),
+      success: result?.success === true
+    })).catch(() => {});
+  } catch {
+    // Publication best-effort uniquement.
+  }
+};
+
 const isTechnicalResponseKey = (key) => {
   const normalized = String(key || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
   return normalized === 'provider'
@@ -254,12 +272,15 @@ const registerProviderCompletionHandler = ({
   listAgents,
   listSkills,
   completionContract,
+  publishUsageEvent,
   resolveProfileModel = resolveModelForProfile
 }) => {
   ipcMain.handle(channel, async (_event, history, currentCode, allProjectFiles = null, options = {}) => {
     const runId = options?.runId || null;
     const controller = registerRun(runId);
+    const startedAt = Date.now();
     let executionOptions = forceChannelCompletionProvider(options, provider);
+    let completionResult;
     try {
       executionOptions = await prepareNevenCoreExecutionOptions({
         options: executionOptions,
@@ -296,13 +317,17 @@ const registerProviderCompletionHandler = ({
           options: controller ? { ...executionOptions, signal: controller.signal } : executionOptions
         });
       }
+      completionResult = response;
       return sanitizeCompletionResponse(response, executionOptions);
     } catch (error) {
       if (controller?.signal?.aborted) {
+        completionResult = { success: false, aborted: true };
         return { success: false, aborted: true, error: 'Generation annulee.' };
       }
+      completionResult = { success: false };
       return sanitizeCompletionResponse({ success: false, error: error?.message || String(error) }, executionOptions);
     } finally {
+      publishCompletionUsage({ publishUsageEvent, provider, startedAt, result: completionResult });
       releaseRun(runId, controller);
     }
   });
@@ -316,6 +341,7 @@ const registerAIHandlers = ({
   listSkills = defaultListSkills,
   completionHandlers = providerHandlers,
   completionRunner = runSingleCompletionProvider,
+  publishUsageEvent,
   resolveProfileModel = resolveModelForProfile
 } = {}) => {
   const completionContract = createProviderContract({
@@ -375,9 +401,10 @@ const registerAIHandlers = ({
     getMainWindow,
     executeCommandForAI,
     listAgents,
-    listSkills,
-    completionContract,
-    resolveProfileModel
+      listSkills,
+      completionContract,
+      publishUsageEvent,
+      resolveProfileModel
   });
   registerProviderCompletionHandler({
     ipcMain,
@@ -386,9 +413,10 @@ const registerAIHandlers = ({
     getMainWindow,
     executeCommandForAI,
     listAgents,
-    listSkills,
-    completionContract,
-    resolveProfileModel
+      listSkills,
+      completionContract,
+      publishUsageEvent,
+      resolveProfileModel
   });
   registerProviderCompletionHandler({
     ipcMain,
@@ -397,9 +425,10 @@ const registerAIHandlers = ({
     getMainWindow,
     executeCommandForAI,
     listAgents,
-    listSkills,
-    completionContract,
-    resolveProfileModel
+      listSkills,
+      completionContract,
+      publishUsageEvent,
+      resolveProfileModel
   });
   registerProviderCompletionHandler({
     ipcMain,
@@ -408,9 +437,10 @@ const registerAIHandlers = ({
     getMainWindow,
     executeCommandForAI,
     listAgents,
-    listSkills,
-    completionContract,
-    resolveProfileModel
+      listSkills,
+      completionContract,
+      publishUsageEvent,
+      resolveProfileModel
   });
   registerProviderCompletionHandler({
     ipcMain,
@@ -419,9 +449,10 @@ const registerAIHandlers = ({
     getMainWindow,
     executeCommandForAI,
     listAgents,
-    listSkills,
-    completionContract,
-    resolveProfileModel
+      listSkills,
+      completionContract,
+      publishUsageEvent,
+      resolveProfileModel
   });
 
   ipcMain.handle('get-inline-completion', async (_event, prompt, code, options = {}) => {
@@ -433,7 +464,9 @@ RÈGLES ABSOLUES:
 
     const runId = options?.runId || null;
     const controller = registerRun(runId);
+    const startedAt = Date.now();
     let executionOptions = normalizeInlineCompletionOptions(options);
+    let completionResult;
     try {
       executionOptions = await prepareNevenCoreExecutionOptions({
         options: executionOptions,
@@ -453,11 +486,21 @@ RÈGLES ABSOLUES:
         },
         options: controller ? { ...executionOptions, signal: controller.signal } : executionOptions
       });
+      completionResult = response;
       return sanitizeCompletionResponse(response, executionOptions);
     } catch (error) {
       console.warn('[AIHandlers] Inline completion unavailable.');
+      completionResult = { success: false };
       return sanitizeCompletionResponse({ success: false, error: error?.message || String(error) }, executionOptions);
-    } finally { releaseRun(runId, controller); }
+    } finally {
+      publishCompletionUsage({
+        publishUsageEvent,
+        provider: executionOptions.provider,
+        startedAt,
+        result: completionResult
+      });
+      releaseRun(runId, controller);
+    }
   });
 
   ipcMain.handle('get-ghost-completion', async (_event, prefix, suffix, options = {}) => {
@@ -470,7 +513,9 @@ RÈGLES ABSOLUES:
 
     const runId = options?.runId || null;
     const controller = registerRun(runId);
+    const startedAt = Date.now();
     let executionOptions = normalizeInlineCompletionOptions(options);
+    let completionResult;
     try {
       executionOptions = await prepareNevenCoreExecutionOptions({
         options: executionOptions,
@@ -491,11 +536,21 @@ RÈGLES ABSOLUES:
         },
         options: controller ? { ...executionOptions, signal: controller.signal } : executionOptions
       });
+      completionResult = response;
       return sanitizeCompletionResponse(response, executionOptions);
     } catch (error) {
       console.warn('[AIHandlers] Ghost completion unavailable.');
+      completionResult = { success: false };
       return sanitizeCompletionResponse({ success: false, error: error?.message || String(error) }, executionOptions);
-    } finally { releaseRun(runId, controller); }
+    } finally {
+      publishCompletionUsage({
+        publishUsageEvent,
+        provider: executionOptions.provider,
+        startedAt,
+        result: completionResult
+      });
+      releaseRun(runId, controller);
+    }
   });
 };
 

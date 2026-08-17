@@ -54,6 +54,10 @@ export interface SystemAIProfile {
   ollama?: { available: boolean; models: OllamaModel[]; error: string | null };
 }
 
+export interface AICompletionOptions extends Record<string, unknown> {
+  runId?: string;
+}
+
 export interface ElectronAPI {
   // File operations
   getAllFiles: (folderPath: string) => Promise<{ success: boolean; files?: string[]; error?: string }>;
@@ -76,10 +80,13 @@ export interface ElectronAPI {
   saveSettings: (settings: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
 
   // AI completions
-  getGeminiCompletion: (history: unknown[], code: string, files: unknown, options: Record<string, unknown>) => Promise<{ success: boolean; text?: string; error?: string }>;
-  getClaudeCompletion: (history: unknown[], code: string, files: unknown, options: Record<string, unknown>) => Promise<{ success: boolean; text?: string; error?: string }>;
-  getKimiCompletion: (history: unknown[], code: string, files: unknown, options: Record<string, unknown>) => Promise<{ success: boolean; text?: string; error?: string }>;
-  getOllamaCompletion: (history: unknown[], code: string, files: unknown, options: Record<string, unknown>) => Promise<{ success: boolean; text?: string; error?: string }>;
+  getGeminiCompletion: (history: unknown[], code: string, files: unknown, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
+  getClaudeCompletion: (history: unknown[], code: string, files: unknown, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
+  getKimiCompletion: (history: unknown[], code: string, files: unknown, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
+  getOllamaCompletion: (history: unknown[], code: string, files: unknown, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
+  getInlineCompletion: (prompt: string, code: string, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
+  getGhostCompletion: (prefix: string, suffix: string, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
+  cancelAIGeneration: (runId: string) => Promise<{ success: boolean; reason?: string }>;
 
   // Ollama
   listOllamaModels: () => Promise<{ success: boolean; models?: OllamaModel[]; error?: string }>;
