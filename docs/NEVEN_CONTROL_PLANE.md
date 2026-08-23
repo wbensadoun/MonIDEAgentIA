@@ -1,6 +1,6 @@
 # Control plane Neven — contrat backend
 
-Version 2.8.0.
+Version 3.0.0.
 
 Cette couche prépare la future interface admin Neven sans donner au client les clés Claude, Gemini, Kimi ou autres. Code Companion conserve uniquement, dans le **main process**, un grant court vers la passerelle Neven.
 
@@ -29,7 +29,7 @@ sequenceDiagram
 
 ```json
 {
-  "workspaceId": "workspace-123",
+  "workspaceId": "123e4567-e89b-42d3-a456-426614174000",
   "profile": "haiku | luna | sol | opus",
   "capability": "completion"
 }
@@ -51,6 +51,14 @@ Le client Electron refuse un grant sans expiration, sans passerelle valide ou d�
 
 `POST /v1/control-plane/access/revoke` reçoit uniquement `workspaceId` et invalide les grants côté Neven.
 
+## Identité workspace et session (COD-31)
+
+Le chemin local ouvert par l'utilisateur reste réservé aux opérations de fichiers : il n'est jamais utilisé comme identifiant réseau. Le main process lit `NEVEN_WORKSPACE_ID`, qui doit être un UUID strict, et refuse le contexte Neven en cas de valeur absente, invalide ou sans répertoire `userData` disponible. Chaque fenêtre/sender reçoit un contexte main-process isolé limité à `workspaceId` et à un `deviceId` stable ; ni le renderer ni ses payloads IPC ne peuvent choisir un workspace, un device, un token ou un grant.
+
+`deviceId` est transmis uniquement comme argument interne au resolver main-process. Le contrat actuel `/access/resolve` et `/access/revoke` n'accepte pas encore ce champ : il n'est donc pas envoyé au réseau (TODO COD-33), ni exposé au renderer. Ce lot ne traite pas le stockage des grants : ils restent mémoire-only dans le resolver d'accès existant.
+
+Le `deviceId` et le token de session d'enrôlement sont stockés par le main process dans le répertoire `userData`, chiffrés avec `electron.safeStorage` lorsqu'il est disponible. Ils ne sont jamais inclus dans le contexte IPC, les objets renderer ou les logs. Si le chiffrement OS est indisponible, aucune persistance n'est permise en production. Un fallback de session par variable d'environnement est autorisé seulement en développement avec `NEVEN_DEV_SESSION_TOKEN_ENABLED=true` et `NEVEN_DEV_SESSION_TOKEN`; il ne sert jamais en production et ne doit pas être utilisé pour un déploiement. `NEVEN_ACCESS_TOKEN` et `NEVEN_SESSION_TOKEN` ne participent plus à la résolution normale.
+
 ## Événements d’usage internes
 
 `POST /api/v1/internal/events` reçoit les événements normalisés de Code Companion. L’appel est fait exclusivement dans le main process : le renderer ne reçoit ni ne fournit le jeton d’authentification.
@@ -60,7 +68,7 @@ Le client Electron refuse un grant sans expiration, sans passerelle valide ou d�
   "eventId": "evt_01HXYZ",
   "eventType": "usage.recorded",
   "occurredAt": "2026-08-16T10:00:00.000Z",
-  "workspaceId": "workspace-123",
+  "workspaceId": "123e4567-e89b-42d3-a456-426614174000",
   "usage": {
     "origin": "neven | byok | local",
     "providerId": "anthropic",
@@ -76,7 +84,7 @@ Le client Electron refuse un grant sans expiration, sans passerelle valide ou d�
 
 L’authentification est un bearer résolu côté backend Electron via `NEVEN_INTERNAL_EVENTS_TOKEN`. Les échecs 401/403, timeout et réseau exposent seulement un résultat générique au consommateur ; aucun détail de transport ou de réponse serveur n’est remonté.
 
-`NEVEN_WORKSPACE_ID` est requis pour publier ces événements. S’il est absent, la télémétrie est désactivée localement sans appel réseau. `NEVEN_CONTROL_PLANE_ALLOWED_HOSTS` doit contenir explicitement chaque hôte distant du control plane **et de la passerelle** (liste séparée par des virgules) ; seuls ces hôtes en HTTPS sont acceptés. Les URLs loopback sont réservées au développement.
+`NEVEN_WORKSPACE_ID` doit être un UUID configuré côté main process pour publier ces événements. S’il est absent ou invalide, la télémétrie est désactivée localement sans appel réseau. `NEVEN_CONTROL_PLANE_ALLOWED_HOSTS` doit contenir explicitement chaque hôte distant du control plane **et de la passerelle** (liste séparée par des virgules) ; seuls ces hôtes en HTTPS sont acceptés. Les URLs loopback sont réservées au développement.
 
 Toutes les requêtes sensibles du control plane, y compris l’ingestion d’événements, utilisent `redirect: 'error'`. Une réponse de redirection est donc refusée sans suivre la nouvelle URL : un bearer ne peut pas être transmis à un hôte absent de l’allowlist.
 

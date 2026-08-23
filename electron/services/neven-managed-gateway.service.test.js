@@ -8,6 +8,7 @@ const {
   createManagedGatewayCompletion,
   isNevenManagedGatewayEnabled
 } = require('./neven-managed-gateway.service');
+const WORKSPACE_ID = '123e4567-e89b-42d3-a456-426614174000';
 
 const access = (token = 'grant', expiresAt = new Date(Date.now() + 60000).toISOString()) => ({ gatewayUrl: 'https://gateway.neven.test', accessToken: token, expiresAt });
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body) });
@@ -18,7 +19,7 @@ test('gateway payload has no provider and transport is HTTPS allowlisted with ma
     allowedHosts: ['gateway.neven.test'],
     fetchImpl: async (url, options) => { request = { url, options }; return response({ text: 'ok' }); }
   });
-  const result = await client.complete({ access: access(), workspaceId: 'workspace-1', profile: 'luna', request: { provider: 'claude', systemInstruction: 'system', userPrompt: 'hello' } });
+  const result = await client.complete({ access: access(), workspaceId: WORKSPACE_ID, profile: 'luna', request: { provider: 'claude', systemInstruction: 'system', userPrompt: 'hello' } });
   assert.equal(result.success, true);
   assert.equal(request.url, 'https://gateway.neven.test/v1/gateway/completions');
   assert.equal(request.options.redirect, 'error');
@@ -26,20 +27,20 @@ test('gateway payload has no provider and transport is HTTPS allowlisted with ma
   const payload = JSON.parse(request.options.body);
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'provider'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(payload.request, 'provider'), false);
-  assert.deepEqual(buildGatewayPayload({ workspaceId: 'workspace-1', request: { provider: 'ignored' } }).request, { systemInstruction: '', userPrompt: '', maxTokens: undefined, temperature: undefined });
+  assert.deepEqual(buildGatewayPayload({ workspaceId: WORKSPACE_ID, request: { provider: 'ignored' } }).request, { systemInstruction: '', userPrompt: '', maxTokens: undefined, temperature: undefined });
 });
 
 test('gateway normalizes redirects, expiry and rejected grants without transport details', async () => {
   const client = new NevenManagedGatewayClient({ allowedHosts: ['gateway.neven.test'], fetchImpl: async () => response({}, 401) });
-  assert.deepEqual(await client.complete({ access: access(), workspaceId: 'workspace-1' }), {
+  assert.deepEqual(await client.complete({ access: access(), workspaceId: WORKSPACE_ID }), {
     success: false, error: { code: 'grant_expired', error: 'Passerelle Neven indisponible.' }
   });
-  assert.deepEqual(await client.complete({ access: { ...access(), gatewayUrl: 'http://gateway.neven.test' }, workspaceId: 'workspace-1' }), {
+  assert.deepEqual(await client.complete({ access: { ...access(), gatewayUrl: 'http://gateway.neven.test' }, workspaceId: WORKSPACE_ID }), {
     success: false, error: { code: 'gateway_invalid_request', error: 'Requête managed Neven invalide.' }
   });
   let fetches = 0;
   const expiringClient = new NevenManagedGatewayClient({ allowedHosts: ['gateway.neven.test'], cacheSkewMs: 1000, fetchImpl: async () => { fetches += 1; return response({ text: 'must-not-run' }); } });
-  assert.equal((await expiringClient.complete({ access: access('grant', new Date(Date.now() + 500).toISOString()), workspaceId: 'workspace-1' })).error.code, 'grant_expired');
+  assert.equal((await expiringClient.complete({ access: access('grant', new Date(Date.now() + 500).toISOString()), workspaceId: WORKSPACE_ID })).error.code, 'grant_expired');
   assert.equal(fetches, 0);
 });
 
@@ -58,12 +59,12 @@ test('managed completion retries exactly once after an expired grant and remains
     } },
     enabled: true
   });
-  assert.deepEqual(await completion({ workspaceId: 'workspace-1' }), { success: true, text: 'retried' });
+  assert.deepEqual(await completion({ workspaceId: WORKSPACE_ID }), { success: true, text: 'retried' });
   assert.equal(resolves, 2);
   assert.equal(calls, 2);
   assert.equal(isNevenManagedGatewayEnabled({}), false);
   const disabled = createManagedGatewayCompletion({ accessResolver: resolver, gatewayClient: { complete: async () => { throw new Error('must not run'); } }, enabled: false });
-  assert.equal((await disabled({ workspaceId: 'workspace-1' })).error.code, 'managed_disabled');
+  assert.equal((await disabled({ workspaceId: WORKSPACE_ID })).error.code, 'managed_disabled');
 });
 
 test('a generic gateway 403 is permission denied and never refreshes or retries the grant', async () => {
@@ -81,12 +82,12 @@ test('a generic gateway 403 is permission denied and never refreshes or retries 
     },
     enabled: true
   });
-  assert.deepEqual(await completion({ workspaceId: 'workspace-1' }), { success: false, error: { code: 'permission_denied' } });
+  assert.deepEqual(await completion({ workspaceId: WORKSPACE_ID }), { success: false, error: { code: 'permission_denied' } });
   assert.equal(resolves, 1);
   assert.equal(calls, 1);
 
   const client = new NevenManagedGatewayClient({ allowedHosts: ['gateway.neven.test'], fetchImpl: async () => response({ code: 'forbidden' }, 403) });
-  assert.equal((await client.complete({ access: access(), workspaceId: 'workspace-1' })).error.code, 'permission_denied');
+  assert.equal((await client.complete({ access: access(), workspaceId: WORKSPACE_ID })).error.code, 'permission_denied');
   const expiredClient = new NevenManagedGatewayClient({ allowedHosts: ['gateway.neven.test'], fetchImpl: async () => response({ error: { code: 'grant_expired' } }, 403) });
-  assert.equal((await expiredClient.complete({ access: access(), workspaceId: 'workspace-1' })).error.code, 'grant_expired');
+  assert.equal((await expiredClient.complete({ access: access(), workspaceId: WORKSPACE_ID })).error.code, 'grant_expired');
 });

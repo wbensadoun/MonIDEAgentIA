@@ -53,10 +53,10 @@ const normalizePath = (value, fallback) => {
 
 const normalizeWorkspaceId = (value) => {
   const workspaceId = String(value || '').trim();
-  if (!workspaceId || workspaceId.length > 400 || /[\r\n]/.test(workspaceId)) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(workspaceId)) {
     throw new Error('Workspace Neven invalide.');
   }
-  return workspaceId;
+  return workspaceId.toLowerCase();
 };
 
 const normalizeEventId = (value) => {
@@ -157,7 +157,7 @@ class NevenControlPlaneClient {
     gatewayBaseUrl = process.env.NEVEN_GATEWAY_URL,
     allowedHosts = process.env.NEVEN_CONTROL_PLANE_ALLOWED_HOSTS,
     allowLoopback,
-    accessTokenResolver = async () => process.env.NEVEN_ACCESS_TOKEN || process.env.NEVEN_SESSION_TOKEN || null,
+    accessTokenResolver = async () => null,
     fetchImpl = globalThis.fetch,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     accessPath = process.env.NEVEN_CONTROL_PLANE_ACCESS_PATH || DEFAULT_ACCESS_PATH,
@@ -317,7 +317,7 @@ const createNevenAccessResolver = ({ client, cacheSkewMs = DEFAULT_CACHE_SKEW_MS
   const getCacheKey = ({ workspaceId, profile = 'haiku', capability = 'completion' } = {}) =>
     JSON.stringify([normalizeWorkspaceId(workspaceId), normalizeProfile(profile), String(capability || 'completion')]);
 
-  const resolve = async ({ workspaceId, profile = 'haiku', capability = 'completion' } = {}) => {
+  const resolve = async ({ workspaceId, deviceId, profile = 'haiku', capability = 'completion' } = {}) => {
     let key;
     try {
       key = getCacheKey({ workspaceId, profile, capability });
@@ -327,6 +327,9 @@ const createNevenAccessResolver = ({ client, cacheSkewMs = DEFAULT_CACHE_SKEW_MS
     const cached = cache.get(key);
     if (cached && Date.parse(cached.expiresAt) > Date.now() + cacheSkewMs) return cached;
 
+    // TODO(COD-33): send deviceId once the control-plane contract accepts it.
+    // It remains main-process-only and is intentionally absent from this payload today.
+    void deviceId;
     const result = await client.resolveAccess({ workspaceId, profile, capability });
     if (!result?.success || !result.access) return null;
     // A newly resolved grant is not usable when it cannot outlive the same
