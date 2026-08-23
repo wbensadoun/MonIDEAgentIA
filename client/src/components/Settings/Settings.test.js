@@ -14,6 +14,7 @@ const baseSettings = {
   geminiModel: 'gemini-3-flash-preview',
   claudeModel: 'claude-sonnet-4-6',
   kimiModel: 'moonshotai/Kimi-K2.7',
+  qwenModel: 'qwen-coder-plus',
   kimiApiKey: 'tgp_v1_test',
   permissionMode: 'edit_terminal',
   multiAgentRoles: {
@@ -97,6 +98,29 @@ test('saves read-only permission mode from settings', async () => {
   });
 
   expect(window.electronAPI.saveSettings.mock.calls[0][0].permissionMode).toBe('read_only');
+});
+
+test('saves the selected Qwen DashScope model without rendering a secret field', async () => {
+  renderSettings();
+
+  fireEvent.change(screen.getByLabelText('Fournisseur par défaut'), { target: { value: 'dashscope' } });
+  fireEvent.click(screen.getByText('Fournisseurs'));
+
+  const qwenModel = await screen.findByLabelText('Modèle Qwen / DashScope');
+  expect(screen.queryByLabelText('Clé API Qwen / DashScope')).not.toBeInTheDocument();
+  fireEvent.change(qwenModel, { target: { value: 'qwen-coder-next' } });
+
+  await act(async () => {
+    fireEvent.click(screen.getByText('Sauvegarder'));
+  });
+
+  await waitFor(() => {
+    expect(window.electronAPI.saveSettings).toHaveBeenCalled();
+  });
+
+  const savedSettings = window.electronAPI.saveSettings.mock.calls[0][0];
+  expect(savedSettings.defaultProvider).toBe('dashscope');
+  expect(savedSettings.qwenModel).toBe('qwen-coder-next');
 });
 
 test('lists models detected from the provider instead of the hardcoded fallback', async () => {

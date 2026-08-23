@@ -1,4 +1,5 @@
 import {
+  DEFAULT_QWEN_MODEL,
   getRemoteModelOptions,
   normalizeRemoteModelName
 } from './remoteModels';
@@ -17,5 +18,9 @@ describe('remote model helpers', () => {
     expect(options).toContain('moonshotai/Kimi-K2.6');
     expect(options).toContain('moonshotai/Kimi-K2.7');
     expect(new Set(options).size).toBe(options.length);
+  });
+
+  test('offers the DashScope Qwen fallback model', () => {
+    expect(getRemoteModelOptions('dashscope')).toEqual([DEFAULT_QWEN_MODEL]);
   });
 });
