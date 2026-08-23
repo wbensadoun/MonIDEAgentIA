@@ -16,9 +16,10 @@ const DEFAULT_GEMINI_MODEL = 'gemini-3-flash-preview';
 const DEFAULT_KIMI_MODEL = 'moonshotai/Kimi-K2.5';
 const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_GEMINI_PRO_MODEL = 'gemini-3.1-pro-preview';
+const DEFAULT_DASHSCOPE_MODEL = 'qwen-plus';
 const CANONICAL_QWEN_OLLAMA_MODEL = 'qwen3:8b';
 
-const SUPPORTED_AI_PROVIDERS = new Set(['gemini', 'claude', 'kimi', 'ollama']);
+const SUPPORTED_AI_PROVIDERS = new Set(['gemini', 'claude', 'kimi', 'ollama', 'dashscope']);
 
 const MULTI_AGENT_ROLE_DEFAULTS = Object.freeze({
   selector: { provider: 'gemini', model: DEFAULT_GEMINI_PRO_MODEL },
@@ -64,6 +65,7 @@ const getDefaultModelForAIProvider = (provider) => {
   if (normalizedProvider === 'claude') return DEFAULT_CLAUDE_MODEL;
   if (normalizedProvider === 'kimi') return DEFAULT_KIMI_MODEL;
   if (normalizedProvider === 'ollama') return CANONICAL_QWEN_OLLAMA_MODEL;
+  if (normalizedProvider === 'dashscope') return DEFAULT_DASHSCOPE_MODEL;
   return DEFAULT_GEMINI_MODEL;
 };
 
@@ -508,6 +510,7 @@ const buildSafeSpawnRequest = (command, args = []) => {
 module.exports = {
   getSettingsPath,
   DEFAULT_GEMINI_MODEL,
+  DEFAULT_DASHSCOPE_MODEL,
   DEFAULT_KIMI_MODEL,
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_GEMINI_PRO_MODEL,

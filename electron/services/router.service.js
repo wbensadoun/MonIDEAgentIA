@@ -48,6 +48,9 @@ const {
 // Placeholder documente : miroir "light" de Claude pour le routeur intelligent.
 // Ajustable en UNE ligne quand Anthropic publiera le nom definitif du modele Haiku.
 const DEFAULT_CLAUDE_LIGHT_MODEL = 'claude-haiku-4-6';
+// DashScope: le routeur consomme le modèle texte le moins coûteux disponible.
+// Le modèle final reste configurable séparément dans les paramètres.
+const DEFAULT_DASHSCOPE_ROUTER_MODEL = 'qwen-turbo';
 
 // ---------------------------------------------------------------------------
 // Resolution du modele par tier ('light' | 'premium')
@@ -61,7 +64,8 @@ const DEFAULT_CLAUDE_LIGHT_MODEL = 'claude-haiku-4-6';
 const PROVIDER_TIER_PROFILES = Object.freeze({
   gemini: { light: ['flash-lite', 'flash'], premium: ['ultra', 'pro'] },
   claude: { light: ['haiku'], premium: ['opus', 'sonnet'] },
-  kimi: { light: ['k2.5', 'k2'], premium: ['k2.6', 'k2'] }
+  kimi: { light: ['k2.5', 'k2'], premium: ['k2.6', 'k2'] },
+  dashscope: { light: ['turbo'], premium: ['max', 'plus'] }
 });
 
 // Petites listes statiques locales (miroir des constantes de settings.service),
@@ -69,7 +73,8 @@ const PROVIDER_TIER_PROFILES = Object.freeze({
 const PROVIDER_TIER_STATIC_CANDIDATES = Object.freeze({
   gemini: [DEFAULT_GEMINI_MODEL, DEFAULT_GEMINI_PRO_MODEL],
   claude: [DEFAULT_CLAUDE_LIGHT_MODEL, DEFAULT_CLAUDE_MODEL],
-  kimi: [DEFAULT_KIMI_MODEL]
+  kimi: [DEFAULT_KIMI_MODEL],
+  dashscope: [DEFAULT_DASHSCOPE_ROUTER_MODEL, 'qwen-plus']
 });
 
 // Profils internes Neven. Ils décrivent une capacité, pas un fournisseur et ne
@@ -343,6 +348,12 @@ const resolveClassifierTarget = async (settings, normalizedProvider, ctx) => {
   const configuredModel = settings?.routerClassifierModel ? String(settings.routerClassifierModel).trim() : '';
   if (configuredModel) {
     return { provider: classifierProvider, resolved: configuredModel, source: 'settings' };
+  }
+
+  // Alibaba est actuellement le seul provider distant actif : le classifieur
+  // doit rester sur le modèle le moins coûteux, indépendamment du modèle final.
+  if (classifierProvider === 'dashscope') {
+    return { provider: classifierProvider, resolved: DEFAULT_DASHSCOPE_ROUTER_MODEL, source: 'router-default' };
   }
 
   const resolved = await resolveModelForTier(classifierProvider, 'light', ctx);
