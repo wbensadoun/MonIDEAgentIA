@@ -18,7 +18,7 @@ const registerProjectHandlers = ({ getMainWindow, setWorkspaceContext = () => {}
     }
 
     const trustedPath = trustProjectPath(filePaths[0]);
-    setWorkspaceContext(event, trustedPath);
+    await setWorkspaceContext(event);
     return { success: true, path: trustedPath };
   });
 
@@ -32,7 +32,7 @@ const registerProjectHandlers = ({ getMainWindow, setWorkspaceContext = () => {}
       const defaultRoot = path.join(app.getPath('documents'), 'Code Companion', 'Sans-titre');
       fs.mkdirSync(defaultRoot, { recursive: true });
       const trustedPath = trustProjectPath(defaultRoot);
-      setWorkspaceContext(event, trustedPath);
+      await setWorkspaceContext(event);
       return { success: true, path: trustedPath };
     } catch (error) {
       return { success: false, error: error.message };
@@ -42,7 +42,7 @@ const registerProjectHandlers = ({ getMainWindow, setWorkspaceContext = () => {}
   ipcMain.handle('authorize-project-path', async (event, projectPath) => {
     try {
       const result = await requestProjectPathApproval(projectPath, { dialog, getMainWindow });
-      if (result.success && result.path) setWorkspaceContext(event, result.path);
+      if (result.success && result.path) await setWorkspaceContext(event);
       return result;
     } catch (error) {
       return { success: false, error: error.message };

@@ -53,6 +53,7 @@ const {
   NevenControlPlaneClient,
   createNevenAccessResolver
 } = require('./electron/services/neven-control-plane.service');
+const { createNevenIdentityService } = require('./electron/services/neven-identity.service');
 const {
   NevenManagedGatewayClient,
   createManagedGatewayCompletion,
@@ -103,8 +104,9 @@ const { vault: providerSecretVault, credentialService: providerCredentialService
 // Le control plane Neven reste dans le main process. Il ne retourne jamais de
 // cle fournisseur au renderer : uniquement un droit court vers la passerelle
 // Neven, conservé en mémoire et destiné aux futures exécutions managed.
-const nevenControlPlane = new NevenControlPlaneClient();
-const publishNevenUsageEvent = createNevenUsagePublisher({ client: nevenControlPlane });
+const nevenIdentity = createNevenIdentityService({ userDataPath: app.getPath('userData'), isDevelopment: isDev });
+const nevenControlPlane = new NevenControlPlaneClient({ accessTokenResolver: nevenIdentity.resolveSessionToken });
+const publishNevenUsageEvent = createNevenUsagePublisher({ client: nevenControlPlane, workspaceId: nevenIdentity.workspaceId });
 const resolveNevenAccess = createNevenAccessResolver({ client: nevenControlPlane });
 const nevenManagedGatewayEnabled = isNevenManagedGatewayEnabled();
 const completeManagedGateway = createManagedGatewayCompletion({
@@ -113,17 +115,8 @@ const completeManagedGateway = createManagedGatewayCompletion({
   enabled: nevenManagedGatewayEnabled
 });
 const providerUsageLedger = new ProviderUsageLedger({ filePath: ProviderUsageLedger.defaultFilePath(app.getPath('userData')) });
-const workspaceContexts = new Map();
-const setWorkspaceContext = (event, workspaceId) => {
-  const sender = event?.sender;
-  if (!sender?.id || !sender.session || !workspaceId) return;
-  workspaceContexts.set(sender.id, { workspaceId });
-};
-const resolveWorkspaceContext = async (event) => {
-  const sender = event?.sender;
-  if (!sender?.id || !sender.session) return null;
-  return workspaceContexts.get(sender.id) || null;
-};
+const setWorkspaceContext = (event) => nevenIdentity.bindSender(event);
+const resolveWorkspaceContext = (event) => nevenIdentity.resolveWorkspaceContext(event);
 const resolveTrustedRouterConfiguration = async () => {
   const settings = await readSettingsSafe();
   // Do not pass persisted credential fields to the router. Provider credentials
@@ -149,7 +142,7 @@ const resolveManagedProviderCredential = async ({ origin, provider, workspaceId,
     withActiveSecret: (operation) => providerCredentialService.withActiveCredential({ workspaceId, provider }, operation)
   };
   // The grant stays inside the managed gateway path; it is never an API key.
-  return nevenManagedGatewayEnabled && context.access ? { managedGateway: true } : { unavailable: true };
+  return nevenManagedGatewayEnabled ? { managedGateway: true } : { unavailable: true };
 };
 configureAIService({ dialog, getMainWindow: () => mainWindow });
 const processService = createProcessService({ getMainWindow: () => mainWindow });
@@ -161,19 +154,18 @@ const ptyService = createPtyService({ getMainWindow: () => mainWindow });
 configureAIService({
   ptyService,
   resolveProviderCredential: resolveManagedProviderCredential,
-  resolveProviderPolicy: async ({ access }) => {
-    // Without a managed grant, only local/BYOK origins can execute. Prefer a
-    // stored BYOK credential and never use a provider environment credential.
-    return normalizePolicy(access?.providerPolicy || { byok: 'priority' });
+  resolveProviderPolicy: async () => {
+    // The local decision is made before any control-plane call. A stored BYOK
+    // credential therefore never causes a Neven grant resolution.
+    return normalizePolicy({ byok: 'priority' });
   },
   resolveProviderExecutionContext: async ({ request }) => {
     const context = request?.workspaceContext;
     const workspaceId = context?.workspaceId;
-    if (!workspaceId) return null;
+    const deviceId = context?.deviceId;
+    if (!workspaceId || !deviceId) return null;
     const profile = 'haiku';
-    if (!nevenManagedGatewayEnabled) return { workspaceId, profile, access: null };
-    const access = await resolveNevenAccess({ workspaceId, profile, capability: 'completion' });
-    return { workspaceId, profile, access };
+    return { workspaceId, deviceId, profile };
   },
   executeManagedGateway: completeManagedGateway,
   providerUsageLedger

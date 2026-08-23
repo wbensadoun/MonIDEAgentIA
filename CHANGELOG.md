@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.1.0] — Contrat gateway Neven COD-34
+
+### Changed
+
+- Alignement strict resolve/revoke/gateway sur le contrat COD-33, avec grant et sujet gardés exclusivement dans le main process.
+- Les modes chat, inline et ghost sont transmis à la gateway ; local et BYOK sont décidés avant toute résolution Neven.
+
+### Security
+
+- Cache de grants cloisonné par workspace, appareil, profil et capacité ; payload gateway plat et borné, sans provider, modèle ni clé.
+
 ## [2.9.0] — Cycle de vie sécurisé des credentials (COD-19)
 
 ### Added

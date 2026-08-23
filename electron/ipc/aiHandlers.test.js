@@ -232,10 +232,11 @@ test('completion IPC strips technical metadata and rejects forged Core context',
   assert.equal(output.trim(), '');
 });
 
-test('chat IPC keeps BYOK available without a managed gateway grant', async () => {
+test('chat, inline and ghost keep local/BYOK execution ahead of Neven and preserve their gateway modes', async () => {
   const { configureAIService } = require('../services/ai.service');
   const handlers = {};
   let gatewayCalls = 0;
+  const modes = [];
   configureAIService({
     resolveProviderExecutionContext: async () => ({ workspaceId: 'workspace-local', profile: 'haiku', access: null }),
     resolveProviderPolicy: async () => ({ byok: 'priority' }),
@@ -252,6 +253,11 @@ test('chat IPC keeps BYOK available without a managed gateway grant', async () =
         assert.equal(options.managedCredential, 'workspace-byok-key');
         return { success: true, text: 'byok-chat' };
       }
+    },
+    completionRunner: async ({ mode, options }) => {
+      modes.push(mode);
+      assert.equal(options.provider, 'gemini');
+      return { success: true, text: `${mode}-local` };
     }
   });
   assert.deepEqual(await handlers['get-claude-completion']({}, [{ role: 'user', text: 'bonjour' }], '', null, {}), {
@@ -259,6 +265,10 @@ test('chat IPC keeps BYOK available without a managed gateway grant', async () =
     text: 'byok-chat',
     origin: 'byok'
   });
+  assert.equal(gatewayCalls, 0);
+  assert.deepEqual(await handlers['get-inline-completion']({}, 'corrige', 'const x = 1;', {}), { success: true, text: 'inline-local' });
+  assert.deepEqual(await handlers['get-ghost-completion']({}, 'const x =', ';', {}), { success: true, text: 'ghost-local' });
+  assert.deepEqual(modes, ['inline', 'ghost']);
   assert.equal(gatewayCalls, 0);
 });
 
