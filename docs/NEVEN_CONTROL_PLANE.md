@@ -1,6 +1,6 @@
 # Control plane Neven — contrat backend
 
-Version 3.0.0.
+Version 3.1.0 (COD-34).
 
 Cette couche prépare la future interface admin Neven sans donner au client les clés Claude, Gemini, Kimi ou autres. Code Companion conserve uniquement, dans le **main process**, un grant court vers la passerelle Neven.
 
@@ -15,8 +15,8 @@ sequenceDiagram
     participant Model as Fournisseurs IA
 
     Admin->>CP: configure providers, profils, forfaits et scopes
-    App->>CP: POST /v1/control-plane/access/resolve
-    CP-->>App: grant court + expiration + gatewayUrl
+    App->>CP: POST /api/v1/control-plane/access/resolve
+    CP-->>App: grant court + subjectId + expiration
     App->>GW: requête avec grant Neven
     GW->>Model: clé fournisseur conservée côté Neven
     Model-->>GW: réponse
@@ -25,11 +25,12 @@ sequenceDiagram
 
 ## Contrat provisoire
 
-`POST /v1/control-plane/access/resolve`
+`POST /api/v1/control-plane/access/resolve`
 
 ```json
 {
   "workspaceId": "123e4567-e89b-42d3-a456-426614174000",
+  "deviceId": "223e4567-e89b-42d3-a456-426614174000",
   "profile": "haiku | luna | sol | opus",
   "capability": "completion"
 }
@@ -39,23 +40,23 @@ Réponse minimale attendue :
 
 ```json
 {
-  "granted": true,
-  "gatewayUrl": "https://gateway.neven.example",
-  "accessToken": "short-lived-token",
-  "expiresAt": "2026-08-09T12:00:00.000Z",
-  "scopes": ["completion"]
+  "data": {
+    "grant": "short-lived-grant",
+    "subjectId": "423e4567-e89b-42d3-a456-426614174000",
+    "expiresAt": "2026-08-09T12:00:00.000Z"
+  }
 }
 ```
 
 Le client Electron refuse un grant sans expiration, sans passerelle valide ou déjà expiré. Le token est gardé en mémoire, jamais écrit dans les settings, jamais envoyé au renderer et jamais journalisé.
 
-`POST /v1/control-plane/access/revoke` reçoit uniquement `workspaceId` et invalide les grants côté Neven.
+`POST /api/v1/control-plane/access/revoke` reçoit uniquement `{ "grant": "..." }` et invalide ce grant côté Neven.
 
 ## Identité workspace et session (COD-31)
 
 Le chemin local ouvert par l'utilisateur reste réservé aux opérations de fichiers : il n'est jamais utilisé comme identifiant réseau. Le main process lit `NEVEN_WORKSPACE_ID`, qui doit être un UUID strict, et refuse le contexte Neven en cas de valeur absente, invalide ou sans répertoire `userData` disponible. Chaque fenêtre/sender reçoit un contexte main-process isolé limité à `workspaceId` et à un `deviceId` stable ; ni le renderer ni ses payloads IPC ne peuvent choisir un workspace, un device, un token ou un grant.
 
-`deviceId` est transmis uniquement comme argument interne au resolver main-process. Le contrat actuel `/access/resolve` et `/access/revoke` n'accepte pas encore ce champ : il n'est donc pas envoyé au réseau (TODO COD-33), ni exposé au renderer. Ce lot ne traite pas le stockage des grants : ils restent mémoire-only dans le resolver d'accès existant.
+`deviceId` est validé comme UUID strict et transmis au resolve depuis le main process. Il participe au cache `(workspaceId, deviceId, profile, capability)` et ne traverse jamais l’IPC renderer. Le revoke reste limité au grant conformément au contrat. Les grants restent mémoire-only.
 
 Le `deviceId` et le token de session d'enrôlement sont stockés par le main process dans le répertoire `userData`, chiffrés avec `electron.safeStorage` lorsqu'il est disponible. Ils ne sont jamais inclus dans le contexte IPC, les objets renderer ou les logs. Si le chiffrement OS est indisponible, aucune persistance n'est permise en production. Un fallback de session par variable d'environnement est autorisé seulement en développement avec `NEVEN_DEV_SESSION_TOKEN_ENABLED=true` et `NEVEN_DEV_SESSION_TOKEN`; il ne sert jamais en production et ne doit pas être utilisé pour un déploiement. `NEVEN_ACCESS_TOKEN` et `NEVEN_SESSION_TOKEN` ne participent plus à la résolution normale.
 
@@ -90,9 +91,9 @@ Toutes les requêtes sensibles du control plane, y compris l’ingestion d’év
 
 ## Exécution managed (COD-26A)
 
-L’exécution gateway est désactivée par défaut et exige `NEVEN_MANAGED_GATEWAY_ENABLED=true` dans le main process. Elle garde un cache mémoire par `(workspaceId, profile, capability)` jusqu’à l’expiration moins une marge de sécurité. Une révocation supprime d’abord toutes les entrées locales du workspace, même si l’appel distant échoue.
+L’exécution gateway est désactivée par défaut et exige `NEVEN_MANAGED_GATEWAY_ENABLED=true` dans le main process. La policy locale choisit d’abord `local`, BYOK ou Neven : local/BYOK ne résolvent aucun grant. Le cache mémoire est par `(workspaceId, deviceId, profile, capability)` jusqu’à l’expiration moins une marge de sécurité. Une révocation supprime d’abord les entrées locales du workspace/device, même si l’appel distant échoue.
 
-La passerelle reçoit uniquement `workspaceId`, `profile`, `capability` et un sous-ensemble de la demande de completion. Le payload ne contient jamais de champ `provider` : le choix du fournisseur et ses clés restent chez Neven. Le grant court est envoyé comme bearer exclusivement depuis le main process et n’est jamais converti en clé d’un adaptateur fournisseur. Si la passerelle indique un grant expiré (401/403), le cache est invalidé, un nouveau grant est demandé et la completion est rejouée une seule fois. Les autres erreurs sont normalisées et suivent la policy BYOK existante : fallback seulement après erreur opérationnelle autorisée, refus/permission sans fallback.
+La gateway est construite à partir de `NEVEN_API_BASE_URL + /api/v1/gateway` et reçoit `POST /api/v1/gateway/completions`. Son JSON plat contient uniquement `workspaceId`, `deviceId`, `subjectId`, `profile`, `capability`, `mode` (`chat`, `inline`, `ghost`) et les champs de prompt bornés. Provider, modèle et clés sont exclus du payload : le choix du fournisseur et ses clés restent chez Neven. Le grant court est envoyé comme bearer exclusivement depuis le main process et n’est jamais converti en clé d’un adaptateur fournisseur. La réponse est déballée depuis `data`. Si la passerelle indique `grant_expired`, le cache est invalidé, un nouveau grant est demandé et la completion est rejouée une seule fois sans remonter de détail de transport.
 
 ## Migration de configuration
 

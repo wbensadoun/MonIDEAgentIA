@@ -1,10 +1,18 @@
 'use strict';
 
-const { DEFAULT_CACHE_SKEW_MS, normalizeBaseUrl, normalizeWorkspaceId } = require('./neven-control-plane.service');
+const {
+  DEFAULT_CACHE_SKEW_MS,
+  normalizeBaseUrl,
+  normalizeDeviceId,
+  normalizeProfile,
+  normalizeSubjectId,
+  normalizeWorkspaceId
+} = require('./neven-control-plane.service');
 
-const DEFAULT_GATEWAY_PATH = '/v1/gateway/completions';
+const DEFAULT_GATEWAY_PATH = '/completions';
 const DEFAULT_TIMEOUT_MS = 10000;
 const NEVEN_MANAGED_GATEWAY_FEATURE_FLAG = 'NEVEN_MANAGED_GATEWAY_ENABLED';
+const MODES = new Set(['chat', 'inline', 'ghost']);
 
 const isNevenManagedGatewayEnabled = (env = process.env) =>
   new Set(['true', '1', 'on', 'yes']).has(String(env?.[NEVEN_MANAGED_GATEWAY_FEATURE_FLAG] || '').trim().toLowerCase());
@@ -23,21 +31,57 @@ const normalizeGatewayError = (error, response = {}) => {
   return 'gateway_network';
 };
 
-const normalizeText = (value, max = 200000) => String(value || '').slice(0, max);
+const normalizeBoundedText = (value, field, max, { required = false, trim = false } = {}) => {
+  if (value === undefined || value === null) {
+    if (required) throw new Error(`${field} requis.`);
+    return undefined;
+  }
+  const text = String(value);
+  const normalized = trim ? text.trim() : text;
+  if (normalized.length > max || (required && !normalized)) throw new Error(`${field} invalide.`);
+  return normalized;
+};
+
+const normalizeHistory = (history) => {
+  if (history === undefined) return undefined;
+  if (!Array.isArray(history) || history.length > 12) throw new Error('Historique invalide.');
+  return history.map((item) => {
+    const role = item?.role;
+    if (role !== 'user' && role !== 'assistant') throw new Error('Historique invalide.');
+    return {
+      role,
+      content: normalizeBoundedText(item?.content ?? item?.text, 'Contenu historique', 8000, { required: true, trim: true })
+    };
+  });
+};
+
+const normalizeMode = (mode, request = {}) => {
+  const candidate = mode || request.mode || ({ chat: 'chat', inline: 'inline', ghost: 'ghost' }[request.kind]);
+  if (!MODES.has(candidate)) throw new Error('Mode gateway invalide.');
+  return candidate;
+};
 
 // The payload deliberately has no provider identifier. Provider selection and
 // credentials remain the gateway's responsibility.
-const buildGatewayPayload = ({ workspaceId, profile = 'haiku', capability = 'completion', request = {}, options = {} } = {}) => ({
-  workspaceId: normalizeWorkspaceId(workspaceId),
-  profile: String(profile || 'haiku').trim().toLowerCase(),
-  capability: String(capability || 'completion').trim(),
-  request: {
-    systemInstruction: normalizeText(request.systemInstruction),
-    userPrompt: normalizeText(request.userPrompt),
-    maxTokens: Number.isFinite(Number(request.maxTokens)) ? Number(request.maxTokens) : undefined,
-    temperature: Number.isFinite(Number(options.temperature)) ? Number(options.temperature) : undefined
-  }
-});
+const buildGatewayPayload = ({ workspaceId, deviceId, subjectId, profile = 'haiku', capability = 'completion', mode, request = {} } = {}) => {
+  const payload = {
+    workspaceId: normalizeWorkspaceId(workspaceId),
+    deviceId: normalizeDeviceId(deviceId),
+    subjectId: normalizeSubjectId(subjectId),
+    profile: normalizeProfile(profile),
+    capability: capability === 'completion' ? 'completion' : (() => { throw new Error('Capacité gateway invalide.'); })(),
+    mode: normalizeMode(mode, request)
+  };
+  const history = normalizeHistory(request.history);
+  const systemInstruction = normalizeBoundedText(request.systemInstruction, 'Instruction système', 4000, { trim: true });
+  const userPrompt = normalizeBoundedText(request.userPrompt, 'Prompt utilisateur', 8000, { required: true, trim: true });
+  const currentCode = normalizeBoundedText(request.currentCode, 'Code courant', 12000);
+  if (history !== undefined) payload.history = history;
+  if (systemInstruction !== undefined) payload.systemInstruction = systemInstruction;
+  payload.userPrompt = userPrompt;
+  if (currentCode !== undefined) payload.currentCode = currentCode;
+  return payload;
+};
 
 class NevenManagedGatewayClient {
   constructor({ allowedHosts = process.env.NEVEN_CONTROL_PLANE_ALLOWED_HOSTS, allowLoopback, fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS, completionPath = DEFAULT_GATEWAY_PATH, cacheSkewMs = DEFAULT_CACHE_SKEW_MS } = {}) {
@@ -49,15 +93,28 @@ class NevenManagedGatewayClient {
     this.cacheSkewMs = Math.max(0, Number(cacheSkewMs) || DEFAULT_CACHE_SKEW_MS);
   }
 
-  async complete({ access, workspaceId, profile, capability, request, options } = {}) {
-    if (!access?.accessToken || !access?.gatewayUrl) return failure('grant_unavailable', 'Grant Neven indisponible.');
+  async complete({ access, workspaceId, deviceId, profile, capability, mode, request } = {}) {
+    if (!access?.grant || !access?.gatewayUrl) return failure('grant_unavailable', 'Grant Neven indisponible.');
     let gatewayUrl;
     let body;
     try {
       gatewayUrl = normalizeBaseUrl(access.gatewayUrl, 'Passerelle Neven', { allowedHosts: this.allowedHosts, allowLoopback: this.allowLoopback });
       const expiresAt = Date.parse(access.expiresAt);
       if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() + this.cacheSkewMs) return failure('grant_expired', 'Grant Neven expiré.');
-      body = buildGatewayPayload({ workspaceId, profile, capability, request, options });
+      const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId || access.workspaceId);
+      const normalizedDeviceId = normalizeDeviceId(deviceId || access.deviceId);
+      if (access.workspaceId !== normalizedWorkspaceId || access.deviceId !== normalizedDeviceId) {
+        return failure('gateway_invalid_request', 'Requête managed Neven invalide.');
+      }
+      body = buildGatewayPayload({
+        workspaceId: normalizedWorkspaceId,
+        deviceId: normalizedDeviceId,
+        subjectId: access.subjectId,
+        profile: profile || access.profile,
+        capability: capability || access.capability,
+        mode,
+        request
+      });
     } catch {
       return failure('gateway_invalid_request', 'Requête managed Neven invalide.');
     }
@@ -66,7 +123,7 @@ class NevenManagedGatewayClient {
     try {
       const response = await this.fetchImpl(`${gatewayUrl}${this.completionPath}`, {
         method: 'POST', redirect: 'error', signal: controller.signal,
-        headers: { Authorization: `Bearer ${access.accessToken}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${access.grant}`, Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
       const raw = await response.text();
@@ -76,8 +133,15 @@ class NevenManagedGatewayClient {
         status: response.status,
         code: data?.code || data?.error?.code
       }), 'Passerelle Neven indisponible.');
-      if (!data || data.success === false || typeof data.text !== 'string') return failure('gateway_invalid_response', 'Réponse passerelle Neven invalide.');
-      return { success: true, text: data.text, usage: data.usage || null };
+      const completion = data?.data;
+      if (!completion || typeof completion.text !== 'string') return failure('gateway_invalid_response', 'Réponse passerelle Neven invalide.');
+      return {
+        success: true,
+        text: completion.text,
+        usage: completion.usage || null,
+        provider: completion.provider,
+        model: completion.model
+      };
     } catch (error) {
       return failure(normalizeGatewayError(error), 'Passerelle Neven indisponible.');
     } finally {
@@ -88,14 +152,14 @@ class NevenManagedGatewayClient {
 
 const createManagedGatewayCompletion = ({ accessResolver, gatewayClient, enabled = isNevenManagedGatewayEnabled() } = {}) => {
   if (!accessResolver || typeof accessResolver !== 'function' || !gatewayClient || typeof gatewayClient.complete !== 'function') throw new Error('Dépendances passerelle Neven requises.');
-  return async ({ workspaceId, profile = 'haiku', capability = 'completion', request = {}, options = {}, access } = {}) => {
+  return async ({ workspaceId, deviceId, profile = 'haiku', capability = 'completion', mode, request = {}, access } = {}) => {
     if (!enabled) return failure('managed_disabled', 'Mode managed Neven désactivé.');
-    let grant = access || await accessResolver({ workspaceId, profile, capability });
-    let result = await gatewayClient.complete({ access: grant, workspaceId, profile, capability, request, options });
+    let grant = access || await accessResolver({ workspaceId, deviceId, profile, capability });
+    let result = await gatewayClient.complete({ access: grant, workspaceId, deviceId, profile, capability, mode, request });
     if (result?.error?.code !== 'grant_expired') return result;
-    accessResolver.invalidate?.({ workspaceId, profile, capability });
-    grant = await accessResolver({ workspaceId, profile, capability });
-    result = await gatewayClient.complete({ access: grant, workspaceId, profile, capability, request, options });
+    accessResolver.invalidate?.({ workspaceId, deviceId, profile, capability });
+    grant = await accessResolver({ workspaceId, deviceId, profile, capability });
+    result = await gatewayClient.complete({ access: grant, workspaceId, deviceId, profile, capability, mode, request });
     return result;
   };
 };

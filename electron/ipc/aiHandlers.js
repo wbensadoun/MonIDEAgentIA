@@ -291,7 +291,7 @@ const registerProviderCompletionHandler = ({
         resolveProfileModel
       });
       const request = {
-          kind: 'chat', history, currentCode, allProjectFiles, getMainWindow, executeCommandForAI,
+          kind: 'chat', mode: 'chat', history, currentCode, allProjectFiles, getMainWindow, executeCommandForAI,
           workspaceContext: typeof resolveWorkspaceContext === 'function' ? await resolveWorkspaceContext(event) : null,
           emitToken: (payload) => {
             const window = typeof getMainWindow === 'function' ? getMainWindow() : null;
@@ -496,8 +496,10 @@ RÈGLES ABSOLUES:
         provider: executionOptions.provider,
         request: {
           kind: 'compact',
+          mode: 'inline',
           systemInstruction: `${systemInstruction}${formatNevenCoreExecutionPrompt(executionOptions.nevenCoreExecutionContext)}`,
           userPrompt: `CONTEXTE DU FICHIER:\n${code}\n\nINSTRUCTION OU CODE SELECTIONNE:\n${prompt}`,
+          currentCode: code,
           maxTokens: 2048,
           workspaceContext: typeof resolveWorkspaceContext === 'function' ? await resolveWorkspaceContext(event) : null
         },
@@ -545,6 +547,7 @@ RÈGLES ABSOLUES:
         provider: executionOptions.provider,
         request: {
           kind: 'compact',
+          mode: 'ghost',
           systemInstruction: `${systemInstruction}${formatNevenCoreExecutionPrompt(executionOptions.nevenCoreExecutionContext)}`,
           userPrompt: `<PREFIX>\n${prefix}\n</PREFIX>\n\n<SUFFIX>\n${suffix}\n</SUFFIX>`,
           maxTokens: 256,

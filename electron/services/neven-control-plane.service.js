@@ -1,10 +1,14 @@
 'use strict';
 
-const DEFAULT_ACCESS_PATH = '/v1/control-plane/access/resolve';
-const DEFAULT_REVOKE_PATH = '/v1/control-plane/access/revoke';
+const DEFAULT_ACCESS_PATH = '/api/v1/control-plane/access/resolve';
+const DEFAULT_REVOKE_PATH = '/api/v1/control-plane/access/revoke';
 const DEFAULT_EVENTS_PATH = '/api/v1/internal/events';
 const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_CACHE_SKEW_MS = 15000;
+const DEFAULT_GATEWAY_BASE_PATH = '/api/v1/gateway';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const GRANT_PATTERN = /^[^\s\r\n]{1,4096}$/;
+const PROFILES = new Set(['haiku', 'luna', 'sol', 'opus']);
 const USAGE_ORIGINS = new Set(['neven', 'byok', 'local']);
 const USAGE_PROVIDERS = new Set(['gemini', 'claude', 'kimi', 'ollama', 'dashscope', 'neven']);
 const MAX_EVENT_ID_LENGTH = 160;
@@ -53,10 +57,28 @@ const normalizePath = (value, fallback) => {
 
 const normalizeWorkspaceId = (value) => {
   const workspaceId = String(value || '').trim();
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(workspaceId)) {
+  if (!UUID_PATTERN.test(workspaceId)) {
     throw new Error('Workspace Neven invalide.');
   }
   return workspaceId.toLowerCase();
+};
+
+const normalizeDeviceId = (value) => {
+  const deviceId = String(value || '').trim();
+  if (!UUID_PATTERN.test(deviceId)) throw new Error('Appareil Neven invalide.');
+  return deviceId.toLowerCase();
+};
+
+const normalizeSubjectId = (value) => {
+  const subjectId = String(value || '').trim();
+  if (!GRANT_PATTERN.test(subjectId)) throw new Error('Sujet Neven invalide.');
+  return subjectId;
+};
+
+const normalizeGrant = (value) => {
+  const grant = String(value || '').trim();
+  if (!GRANT_PATTERN.test(grant)) throw new Error('Grant Neven invalide.');
+  return grant;
 };
 
 const normalizeEventId = (value) => {
@@ -108,7 +130,14 @@ const normalizeUsageEvent = (event = {}, now = () => new Date().toISOString()) =
 
 const normalizeProfile = (value) => {
   const profile = String(value || 'haiku').trim().toLowerCase();
-  return ['haiku', 'luna', 'sol', 'opus'].includes(profile) ? profile : 'haiku';
+  if (!PROFILES.has(profile)) throw new Error('Profil Neven invalide.');
+  return profile;
+};
+
+const normalizeCapability = (value) => {
+  const capability = String(value || 'completion').trim();
+  if (capability !== 'completion') throw new Error('Capacité Neven invalide.');
+  return capability;
 };
 
 const normalizeExpiry = (value) => {
@@ -118,29 +147,38 @@ const normalizeExpiry = (value) => {
 
 const normalizeAccess = (payload, {
   workspaceId,
+  deviceId,
+  profile = 'haiku',
+  capability = 'completion',
   gatewayBaseUrl,
   allowedHosts,
   allowLoopback
 }) => {
-  const source = payload?.access && typeof payload.access === 'object' ? payload.access : payload;
-  const accessToken = String(source?.accessToken || source?.grantToken || source?.token || '').trim();
+  const source = payload?.data && typeof payload.data === 'object' ? payload.data : null;
+  const grant = source?.grant;
+  const subjectId = normalizeSubjectId(source?.subjectId);
   const expiresAt = normalizeExpiry(source?.expiresAt);
-  const gatewayUrl = normalizeBaseUrl(source?.gatewayUrl || gatewayBaseUrl, 'Passerelle Neven', {
+  const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
+  const normalizedDeviceId = normalizeDeviceId(deviceId);
+  const normalizedProfile = normalizeProfile(profile);
+  const normalizedCapability = normalizeCapability(capability);
+  const gatewayUrl = normalizeBaseUrl(gatewayBaseUrl, 'Passerelle Neven', {
     allowedHosts,
     allowLoopback
   });
 
-  if (source?.granted === false || !accessToken || !expiresAt || !gatewayUrl) return null;
+  if (!source || !GRANT_PATTERN.test(String(grant || '')) || !expiresAt || !gatewayUrl) return null;
 
   return Object.freeze({
     kind: 'neven-gateway',
-    workspaceId,
+    workspaceId: normalizedWorkspaceId,
+    deviceId: normalizedDeviceId,
+    subjectId,
     gatewayUrl,
-    accessToken,
+    grant: String(grant),
     expiresAt,
-    scopes: Array.isArray(source?.scopes) ? source.scopes.map((scope) => String(scope)).slice(0, 32) : [],
-    // This is authorization metadata from the control plane, not renderer input.
-    providerPolicy: source?.providerPolicy && typeof source.providerPolicy === 'object' ? source.providerPolicy : null
+    profile: normalizedProfile,
+    capability: normalizedCapability
   });
 };
 
@@ -153,15 +191,15 @@ const failure = (code, error, extra = {}) => ({
 
 class NevenControlPlaneClient {
   constructor({
-    baseUrl = process.env.NEVEN_CONTROL_PLANE_URL || process.env.NEVEN_API_BASE_URL,
-    gatewayBaseUrl = process.env.NEVEN_GATEWAY_URL,
+    baseUrl = process.env.NEVEN_API_BASE_URL,
+    gatewayBaseUrl,
     allowedHosts = process.env.NEVEN_CONTROL_PLANE_ALLOWED_HOSTS,
     allowLoopback,
     accessTokenResolver = async () => null,
     fetchImpl = globalThis.fetch,
     timeoutMs = DEFAULT_TIMEOUT_MS,
-    accessPath = process.env.NEVEN_CONTROL_PLANE_ACCESS_PATH || DEFAULT_ACCESS_PATH,
-    revokePath = process.env.NEVEN_CONTROL_PLANE_REVOKE_PATH || DEFAULT_REVOKE_PATH,
+    accessPath = DEFAULT_ACCESS_PATH,
+    revokePath = DEFAULT_REVOKE_PATH,
     eventsPath = process.env.NEVEN_INTERNAL_EVENTS_PATH || DEFAULT_EVENTS_PATH,
     eventTokenResolver = async () => process.env.NEVEN_INTERNAL_EVENTS_TOKEN || null
   } = {}) {
@@ -171,7 +209,11 @@ class NevenControlPlaneClient {
     this.allowLoopback = allowLoopback;
     try {
       this.baseUrl = normalizeBaseUrl(baseUrl, 'URL du control plane Neven', { allowedHosts, allowLoopback });
-      this.gatewayBaseUrl = normalizeBaseUrl(gatewayBaseUrl, 'URL de la passerelle Neven', { allowedHosts, allowLoopback });
+      this.gatewayBaseUrl = normalizeBaseUrl(
+        gatewayBaseUrl || `${this.baseUrl}${DEFAULT_GATEWAY_BASE_PATH}`,
+        'URL de la passerelle Neven',
+        { allowedHosts, allowLoopback }
+      );
     } catch {
       // Une ancienne configuration distante sans allowlist ne doit pas empêcher
       // Electron de démarrer. Elle reste inopérante tant qu'elle n'est pas migrée.
@@ -240,20 +282,27 @@ class NevenControlPlaneClient {
     }
   }
 
-  async resolveAccess({ workspaceId, profile = 'haiku', capability = 'completion' } = {}) {
+  async resolveAccess({ workspaceId, deviceId, profile = 'haiku', capability = 'completion' } = {}) {
     let normalizedWorkspaceId;
+    let normalizedDeviceId;
+    let normalizedProfile;
+    let normalizedCapability;
     try {
       normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
+      normalizedDeviceId = normalizeDeviceId(deviceId);
+      normalizedProfile = normalizeProfile(profile);
+      normalizedCapability = normalizeCapability(capability);
     } catch (error) {
-      return failure('invalid_workspace', error.message);
+      return failure('invalid_access_request', error.message);
     }
 
     const response = await this.request(this.accessPath, {
       method: 'POST',
       body: {
         workspaceId: normalizedWorkspaceId,
-        profile: normalizeProfile(profile),
-        capability: String(capability || 'completion').trim().slice(0, 80)
+        deviceId: normalizedDeviceId,
+        profile: normalizedProfile,
+        capability: normalizedCapability
       }
     });
     if (!response.success) return response;
@@ -262,6 +311,9 @@ class NevenControlPlaneClient {
     try {
       access = normalizeAccess(response.data, {
         workspaceId: normalizedWorkspaceId,
+        deviceId: normalizedDeviceId,
+        profile: normalizedProfile,
+        capability: normalizedCapability,
         gatewayBaseUrl: this.gatewayBaseUrl || this.baseUrl,
         allowedHosts: this.allowedHosts,
         allowLoopback: this.allowLoopback
@@ -274,16 +326,16 @@ class NevenControlPlaneClient {
       : failure('invalid_access_response', 'Réponse d’accès Neven invalide.');
   }
 
-  async revokeAccess({ workspaceId } = {}) {
-    let normalizedWorkspaceId;
+  async revokeAccess({ grant } = {}) {
+    let normalizedGrant;
     try {
-      normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
+      normalizedGrant = normalizeGrant(grant);
     } catch (error) {
-      return failure('invalid_workspace', error.message);
+      return failure('invalid_grant', error.message);
     }
     return this.request(this.revokePath, {
       method: 'POST',
-      body: { workspaceId: normalizedWorkspaceId }
+      body: { grant: normalizedGrant }
     });
   }
 
@@ -314,23 +366,25 @@ const createNevenAccessResolver = ({ client, cacheSkewMs = DEFAULT_CACHE_SKEW_MS
   if (!client || typeof client.resolveAccess !== 'function') throw new Error('Client control plane Neven requis.');
   const cache = new Map();
 
-  const getCacheKey = ({ workspaceId, profile = 'haiku', capability = 'completion' } = {}) =>
-    JSON.stringify([normalizeWorkspaceId(workspaceId), normalizeProfile(profile), String(capability || 'completion')]);
+  const getCacheKey = ({ workspaceId, deviceId, profile = 'haiku', capability = 'completion' } = {}) =>
+    JSON.stringify([
+      normalizeWorkspaceId(workspaceId),
+      normalizeDeviceId(deviceId),
+      normalizeProfile(profile),
+      normalizeCapability(capability)
+    ]);
 
   const resolve = async ({ workspaceId, deviceId, profile = 'haiku', capability = 'completion' } = {}) => {
     let key;
     try {
-      key = getCacheKey({ workspaceId, profile, capability });
+      key = getCacheKey({ workspaceId, deviceId, profile, capability });
     } catch {
       return null;
     }
     const cached = cache.get(key);
     if (cached && Date.parse(cached.expiresAt) > Date.now() + cacheSkewMs) return cached;
 
-    // TODO(COD-33): send deviceId once the control-plane contract accepts it.
-    // It remains main-process-only and is intentionally absent from this payload today.
-    void deviceId;
-    const result = await client.resolveAccess({ workspaceId, profile, capability });
+    const result = await client.resolveAccess({ workspaceId, deviceId, profile, capability });
     if (!result?.success || !result.access) return null;
     // A newly resolved grant is not usable when it cannot outlive the same
     // safety margin used by the cache. Never hand it to the gateway bearer.
@@ -340,26 +394,32 @@ const createNevenAccessResolver = ({ client, cacheSkewMs = DEFAULT_CACHE_SKEW_MS
   };
 
   resolve.clear = () => cache.clear();
-  resolve.invalidate = ({ workspaceId, profile = 'haiku', capability = 'completion' } = {}) => {
+  resolve.invalidate = ({ workspaceId, deviceId, profile = 'haiku', capability = 'completion' } = {}) => {
     try {
-      cache.delete(getCacheKey({ workspaceId, profile, capability }));
+      cache.delete(getCacheKey({ workspaceId, deviceId, profile, capability }));
     } catch {
       // Invalid input must not affect unrelated grants.
     }
   };
-  resolve.revoke = async ({ workspaceId } = {}) => {
+  resolve.revoke = async ({ workspaceId, deviceId, profile = 'haiku', capability = 'completion', grant } = {}) => {
     let normalizedWorkspaceId;
+    let normalizedDeviceId;
+    let cacheKey;
     try {
       normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
+      normalizedDeviceId = normalizeDeviceId(deviceId);
+      cacheKey = getCacheKey({ workspaceId: normalizedWorkspaceId, deviceId: normalizedDeviceId, profile, capability });
     } catch (error) {
-      return failure('invalid_workspace', error.message);
+      return failure('invalid_revoke_request', error.message);
     }
     // Purge first: a remote revoke failure must never leave a usable local grant.
+    const cached = cache.get(cacheKey);
     for (const key of cache.keys()) {
-      if (JSON.parse(key)[0] === normalizedWorkspaceId) cache.delete(key);
+      const [cachedWorkspaceId, cachedDeviceId] = JSON.parse(key);
+      if (cachedWorkspaceId === normalizedWorkspaceId && cachedDeviceId === normalizedDeviceId) cache.delete(key);
     }
     try {
-      return await client.revokeAccess({ workspaceId: normalizedWorkspaceId });
+      return await client.revokeAccess({ grant: grant || cached?.grant });
     } catch {
       return failure('revoke_unavailable', 'Révocation Neven indisponible.');
     }
@@ -371,11 +431,16 @@ module.exports = {
   DEFAULT_ACCESS_PATH,
   DEFAULT_REVOKE_PATH,
   DEFAULT_EVENTS_PATH,
+  DEFAULT_GATEWAY_BASE_PATH,
   DEFAULT_CACHE_SKEW_MS,
   NevenControlPlaneClient,
   createNevenAccessResolver,
   normalizeAccess,
   normalizeBaseUrl,
+  normalizeDeviceId,
+  normalizeGrant,
+  normalizeProfile,
+  normalizeSubjectId,
   normalizeUsageEvent,
   normalizeWorkspaceId
 };

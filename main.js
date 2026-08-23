@@ -142,7 +142,7 @@ const resolveManagedProviderCredential = async ({ origin, provider, workspaceId,
     withActiveSecret: (operation) => providerCredentialService.withActiveCredential({ workspaceId, provider }, operation)
   };
   // The grant stays inside the managed gateway path; it is never an API key.
-  return nevenManagedGatewayEnabled && context.access ? { managedGateway: true } : { unavailable: true };
+  return nevenManagedGatewayEnabled ? { managedGateway: true } : { unavailable: true };
 };
 configureAIService({ dialog, getMainWindow: () => mainWindow });
 const processService = createProcessService({ getMainWindow: () => mainWindow });
@@ -154,10 +154,10 @@ const ptyService = createPtyService({ getMainWindow: () => mainWindow });
 configureAIService({
   ptyService,
   resolveProviderCredential: resolveManagedProviderCredential,
-  resolveProviderPolicy: async ({ access }) => {
-    // Without a managed grant, only local/BYOK origins can execute. Prefer a
-    // stored BYOK credential and never use a provider environment credential.
-    return normalizePolicy(access?.providerPolicy || { byok: 'priority' });
+  resolveProviderPolicy: async () => {
+    // The local decision is made before any control-plane call. A stored BYOK
+    // credential therefore never causes a Neven grant resolution.
+    return normalizePolicy({ byok: 'priority' });
   },
   resolveProviderExecutionContext: async ({ request }) => {
     const context = request?.workspaceContext;
@@ -165,9 +165,7 @@ configureAIService({
     const deviceId = context?.deviceId;
     if (!workspaceId || !deviceId) return null;
     const profile = 'haiku';
-    if (!nevenManagedGatewayEnabled) return { workspaceId, profile, access: null };
-    const access = await resolveNevenAccess({ workspaceId, deviceId, profile, capability: 'completion' });
-    return { workspaceId, profile, access };
+    return { workspaceId, deviceId, profile };
   },
   executeManagedGateway: completeManagedGateway,
   providerUsageLedger

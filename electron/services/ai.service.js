@@ -655,11 +655,12 @@ const runProviderCompletionWithPolicy = async ({ provider, request = {}, options
         // provider API key or passed to a provider adapter.
         return serviceDeps.executeManagedGateway({
           workspaceId: context.workspaceId,
+          deviceId: context.deviceId,
           profile: context.profile || 'haiku',
           capability: 'completion',
           access: context.access,
+          mode: request.mode,
           request,
-          options
         });
       }
       const managedOptions = {
