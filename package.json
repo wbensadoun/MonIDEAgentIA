@@ -1,6 +1,6 @@
 {
   "name": "code-companion",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "main": "main.js",
   "scripts": {
     "start": "concurrently \"npm:start-react\" \"npm:electron-dev\"",
@@ -17,7 +17,8 @@
     "logs-server": "bash scripts/logs-server.sh",
     "postinstall": "node scripts/postinstall.js",
     "test": "npm test --prefix client -- --watchAll=false --runInBand",
-    "test:electron": "node --test electron/services/provider-contract.service.test.js electron/services/provider-management.test.js electron/services/provider-credential-composition.service.test.js electron/services/router.service.test.js electron/services/neven-control-plane.service.test.js electron/services/neven-identity.service.test.js electron/services/neven-managed-gateway.service.test.js electron/services/neven-core.service.test.js electron/services/neven-usage-publisher.service.test.js electron/ipc/aiHandlers.test.js electron/ipc/projectHandlers.test.js electron/ipc/routerHandlers.test.js",
+    "test:managed-harness": "node --test electron/integration/neven-managed-flow.integration.test.js",
+    "test:electron": "node --test electron/services/provider-contract.service.test.js electron/services/provider-management.test.js electron/services/provider-credential-composition.service.test.js electron/services/router.service.test.js electron/services/neven-control-plane.service.test.js electron/services/neven-identity.service.test.js electron/services/neven-managed-gateway.service.test.js electron/services/neven-core.service.test.js electron/services/neven-usage-publisher.service.test.js electron/ipc/aiHandlers.test.js electron/ipc/projectHandlers.test.js electron/ipc/routerHandlers.test.js electron/integration/neven-managed-flow.integration.test.js",
     "lint:css": "npm run lint:css --prefix client",
     "check:design-debt": "bash scripts/check-design-debt.sh"
   },

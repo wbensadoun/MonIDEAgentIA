@@ -291,7 +291,7 @@ const registerProviderCompletionHandler = ({
         resolveProfileModel
       });
       const request = {
-          kind: 'chat', mode: 'chat', history, currentCode, allProjectFiles, getMainWindow, executeCommandForAI,
+          kind: 'chat', mode: 'chat', history, userPrompt: getLatestUserPrompt(history), currentCode, allProjectFiles, getMainWindow, executeCommandForAI,
           workspaceContext: typeof resolveWorkspaceContext === 'function' ? await resolveWorkspaceContext(event) : null,
           emitToken: (payload) => {
             const window = typeof getMainWindow === 'function' ? getMainWindow() : null;
