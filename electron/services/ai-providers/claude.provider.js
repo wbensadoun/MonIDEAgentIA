@@ -24,6 +24,7 @@ const {
   FILE_EDIT_PROTOCOL,
   executeCommandForAI: defaultExecuteCommandForAI,
 } = require('../ai.service');
+const { formatNevenCoreExecutionPrompt } = require('../neven-core.service');
 
 const getClaudeCompletion = async ({
   history,
@@ -115,6 +116,7 @@ const getClaudeCompletion = async ({
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
+    const nevenCoreExecutionContext = formatNevenCoreExecutionPrompt(options.nevenCoreExecutionContext);
 
     const skillContext = [
       globalSkillsContent
@@ -133,6 +135,7 @@ const getClaudeCompletion = async ({
     const systemPrompt = `
       Vous êtes un assistant de développement expert et autonome, comme Cascade AI.
       ${agentContext}
+      ${nevenCoreExecutionContext}
       ${skillContext}
       ${projectContext}
       ${visualWorkflowContext}

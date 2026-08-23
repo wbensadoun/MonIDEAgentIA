@@ -19,6 +19,10 @@ const emitUpdate = () => {
 export const getProviderModelsState = (providerId) => state[providerId] || EMPTY_DETECTION;
 
 export const refreshProviderModel = async (provider, apiKey) => {
+  if (provider.supportsModelDiscovery === false) {
+    state[provider.id] = EMPTY_DETECTION;
+    return state[provider.id];
+  }
   if (!window.electronAPI?.listProviderModels) return getProviderModelsState(provider.id);
 
   if (provider.keyField && !apiKey) {

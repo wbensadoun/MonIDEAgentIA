@@ -4,7 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   NevenControlPlaneClient,
-  createNevenAccessResolver
+  createNevenAccessResolver,
+  createManagedCompletionExecutor
 } = require('./neven-control-plane.service');
 
 const jsonResponse = (payload, status = 200) => ({
@@ -103,4 +104,35 @@ test('invalid grants never become usable access', async () => {
   const result = await client.resolveAccess({ workspaceId: 'workspace-1' });
   assert.equal(result.success, false);
   assert.equal(result.code, 'invalid_access_response');
+});
+
+test('managed completion uses only the short grant and rejects malformed gateway responses', async () => {
+  let request;
+  const client = new NevenControlPlaneClient({
+    baseUrl: 'https://api.neven.test',
+    accessTokenResolver: async () => 'session-token',
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return jsonResponse({ success: true, text: 'managed result', providerKey: 'must-not-cross' });
+    }
+  });
+  const access = { kind: 'neven-gateway', gatewayUrl: 'https://gateway.neven.test', accessToken: 'grant-only', expiresAt: new Date(Date.now() + 60_000).toISOString() };
+  const result = await client.executeManagedCompletion(access, { mode: 'inline', userPrompt: 'safe prompt' });
+  assert.deepEqual(result, { success: true, text: 'managed result' });
+  assert.equal(request.url, 'https://gateway.neven.test/v1/gateway/completions');
+  assert.equal(request.options.headers.Authorization, 'Bearer grant-only');
+  assert.equal(request.options.headers.Authorization.includes('session-token'), false);
+
+  const invalid = new NevenControlPlaneClient({ baseUrl: 'https://api.neven.test', accessTokenResolver: async () => 'session-token', fetchImpl: async () => jsonResponse({ success: true }) });
+  assert.equal((await invalid.executeManagedCompletion(access, {})).code, 'invalid_gateway_response');
+});
+
+test('managed executor does not call a gateway when the grant is refused', async () => {
+  let called = false;
+  const execute = createManagedCompletionExecutor({
+    resolveAccess: async () => null,
+    client: { executeManagedCompletion: async () => { called = true; return { success: true }; } }
+  });
+  assert.equal((await execute({ workspaceId: 'workspace-1', payload: {} })).code, 'managed_access_denied');
+  assert.equal(called, false);
 });

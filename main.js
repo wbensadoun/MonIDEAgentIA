@@ -49,7 +49,8 @@ const { ProviderSecretVault } = require('./electron/services/provider-secret-vau
 const { resolveProviderCredential } = require('./electron/services/provider-policy.service');
 const {
   NevenControlPlaneClient,
-  createNevenAccessResolver
+  createNevenAccessResolver,
+  createManagedCompletionExecutor
 } = require('./electron/services/neven-control-plane.service');
 
 const isDev =
@@ -97,6 +98,10 @@ const providerSecretVault = new ProviderSecretVault({
 // Neven, conservé en mémoire et destiné aux futures exécutions managed.
 const nevenControlPlane = new NevenControlPlaneClient();
 const resolveNevenAccess = createNevenAccessResolver({ client: nevenControlPlane });
+const runManagedNevenCompletion = createManagedCompletionExecutor({
+  client: nevenControlPlane,
+  resolveAccess: resolveNevenAccess
+});
 const resolveManagedProviderCredential = ({ provider, workspaceId, policy }) => resolveProviderCredential({
   provider,
   workspaceId,
@@ -205,7 +210,7 @@ registerFileHandlers();
 registerSnapshotHandlers();
 registerAgentHandlers(() => mainWindow);
 registerOllamaHandlers(() => mainWindow);
-registerAIHandlers({ getMainWindow: () => mainWindow, executeCommandForAI });
+registerAIHandlers({ getMainWindow: () => mainWindow, executeCommandForAI, managedCompletionRunner: runManagedNevenCompletion });
 registerSkillHandlers();
 registerRouterHandlers({
   ipcMain,

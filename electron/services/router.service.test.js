@@ -62,3 +62,23 @@ test('route decision uses the internal profile while the UI-facing decision stay
   assert.equal(result.model.resolved, 'claude-haiku-4-6');
   assert.equal(result.execution.profile, 'haiku');
 });
+
+test('route fallback does not call an LLM when agents and skills are absent', async () => {
+  let completionCalls = 0;
+  const result = await routeToDecision({
+    projectPath: null,
+    userPrompt: 'refactor the complete repository architecture',
+    provider: 'claude',
+    listAgents: async () => ({ agents: [] }),
+    listSkills: async () => ({ skills: [] }),
+    runSingleCompletionProvider: async () => {
+      completionCalls += 1;
+      return { success: true, text: '{}' };
+    }
+  });
+
+  assert.equal(completionCalls, 0);
+  assert.equal(result.source, 'fallback');
+  assert.equal(result.decision.profile, 'haiku');
+  assert.equal(result.execution.profile, 'haiku');
+});

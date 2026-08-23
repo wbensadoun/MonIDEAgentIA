@@ -51,4 +51,8 @@ Le client Electron refuse un grant sans expiration, sans passerelle valide ou d�
 
 `POST /v1/control-plane/access/revoke` reçoit uniquement `workspaceId` et invalide les grants côté Neven.
 
+Les complétions managed passent ensuite par `POST /v1/gateway/completions` avec le grant dans `Authorization: Bearer`. Le main process l'utilise pour chat, inline et ghost; il ne retombe jamais sur un fournisseur direct dans ce mode. La réponse publique est strictement `{ success: true, text }`: clé fournisseur, modèle interne, grant et erreurs amont sont retirés avant l'IPC renderer.
+
+Sans URL/session de control plane, ou quand le grant est refusé, expiré, révoqué, en timeout ou invalide, l'exécution managed échoue fermée. Aucun appel fournisseur ne doit alors être tenté.
+
 Le contrat est derrière des variables d'environnement : l'URL réelle et les routes pourront être remplacées quand l'interface admin sera disponible. Aucun faux endpoint de production n'est activé par défaut.

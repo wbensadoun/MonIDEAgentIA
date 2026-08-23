@@ -28,6 +28,7 @@ import {
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_GEMINI_MODEL,
   DEFAULT_KIMI_MODEL,
+  DEFAULT_QWEN_MODEL,
   PROVIDER_CATALOG,
   normalizeRemoteModelName
 } from '../../utils/remoteModels';
@@ -94,6 +95,7 @@ const Settings = ({
     geminiModel: DEFAULT_GEMINI_MODEL,
     claudeModel: DEFAULT_CLAUDE_MODEL,
     kimiModel: DEFAULT_KIMI_MODEL,
+    qwenModel: DEFAULT_QWEN_MODEL,
     ollamaModel: DEFAULT_OLLAMA_MODEL,
     multiAgentRoles: normalizeMultiAgentRoles(),
     devPort: '3004',

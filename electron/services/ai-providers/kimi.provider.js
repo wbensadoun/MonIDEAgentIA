@@ -21,6 +21,7 @@ const {
   TERMINAL_CAPABILITY_PROMPT,
   executeCommandForAI: defaultExecuteCommandForAI,
 } = require('../ai.service');
+const { formatNevenCoreExecutionPrompt } = require('../neven-core.service');
 
 const safeConsoleLog = (...args) => {
   try {
@@ -187,6 +188,7 @@ const getKimiCompletion = async ({
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
+    const nevenCoreExecutionContext = formatNevenCoreExecutionPrompt(options.nevenCoreExecutionContext);
 
     const skillContext = [
       globalSkillsContent
@@ -206,6 +208,7 @@ const getKimiCompletion = async ({
     const prompt = `
       Vous êtes un assistant de développement expert et autonome.
       ${agentContext}
+      ${nevenCoreExecutionContext}
       ${skillContext}
       ${projectContext}
       ${visualWorkflowContext}

@@ -1,6 +1,6 @@
 # Neven Core Lite
 
-Version 2.3.0.
+Version 2.3.1.
 
 Ce socle ne remplace pas le routeur invisible existant. Il le compacte et lui donne une colonne vertebrale explicite pour les futurs agents, les futurs plugins et les futures politiques admin Neven.
 
@@ -33,16 +33,20 @@ Ce socle ne remplace pas le routeur invisible existant. Il le compacte et lui do
 
 ## Ce qui est fait dans cette branche
 
-- Un manifeste versionne `2.3.0`.
+- Un manifeste versionne `2.3.1`.
 - Un plan interne qui choisit le role et le profil sans exposer le modele.
 - Une selection compacte du catalogue agents/skills pour le prompt de classification.
+- Le meme plan est branche sur les completions normales ainsi que les chemins inline/ghost, dans le main process.
+- Le contexte d execution transmet seulement profil, roles, capabilities et selection compacte ; aucun provider ou modele physique.
+- Le branchement est desactive par defaut et s active uniquement cote backend avec `NEVEN_CORE_LITE_EXECUTION_ENABLED=true`, `1`, `on` ou `yes`.
+- Si le catalogue agents/skills est vide ou indisponible, les options de completion restent inchangees et aucun appel LLM auxiliaire n est lance.
 - Des tests unitaires sur le role, le profil et la reduction du contexte.
 
 ## Ce qui reste a faire
 
-- Brancher ce meme noyau sur les providers de completion pour reduire aussi les prompts d'execution.
 - Brancher un rapport d'economie de tokens exploitable par l'admin Neven.
 - Mettre en place les vraies politiques de priorisation BYOK par workspace et par capability.
+- La selection complete du provider physique reste hors perimetre et depend de COD-9.
 
 ## Critere de validation
 

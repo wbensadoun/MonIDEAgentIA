@@ -56,6 +56,7 @@ const {
   TERMINAL_CAPABILITY_PROMPT,
   executeCommandForAI: defaultExecuteCommandForAI,
 } = require('../ai.service');
+const { formatNevenCoreExecutionPrompt } = require('../neven-core.service');
 
 // Erreur d'annulation reconnaissable : distingue "l'utilisateur a coupe" d'une
 // vraie panne, pour ne pas afficher un message d'erreur alarmant sur un arret
@@ -151,6 +152,7 @@ const getOllamaCompletion = async ({
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
       : '';
+    const nevenCoreExecutionContext = formatNevenCoreExecutionPrompt(options.nevenCoreExecutionContext);
 
     const skillContext = [
       selectedSkill
@@ -175,6 +177,7 @@ RÈGLES DE RÉPONSE (prioritaires sur tout le reste) :
 - Pas de préambule ("Bien sûr", "Très bonne question") ni de récapitulatif final.
 - Réponds dans la langue de l'utilisateur.
 ${agentContext}
+${nevenCoreExecutionContext}
 ${skillContext}
 ${projectContext}
 ${toolContract}
