@@ -1,6 +1,6 @@
 # Control plane Neven — contrat backend
 
-Version 3.1.0 (COD-34).
+Version 3.2.0 (COD-36).
 
 Cette couche prépare la future interface admin Neven sans donner au client les clés Claude, Gemini, Kimi ou autres. Code Companion conserve uniquement, dans le **main process**, un grant court vers la passerelle Neven.
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.2.0] — Harness managed local COD-36
+
+### Added
+
+- Harness d'intégration main-process local pour le flux managed Neven : resolve, gateway et réponse texte sans provider réel.
+
+### Security
+
+- Vérifie que provider, modèle, grant et clé ne traversent pas le renderer, l'IPC ou le payload gateway, y compris sur les refus et erreurs simulés.
+
 ## [3.1.0] — Contrat gateway Neven COD-34
 
 ### Changed
