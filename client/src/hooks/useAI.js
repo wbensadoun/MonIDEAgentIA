@@ -256,6 +256,7 @@ export const useAI = (
     let effSkill = activeSkill;
     let effDepth = multiAgentOptions?.depth;
     let routerModelOverride = null;
+    let routeRequestedMultiAgent = false;
 
     if (autoRoute) {
       try {
@@ -283,6 +284,7 @@ export const useAI = (
           if (routed && routed.decision) {
             const { decision } = routed;
             const execution = routed.execution || {};
+            routeRequestedMultiAgent = decision.mode === 'orchestrator' || decision.mode === 'multi_agent';
             effExecutionMode = execution.executionMode || mapRouterModeToExecutionMode(decision.mode);
             effDepth = execution.depth || mapComplexityToDepth(decision.complexity);
             const matchedAgent = decision.agent ? matchAgentByName(availableAgents, decision.agent) : null;
@@ -364,6 +366,15 @@ export const useAI = (
       });
 
       const normalizedMultiAgentRoles = normalizeMultiAgentRoles(multiAgentRoles);
+      // When auto-route selects a multi-agent mode, all selected roles use the
+      // logical provider chosen for this request. Neven then resolves each
+      // physical model from its profile in the control plane.
+      const rolesForRun = routeRequestedMultiAgent && effectiveAIProvider !== 'multi'
+        ? Object.fromEntries(Object.entries(normalizedMultiAgentRoles).map(([roleKey, role]) => [
+          roleKey,
+          { ...role, provider: effectiveAIProvider, model: effectiveAIProvider === 'neven' ? 'managed' : role.model }
+        ]))
+        : normalizedMultiAgentRoles;
       const getProviderApiKey = createProviderApiKeyResolver({
         claudeApiKey,
         kimiApiKey,
@@ -372,7 +383,7 @@ export const useAI = (
       const runMultiAgentRole = (options = {}) => callMultiAgentRole({
         codeContext: code,
         projectFiles: allProjectFiles,
-        normalizedMultiAgentRoles,
+        normalizedMultiAgentRoles: rolesForRun,
         getProviderApiKey,
         currentProjectPath: effectiveProjectPath,
         activeAgent: effAgent,
@@ -385,11 +396,11 @@ export const useAI = (
       });
 
       // Mode Multi-IA: selectionneur + equipe dynamique adaptee a la demande.
-      if (effectiveAIProvider === 'multi') {
+      if (effectiveAIProvider === 'multi' || routeRequestedMultiAgent) {
         await runDynamicMultiAgentFlow({
           promptToSend,
           allProjectFiles,
-          normalizedMultiAgentRoles,
+          normalizedMultiAgentRoles: rolesForRun,
           localAISettings,
           multiAgentOptions: { ...multiAgentOptions, depth: effDepth },
           setMultiAIState,

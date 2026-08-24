@@ -100,15 +100,17 @@ test('saves read-only permission mode from settings', async () => {
   expect(window.electronAPI.saveSettings.mock.calls[0][0].permissionMode).toBe('read_only');
 });
 
-test('saves the selected Qwen DashScope model without rendering a secret field', async () => {
+test('exposes Neven IA without rendering a direct provider secret or model field', async () => {
   renderSettings();
 
-  fireEvent.change(screen.getByLabelText('Fournisseur par défaut'), { target: { value: 'dashscope' } });
+  const providerSelect = screen.getByLabelText('Fournisseur par défaut');
+  expect(screen.getByRole('option', { name: 'Neven IA' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: 'Qwen / DashScope' })).not.toBeInTheDocument();
+  fireEvent.change(providerSelect, { target: { value: 'neven' } });
   fireEvent.click(screen.getByText('Fournisseurs'));
 
-  const qwenModel = await screen.findByLabelText('Modèle Qwen / DashScope');
   expect(screen.queryByLabelText('Clé API Qwen / DashScope')).not.toBeInTheDocument();
-  fireEvent.change(qwenModel, { target: { value: 'qwen-coder-next' } });
+  expect(screen.queryByLabelText('Modèle Qwen / DashScope')).not.toBeInTheDocument();
 
   await act(async () => {
     fireEvent.click(screen.getByText('Sauvegarder'));
@@ -119,8 +121,7 @@ test('saves the selected Qwen DashScope model without rendering a secret field',
   });
 
   const savedSettings = window.electronAPI.saveSettings.mock.calls[0][0];
-  expect(savedSettings.defaultProvider).toBe('dashscope');
-  expect(savedSettings.qwenModel).toBe('qwen-coder-next');
+  expect(savedSettings.defaultProvider).toBe('neven');
 });
 
 test('lists models detected from the provider instead of the hardcoded fallback', async () => {

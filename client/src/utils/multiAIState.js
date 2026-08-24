@@ -137,5 +137,6 @@ export const ROLE_PROVIDER_METHODS = {
   gemini: 'getGeminiCompletion',
   claude: 'getClaudeCompletion',
   kimi: 'getKimiCompletion',
-  ollama: 'getOllamaCompletion'
+  ollama: 'getOllamaCompletion',
+  neven: 'getNevenCompletion'
 };

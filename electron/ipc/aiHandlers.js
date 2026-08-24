@@ -29,7 +29,13 @@ const providerHandlers = {
   claude: getClaudeCompletion,
   kimi: getKimiCompletion,
   ollama: getOllamaCompletion,
-  dashscope: getDashScopeCompletion
+  dashscope: getDashScopeCompletion,
+  // Neven est un provider logique. En configuration Electron normale, la
+  // policy intercepte l'origine managed avant d'appeler ce fallback.
+  neven: async () => ({
+    success: false,
+    error: 'La passerelle Neven est indisponible.'
+  })
 };
 
 // Registre des generations en cours : runId -> AbortController.
@@ -347,7 +353,7 @@ const registerAIHandlers = ({
   resolveProfileModel = resolveModelForProfile
 } = {}) => {
   const completionContract = createProviderContract({
-    adapters: Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama', 'dashscope'].map((provider) => [provider, {
+    adapters: Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama', 'dashscope', 'neven'].map((provider) => [provider, {
       // Gemini/Claude n'ont pas de stream implémenté dans ce produit; health
       // non implémenté signifie explicitement unsupported dans le contrat.
       capabilities: { streaming: provider === 'kimi' || provider === 'ollama', usage: true, cost: 'unpriced', health: false },
@@ -431,6 +437,19 @@ const registerAIHandlers = ({
       publishUsageEvent,
       resolveWorkspaceContext,
       resolveProfileModel
+  });
+  registerProviderCompletionHandler({
+    ipcMain,
+    channel: 'get-neven-completion',
+    provider: 'neven',
+    getMainWindow,
+    executeCommandForAI,
+    listAgents,
+    listSkills,
+    completionContract,
+    publishUsageEvent,
+    resolveWorkspaceContext,
+    resolveProfileModel
   });
   registerProviderCompletionHandler({
     ipcMain,

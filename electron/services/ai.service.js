@@ -819,6 +819,14 @@ const runLegacySingleCompletionProvider = async ({
     });
   }
 
+  if (normalizedProvider === 'neven') {
+    return {
+      success: false,
+      error: 'La passerelle Neven doit être exécutée depuis le workspace authentifié.',
+      provider: 'neven'
+    };
+  }
+
   if (normalizedProvider === 'openai') {
     const apiKey = resolveApiKey(null, 'OPENAI_API_KEY');
     const model = options.model || process.env.OPENAI_MODEL || 'gpt-4o-mini';
@@ -899,7 +907,7 @@ const runSingleCompletionProvider = async (request = {}) => {
   const provider = normalizeCompletionProvider(request.provider ?? request.options?.provider);
   if (!provider) return { success: false, error: `Provider completion non pris en charge: ${request.provider || request.options?.provider || 'aucun'}` };
   const contract = createProviderContract({
-    adapters: Object.fromEntries(['gemini', 'claude', 'openai', 'kimi', 'ollama', 'dashscope'].map((id) => [id, {
+    adapters: Object.fromEntries(['gemini', 'claude', 'openai', 'kimi', 'ollama', 'dashscope', 'neven'].map((id) => [id, {
       capabilities: { streaming: false, usage: true, cost: 'unpriced' },
       complete: ({ options, ...payload }) => runLegacySingleCompletionProvider({ ...payload, provider: id, options })
     }]))

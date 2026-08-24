@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { createProviderContract } = require('./provider-contract.service');
 
-const providerIds = ['gemini', 'claude', 'kimi', 'dashscope'];
+const providerIds = ['gemini', 'claude', 'kimi', 'dashscope', 'neven'];
 
 test('provider contract normalizes completion, capabilities and health for every adapter', async () => {
   const adapters = Object.fromEntries(providerIds.map((id) => [id, {
@@ -31,7 +31,8 @@ test('provider contract rejects unknown providers and only retries controlled re
     claude: { complete: async () => ({ success: true, text: 'ok' }) },
     kimi: { complete: async () => ({ success: true, text: 'ok' }) },
     ollama: { complete: async () => ({ success: true, text: 'ok' }) },
-    dashscope: { complete: async () => { attempts += 1; if (attempts === 1) return { success: false, error: 'retry', retryable: true }; return { success: true, text: 'ok' }; } }
+    dashscope: { complete: async () => { attempts += 1; if (attempts === 1) return { success: false, error: 'retry', retryable: true }; return { success: true, text: 'ok' }; } },
+    neven: { complete: async () => ({ success: true, text: 'ok' }) }
   } });
   await assert.rejects(() => contract.complete({ provider: 'unknown', request: {} }), { code: 'PROVIDER_UNSUPPORTED' });
   const result = await contract.complete({ provider: 'dashscope', request: {}, options: { retryAttempts: 1 } });

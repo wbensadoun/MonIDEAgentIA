@@ -145,6 +145,9 @@ const Settings = ({
         setSettings(prev => ({
           ...prev,
           ...response.settings,
+          defaultProvider: response.settings.defaultProvider === 'dashscope'
+            ? 'neven'
+            : (response.settings.defaultProvider || prev.defaultProvider),
           multiAgentRoles: normalizeMultiAgentRoles(response.settings.multiAgentRoles)
         }));
       }
@@ -447,6 +450,7 @@ const Settings = ({
               {PROVIDER_CATALOG.map((provider) => (
                 <option key={`default-${provider.id}`} value={provider.id}>{provider.label}</option>
               ))}
+              <option value="neven">Neven IA</option>
               <option value="multi">Équipe d&apos;agents</option>
             </select>
             <div className="settings-hint">

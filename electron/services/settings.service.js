@@ -19,7 +19,7 @@ const DEFAULT_GEMINI_PRO_MODEL = 'gemini-3.1-pro-preview';
 const DEFAULT_DASHSCOPE_MODEL = 'qwen-plus';
 const CANONICAL_QWEN_OLLAMA_MODEL = 'qwen3:8b';
 
-const SUPPORTED_AI_PROVIDERS = new Set(['gemini', 'claude', 'kimi', 'ollama', 'dashscope']);
+const SUPPORTED_AI_PROVIDERS = new Set(['gemini', 'claude', 'kimi', 'ollama', 'dashscope', 'neven']);
 
 const MULTI_AGENT_ROLE_DEFAULTS = Object.freeze({
   selector: { provider: 'gemini', model: DEFAULT_GEMINI_PRO_MODEL },
@@ -66,6 +66,7 @@ const getDefaultModelForAIProvider = (provider) => {
   if (normalizedProvider === 'kimi') return DEFAULT_KIMI_MODEL;
   if (normalizedProvider === 'ollama') return CANONICAL_QWEN_OLLAMA_MODEL;
   if (normalizedProvider === 'dashscope') return DEFAULT_DASHSCOPE_MODEL;
+  if (normalizedProvider === 'neven') return null;
   return DEFAULT_GEMINI_MODEL;
 };
 

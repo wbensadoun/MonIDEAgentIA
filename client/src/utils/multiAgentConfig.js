@@ -6,6 +6,7 @@ import {
   DEFAULT_KIMI_MODEL,
   KIMI_K2_6_MODEL,
   DEFAULT_QWEN_MODEL,
+  DEFAULT_NEVEN_MODEL,
   PROVIDER_CATALOG
 } from './remoteModels';
 
@@ -14,14 +15,15 @@ import {
 export const AI_PROVIDER_OPTIONS = PROVIDER_CATALOG.map((provider) => ({
   value: provider.id,
   label: provider.label
-}));
+})).concat({ value: 'neven', label: 'Neven IA' });
 
 // Libelles courts pour les badges du chat, ou la place est comptee.
 export const PROVIDER_LABELS = {
   gemini: 'Gemini',
   claude: 'Claude',
   kimi: 'Kimi',
-  ollama: 'Ollama'
+  ollama: 'Ollama',
+  neven: 'Neven IA'
 };
 
 export const MULTI_AGENT_ROLE_DEFINITIONS = [
@@ -197,6 +199,7 @@ export const MODEL_DEFAULTS_BY_PROVIDER = {
   claude: DEFAULT_CLAUDE_MODEL,
   kimi: DEFAULT_KIMI_MODEL,
   dashscope: DEFAULT_QWEN_MODEL,
+  neven: DEFAULT_NEVEN_MODEL,
   ollama: DEFAULT_OLLAMA_MODEL
 };
 
@@ -210,6 +213,8 @@ export const REMOTE_MODEL_SUGGESTIONS = [
 
 export const normalizeAIProvider = (provider, fallback = 'gemini') => {
   const value = String(provider || '').trim().toLowerCase();
+  // Legacy direct DashScope settings now belong to the Neven managed route.
+  if (value === 'dashscope') return 'neven';
   return AI_PROVIDER_OPTIONS.some((option) => option.value === value)
     ? value
     : fallback;

@@ -124,7 +124,7 @@ test('completion IPC strips technical metadata and rejects forged Core context',
       assert.equal(resolved.nevenCoreExecutionContext.profile, 'luna');
 
       const normalCalls = [];
-      const normalHandlers = Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama', 'dashscope'].map((channelProvider) => [channelProvider, async ({ options }) => {
+      const normalHandlers = Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama', 'dashscope', 'neven'].map((channelProvider) => [channelProvider, async ({ options }) => {
         assert.equal(Object.prototype.hasOwnProperty.call(options, 'apiUrl'), false);
         normalCalls.push({ channelProvider, provider: options.provider, model: options.model });
         return { success: true, text: channelProvider, provider: channelProvider, model: options.model };
@@ -146,7 +146,8 @@ test('completion IPC strips technical metadata and rejects forged Core context',
         ['get-gemini-completion', 'gemini'],
         ['get-claude-completion', 'claude'],
         ['get-kimi-completion', 'kimi'],
-        ['get-dashscope-completion', 'dashscope']
+        ['get-dashscope-completion', 'dashscope'],
+        ['get-neven-completion', 'neven']
       ];
       for (const [channel, channelProvider] of normalChannels) {
         for (const rendererProvider of [undefined, channelProvider === 'gemini' ? 'claude' : 'gemini']) {
@@ -349,7 +350,7 @@ test('chat, inline and ghost publish bounded usage without delaying their result
   const events = [];
   registerAIHandlers({
     ipcMain: { handle: (channel, handler) => { handlers[channel] = handler; } },
-    completionHandlers: Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama', 'dashscope'].map((provider) => [provider,
+    completionHandlers: Object.fromEntries(['gemini', 'claude', 'kimi', 'ollama', 'dashscope', 'neven'].map((provider) => [provider,
       async () => ({ success: true, text: 'completion', usage: { inputTokens: 3, outputTokens: 2 } })
     ])),
     completionRunner: async () => ({ success: true, text: 'completion', usage: { promptTokens: 4, completionTokens: 1 } }),

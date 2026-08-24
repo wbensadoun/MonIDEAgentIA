@@ -2,7 +2,8 @@ import { DEFAULT_OLLAMA_MODEL } from './ollamaModels';
 import {
   DEFAULT_CLAUDE_MODEL,
   DEFAULT_GEMINI_MODEL,
-  DEFAULT_KIMI_MODEL
+  DEFAULT_KIMI_MODEL,
+  DEFAULT_NEVEN_MODEL
 } from './remoteModels';
 
 const collectInlineImages = (history) => (
@@ -117,6 +118,26 @@ export const callSingleAIProvider = async ({
       code,
       allProjectFiles,
       ollamaOptions
+    );
+  }
+
+  if (effectiveAIProvider === 'neven') {
+    const nevenOptions = {
+      model: DEFAULT_NEVEN_MODEL,
+      thinkingMode,
+      runId,
+      executionMode,
+      projectPath: currentProjectPath,
+      agent: activeAgent,
+      skill: activeSkill,
+      ...sharedAgentContextOptions
+    };
+
+    return electronAPI.getNevenCompletion(
+      [...aiConversationHistory, Object.assign({}, newMessage, { text: promptToSend })],
+      code,
+      allProjectFiles,
+      nevenOptions
     );
   }
 

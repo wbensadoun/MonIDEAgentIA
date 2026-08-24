@@ -48,6 +48,8 @@ export const runMultiAgentRole = async ({
   thinking = false,
   maxTokens = 4096,
   normalizedMultiAgentRoles,
+  providerOverride = null,
+  modelOverride = null,
   getProviderApiKey,
   currentProjectPath,
   activeAgent,
@@ -59,10 +61,11 @@ export const runMultiAgentRole = async ({
   electronAPI = window.electronAPI
 }) => {
   const roleConfig = normalizedMultiAgentRoles[roleKey] || {};
-  const provider = normalizeAIProvider(roleConfig.provider);
+  const provider = normalizeAIProvider(providerOverride || roleConfig.provider);
+  const model = modelOverride || roleConfig.model;
   const methodName = ROLE_PROVIDER_METHODS[provider] || ROLE_PROVIDER_METHODS.gemini;
   const providerOptions = {
-    model: roleConfig.model,
+    model,
     thinkingMode: thinking,
     apiKey: getProviderApiKey(provider),
     projectPath: currentProjectPath,
@@ -107,7 +110,7 @@ export const runMultiAgentRole = async ({
   return {
     ...response,
     provider,
-    model: roleConfig.model
+    model
   };
 };
 

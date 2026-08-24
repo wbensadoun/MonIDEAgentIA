@@ -60,6 +60,10 @@ const {
   isNevenManagedGatewayEnabled
 } = require('./electron/services/neven-managed-gateway.service');
 const { createNevenUsagePublisher } = require('./electron/services/neven-usage-publisher.service');
+const {
+  NEVEN_INTERNAL_PROFILES,
+  buildNevenCorePlan
+} = require('./electron/services/neven-core.service');
 
 const isDev =
   process.env.NODE_ENV === 'development' ||
@@ -119,12 +123,13 @@ const setWorkspaceContext = (event) => nevenIdentity.bindSender(event);
 const resolveWorkspaceContext = (event) => nevenIdentity.resolveWorkspaceContext(event);
 const resolveTrustedRouterConfiguration = async () => {
   const settings = await readSettingsSafe();
+  const defaultProvider = settings.defaultProvider === 'dashscope' ? 'neven' : settings.defaultProvider;
   // Do not pass persisted credential fields to the router. Provider credentials
   // and policies are resolved later by the main/workspace execution boundary.
   return {
-    provider: settings.defaultProvider,
+    provider: defaultProvider,
     settings: {
-      defaultProvider: settings.defaultProvider,
+      defaultProvider,
       geminiModel: settings.geminiModel,
       claudeModel: settings.claudeModel,
       kimiModel: settings.kimiModel,
@@ -159,12 +164,19 @@ configureAIService({
     // credential therefore never causes a Neven grant resolution.
     return normalizePolicy({ byok: 'priority' });
   },
-  resolveProviderExecutionContext: async ({ request }) => {
+  resolveProviderExecutionContext: async ({ request, options }) => {
     const context = request?.workspaceContext;
     const workspaceId = context?.workspaceId;
     const deviceId = context?.deviceId;
     if (!workspaceId || !deviceId) return null;
-    const profile = 'haiku';
+    // The renderer never chooses a physical model. The internal Core profile
+    // is generated in the main process from the prompt and is then resolved by
+    // Neven/Supabase (routing_profiles -> provider -> selected model).
+    const profileFromCore = options?.nevenCoreExecutionContext?.profile;
+    const derivedProfile = buildNevenCorePlan({ prompt: request?.userPrompt || '' }).profile;
+    const profile = Object.prototype.hasOwnProperty.call(NEVEN_INTERNAL_PROFILES, profileFromCore)
+      ? profileFromCore
+      : (Object.prototype.hasOwnProperty.call(NEVEN_INTERNAL_PROFILES, derivedProfile) ? derivedProfile : 'haiku');
     return { workspaceId, deviceId, profile };
   },
   executeManagedGateway: completeManagedGateway,

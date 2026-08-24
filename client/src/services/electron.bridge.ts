@@ -84,6 +84,7 @@ export interface ElectronAPI {
   getClaudeCompletion: (history: unknown[], code: string, files: unknown, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
   getKimiCompletion: (history: unknown[], code: string, files: unknown, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
   getOllamaCompletion: (history: unknown[], code: string, files: unknown, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
+  getNevenCompletion: (history: unknown[], code: string, files: unknown, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
   getInlineCompletion: (prompt: string, code: string, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
   getGhostCompletion: (prefix: string, suffix: string, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
   cancelAIGeneration: (runId: string) => Promise<{ success: boolean; reason?: string }>;

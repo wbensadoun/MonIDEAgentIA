@@ -125,6 +125,9 @@ try {
     getClaudeCompletion: (history, currentCode, allProjectFiles, options) =>
       ipcRenderer.invoke('get-claude-completion', history, currentCode, allProjectFiles, options),
 
+    getNevenCompletion: (history, currentCode, allProjectFiles, options) =>
+      ipcRenderer.invoke('get-neven-completion', history, currentCode, allProjectFiles, options),
+
     // API pour sauvegarder une conversation
     saveConversation: (projectPath, conversationHistory) => ipcRenderer.invoke('saveConversation', projectPath, conversationHistory),
     listConversations: (projectPath) => ipcRenderer.invoke('listConversations', projectPath),

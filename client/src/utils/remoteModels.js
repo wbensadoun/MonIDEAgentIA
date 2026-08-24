@@ -6,6 +6,7 @@ export const DEFAULT_KIMI_MODEL = 'moonshotai/Kimi-K2.5';
 export const KIMI_K2_6_MODEL = 'moonshotai/Kimi-K2.6';
 export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-6';
 export const DEFAULT_QWEN_MODEL = 'qwen-plus';
+export const DEFAULT_NEVEN_MODEL = 'managed';
 
 export const REMOTE_MODEL_OPTIONS = {
   gemini: [
@@ -69,17 +70,6 @@ export const PROVIDER_CATALOG = [
     fallbackModels: [DEFAULT_KIMI_MODEL, KIMI_K2_6_MODEL]
   },
   {
-    id: 'dashscope',
-    label: 'Qwen / DashScope',
-    kind: 'cloud',
-    keyField: null,
-    modelField: 'qwenModel',
-    supportsModelDiscovery: false,
-    keyHint: 'Configuration du modèle DashScope uniquement',
-    defaultModel: DEFAULT_QWEN_MODEL,
-    fallbackModels: [DEFAULT_QWEN_MODEL]
-  },
-  {
     id: 'ollama',
     label: 'Ollama',
     kind: 'local',
@@ -96,6 +86,7 @@ export const getProviderDescriptor = (providerId) => (
 );
 
 export const getDefaultRemoteModel = (provider) => {
+  if (provider === 'neven') return DEFAULT_NEVEN_MODEL;
   if (provider === 'claude') return DEFAULT_CLAUDE_MODEL;
   if (provider === 'kimi') return DEFAULT_KIMI_MODEL;
   if (provider === 'dashscope') return DEFAULT_QWEN_MODEL;

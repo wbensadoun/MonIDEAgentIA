@@ -5,7 +5,7 @@ const { normalizeCredentialProviderId, toRuntimeProviderId } = require('./provid
 // Contrat unique pour les fournisseurs IA. Les adaptateurs restent responsables
 // du protocole HTTP/SDK propre au fournisseur; cette couche ne connait ni clé
 // ni détail de modèle et standardise uniquement l'orchestration backend.
-const PROVIDER_IDS = Object.freeze(['gemini', 'claude', 'openai', 'kimi', 'ollama', 'dashscope']);
+const PROVIDER_IDS = Object.freeze(['gemini', 'claude', 'openai', 'kimi', 'ollama', 'dashscope', 'neven']);
 const RUNTIME_UNSUPPORTED_PROVIDER_IDS = new Set(['azure', 'ollama-local']);
 
 const isKnownProvider = (value) => PROVIDER_IDS.includes(toRuntimeProviderId(value) || String(value || '').trim().toLowerCase());

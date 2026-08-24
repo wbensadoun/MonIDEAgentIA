@@ -48,9 +48,6 @@ const {
 // Placeholder documente : miroir "light" de Claude pour le routeur intelligent.
 // Ajustable en UNE ligne quand Anthropic publiera le nom definitif du modele Haiku.
 const DEFAULT_CLAUDE_LIGHT_MODEL = 'claude-haiku-4-6';
-// DashScope: le routeur consomme le modèle texte le moins coûteux disponible.
-// Le modèle final reste configurable séparément dans les paramètres.
-const DEFAULT_DASHSCOPE_ROUTER_MODEL = 'qwen-turbo';
 
 // ---------------------------------------------------------------------------
 // Resolution du modele par tier ('light' | 'premium')
@@ -74,7 +71,7 @@ const PROVIDER_TIER_STATIC_CANDIDATES = Object.freeze({
   gemini: [DEFAULT_GEMINI_MODEL, DEFAULT_GEMINI_PRO_MODEL],
   claude: [DEFAULT_CLAUDE_LIGHT_MODEL, DEFAULT_CLAUDE_MODEL],
   kimi: [DEFAULT_KIMI_MODEL],
-  dashscope: [DEFAULT_DASHSCOPE_ROUTER_MODEL, 'qwen-plus']
+  dashscope: ['qwen-plus']
 });
 
 // Profils internes Neven. Ils décrivent une capacité, pas un fournisseur et ne
@@ -216,6 +213,10 @@ const resolveModelForTier = async (provider, tier, ctx = {}) => {
   const normalizedProvider = normalizeAIProviderName(provider);
   const normalizedTier = tier === 'premium' ? 'premium' : 'light';
 
+  // Neven est un provider logique : le modèle physique est choisi par le
+  // control plane depuis Supabase selon le profil.
+  if (normalizedProvider === 'neven') return { resolved: null, source: 'managed' };
+
   if (normalizedProvider === 'ollama') {
     return resolveOllamaModelForTier(normalizedTier, ctx);
   }
@@ -238,6 +239,7 @@ const resolveModelForTier = async (provider, tier, ctx = {}) => {
 
 const resolveModelForProfile = async (provider, profile, ctx = {}) => {
   const normalizedProfile = normalizeRouterProfile(profile);
+  if (normalizeAIProviderName(provider) === 'neven') return { resolved: null, source: 'managed' };
   if (normalizedProfile === 'haiku') return resolveModelForTier(provider, 'light', ctx);
 
   const normalizedProvider = normalizeAIProviderName(provider);
@@ -348,12 +350,6 @@ const resolveClassifierTarget = async (settings, normalizedProvider, ctx) => {
   const configuredModel = settings?.routerClassifierModel ? String(settings.routerClassifierModel).trim() : '';
   if (configuredModel) {
     return { provider: classifierProvider, resolved: configuredModel, source: 'settings' };
-  }
-
-  // Alibaba est actuellement le seul provider distant actif : le classifieur
-  // doit rester sur le modèle le moins coûteux, indépendamment du modèle final.
-  if (classifierProvider === 'dashscope') {
-    return { provider: classifierProvider, resolved: DEFAULT_DASHSCOPE_ROUTER_MODEL, source: 'router-default' };
   }
 
   const resolved = await resolveModelForTier(classifierProvider, 'light', ctx);
@@ -560,6 +556,8 @@ const routeToDecision = async ({
     });
     const completion = await runSingleCompletionProvider({
       provider: classifierTarget.provider,
+      kind: 'chat',
+      mode: 'chat',
       systemInstruction,
       userPrompt: truncateText(String(userPrompt || '').trim(), ROUTER_USER_PROMPT_MAX, '\n[...TRONQUE...]'),
       options: { model: classifierTarget.resolved, temperature: 0.1 },

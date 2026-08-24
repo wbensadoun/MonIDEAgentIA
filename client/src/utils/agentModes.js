@@ -75,5 +75,7 @@ export const isLocalOnlyProvider = (provider) => {
 // retiré de l'UI, cf. EXECUTION_MODES ci-dessus), donc le provider actif
 // suffit désormais sans branche dédiée.
 export const resolveProviderForExecutionMode = (aiProvider, _executionMode) => (
-  String(aiProvider || 'gemini').trim().toLowerCase()
+  String(aiProvider || 'gemini').trim().toLowerCase() === 'dashscope'
+    ? 'neven'
+    : String(aiProvider || 'gemini').trim().toLowerCase()
 );

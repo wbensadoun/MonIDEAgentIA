@@ -32,12 +32,12 @@ test('profile resolution selects a physical model without changing the internal 
   assert.equal(opus.resolved, 'claude-opus-4-1');
 });
 
-test('DashScope router defaults to the lowest-cost Qwen model', async () => {
+test('Neven router leaves physical model selection to the managed control plane', async () => {
   const calls = [];
   const result = await routeToDecision({
     projectPath: null,
     userPrompt: 'compare les agents disponibles et choisis le meilleur workflow',
-    trustedRouterConfiguration: { provider: 'dashscope' },
+    trustedRouterConfiguration: { provider: 'neven' },
     listAgents: async () => ({ agents: [{ name: 'coder' }] }),
     listSkills: async () => ({ skills: [] }),
     runSingleCompletionProvider: async (request) => {
@@ -46,9 +46,10 @@ test('DashScope router defaults to the lowest-cost Qwen model', async () => {
     }
   });
 
-  assert.equal(calls[0].provider, 'dashscope');
-  assert.equal(calls[0].options.model, 'qwen-turbo');
-  assert.equal(result.model.provider, 'dashscope');
+  assert.equal(calls[0].provider, 'neven');
+  assert.equal(calls[0].options.model, null);
+  assert.equal(result.model.provider, 'neven');
+  assert.equal(result.model.resolved, null);
 });
 
 test('profile validation overrides contradictory mode and complexity fields', () => {

@@ -61,7 +61,8 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     }
 
     if (settings.defaultProvider) {
-      setAiProvider(String(settings.defaultProvider));
+      const configuredProvider = String(settings.defaultProvider).trim().toLowerCase();
+      setAiProvider(configuredProvider === 'dashscope' ? 'neven' : configuredProvider);
     }
 
     setGeminiModel(normalizeRemoteModelName(settings.geminiModel, DEFAULT_GEMINI_MODEL));
