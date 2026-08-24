@@ -32,6 +32,48 @@ test('control plane refuses to operate when no endpoint is configured', async ()
   assert.equal(result.code, 'not_configured');
 });
 
+test('control plane accepts the documented control-plane and gateway environment names', async () => {
+  const previousControlPlane = process.env.NEVEN_CONTROL_PLANE_URL;
+  const previousGateway = process.env.NEVEN_GATEWAY_URL;
+  try {
+    process.env.NEVEN_CONTROL_PLANE_URL = 'https://api.neven.test';
+    process.env.NEVEN_GATEWAY_URL = 'https://gateway.neven.test';
+    const client = new NevenControlPlaneClient({
+      accessTokenResolver: async () => 'session-token',
+      fetchImpl: async () => jsonResponse({
+        data: { grant: GRANT, subjectId: SUBJECT_ID, expiresAt: new Date(Date.now() + 60000).toISOString() }
+      }, 201)
+    });
+    const result = await client.resolveAccess({ workspaceId: WORKSPACE_ID, deviceId: DEVICE_ID, profile: 'luna' });
+    assert.equal(result.success, true);
+    assert.equal(result.access.gatewayUrl, 'https://gateway.neven.test');
+  } finally {
+    if (previousControlPlane === undefined) delete process.env.NEVEN_CONTROL_PLANE_URL;
+    else process.env.NEVEN_CONTROL_PLANE_URL = previousControlPlane;
+    if (previousGateway === undefined) delete process.env.NEVEN_GATEWAY_URL;
+    else process.env.NEVEN_GATEWAY_URL = previousGateway;
+  }
+});
+
+test('the documented control-plane URL takes precedence over the legacy alias', () => {
+  const previousControlPlane = process.env.NEVEN_CONTROL_PLANE_URL;
+  const previousLegacy = process.env.NEVEN_API_BASE_URL;
+  process.env.NEVEN_CONTROL_PLANE_URL = 'https://api.current.neven.test';
+  process.env.NEVEN_API_BASE_URL = 'https://api.legacy.neven.test';
+  try {
+    const client = new NevenControlPlaneClient({
+      allowedHosts: ['api.current.neven.test', 'api.legacy.neven.test', 'gateway.neven.test'],
+      gatewayBaseUrl: 'https://gateway.neven.test'
+    });
+    assert.equal(client.baseUrl, 'https://api.current.neven.test');
+  } finally {
+    if (previousControlPlane === undefined) delete process.env.NEVEN_CONTROL_PLANE_URL;
+    else process.env.NEVEN_CONTROL_PLANE_URL = previousControlPlane;
+    if (previousLegacy === undefined) delete process.env.NEVEN_API_BASE_URL;
+    else process.env.NEVEN_API_BASE_URL = previousLegacy;
+  }
+});
+
 test('control plane disables an unallowlisted legacy remote configuration before a token can be resolved', async () => {
   let tokenRequests = 0;
   const client = new NevenControlPlaneClient({
