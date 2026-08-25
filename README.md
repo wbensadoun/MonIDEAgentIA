@@ -100,6 +100,17 @@ npm run build
 | `npm run build:win-installer` | Gnre un vrai installateur Windows (`Setup.exe`) |
 | `npm run postinstall` | Installation des deps Electron |
 
+### Harness managed local (COD-36 / COD-26)
+
+Prerequis : dependances npm installees dans ce checkout. Aucun provider, endpoint distant, cle ou base Supabase n'est requis : le flux `resolve -> gateway -> completion` est entierement mocke dans le main process Electron.
+
+```bash
+npm run test:managed-harness
+npm run test:electron
+```
+
+Le harness ne cree aucun fichier persistant et ne demande donc aucun nettoyage. Il valide les refus de grant/appareil/provider/modele et l'absence de fallback interdit ou de fuite IPC/log ; il ne valide ni les migrations Supabase locales du depot Neven, ni staging, ni un provider reel.
+
 ### Installer Windows (Setup.exe)
 
 Pour une installation "comme une vraie app", utilise :
