@@ -138,9 +138,7 @@ class NevenManagedGatewayClient {
       return {
         success: true,
         text: completion.text,
-        usage: completion.usage || null,
-        provider: completion.provider,
-        model: completion.model
+        usage: completion.usage || null
       };
     } catch (error) {
       return failure(normalizeGatewayError(error), 'Passerelle Neven indisponible.');

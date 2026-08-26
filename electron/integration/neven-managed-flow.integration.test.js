@@ -36,11 +36,18 @@ test('managed main-process harness resolves through the local gateway without pr
     const workspaceId = '123e4567-e89b-42d3-a456-426614174000';
     const deviceId = '223e4567-e89b-42d3-a456-426614174000';
     const subjectId = '423e4567-e89b-42d3-a456-426614174000';
+    const rendererPrompt = 'réponds localement';
+    const rendererSensitiveValues = ['renderer-provider', 'renderer-model', 'renderer-grant', 'renderer-hidden-value'];
+    const capturedLogs = [];
+    for (const level of ['log', 'warn', 'error']) {
+      console[level] = (...values) => capturedLogs.push({ level, values: values.map((value) => String(value)) });
+    }
     const json = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body) });
     const assertRendererSafe = (result) => {
       for (const forbidden of ['provider', 'model', 'grant', 'apiKey', 'key', 'credential', 'authorization', 'errorCode']) {
         assert.equal(Object.prototype.hasOwnProperty.call(result, forbidden), false);
       }
+      for (const value of rendererSensitiveValues) assert.equal(JSON.stringify(result).includes(value), false);
     };
 
     const invoke = async (scenario) => {
@@ -48,9 +55,10 @@ test('managed main-process harness resolves through the local gateway without pr
       let adapterCalls = 0;
       let resolveCalls = 0;
       let gatewayCalls = 0;
+      const policyAllowsByokFallback = new Set(['grant-expired', 'grant-revoked', 'device-refused', 'provider-unavailable', 'model-unavailable']).has(scenario);
       const fetchImpl = async (url, options) => {
         const body = options.body ? JSON.parse(options.body) : null;
-        requests.push({ url, body });
+        requests.push({ url, body, headers: options.headers });
         if (url.endsWith('/access/resolve')) {
           resolveCalls += 1;
           if (scenario === 'device-refused') return json({ code: 'device_refused' }, 403);
@@ -63,6 +71,8 @@ test('managed main-process harness resolves through the local gateway without pr
         gatewayCalls += 1;
         if (scenario === 'grant-expired') return json({ code: 'grant_expired' }, 401);
         if (scenario === 'grant-revoked') return json({ code: 'grant_revoked' }, 403);
+        if (scenario === 'provider-unavailable') return json({ code: 'provider_unavailable', detail: 'provider fixture internal' }, 404);
+        if (scenario === 'model-unavailable') return json({ code: 'model_unavailable', detail: 'model fixture internal' }, 404);
         if (scenario === 'gateway-invalid') return json({ data: {} });
         if (scenario === 'gateway-timeout') {
           const error = new Error('local timeout');
@@ -89,8 +99,12 @@ test('managed main-process harness resolves through the local gateway without pr
       });
       configureAIService({
         resolveProviderExecutionContext: async () => ({ workspaceId, deviceId, profile: 'luna' }),
-        resolveProviderPolicy: async () => ({ byok: 'disabled' }),
-        resolveProviderCredential: async ({ origin }) => origin === 'neven' ? { managedGateway: true } : null,
+        resolveProviderPolicy: async () => ({ byok: policyAllowsByokFallback ? 'non_priority' : 'disabled' }),
+        resolveProviderCredential: async ({ origin }) => {
+          if (origin === 'neven') return { managedGateway: true };
+          if (origin === 'byok') return 'fixture-byok-credential';
+          return null;
+        },
         executeManagedGateway: completeManagedGateway,
         providerUsageLedger: { append: async () => {} }
       });
@@ -104,10 +118,10 @@ test('managed main-process harness resolves through the local gateway without pr
         listSkills: async () => ({ skills: [] })
       });
       const result = await handlers['get-claude-completion'](
-        {}, [{ role: 'user', text: 'réponds localement' }], '', null,
-        { provider: 'renderer-provider', model: 'renderer-model', grant: 'renderer-grant', apiKey: 'renderer-value' }
+        {}, [{ role: 'user', text: rendererPrompt }], '', null,
+        { provider: 'renderer-provider', model: 'renderer-model', grant: 'renderer-grant', apiKey: 'renderer-hidden-value' }
       );
-      return { result, requests, adapterCalls, resolveCalls, gatewayCalls };
+      return { result, requests, adapterCalls, resolveCalls, gatewayCalls, capturedLogs };
     };
 
     (async () => {
@@ -117,35 +131,48 @@ test('managed main-process harness resolves through the local gateway without pr
       assert.equal(success.resolveCalls, 1);
       assert.equal(success.gatewayCalls, 1);
       const gatewayPayload = success.requests.find(({ url }) => url.endsWith('/gateway/completions')).body;
-      assert.equal(gatewayPayload.userPrompt, 'réponds localement');
+      const gatewayRequest = success.requests.find(({ url }) => url.endsWith('/gateway/completions'));
+      assert.equal(gatewayPayload.userPrompt, rendererPrompt);
       for (const forbidden of ['provider', 'model', 'grant', 'apiKey', 'key', 'credential', 'authorization']) {
         assert.equal(Object.prototype.hasOwnProperty.call(gatewayPayload, forbidden), false);
       }
+      for (const value of rendererSensitiveValues) assert.equal(JSON.stringify(gatewayPayload).includes(value), false);
+      assert.equal(gatewayRequest.headers.Authorization, 'Bearer fixture-grant-1');
+      assert.equal(JSON.stringify(gatewayRequest.headers).includes('renderer-hidden-value'), false);
       assertRendererSafe(success.result);
       assert.equal(Object.prototype.hasOwnProperty.call(success.result, 'usage'), false);
 
       const expired = await invoke('grant-expired');
       assert.equal(expired.result.success, false);
+      assert.equal(expired.adapterCalls, 0);
       assert.equal(expired.resolveCalls, 2);
       assert.equal(expired.gatewayCalls, 2);
       assertRendererSafe(expired.result);
 
       const revoked = await invoke('grant-revoked');
       assert.equal(revoked.result.success, false);
+      assert.equal(revoked.adapterCalls, 0);
       assert.equal(revoked.resolveCalls, 1);
       assert.equal(revoked.gatewayCalls, 1);
       assertRendererSafe(revoked.result);
 
       const deviceRefused = await invoke('device-refused');
       assert.equal(deviceRefused.result.success, false);
+      assert.equal(deviceRefused.adapterCalls, 0);
       assert.equal(deviceRefused.gatewayCalls, 0);
       assertRendererSafe(deviceRefused.result);
 
-      for (const scenario of ['gateway-timeout', 'gateway-invalid']) {
+      for (const scenario of ['grant-expired', 'grant-revoked', 'device-refused', 'provider-unavailable', 'model-unavailable', 'gateway-timeout', 'gateway-invalid']) {
         const failure = await invoke(scenario);
         assert.equal(failure.result.success, false);
-        assert.equal(failure.gatewayCalls, 1);
+        assert.equal(failure.adapterCalls, 0);
         assertRendererSafe(failure.result);
+        assert.equal(JSON.stringify(failure.result).includes(rendererPrompt), false);
+        assert.equal(JSON.stringify(failure.capturedLogs).includes(rendererPrompt), false);
+        for (const value of rendererSensitiveValues) {
+          assert.equal(JSON.stringify(failure.capturedLogs).includes(value), false);
+          assert.equal(JSON.stringify(failure.requests.map(({ body }) => body)).includes(value), false);
+        }
       }
     })().catch((error) => { console.error(error); process.exitCode = 1; });
   `;

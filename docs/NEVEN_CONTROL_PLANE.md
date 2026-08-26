@@ -1,6 +1,6 @@
 # Control plane Neven — contrat backend
 
-Version 3.2.0 (COD-36).
+Version 3.3.2 (COD-36 / reliquat vérifiable COD-26).
 
 Cette couche prépare la future interface admin Neven sans donner au client les clés Claude, Gemini, Kimi ou autres. Code Companion conserve uniquement, dans le **main process**, un grant court vers la passerelle Neven.
 
@@ -93,7 +93,7 @@ Toutes les requêtes sensibles du control plane, y compris l’ingestion d’év
 
 L’exécution gateway est désactivée par défaut et exige `NEVEN_MANAGED_GATEWAY_ENABLED=true` dans le main process. La policy locale choisit d’abord `local`, BYOK ou Neven : local/BYOK ne résolvent aucun grant. Le cache mémoire est par `(workspaceId, deviceId, profile, capability)` jusqu’à l’expiration moins une marge de sécurité. Une révocation supprime d’abord les entrées locales du workspace/device, même si l’appel distant échoue.
 
-La gateway est construite à partir de `NEVEN_API_BASE_URL + /api/v1/gateway` et reçoit `POST /api/v1/gateway/completions`. Son JSON plat contient uniquement `workspaceId`, `deviceId`, `subjectId`, `profile`, `capability`, `mode` (`chat`, `inline`, `ghost`) et les champs de prompt bornés. Provider, modèle et clés sont exclus du payload : le choix du fournisseur et ses clés restent chez Neven. Le grant court est envoyé comme bearer exclusivement depuis le main process et n’est jamais converti en clé d’un adaptateur fournisseur. La réponse est déballée depuis `data`. Si la passerelle indique `grant_expired`, le cache est invalidé, un nouveau grant est demandé et la completion est rejouée une seule fois sans remonter de détail de transport.
+La gateway est construite à partir de `NEVEN_API_BASE_URL + /api/v1/gateway` et reçoit `POST /api/v1/gateway/completions`. Son JSON plat contient uniquement `workspaceId`, `deviceId`, `subjectId`, `profile`, `capability`, `mode` (`chat`, `inline`, `ghost`) et les champs de prompt bornés. Provider, modèle et clés sont exclus du payload : le choix du fournisseur et ses clés restent chez Neven. Le grant court est envoyé comme bearer exclusivement depuis le main process et n’est jamais converti en clé d’un adaptateur fournisseur. La réponse est déballée depuis `data`. Si la passerelle indique `grant_expired`, le cache est invalidé, un nouveau grant est demandé et la completion est rejouée une seule fois sans remonter de détail de transport. Un grant révoqué, un appareil refusé, ou un provider/modèle indisponible est un refus terminal de cette tentative : aucun adaptateur local ou BYOK ne reçoit le grant ni ne prend le relais.
 
 ## Migration de configuration
 

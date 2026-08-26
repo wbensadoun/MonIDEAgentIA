@@ -160,9 +160,12 @@ configureAIService({
   ptyService,
   resolveProviderCredential: resolveManagedProviderCredential,
   resolveProviderPolicy: async () => {
-    // The local decision is made before any control-plane call. A stored BYOK
-    // credential therefore never causes a Neven grant resolution.
-    return normalizePolicy({ byok: 'priority' });
+    // Neven is the safe default until the control plane supplies a workspace
+    // policy. A BYOK ordering is accepted only as an explicit local override;
+    // renderer options and stored credentials cannot silently force it.
+    const configured = String(process.env.NEVEN_BYOK_POLICY || '').trim().toLowerCase();
+    const allowed = new Set(['disabled', 'non_priority', 'priority', 'mandatory']);
+    return normalizePolicy({ byok: allowed.has(configured) ? configured : 'disabled' });
   },
   resolveProviderExecutionContext: async ({ request, options }) => {
     const context = request?.workspaceContext;

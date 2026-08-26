@@ -906,16 +906,20 @@ const runLegacySingleCompletionProvider = async ({
 const runSingleCompletionProvider = async (request = {}) => {
   const provider = normalizeCompletionProvider(request.provider ?? request.options?.provider);
   if (!provider) return { success: false, error: `Provider completion non pris en charge: ${request.provider || request.options?.provider || 'aucun'}` };
+  const { __skipProviderPolicy, ...providerRequest } = request;
   const contract = createProviderContract({
     adapters: Object.fromEntries(['gemini', 'claude', 'openai', 'kimi', 'ollama', 'dashscope', 'neven'].map((id) => [id, {
       capabilities: { streaming: false, usage: true, cost: 'unpriced' },
       complete: ({ options, ...payload }) => runLegacySingleCompletionProvider({ ...payload, provider: id, options })
     }]))
   });
-  const options = request.options || {};
+  const options = providerRequest.options || {};
+  if (__skipProviderPolicy === true) {
+    return contract.complete({ provider, request: providerRequest, options });
+  }
   return runProviderCompletionWithPolicy({
     provider,
-    request: { ...request, provider },
+    request: { ...providerRequest, provider },
     options,
     execute: (executionRequest) => contract.complete({ provider, request: executionRequest, options: executionRequest.options || options })
   });

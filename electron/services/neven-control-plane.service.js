@@ -191,8 +191,8 @@ const failure = (code, error, extra = {}) => ({
 
 class NevenControlPlaneClient {
   constructor({
-    baseUrl = process.env.NEVEN_API_BASE_URL,
-    gatewayBaseUrl,
+    baseUrl = process.env.NEVEN_CONTROL_PLANE_URL || process.env.NEVEN_API_BASE_URL,
+    gatewayBaseUrl = process.env.NEVEN_GATEWAY_URL,
     allowedHosts = process.env.NEVEN_CONTROL_PLANE_ALLOWED_HOSTS,
     allowLoopback,
     accessTokenResolver = async () => null,

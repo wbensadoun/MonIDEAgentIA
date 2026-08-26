@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.3.3] — Hardening du routage managed
+
+### Security
+
+- L’ancienne route managed sans grant est désactivée ; le gateway Neven est l’unique entrée d’exécution.
+- Les modes chat, inline et ghost partagent la même policy et les erreurs gateway indisponibles déclenchent le fallback autorisé.
+- Les métadonnées provider/modèle restent server-side dans la réponse managed.
+
+## [3.3.2] — Refus vérifiables du flux managed COD-36 / COD-26
+
+### Security
+
+- Le harness local prouve l'absence de fallback fournisseur sur les grants expirés ou révoqués, le refus d'appareil et l'indisponibilité serveur du provider ou du modèle.
+- Les échecs mockés ne renvoient ni prompt, ni métadonnée renderer sensible dans l'IPC ou les logs capturés.
+
 ## [3.2.0] — Harness managed local COD-36
 
 ### Added
