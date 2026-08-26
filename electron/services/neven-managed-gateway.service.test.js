@@ -40,7 +40,7 @@ test('gateway uses the frozen COD-33 route, flat bounded payload and data respon
       provider: 'claude', model: 'forged', apiKey: 'forged', key: 'forged'
     }
   });
-  assert.deepEqual(result, { success: true, text: 'ok', usage: { inputTokens: 3 }, provider: 'neven', model: 'server-only' });
+  assert.deepEqual(result, { success: true, text: 'ok', usage: { inputTokens: 3 } });
   assert.equal(request.url, 'https://api.neven.test/api/v1/gateway/completions');
   assert.equal(request.options.redirect, 'error');
   assert.equal(request.options.headers.Authorization, 'Bearer grant-for-cod-34');

@@ -50,6 +50,7 @@ const normalizeProviderError = (error, result = {}) => {
   if (status === 429 || /\b429\b|rate.?limit|too many requests|quota/.test(text)) return { code: 'rate_limited' };
   if (rawCode === 'provider_timeout' || /timeout|timed out|deadline exceeded|etimedout|econnaborted/.test(`${rawCode} ${text}`)) return { code: 'timeout' };
   if (/network|fetch failed|econn|enotfound|eai_again|socket/.test(`${rawCode} ${text}`)) return { code: 'network_error' };
+  if (rawCode === 'gateway_unavailable') return { code: 'unavailable' };
   if ([502, 503, 504].includes(status) || /gateway|service unavailable|temporarily unavailable|http (502|503|504)/.test(text)) return { code: 'unavailable' };
   if (result.retryable === true || error?.retryable === true) return { code: 'gateway_error' };
   return { code: 'provider_error' };

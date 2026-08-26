@@ -237,10 +237,11 @@ test('chat, inline and ghost keep local/BYOK execution ahead of Neven and preser
   const { configureAIService } = require('../services/ai.service');
   const handlers = {};
   let gatewayCalls = 0;
+  let policyCalls = 0;
   const modes = [];
   configureAIService({
     resolveProviderExecutionContext: async () => ({ workspaceId: 'workspace-local', profile: 'haiku', access: null }),
-    resolveProviderPolicy: async () => ({ byok: 'priority' }),
+    resolveProviderPolicy: async () => { policyCalls += 1; return { byok: 'priority' }; },
     resolveProviderCredential: async ({ origin }) => origin === 'byok' ? 'workspace-byok-key' : { unavailable: true },
     executeManagedGateway: async () => { gatewayCalls += 1; throw new Error('gateway must stay disabled'); },
     providerUsageLedger: { append: async () => {} }
@@ -267,9 +268,10 @@ test('chat, inline and ghost keep local/BYOK execution ahead of Neven and preser
     origin: 'byok'
   });
   assert.equal(gatewayCalls, 0);
-  assert.deepEqual(await handlers['get-inline-completion']({}, 'corrige', 'const x = 1;', {}), { success: true, text: 'inline-local' });
-  assert.deepEqual(await handlers['get-ghost-completion']({}, 'const x =', ';', {}), { success: true, text: 'ghost-local' });
+  assert.deepEqual(await handlers['get-inline-completion']({}, 'corrige', 'const x = 1;', {}), { success: true, text: 'inline-local', origin: 'byok' });
+  assert.deepEqual(await handlers['get-ghost-completion']({}, 'const x =', ';', {}), { success: true, text: 'ghost-local', origin: 'byok' });
   assert.deepEqual(modes, ['inline', 'ghost']);
+  assert.equal(policyCalls, 3);
   assert.equal(gatewayCalls, 0);
 });
 

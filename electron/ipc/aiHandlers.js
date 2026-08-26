@@ -368,7 +368,19 @@ const registerAIHandlers = ({
             execute: (executionRequest) => handler({ ...executionRequest, options: executionRequest.options })
           });
         }
-        return completionRunner({ ...request, provider, options });
+        // Inline and ghost use the same policy/grant path as chat. The flag is
+        // consumed only by the default runner to avoid wrapping it twice.
+        return runProviderCompletionWithPolicy({
+          provider,
+          request,
+          options,
+          execute: (executionRequest) => completionRunner({
+            ...executionRequest,
+            provider,
+            __skipProviderPolicy: true,
+            options: executionRequest.options
+          })
+        });
       },
       stream: (provider === 'kimi' || provider === 'ollama') ? async function* ({ options, onComplete, ...request }) {
         const handler = completionHandlers[provider];

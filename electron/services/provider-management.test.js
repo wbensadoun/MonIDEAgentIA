@@ -190,6 +190,7 @@ test('provider failures normalize real adapter formats before fallback decisions
   assert.deepEqual(normalizeProviderError('Request failed with status code 429', { retryable: true }), { code: 'rate_limited' });
   assert.deepEqual(normalizeProviderError({ code: 'ETIMEDOUT', message: 'socket timed out' }), { code: 'timeout' });
   assert.deepEqual(normalizeProviderError('Accès refusé à la clé API'), { code: 'permission_denied' });
+  assert.deepEqual(normalizeProviderError({ code: 'gateway_unavailable' }), { code: 'unavailable' });
 });
 
 test('credential lifecycle is serialized, versioned, audited and never returns a secret', async () => {

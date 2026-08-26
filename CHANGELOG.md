@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.3.3] — Hardening du routage managed
+
+### Security
+
+- L’ancienne route managed sans grant est désactivée ; le gateway Neven est l’unique entrée d’exécution.
+- Les modes chat, inline et ghost partagent la même policy et les erreurs gateway indisponibles déclenchent le fallback autorisé.
+- Les métadonnées provider/modèle restent server-side dans la réponse managed.
+
 ## [3.3.2] — Refus vérifiables du flux managed COD-36 / COD-26
 
 ### Security
