@@ -65,7 +65,8 @@ const AppContent = () => {
     handleAiProviderChange,
     handleOllamaSettingChange,
     handleActiveModelChange,
-    handlePermissionModeChange
+    handlePermissionModeChange,
+    saveSettingsPatch
   } = useAIModelSettings({ isElectronApiAvailable, showMessage });
   const {
     theme,
@@ -191,6 +192,8 @@ const AppContent = () => {
     setRouterClassifierModel,
     routerComplexityThreshold,
     setRouterComplexityThreshold,
+    reasoningEffort,
+    setReasoningEffort,
     multiAgentRunOptions
   } = useRunConfiguration();
 
@@ -663,6 +666,11 @@ const AppContent = () => {
     onRouterClassifierModelChange: setRouterClassifierModel,
     routerComplexityThreshold,
     onRouterComplexityThresholdChange: setRouterComplexityThreshold,
+    reasoningEffort,
+    onReasoningEffortChange: (effort) => {
+      setReasoningEffort(effort);
+      saveSettingsPatch({ reasoningEffort: effort });
+    },
     thinkingMode,
     onThinkingModeChange: setThinkingMode,
     deepContextEnabled,

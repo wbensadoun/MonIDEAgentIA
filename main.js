@@ -64,6 +64,7 @@ const {
   NEVEN_INTERNAL_PROFILES,
   buildNevenCorePlan
 } = require('./electron/services/neven-core.service');
+const { applyReasoningEffortFloor } = require('./electron/services/router.service');
 
 const isDev =
   process.env.NODE_ENV === 'development' ||
@@ -136,7 +137,8 @@ const resolveTrustedRouterConfiguration = async () => {
       ollamaModel: settings.ollamaModel,
       routerClassifierProvider: settings.routerClassifierProvider,
       routerClassifierModel: settings.routerClassifierModel,
-      routerComplexityThreshold: settings.routerComplexityThreshold
+      routerComplexityThreshold: settings.routerComplexityThreshold,
+      reasoningEffort: settings.reasoningEffort
     }
   };
 };
@@ -177,9 +179,19 @@ configureAIService({
     // Neven/Supabase (routing_profiles -> provider -> selected model).
     const profileFromCore = options?.nevenCoreExecutionContext?.profile;
     const derivedProfile = buildNevenCorePlan({ prompt: request?.userPrompt || '' }).profile;
-    const profile = Object.prototype.hasOwnProperty.call(NEVEN_INTERNAL_PROFILES, profileFromCore)
+    const baseProfile = Object.prototype.hasOwnProperty.call(NEVEN_INTERNAL_PROFILES, profileFromCore)
       ? profileFromCore
       : (Object.prototype.hasOwnProperty.call(NEVEN_INTERNAL_PROFILES, derivedProfile) ? derivedProfile : 'haiku');
+    // L'effort de raisonnement (Settings > Routeur) pose un PLANCHER sur le profil
+    // managed : le control plane peut monter au-dessus, jamais descendre en dessous.
+    // 'auto' (defaut) laisse le profil derive intact — comportement historique.
+    let profile = baseProfile;
+    try {
+      const settings = await readSettingsSafe();
+      profile = applyReasoningEffortFloor(baseProfile, settings.reasoningEffort);
+    } catch {
+      profile = baseProfile;
+    }
     return { workspaceId, deviceId, profile };
   },
   executeManagedGateway: completeManagedGateway,

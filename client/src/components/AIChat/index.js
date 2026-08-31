@@ -314,11 +314,62 @@ const AgentModePill = ({
   );
 };
 
+// ─── ReasoningEffortPill ────────────────────────────────────────────────────
+// Sélecteur d'effort de raisonnement (façon Codex/Claude). Aiguille le routeur
+// vers un profil interne PLANCHER (low→luna, medium→sol, high/ultra→opus) sans
+// jamais exposer ces profils à l'utilisateur : il ne voit que "Neven IA" ou son
+// BYOK + modèle. 'auto' = le routeur décide seul (comportement historique).
+// Miroir de ROUTER_REASONING_EFFORTS (electron/services/router.service.js).
+const REASONING_EFFORT_LEVELS = [
+  { id: 'auto', label: 'Auto', helper: 'Le routeur choisit la puissance selon la demande.', tone: 'success' },
+  { id: 'low', label: 'Faible', helper: 'Réponses rapides, tâches simples.', tone: 'success' },
+  { id: 'medium', label: 'Moyen', helper: 'Équilibre vitesse / profondeur.', tone: 'warning' },
+  { id: 'high', label: 'Élevé', helper: 'Raisonnement approfondi.', tone: 'danger' },
+  { id: 'ultra', label: 'Ultra', helper: 'Puissance maximale, multi-agents.', tone: 'danger' }
+];
+
+const ReasoningEffortPill = ({ reasoningEffort, onReasoningEffortChange, disabled }) => {
+  const { open, setOpen, wrapRef } = usePillMenu();
+  const current = REASONING_EFFORT_LEVELS.find((l) => l.id === reasoningEffort) || REASONING_EFFORT_LEVELS[0];
+
+  return (
+    <div className="ai-pill-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className="ai-pill"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        title={`Effort de raisonnement : ${current.label}. ${current.helper}`}
+      >
+        <span className={`ai-pill-dot ai-pill-dot--${current.tone}`} aria-hidden="true" />
+        {current.label}
+      </button>
+      {open && (
+        <div className="ai-pill-menu" role="menu">
+          {REASONING_EFFORT_LEVELS.map((level) => (
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={level.id === reasoningEffort}
+              key={level.id}
+              className={`ai-pill-menu-item ${level.id === reasoningEffort ? 'is-active' : ''}`}
+              onClick={() => { onReasoningEffortChange(level.id); setOpen(false); }}
+              title={level.helper}
+            >
+              <span className={`ai-pill-dot ai-pill-dot--${level.tone}`} aria-hidden="true" />
+              {level.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── AutonomyPill ───────────────────────────────────────────────────────────
 // Compact pill showing the current autonomy level (dot + label); click opens
 // a popover to switch between Lecture seule / Supervisé / Autonome.
-const AutonomyPill = ({ autonomyLevel, onAutonomyLevelChange, disabled }) => {
-  const { open, setOpen, wrapRef } = usePillMenu();
+const AutonomyPill = ({ autonomyLevel, onAutonomyLevelChange, disabled }) => {  const { open, setOpen, wrapRef } = usePillMenu();
   const current = AUTONOMY_LEVELS.find((l) => l.id === autonomyLevel) || AUTONOMY_LEVELS[0];
 
   return (
@@ -497,6 +548,10 @@ const AIChat = ({
   routerClassifierModel = null,
   // eslint-disable-next-line no-unused-vars
   routerComplexityThreshold = 0.5,
+  // Effort de raisonnement (façon Codex/Claude) : aiguille le routeur vers un
+  // profil interne plancher sans jamais l'exposer à l'utilisateur.
+  reasoningEffort = 'auto',
+  onReasoningEffortChange,
   agents = [],
   activeAgent = null,
   onActiveAgentChange,
@@ -1908,6 +1963,16 @@ const AIChat = ({
                   disabled={isLoading}
                 />
               </>
+            )}
+
+            {/* Effort de raisonnement : aiguille le routeur / control plane vers
+                un profil plus ou moins puissant, sans exposer les profils internes. */}
+            {onReasoningEffortChange && (
+              <ReasoningEffortPill
+                reasoningEffort={reasoningEffort}
+                onReasoningEffortChange={onReasoningEffortChange}
+                disabled={isLoading}
+              />
             )}
 
             {/* Permission Level n'a de sens qu'en mode Agent (Ask/Plan sont
