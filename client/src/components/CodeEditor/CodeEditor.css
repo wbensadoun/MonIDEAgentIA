@@ -415,6 +415,142 @@
   color: var(--text-muted);
 }
 
+/* ---- EditorWelcome : écran d'accueil riche (mode code) ----
+   Toutes les couleurs passent par les tokens (N4). Pas de fond accent
+   saturé ; --accent-soft et teintes de texte uniquement (N7). Focus
+   visible conservé (N6). */
+.editor-welcome {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.editor-welcome-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 420px;
+}
+
+.editor-welcome-logo {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.editor-welcome-title {
+  font-size: 18px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-main);
+  letter-spacing: -0.01em;
+}
+
+.editor-welcome-subtitle {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.editor-welcome-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 520px;
+}
+
+@media (max-width: 560px) {
+  .editor-welcome-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.editor-welcome-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text-main);
+  text-align: left;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.editor-welcome-card:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.editor-welcome-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.editor-welcome-card-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.editor-welcome-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.editor-welcome-card-title {
+  font-size: 12.5px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-welcome-card-keys {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.editor-welcome-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.editor-welcome-foot-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 /* ---- Inline Prompt (Ctrl+K) ---- */
 .inline-prompt-box {
   position: absolute;

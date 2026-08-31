@@ -1504,6 +1504,137 @@
   line-height: 1.6;
 }
 
+/* ── ChatWelcome : écran d'accueil riche (mode chat) ───────────────────────
+   Remplace l'état vide minimaliste. Toutes les couleurs passent par les
+   tokens (N4). L'accent plein est réservé ; on n'utilise ici que
+   --accent-soft et des teintes de texte (N7). Focus visible conservé (N6). */
+.chat-welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+  overflow-y: auto;
+}
+
+.chat-welcome-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 420px;
+}
+
+.chat-welcome-logo {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.chat-welcome-title {
+  font-size: 18px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-main);
+  letter-spacing: -0.01em;
+}
+
+.chat-welcome-subtitle {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.chat-welcome-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 520px;
+}
+
+@media (max-width: 560px) {
+  .chat-welcome-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chat-welcome-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text-main);
+  text-align: left;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.chat-welcome-card:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.chat-welcome-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chat-welcome-card-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.chat-welcome-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.chat-welcome-card-title {
+  font-size: 12.5px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-welcome-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.chat-welcome-hint kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
 /* ── Intelligent Router : Auto agent selector ───────────────── */
 .ai-auto-row {
   display: flex;

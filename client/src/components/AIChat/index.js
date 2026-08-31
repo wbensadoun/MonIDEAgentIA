@@ -7,6 +7,7 @@ import { LiveFilesPanel } from '../LoadingAnimations';
 import SyntaxHighlightedCode from './SyntaxHighlightedCode';
 import { EXECUTION_MODES } from '../../utils/agentModes';
 import AIDecisionBadge from './AIDecisionBadge';
+import ChatWelcome from './ChatWelcome';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AUTONOMY_LEVELS, toLegacyPermission } from './AutonomyControls';
 import MessageViewer from './MessageViewer';
@@ -1588,13 +1589,12 @@ const AIChat = ({
       >
         <div className="ai-reading-col">
           {conversationHistory.length === 0 && !isLoading && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: 'var(--text-muted)', padding: 30, textAlign: 'center' }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ width: 40, height: 40, opacity: 0.15 }}>
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-              <p style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>Commencez à discuter avec l&apos;IA</p>
-              <p style={{ fontSize: 10, margin: 0 }}>Contexte complet du projet pris en compte.</p>
-            </div>
+            <ChatWelcome
+              onPickSuggestion={(suggestionPrompt) => {
+                handlePromptChange(suggestionPrompt);
+                setTimeout(() => promptInputRef.current?.focus(), 10);
+              }}
+            />
           )}
 
           {chatInterfaceSwap ? (

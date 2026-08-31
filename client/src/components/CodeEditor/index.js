@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useEffect, useCallback, useState } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import './CodeEditor.css';
+import EditorWelcome from './EditorWelcome';
 import {
   extractEditorSymbols,
   filterEditorSymbols,
@@ -545,6 +546,13 @@ const CodeEditor = ({
                 ignoreTrimWhitespace: false,
                 readOnly: true // On force la lecture seule dans le DiffViewer pour l'instant
               }}
+            />
+          ) : !activeFile ? (
+            // Écran d'accueil riche (mode code) : remplace la surface Monaco
+            // vide quand aucun fichier n'est ouvert. Façon VS Code / Cursor :
+            // raccourcis actionnables, aucune logique nouvelle.
+            <EditorWelcome
+              projectName={String(currentProjectPath || '').split(/[\\/]/).filter(Boolean).pop() || ''}
             />
           ) : (
             <Editor
