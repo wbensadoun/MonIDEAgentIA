@@ -58,6 +58,16 @@ const useRunConfiguration = () => {
     () => readLocalStorageNumber('router.complexityThreshold', DEFAULT_ROUTER_COMPLEXITY_THRESHOLD)
   );
 
+  // Effort de raisonnement (façon Codex/Claude) : aiguille le routeur vers un
+  // profil interne plancher sans jamais l'exposer à l'utilisateur. 'auto' = le
+  // routeur décide seul. Mirroir de DEFAULT_APP_SETTINGS.reasoningEffort
+  // (electron/services/settings.service.js) — la valeur backend fait foi pour
+  // le routage ; le localStorage n'est qu'un cache d'affichage au démarrage.
+  const [reasoningEffort, setReasoningEffort] = useState(() => {
+    const stored = readLocalStorageString('router.reasoningEffort');
+    return ['auto', 'low', 'medium', 'high', 'ultra'].includes(stored) ? stored : 'auto';
+  });
+
   useEffect(() => {
     try {
       localStorage.setItem('router.autoRoute', autoRoute ? '1' : '0');
@@ -98,6 +108,14 @@ const useRunConfiguration = () => {
     }
   }, [routerComplexityThreshold]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('router.reasoningEffort', reasoningEffort);
+    } catch {
+      // ignore
+    }
+  }, [reasoningEffort]);
+
   const multiAgentRunOptions = useMemo(() => ({
     formationKey: multiAgentFormationKey,
     disabledAgentKeys,
@@ -123,6 +141,8 @@ const useRunConfiguration = () => {
     setRouterClassifierModel,
     routerComplexityThreshold,
     setRouterComplexityThreshold,
+    reasoningEffort,
+    setReasoningEffort,
     multiAgentRunOptions
   };
 };

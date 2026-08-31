@@ -91,6 +91,62 @@ const normalizeRouterProfile = (profile) => {
   return ROUTER_VALID_PROFILES.has(normalized) ? normalized : 'haiku';
 };
 
+// ---------------------------------------------------------------------------
+// Effort de raisonnement (façon Codex / Claude Code).
+//
+// L'utilisateur choisit un effort "low → ultra" qui AIGUILLE le routeur vers un
+// profil interne plancher, SANS jamais voir ces profils (il ne voit que "Neven
+// IA" ou son BYOK + modèle). 'auto' = le routeur décide seul (comportement
+// historique inchangé). Sémantique PLANCHER : le routeur peut monter au-dessus
+// du niveau demandé (ex. prompt critique → opus même en Low), jamais descendre
+// en dessous. Les profils internes restent une métadonnée backend.
+// ---------------------------------------------------------------------------
+const ROUTER_REASONING_EFFORTS = Object.freeze({
+  auto: { floor: null, label: 'Auto' },
+  low: { floor: 'luna', label: 'Faible' },
+  medium: { floor: 'sol', label: 'Moyen' },
+  high: { floor: 'opus', label: 'Élevé' },
+  ultra: { floor: 'opus', label: 'Ultra' }
+});
+const ROUTER_VALID_EFFORTS = new Set(Object.keys(ROUTER_REASONING_EFFORTS));
+const ROUTER_PROFILE_RANK = Object.freeze({ haiku: 0, luna: 1, sol: 2, opus: 3 });
+
+const normalizeReasoningEffort = (effort) => {
+  const normalized = String(effort || '').trim().toLowerCase();
+  return ROUTER_VALID_EFFORTS.has(normalized) ? normalized : 'auto';
+};
+
+// Rehausse un profil au plancher demandé par l'effort, sans jamais le baisser.
+// Un effort 'auto' (floor null) laisse le profil intact.
+const applyReasoningEffortFloor = (profile, effort) => {
+  const normalizedEffort = normalizeReasoningEffort(effort);
+  const floor = ROUTER_REASONING_EFFORTS[normalizedEffort]?.floor;
+  const current = normalizeRouterProfile(profile);
+  if (!floor) return current;
+  return (ROUTER_PROFILE_RANK[current] ?? 0) >= (ROUTER_PROFILE_RANK[floor] ?? 0)
+    ? current
+    : floor;
+};
+
+// Reconstruit une decision en rehaussant son profil au plancher d'effort. Le
+// mode et la complexite sont dérives du NOUVEAU profil ; agent/skills choisis
+// par la classification sont conserves. Retourne la decision d'origine si aucun
+// rehaussement n'est necessaire.
+const raiseDecisionProfile = (decision, effort) => {
+  if (!decision || typeof decision !== 'object') return decision;
+  const raised = applyReasoningEffortFloor(decision.profile, effort);
+  if (raised === decision.profile) return decision;
+  const definition = ROUTER_PROFILE_DEFINITIONS[raised];
+  return {
+    ...decision,
+    profile: raised,
+    complexity: definition.complexity,
+    mode: definition.executionMode === 'agent'
+      ? 'single_agent'
+      : (raised === 'opus' ? 'multi_agent' : 'orchestrator')
+  };
+};
+
 const deriveProfileFromDecision = ({ mode, complexity }) => {
   if (mode === 'multi_agent') return 'opus';
   if (mode === 'orchestrator') return 'sol';
@@ -484,6 +540,34 @@ const routeToDecision = async ({
     settings: trustedSettings
   };
 
+  // Effort de raisonnement choisi par l'utilisateur (Settings > Routeur, persiste
+  // par le main process). 'auto' = le routeur decide seul. Toute valeur absente ou
+  // invalide retombe sur 'auto' (comportement historique inchange).
+  const reasoningEffort = normalizeReasoningEffort(trustedSettings.reasoningEffort);
+
+  // Construit la reponse finale en rehaussant la decision au plancher d'effort,
+  // puis en resolvant le modele physique pour le profil FINAL (jamais depuis une
+  // preference visible dans le chat).
+  const buildResponse = async (decision, source) => {
+    const raisedDecision = raiseDecisionProfile(decision, reasoningEffort);
+    const finalProfile = normalizeRouterProfile(raisedDecision.profile);
+    const finalModel = await resolveModelForProfile(normalizedProvider, finalProfile, ctx);
+    return {
+      success: true,
+      decision: raisedDecision,
+      execution: buildExecution(raisedDecision),
+      model: {
+        provider: normalizedProvider,
+        profile: finalProfile,
+        resolved: finalModel.resolved,
+        source: finalModel.source
+      },
+      reasoningEffort,
+      source,
+      timingMs: Date.now() - startedAt
+    };
+  };
+
   try {
     // 1) Liste agents + skills (dedupe par vrai nom, construction des Sets de validation).
     const agentsResult = typeof listAgents === 'function' ? await listAgents(projectPath) : null;
@@ -508,35 +592,19 @@ const routeToDecision = async ({
 
     // 2) Rien sur disque -> rien a router : repli direct, sans appel LLM inutile.
     if (agentNameSet.size === 0 && skillNameSet.size === 0) {
-      const fallbackModel = await resolveModelForProfile(normalizedProvider, 'haiku', ctx);
-      const decision = { ...ROUTER_SAFE_FALLBACK_DECISION };
-      return {
-        success: true,
-        decision,
-        execution: buildExecution(decision),
-        model: { provider: normalizedProvider, profile: 'haiku', resolved: fallbackModel.resolved, source: fallbackModel.source },
-        source: 'fallback',
-        timingMs: Date.now() - startedAt
-      };
+      return buildResponse({ ...ROUTER_SAFE_FALLBACK_DECISION }, 'fallback');
     }
 
     // 2bis) L1 (Trivial) : heuristique locale (longueur + indices d'action), frontiere
     //       configurable via `routerComplexityThreshold` (Settings > Routeur Intelligent,
     //       repli 0.5). Aucun appel reseau ici : si le prompt est juge trivial, repli
-    //       direct sur la decision sure, tier 'light'.
+    //       direct sur la decision sure, tier 'light'. Le plancher d'effort de
+    //       raisonnement s'applique aussi ici (buildResponse), donc un effort manuel
+    //       rehausse le profil meme sur un prompt trivial.
     const localProfile = classifyPromptProfile(userPrompt);
     if (localProfile?.confidence === 'high' || isPromptTrivialForL1(userPrompt, ctx.settings)) {
       const profile = localProfile?.profile || 'haiku';
-      const fallbackModel = await resolveModelForProfile(normalizedProvider, profile, ctx);
-      const decision = buildProfileDecision(profile);
-      return {
-        success: true,
-        decision,
-        execution: buildExecution(decision),
-        model: { provider: normalizedProvider, profile, resolved: fallbackModel.resolved, source: fallbackModel.source },
-        source: 'fallback',
-        timingMs: Date.now() - startedAt
-      };
+      return buildResponse(buildProfileDecision(profile), 'fallback');
     }
 
     // 3) Le classifieur (routeur) tourne toujours en tier 'light', quelle que soit la
@@ -575,41 +643,34 @@ const routeToDecision = async ({
       }
     }
 
-    // 4) Résout le modèle FINAL depuis le profil interne, jamais depuis une
-    // préférence visible dans le chat.
-    const finalProfile = normalizeRouterProfile(decision.profile);
-    const finalModel = await resolveModelForProfile(normalizedProvider, finalProfile, ctx);
-
-    return {
-      success: true,
-      decision,
-      execution: buildExecution(decision),
-      model: {
-        provider: normalizedProvider,
-        profile: finalProfile,
-        resolved: finalModel.resolved,
-        source: finalModel.source
-      },
-      source,
-      timingMs: Date.now() - startedAt
-    };
+    // 4) Résout le modèle FINAL depuis le profil interne (rehaussé au plancher
+    // d'effort de raisonnement), jamais depuis une préférence visible dans le chat.
+    return buildResponse(decision, source);
   } catch (error) {
     // Jamais de payload (donc jamais de cle API) dans les logs — message generique seulement.
     console.error('[Router] routeToDecision en echec, repli sur le comportement par defaut:', error?.message || 'erreur inconnue');
-    const decision = { ...ROUTER_SAFE_FALLBACK_DECISION };
-    return {
-      success: true,
-      decision,
-      execution: buildExecution(decision),
-      model: {
-        provider: normalizedProvider,
-        profile: 'haiku',
-        resolved: getDefaultModelForAIProvider(normalizedProvider),
-        source: 'static'
-      },
-      source: 'fallback',
-      timingMs: Date.now() - startedAt
-    };
+    // Le plancher d'effort s'applique meme sur le repli d'erreur : un utilisateur
+    // en "ultra" doit obtenir un profil eleve, pas le repli haiku par defaut.
+    try {
+      return await buildResponse({ ...ROUTER_SAFE_FALLBACK_DECISION }, 'fallback');
+    } catch {
+      // Repli ultime synchrone : jamais de throw au renderer.
+      const decision = raiseDecisionProfile({ ...ROUTER_SAFE_FALLBACK_DECISION }, reasoningEffort);
+      return {
+        success: true,
+        decision,
+        execution: buildExecution(decision),
+        model: {
+          provider: normalizedProvider,
+          profile: decision.profile,
+          resolved: getDefaultModelForAIProvider(normalizedProvider),
+          source: 'static'
+        },
+        reasoningEffort,
+        source: 'fallback',
+        timingMs: Date.now() - startedAt
+      };
+    }
   }
 };
 
@@ -625,8 +686,12 @@ module.exports = {
   buildRouterSystemPrompt,
   parseRouterClassificationResponse,
   validateRouterDecision,
+  normalizeReasoningEffort,
+  applyReasoningEffortFloor,
+  raiseDecisionProfile,
   ROUTER_PROFILE_DEFINITIONS,
   ROUTER_VALID_PROFILES,
+  ROUTER_REASONING_EFFORTS,
   PROVIDER_TIER_PROFILES,
   ROUTER_COMPLEXITY_THRESHOLD_FALLBACK,
   DEFAULT_CLAUDE_LIGHT_MODEL

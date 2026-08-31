@@ -106,6 +106,10 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   routerClassifierProvider: null,
   routerClassifierModel: null,
   routerComplexityThreshold: 0.5,
+  // Effort de raisonnement (façon Codex/Claude) : aiguille le routeur vers un
+  // profil interne plancher sans l'exposer à l'utilisateur. 'auto' = le routeur
+  // décide seul (comportement historique). Voir router.service.js.
+  reasoningEffort: 'auto',
   devPort: '3004',
   allowDangerousActions: false,
   aiContextPreset: 'safe',
@@ -212,6 +216,13 @@ const normalizeSettings = (raw) => {
   normalized.routerComplexityThreshold = Number.isFinite(routerComplexityThreshold)
     ? Math.min(1, Math.max(0, routerComplexityThreshold))
     : DEFAULT_APP_SETTINGS.routerComplexityThreshold;
+
+  // Effort de raisonnement : liste fermee miroir de ROUTER_REASONING_EFFORTS
+  // (router.service.js — non importe ici pour eviter une dependance circulaire).
+  const reasoningEffort = String(normalized.reasoningEffort || '').trim().toLowerCase();
+  normalized.reasoningEffort = ['auto', 'low', 'medium', 'high', 'ultra'].includes(reasoningEffort)
+    ? reasoningEffort
+    : DEFAULT_APP_SETTINGS.reasoningEffort;
 
   const preset = String(normalized.aiContextPreset || 'safe');
   normalized.aiContextPreset = preset === 'full' || preset === 'god' ? preset : 'safe';

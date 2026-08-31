@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.4.0] — Sélecteur d'effort de raisonnement
+
+### Added
+
+- Sélecteur d'effort de raisonnement dans la barre de saisie du chat (Auto / Faible / Moyen / Élevé / Ultra), façon Codex / Claude Code.
+- L'effort aiguille le routeur vers un profil interne **plancher** (low→luna, medium→sol, high/ultra→opus) sans jamais exposer ces profils à l'utilisateur.
+- Le plancher s'applique sur les chemins BYOK/local (route-request) et managed Neven (gateway), ainsi que sur tous les replis du routeur.
+
+### Security
+
+- L'effort n'est ni un modèle ni une clé : la source de vérité reste le fichier de settings du main process (liste fermée validée), jamais injectable depuis le renderer.
+
 ## [3.3.3] — Hardening du routage managed
 
 ### Security

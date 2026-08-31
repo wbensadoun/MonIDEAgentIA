@@ -400,7 +400,8 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     handleAiProviderChange,
     handleOllamaSettingChange,
     handleActiveModelChange,
-    handlePermissionModeChange
+    handlePermissionModeChange,
+    saveSettingsPatch
   };
 };
 

@@ -36,12 +36,35 @@ Le routeur renvoie :
 
 L'interface transforme ces valeurs en variables d'exécution (`effExecutionMode`, `effDepth`, `routerModelOverride`).
 
+## Effort de raisonnement (v3.4.0)
+
+L'utilisateur dispose d'un sélecteur d'effort de raisonnement (pill dans la barre de saisie du chat, façon Codex / Claude Code) qui **aiguille le routeur vers un profil interne plancher**, sans jamais voir ces profils : il ne voit que « Neven IA » (auto-route) ou son BYOK + modèle.
+
+| Effort | Plancher de profil interne | Effet |
+|---|---|---|
+| `auto` (défaut) | — | Le routeur décide seul (comportement historique) |
+| `low` | `luna` | Réponses rapides, tâches simples |
+| `medium` | `sol` | Équilibre vitesse / profondeur |
+| `high` | `opus` | Raisonnement approfondi |
+| `ultra` | `opus` | Puissance maximale, multi-agents |
+
+**Sémantique plancher (floor)** : le routeur peut monter au-dessus du niveau demandé (ex. prompt critique → `opus` même en `low`), jamais descendre en dessous. Le plancher s'applique sur les 4 chemins de décision : repli sans catalogue, L1 trivial, L2 classification LLM, et repli d'erreur.
+
+**Circuit** :
+
+1. UI : `ReasoningEffortPill` (AIChat) → `onReasoningEffortChange` (App.js) → `saveSettingsPatch({ reasoningEffort })` persiste dans le fichier de settings du main process (source de vérité) + localStorage (cache d'affichage).
+2. Routeur BYOK/local : `resolveTrustedRouterConfiguration` (main.js) passe `reasoningEffort` au handler `route-request` → `raiseDecisionProfile` rehausse la décision.
+3. Chemin managed Neven : `resolveProviderExecutionContext` (main.js) applique `applyReasoningEffortFloor` au profil dérivé du prompt avant l'appel gateway — le control plane choisit ensuite le modèle physique pour ce profil.
+
+**Sécurité** : l'effort n'est ni un modèle ni une clé ; le renderer ne peut pas l'injecter dans les options de completion (source de vérité = settings backend, liste fermée `auto|low|medium|high|ultra` validée dans `normalizeSettings`). Les profils internes restent une métadonnée backend.
+
 ## Configuration utilisateur
 
 > Statut actuel : il n'existe pas encore d'onglet Settings dédié au routeur. Ce qui suit décrit uniquement ce qui est réellement implémenté aujourd'hui.
 
 - Le routeur est piloté par un simple booléen `autoRoute` (état local dans `useRunConfiguration.js`, activé par défaut).
 - Il est exposé via le sélecteur d'agent dans AIChat (`client/src/components/AIChat/index.js`) : l'option **Auto (Sélection intelligente)** en haut de la liste active `autoRoute`, choisir un agent précis le désactive.
+- L'effort de raisonnement (`reasoningEffort`) est exposé via la pill dédiée dans la barre de saisie du chat (voir section ci-dessus).
 - Il n'y a pas de choix du modèle de classification par l'utilisateur.
 - Il n'y a pas de seuil de complexité ajustable.
 
