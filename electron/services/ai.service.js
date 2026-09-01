@@ -1020,6 +1020,10 @@ const buildN8nWorkflowAdapter = (n8nWf, saveName) => {
 // portee du modele.
 const executeCommandForAI = (cmd, projectPath, deps = serviceDeps, runContext = {}) => {
   return new Promise(async (resolve) => {
+    if (runContext?.toolsAllowed === false || runContext?.allowToolCalls === false
+      || runContext?.promptSafety?.allowToolCalls === false) {
+      return resolve({ success: false, output: '[AI TERMINAL] Outil desactive par la politique de securite.' });
+    }
     if (!cmd || typeof cmd !== 'string' || !cmd.trim()) {
       return resolve({ success: false, output: '[AI TERMINAL] Commande vide ignoree.' });
     }

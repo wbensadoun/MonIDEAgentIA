@@ -352,7 +352,10 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
           const toolResults = [];
           for (const call of toolCalls.slice(0, AGENT_MAX_TOOL_CALLS)) {
             // eslint-disable-next-line no-await-in-loop
-            toolResults.push(await executeAgentFileToolCall(projectPath, call));
+            toolResults.push(await executeAgentFileToolCall(projectPath, call, {
+              toolsAllowed: options.toolsAllowed,
+              promptSafety: options.promptSafety || options.retrievalPromptSafety
+            }));
           }
           messages = [
             ...messages,
@@ -397,7 +400,9 @@ Pour modifier des fichiers, utilise: **FICHIER: nom.ext** \`\`\`langage\n// code
       }
       const { output, success: commandSucceeded, exitCode } = await executeCommandForAI(cmd, projectPath, undefined, {
         executionMode: options.executionMode,
-        autonomyLevel: options.autonomyLevel
+        autonomyLevel: options.autonomyLevel,
+        toolsAllowed: options.toolsAllowed,
+        promptSafety: options.promptSafety || options.retrievalPromptSafety
       });
       messages = [
         ...messages,

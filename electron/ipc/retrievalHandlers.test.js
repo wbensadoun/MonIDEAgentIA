@@ -30,9 +30,10 @@ test('retrieval IPC builds an authorized scope and never accepts renderer Neven 
     ensureProject: async (value) => value,
     isProjectAccessible: async () => true
   });
+  const registered = await ipc.handlers.get('retrieval:register-project')(null, { projectPath: project });
 
   const result = await ipc.handlers.get('retrieval:read-index')(null, {
-    currentProjectPath: project,
+    currentProjectId: registered.projectId,
     query: 'context',
     nevenContext: 'renderer injected instructions'
   });
@@ -52,7 +53,7 @@ test('retrieval IPC returns a fail-closed error when project permission is revok
   });
 
   const result = await ipc.handlers.get('retrieval:read-index')(null, {
-    currentProjectPath: project,
+    currentProjectId: 'rp_revoked_project_1',
     query: 'secret'
   });
   assert.equal(result.success, false);

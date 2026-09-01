@@ -43,7 +43,7 @@ const registerRetrievalHandlers = ({
       return { success: true, projectId: id };
     } catch (error) {
       const safe = publicError(error);
-      console.error('[Retrieval] register refused:', error?.message || error);
+      console.error('[Retrieval] register refused:', safe.code);
       return { success: false, ...safe };
     }
   });
@@ -72,7 +72,7 @@ const registerRetrievalHandlers = ({
       return { success: true, scope, ...indexes };
     } catch (error) {
       const safe = publicError(error);
-      console.error('[Retrieval] read refused:', error?.message || error);
+      console.error('[Retrieval] read refused:', safe.code);
       return { success: false, ...safe };
     }
   });

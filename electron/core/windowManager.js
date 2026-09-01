@@ -12,6 +12,45 @@ const defaultIsDev =
   process.env.ELECTRON_IS_DEV === '1' ||
   process.defaultApp === true;
 
+// Main-process view of projects currently opened by the desktop window. The
+// renderer can display this state but cannot manufacture membership in it.
+const createProjectWindowState = () => {
+  const openProjects = new Set();
+  let currentProject = null;
+  const normalize = (value) => {
+    const raw = String(value || '').trim();
+    return raw ? path.resolve(raw) : null;
+  };
+  return Object.freeze({
+    markOpened: (projectPath) => {
+      const normalized = normalize(projectPath);
+      if (!normalized) return null;
+      openProjects.add(normalized);
+      currentProject = normalized;
+      return normalized;
+    },
+    markCurrent: (projectPath) => {
+      const normalized = normalize(projectPath);
+      if (!normalized || !openProjects.has(normalized)) return false;
+      currentProject = normalized;
+      return true;
+    },
+    markClosed: (projectPath) => {
+      const normalized = normalize(projectPath);
+      if (!normalized) return false;
+      const deleted = openProjects.delete(normalized);
+      if (currentProject === normalized) currentProject = null;
+      return deleted;
+    },
+    isOpen: (projectPath) => {
+      const normalized = normalize(projectPath);
+      return !!normalized && openProjects.has(normalized);
+    },
+    getCurrent: () => currentProject,
+    listOpen: () => [...openProjects]
+  });
+};
+
 const callLogger = async (logger, level, message, payload) => {
   try {
     const fn = logger?.[level];
@@ -435,6 +474,7 @@ const createMainWindow = async ({
 };
 
 module.exports = {
+  createProjectWindowState,
   createMainWindow,
   createSecondaryWindow,
   createAppMenu,

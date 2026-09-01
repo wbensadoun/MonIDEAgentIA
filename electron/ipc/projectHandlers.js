@@ -8,7 +8,7 @@ const {
   requestProjectPathApproval,
 } = require('../core/security');
 
-const registerProjectHandlers = ({ getMainWindow }) => {
+const registerProjectHandlers = ({ getMainWindow, projectState = null }) => {
   ipcMain.handle('open-folder-dialog', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(getMainWindow(), {
       properties: ['openDirectory']
@@ -18,6 +18,7 @@ const registerProjectHandlers = ({ getMainWindow }) => {
     }
 
     const trustedPath = trustProjectPath(filePaths[0]);
+    projectState?.markOpened?.(trustedPath);
     return { success: true, path: trustedPath };
   });
 
@@ -31,6 +32,7 @@ const registerProjectHandlers = ({ getMainWindow }) => {
       const defaultRoot = path.join(app.getPath('documents'), 'Code Companion', 'Sans-titre');
       fs.mkdirSync(defaultRoot, { recursive: true });
       const trustedPath = trustProjectPath(defaultRoot);
+      projectState?.markOpened?.(trustedPath);
       return { success: true, path: trustedPath };
     } catch (error) {
       return { success: false, error: error.message };
@@ -39,7 +41,9 @@ const registerProjectHandlers = ({ getMainWindow }) => {
 
   ipcMain.handle('authorize-project-path', async (_event, projectPath) => {
     try {
-      return await requestProjectPathApproval(projectPath, { dialog, getMainWindow });
+      const result = await requestProjectPathApproval(projectPath, { dialog, getMainWindow });
+      if (result?.success) projectState?.markOpened?.(result.path);
+      return result;
     } catch (error) {
       return { success: false, error: error.message };
     }

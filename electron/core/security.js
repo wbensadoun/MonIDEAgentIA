@@ -246,10 +246,14 @@ REGLES OUTILS:
 - Taille max fichier: ${AGENT_MAX_FILE_BYTES} bytes ; read_lines renvoie au max ${AGENT_MAX_LINES_PER_CALL} lignes.
 - Quand tu appelles un outil, reponds UNIQUEMENT avec les balises d'outil, sans texte autour.`;
 
-const executeAgentFileToolCall = async (workspaceRoot, call) => {
+const executeAgentFileToolCall = async (workspaceRoot, call, toolPolicy = {}) => {
   const toolName = String(call?.name || '').trim();
   const attrs = call?.attrs && typeof call.attrs === 'object' ? call.attrs : {};
   try {
+    if (toolPolicy?.toolsAllowed === false || toolPolicy?.allowToolCalls === false
+      || toolPolicy?.promptSafety?.allowToolCalls === false) {
+      throw new Error('Tool calls disabled by retrieval safety policy');
+    }
     if (!workspaceRoot) throw new Error('Aucun projet autorise pour la lecture de fichier.');
     if (toolName === 'read_file') {
       const relFile = String(attrs.file || '').trim();

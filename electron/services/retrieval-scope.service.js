@@ -50,6 +50,13 @@ const normalizeQuery = (value) => {
   return query;
 };
 
+const normalizeProjectId = (value, fieldName) => {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(value)) {
+    throw new Error(`${fieldName} invalide`);
+  }
+  return value;
+};
+
 const queryTokens = (query) => [...new Set(String(query || '').toLowerCase()
   .split(/[^\p{L}\p{N}_.$/-]+/u)
   .map((token) => token.trim())
@@ -68,9 +75,12 @@ const scoreEntry = (text, tokens) => {
 const sanitizeRetrievalRequest = (payload = {}) => {
   if (!isPlainObject(payload)) throw new Error(RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST);
 
-  const currentProjectPath = payload.currentProjectPath == null
+  if (Object.prototype.hasOwnProperty.call(payload, 'currentProjectPath')) {
+    throw new Error(RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST);
+  }
+  const currentProjectId = payload.currentProjectId == null
     ? null
-    : normalizePathInput(payload.currentProjectPath, 'Projet courant');
+    : normalizeProjectId(payload.currentProjectId, 'Identifiant projet courant');
   if (Object.prototype.hasOwnProperty.call(payload, 'openProjectPaths')) {
     throw new Error(RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST);
   }
@@ -95,7 +105,7 @@ const sanitizeRetrievalRequest = (payload = {}) => {
   }
 
   return Object.freeze({
-    currentProjectPath,
+    currentProjectId,
     openProjectIds: Object.freeze(openProjectIds),
     includeOpenProjects: payload.includeOpenProjects === true,
     // Neven is a capability marker only. Raw Neven context is intentionally
@@ -116,14 +126,15 @@ const freezeProject = (kind, projectPath, projectId = null) => Object.freeze({
  * path list that they can alter or use as an authorization claim. */
 const createRetrievalProjectRegistry = ({
   ensureProject = ensureTrustedProjectPath,
-  isProjectAccessible = async () => true
+  isProjectAccessible = async () => true,
+  isProjectOpen = async () => true
 } = {}) => {
   const projects = new Map();
   return Object.freeze({
     register: async (projectPath) => {
       const normalized = normalizePathInput(projectPath, 'Projet');
       const trustedPath = normalizePathInput(await ensureProject(normalized), 'Projet autorise');
-      if (trustedPath !== normalized || !(await isProjectAccessible(trustedPath))) {
+      if (trustedPath !== normalized || !(await isProjectAccessible(trustedPath)) || !(await isProjectOpen(trustedPath))) {
         const error = new Error(RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED);
         error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
         throw error;
@@ -134,7 +145,9 @@ const createRetrievalProjectRegistry = ({
     },
     resolve: (projectId) => projects.get(projectId) || null,
     isActive: async (projectId, projectPath) => (
-      projects.get(projectId) === projectPath && (await isProjectAccessible(projectPath))
+      projects.get(projectId) === projectPath
+        && (await isProjectAccessible(projectPath))
+        && (await isProjectOpen(projectPath))
     ),
     revoke: (projectId) => projects.delete(projectId)
   });
@@ -166,7 +179,15 @@ const buildRetrievalScope = async (payload, {
     projectEntries.push(freezeProject(kind, normalizedTrusted, projectId));
   };
 
-  if (request.currentProjectPath) await authorize(request.currentProjectPath, 'current-project');
+  if (request.currentProjectId) {
+    const currentPath = await resolveProjectId(request.currentProjectId);
+    if (!currentPath) {
+      const error = new Error(RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED);
+      error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
+      throw error;
+    }
+    await authorize(currentPath, 'current-project', request.currentProjectId);
+  }
   if (request.includeOpenProjects) {
     for (const projectId of request.openProjectIds) {
       const projectPath = await resolveProjectId(projectId);
@@ -320,10 +341,15 @@ const streamIndexEntries = async function* (indexPath) {
   let buffer = '';
   let position = 0;
   let started = false;
+  let closed = false;
   for await (const piece of stream) {
     buffer += piece;
     while (true) {
       while (/\s/.test(buffer[position] || '')) position += 1;
+      if (closed) {
+        if (buffer[position]) throw new Error('Index retrieval invalide');
+        break;
+      }
       if (!started) {
         if (!buffer[position]) break;
         if (buffer[position] !== '{') throw new Error('Index retrieval invalide');
@@ -332,7 +358,11 @@ const streamIndexEntries = async function* (indexPath) {
         continue;
       }
       while (/\s/.test(buffer[position] || '')) position += 1;
-      if (buffer[position] === '}') return;
+      if (buffer[position] === '}') {
+        closed = true;
+        position += 1;
+        continue;
+      }
       const keyEnd = scanStringEnd(buffer, position);
       if (keyEnd == null) break;
       const key = JSON.parse(buffer.slice(position, keyEnd));
@@ -353,7 +383,11 @@ const streamIndexEntries = async function* (indexPath) {
         position += 1;
         continue;
       }
-      if (buffer[position] === '}') return;
+      if (buffer[position] === '}') {
+        closed = true;
+        position += 1;
+        continue;
+      }
       if (!buffer[position]) break;
       throw new Error('Index retrieval invalide');
     }
@@ -363,7 +397,7 @@ const streamIndexEntries = async function* (indexPath) {
     }
   }
   while (/\s/.test(buffer[position] || '')) position += 1;
-  if (!started || buffer[position] !== '}') throw new Error('Index retrieval invalide');
+  if (!started || !closed) throw new Error('Index retrieval invalide');
 };
 
 const normalizeIndexFilePath = (projectPath, relativeFilePath) => {

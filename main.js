@@ -9,6 +9,7 @@ const { registerAppLifecycle } = require('./electron/core/appLifecycle');
 const { registerLogHandlers } = require('./electron/ipc/logHandlers');
 const { registerProcessHandlers } = require('./electron/ipc/processHandlers');
 const { registerProjectHandlers } = require('./electron/ipc/projectHandlers');
+const { createProjectWindowState } = require('./electron/core/windowManager');
 const { registerQualityHandlers } = require('./electron/ipc/qualityHandlers');
 const { registerSystemHandlers } = require('./electron/ipc/systemHandlers');
 const { registerSkillHandlers } = require('./electron/ipc/skillHandlers');
@@ -95,6 +96,7 @@ let mainWindow;
 const providerSecretVault = new ProviderSecretVault({
   filePath: ProviderSecretVault.defaultFilePath(app.getPath('userData'))
 });
+const projectWindowState = createProjectWindowState();
 // Le control plane Neven reste dans le main process. Il ne retourne jamais de
 // cle fournisseur au renderer : uniquement un droit court vers la passerelle
 // Neven, conservé en mémoire et destiné aux futures exécutions managed.
@@ -195,7 +197,8 @@ registerBrainGraphHandlers({
 // local projects, so trust is the permission source for this bounded slice.
 const retrievalProjectRegistry = createRetrievalProjectRegistry({
   ensureProject: ensureTrustedProjectPath,
-  isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath)
+  isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath),
+  isProjectOpen: async (projectPath) => projectWindowState.isOpen(projectPath)
 });
 registerRetrievalHandlers({
   ipcMain,
@@ -217,7 +220,7 @@ registerGitHandlers({
 
 // Handlers extraits dans leurs modules respectifs
 registerLogHandlers({ getLogsDir, getLatestLogPath });
-registerProjectHandlers({ getMainWindow: () => mainWindow });
+registerProjectHandlers({ getMainWindow: () => mainWindow, projectState: projectWindowState });
 registerProcessHandlers(processService);
 registerQualityHandlers(processService);
 registerSystemHandlers();
