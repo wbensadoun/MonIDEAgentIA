@@ -190,6 +190,9 @@ try {
     brainGraphGet: (projectPath, options) => ipcRenderer.invoke('brain-graph:get', projectPath, options),
     brainGraphSelect: (projectPath, query, options) => ipcRenderer.invoke('brain-graph:select', projectPath, query, options),
     brainGraphPath: (projectPath) => ipcRenderer.invoke('brain-graph:path', projectPath),
+    // Retrieval is authorized and scoped in the main process. The renderer
+    // only supplies a bounded request; raw Neven context is never accepted.
+    retrievalReadIndex: (payload) => ipcRenderer.invoke('retrieval:read-index', payload),
 
     // Agents APIs
     listAgents: (projectPath) => ipcRenderer.invoke('list-agents', projectPath),

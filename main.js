@@ -15,6 +15,7 @@ const { registerSkillHandlers } = require('./electron/ipc/skillHandlers');
 const { registerGitHandlers } = require('./electron/ipc/gitHandlers');
 const { registerWorkflowHandlers } = require('./electron/ipc/workflowHandlers');
 const { registerBrainGraphHandlers } = require('./electron/ipc/brainGraphHandlers');
+const { registerRetrievalHandlers } = require('./electron/ipc/retrievalHandlers');
 const {
   configureAIService,
   getN8nCatalogEntries,
@@ -186,6 +187,16 @@ registerBrainGraphHandlers({
   ipcMain,
   ensureTrustedProjectPath,
   assertSafePath
+});
+
+// Retrieval must pass through the same trusted-project boundary as file and
+// graph reads. The current desktop app has no separate identity provider for
+// local projects, so trust is the permission source for this bounded slice.
+registerRetrievalHandlers({
+  ipcMain,
+  ensureProject: ensureTrustedProjectPath,
+  isProjectAccessible: async (projectPath) => Boolean(projectPath),
+  resolveNevenContext: async () => ({ available: false })
 });
 
 registerGitHandlers({
