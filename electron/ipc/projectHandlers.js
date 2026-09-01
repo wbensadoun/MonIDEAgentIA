@@ -9,7 +9,7 @@ const {
   revokeProjectPath,
 } = require('../core/security');
 
-const registerProjectHandlers = ({ getMainWindow, projectState = null }) => {
+const registerProjectHandlers = ({ getMainWindow, projectState = null, revokeRetrievalPath = null }) => {
   ipcMain.handle('open-folder-dialog', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(getMainWindow(), {
       properties: ['openDirectory']
@@ -56,6 +56,7 @@ const registerProjectHandlers = ({ getMainWindow, projectState = null }) => {
     }
     projectState.markClosed(projectPath);
     revokeProjectPath(projectPath);
+    revokeRetrievalPath?.(projectPath);
     return { success: true };
   });
 };

@@ -8,6 +8,7 @@ const test = require('node:test');
 const {
   RETRIEVAL_SCOPE_ERRORS,
   RETRIEVAL_SCOPE_VERSION,
+  MAX_INDEX_ENTRIES_LENGTH,
   buildRetrievalScope,
   createRetrievalProjectRegistry,
   getIndexPath,
@@ -145,6 +146,20 @@ test('query filtering and topK are applied before context leaves the main proces
   assert.equal(result.context.includes('unrelated documentation'), false);
 });
 
+test('structured index entries have an independent payload bound', async () => {
+  const current = await makeProject('entry-bound');
+  const trusted = new Set([current]);
+  await writeIndex(current, {
+    'large.md': { chunks: [{ text: `auth ${'x'.repeat(MAX_INDEX_ENTRIES_LENGTH + 5000)}` }] },
+    'second.md': { chunks: [{ text: 'auth second result' }] }
+  });
+  const scope = await makeScope({ currentProjectId: CURRENT_PROJECT_ID, query: 'auth', topK: 2 }, trusted);
+  const result = await readScopedIndexes(scope);
+  const serializedEntries = result.indexes.flatMap((index) => index.entries)
+    .reduce((total, entry) => total + entry.text.length, 0);
+  assert.ok(serializedEntries <= MAX_INDEX_ENTRIES_LENGTH);
+});
+
 test('explicitly enabled open projects remain separately labeled', async () => {
   const current = await makeProject('current-open');
   const open = await makeProject('open');
@@ -217,6 +232,27 @@ test('registry follows the main-process window project state, not trusted paths 
   const projectId = await registry.register(project);
   projectState.markClosed(project);
   assert.equal(await registry.isActive(projectId, project), false);
+});
+
+test('project IDs are generation-scoped and cannot cross a main-process session', async () => {
+  const project = await makeProject('generation');
+  const first = createRetrievalProjectRegistry({ ensureProject: async (value) => value });
+  const staleId = await first.register(project);
+  const second = createRetrievalProjectRegistry({ ensureProject: async (value) => value });
+  const freshId = await second.register(project);
+  assert.notEqual(staleId, freshId);
+  assert.equal(second.resolve(staleId), null);
+  assert.equal(second.resolve(freshId), project);
+});
+
+test('closing a project path revokes every registered retrieval generation', async () => {
+  const project = await makeProject('path-revoke');
+  const registry = createRetrievalProjectRegistry({ ensureProject: async (value) => value });
+  const staleId = await registry.register(project);
+  assert.equal(registry.revokePath(project), true);
+  assert.equal(registry.resolve(staleId), null);
+  const freshId = await registry.register(project);
+  assert.notEqual(freshId, staleId);
 });
 
 test('trailing JSON content is rejected instead of being silently ignored', async () => {

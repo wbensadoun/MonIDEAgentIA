@@ -190,7 +190,22 @@ const useProjectWorkspace = ({
     }
   }, [currentProjectPath, handleSelectProject, loadConversationByFile]);
 
-  const handleRemoveProject = useCallback((projectPath) => {
+  const handleRemoveProject = useCallback(async (projectPath) => {
+    // Removing a workspace from the UI must revoke its main-process trust
+    // first. Otherwise a stale retrieval ID could remain usable after the
+    // project disappeared from the renderer's list.
+    if (isElectronApiAvailable && typeof window.electronAPI?.closeProject === 'function') {
+      try {
+        const response = await window.electronAPI.closeProject(projectPath);
+        if (!response?.success) {
+          showMessage(`Projet non ferme: ${response?.error || 'refuse'}`, 3500);
+          return false;
+        }
+      } catch (error) {
+        showMessage(`Erreur fermeture projet: ${error?.message || 'refuse'}`, 3500);
+        return false;
+      }
+    }
     setWorkspaces((prev) => prev.filter((workspace) => workspace.path !== projectPath));
     setProjectRunState((prev) => {
       if (!(projectPath in prev)) return prev;
@@ -198,7 +213,8 @@ const useProjectWorkspace = ({
       delete next[projectPath];
       return next;
     });
-  }, []);
+    return true;
+  }, [isElectronApiAvailable, showMessage]);
 
   return {
     workspaces,

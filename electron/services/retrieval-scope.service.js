@@ -18,6 +18,9 @@ const MAX_TOP_K = 20;
 const MAX_RETRIEVED_TEXT_LENGTH = 12000;
 const MAX_INDEX_BYTES = 25 * 1024 * 1024;
 const MAX_TOTAL_CHUNKS = 200;
+// The context limit protects the prompt; this independent limit protects the
+// structured IPC response when callers inspect `indexes[].entries`.
+const MAX_INDEX_ENTRIES_LENGTH = 120000;
 const MAX_CONTEXT_LENGTH = 60000;
 const INDEX_RELATIVE_PATH = path.join('.vibe-workspace', 'rag_index.json');
 
@@ -130,6 +133,10 @@ const createRetrievalProjectRegistry = ({
   isProjectOpen = async () => true
 } = {}) => {
   const projects = new Map();
+  // IDs are scoped to one main-process lifetime. Including this nonce makes
+  // the boundary explicit and prevents a persisted/stale renderer ID from
+  // being interpreted as a valid ID after a new session starts.
+  const sessionGeneration = crypto.randomUUID();
   return Object.freeze({
     register: async (projectPath) => {
       const normalized = normalizePathInput(projectPath, 'Projet');
@@ -139,17 +146,32 @@ const createRetrievalProjectRegistry = ({
         error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
         throw error;
       }
-      const id = `rp_${crypto.randomUUID()}`;
-      projects.set(id, trustedPath);
+      const id = `rp_${sessionGeneration}_${crypto.randomUUID()}`;
+      projects.set(id, Object.freeze({ projectPath: trustedPath, generation: sessionGeneration }));
       return id;
     },
-    resolve: (projectId) => projects.get(projectId) || null,
+    resolve: (projectId) => {
+      const registration = projects.get(projectId);
+      return registration?.generation === sessionGeneration ? registration.projectPath : null;
+    },
     isActive: async (projectId, projectPath) => (
-      projects.get(projectId) === projectPath
+      projects.get(projectId)?.generation === sessionGeneration
+        && projects.get(projectId)?.projectPath === projectPath
         && (await isProjectAccessible(projectPath))
         && (await isProjectOpen(projectPath))
     ),
-    revoke: (projectId) => projects.delete(projectId)
+    revoke: (projectId) => projects.delete(projectId),
+    revokePath: (projectPath) => {
+      const normalized = normalizePathInput(projectPath, 'Projet');
+      let revoked = false;
+      for (const [projectId, registration] of projects.entries()) {
+        if (registration.projectPath === normalized) {
+          projects.delete(projectId);
+          revoked = true;
+        }
+      }
+      return revoked;
+    }
   });
 };
 
@@ -297,6 +319,35 @@ const validateIndexLocation = async (projectPath, indexPath) => {
   return true;
 };
 
+/**
+ * Pin the already-validated index to a file descriptor before parsing it.
+ * This closes the most important path replacement race: subsequent reads use
+ * the opened handle rather than resolving the path again. Windows does not
+ * expose O_NOFOLLOW through Node, so the lstat/fstat identity check is the
+ * remaining defence there; a concurrent parent-junction swap between those
+ * checks cannot be made fully atomic without a native handle-relative open.
+ */
+const openValidatedIndex = async (projectPath, indexPath) => {
+  const exists = await validateIndexLocation(projectPath, indexPath);
+  if (!exists) return null;
+  const before = await fsp.lstat(indexPath);
+  const noFollow = fs.constants.O_NOFOLLOW || 0;
+  const handle = await fsp.open(indexPath, fs.constants.O_RDONLY | noFollow);
+  try {
+    const after = await handle.stat();
+    const sameIdentity = !before.dev || !before.ino || (before.dev === after.dev && before.ino === after.ino);
+    if (!after.isFile() || after.isSymbolicLink?.() || !sameIdentity || after.size > MAX_INDEX_BYTES) {
+      const error = new Error(RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED);
+      error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
+      throw error;
+    }
+    return handle;
+  } catch (error) {
+    await handle.close().catch(() => {});
+    throw error;
+  }
+};
+
 const scanJsonValueEnd = (source, start) => {
   const first = source[start];
   if (first === '{' || first === '[') {
@@ -341,12 +392,16 @@ const scanStringEnd = (source, start) => {
 /** Stream top-level JSON members so a retrieval request never materializes
  * every chunk in memory. The existing local index is a JSON object keyed by
  * file path, so only one file entry is parsed at a time. */
-const streamIndexEntries = async function* (indexPath) {
-  const stream = fs.createReadStream(indexPath, { encoding: 'utf8' });
+const streamIndexEntries = async function* (indexPath, fileHandle = null) {
+  const stream = fileHandle?.createReadStream
+    ? fileHandle.createReadStream({ encoding: 'utf8', autoClose: false })
+    : fs.createReadStream(indexPath, { encoding: 'utf8' });
   let buffer = '';
   let position = 0;
   let started = false;
   let closed = false;
+  let pendingValueStart = null;
+  let pendingKey = null;
   for await (const piece of stream) {
     buffer += piece;
     while (true) {
@@ -363,26 +418,41 @@ const streamIndexEntries = async function* (indexPath) {
         continue;
       }
       while (/\s/.test(buffer[position] || '')) position += 1;
-      if (buffer[position] === '}') {
-        closed = true;
+      if (pendingValueStart !== null) {
+        const valueEnd = scanJsonValueEnd(buffer, pendingValueStart);
+        if (valueEnd == null) break;
+        const value = JSON.parse(buffer.slice(pendingValueStart, valueEnd));
+        position = valueEnd;
+        const key = pendingKey;
+        pendingValueStart = null;
+        pendingKey = null;
+        yield [key, value];
+      } else {
+        if (buffer[position] === '}') {
+          closed = true;
+          position += 1;
+          continue;
+        }
+        const keyEnd = scanStringEnd(buffer, position);
+        if (keyEnd == null) break;
+        const key = JSON.parse(buffer.slice(position, keyEnd));
+        position = keyEnd;
+        while (/\s/.test(buffer[position] || '')) position += 1;
+        if (!buffer[position]) break;
+        if (buffer[position] !== ':') throw new Error('Index retrieval invalide');
         position += 1;
-        continue;
+        while (/\s/.test(buffer[position] || '')) position += 1;
+        if (!buffer[position]) break;
+        pendingKey = key;
+        pendingValueStart = position;
+        const valueEnd = scanJsonValueEnd(buffer, pendingValueStart);
+        if (valueEnd == null) break;
+        const value = JSON.parse(buffer.slice(pendingValueStart, valueEnd));
+        position = valueEnd;
+        pendingValueStart = null;
+        pendingKey = null;
+        yield [key, value];
       }
-      const keyEnd = scanStringEnd(buffer, position);
-      if (keyEnd == null) break;
-      const key = JSON.parse(buffer.slice(position, keyEnd));
-      position = keyEnd;
-      while (/\s/.test(buffer[position] || '')) position += 1;
-      if (!buffer[position]) break;
-      if (buffer[position] !== ':') throw new Error('Index retrieval invalide');
-      position += 1;
-      while (/\s/.test(buffer[position] || '')) position += 1;
-      if (!buffer[position]) break;
-      const valueEnd = scanJsonValueEnd(buffer, position);
-      if (valueEnd == null) break;
-      const value = JSON.parse(buffer.slice(position, valueEnd));
-      position = valueEnd;
-      yield [key, value];
       while (/\s/.test(buffer[position] || '')) position += 1;
       if (buffer[position] === ',') {
         position += 1;
@@ -482,8 +552,8 @@ const readScopedIndexes = async (
     const indexPath = getIndexPath(project.projectPath);
     await validateWorkspaceLocation(project.projectPath);
     try {
-      const exists = await validateIndexLocation(project.projectPath, indexPath);
-      if (!exists) {
+      const fileHandle = await openValidatedIndex(project.projectPath, indexPath);
+      if (!fileHandle) {
         indexes.push(Object.freeze({
           projectKind: project.kind,
           projectPath: project.projectPath,
@@ -494,28 +564,32 @@ const readScopedIndexes = async (
         continue;
       }
       const entries = [];
-      for await (const [filePath, fileEntry] of streamIndexEntries(indexPath)) {
-        if (totalChunks >= MAX_TOTAL_CHUNKS) break;
-        const safeFilePath = normalizeIndexFilePath(project.projectPath, filePath);
-        if (!safeFilePath || !isPlainObject(fileEntry)) continue;
-        const chunks = Array.isArray(fileEntry.chunks) ? fileEntry.chunks : [];
-        for (const chunk of chunks) {
+      try {
+        for await (const [filePath, fileEntry] of streamIndexEntries(indexPath, fileHandle)) {
           if (totalChunks >= MAX_TOTAL_CHUNKS) break;
-          if (!isPlainObject(chunk) || typeof chunk.text !== 'string') continue;
-          totalChunks += 1;
-          const score = scoreEntry(chunk.text, tokens);
-          if (score === 0) continue;
-          const text = sanitizeRetrievedText(chunk.text);
-          entries.push({
-            projectKind: project.kind,
-            projectPath: project.projectPath,
-            filePath: safeFilePath,
-            text,
-            sanitized: true,
-            score,
-            hash: typeof fileEntry.hash === 'string' ? fileEntry.hash.slice(0, 128) : null
-          });
+          const safeFilePath = normalizeIndexFilePath(project.projectPath, filePath);
+          if (!safeFilePath || !isPlainObject(fileEntry)) continue;
+          const chunks = Array.isArray(fileEntry.chunks) ? fileEntry.chunks : [];
+          for (const chunk of chunks) {
+            if (totalChunks >= MAX_TOTAL_CHUNKS) break;
+            if (!isPlainObject(chunk) || typeof chunk.text !== 'string') continue;
+            totalChunks += 1;
+            const score = scoreEntry(chunk.text, tokens);
+            if (score === 0) continue;
+            const text = sanitizeRetrievedText(chunk.text);
+            entries.push({
+              projectKind: project.kind,
+              projectPath: project.projectPath,
+              filePath: safeFilePath,
+              text,
+              sanitized: true,
+              score,
+              hash: typeof fileEntry.hash === 'string' ? fileEntry.hash.slice(0, 128) : null
+            });
+          }
         }
+      } finally {
+        await fileHandle.close().catch(() => {});
       }
       entries.sort((left, right) => right.score - left.score);
       indexes.push(Object.freeze({ projectKind: project.kind, projectPath: project.projectPath, status: 'ready', entries: Object.freeze(entries) }));
@@ -532,10 +606,25 @@ const readScopedIndexes = async (
   }
   const entries = indexes.flatMap((index) => index.entries);
   entries.sort((left, right) => right.score - left.score);
-  const selected = entries.slice(0, scope.topK);
+  const selected = [];
+  const selectedByIdentity = new Map();
+  let entriesBudget = MAX_INDEX_ENTRIES_LENGTH;
+  for (const entry of entries.slice(0, scope.topK)) {
+    if (entriesBudget <= 0) break;
+    const text = entry.text.slice(0, entriesBudget);
+    entriesBudget -= text.length;
+    const boundedEntry = text === entry.text ? entry : { ...entry, text };
+    selected.push(boundedEntry);
+    selectedByIdentity.set(entry, boundedEntry);
+  }
   const context = formatUntrustedRetrievedContext(selected).slice(0, MAX_CONTEXT_LENGTH);
   return Object.freeze({
-    indexes: Object.freeze(indexes.map((index) => Object.freeze({ ...index, entries: Object.freeze(index.entries.filter((entry) => selected.includes(entry))) }))),
+    indexes: Object.freeze(indexes.map((index) => Object.freeze({
+      ...index,
+      entries: Object.freeze(index.entries
+        .filter((entry) => selectedByIdentity.has(entry))
+        .map((entry) => selectedByIdentity.get(entry)))
+    }))),
     context,
     toolsAllowed: false,
     promptSafety: Object.freeze({ source: 'untrusted-data', allowInstructions: false, allowToolCalls: false }),
@@ -548,6 +637,8 @@ module.exports = {
   RETRIEVAL_SCOPE_ERRORS,
   MAX_OPEN_PROJECTS,
   MAX_TOP_K,
+  MAX_INDEX_BYTES,
+  MAX_INDEX_ENTRIES_LENGTH,
   sanitizeRetrievalRequest,
   createRetrievalProjectRegistry,
   buildRetrievalScope,

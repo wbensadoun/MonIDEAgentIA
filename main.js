@@ -226,7 +226,11 @@ registerGitHandlers({
 
 // Handlers extraits dans leurs modules respectifs
 registerLogHandlers({ getLogsDir, getLatestLogPath });
-registerProjectHandlers({ getMainWindow: () => mainWindow, projectState: projectWindowState });
+registerProjectHandlers({
+  getMainWindow: () => mainWindow,
+  projectState: projectWindowState,
+  revokeRetrievalPath: retrievalProjectRegistry.revokePath
+});
 registerProcessHandlers(processService);
 registerQualityHandlers(processService);
 registerSystemHandlers();

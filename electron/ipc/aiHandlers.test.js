@@ -157,3 +157,51 @@ test('managed completions use the gateway runner for chat, inline and ghost with
   `;
   assert.equal(execFileSync(process.execPath, ['-e', script], { cwd: process.cwd(), encoding: 'utf8' }).trim(), '');
 });
+
+test('all provider IPC routes keep retrieval context data-only and block command execution', () => {
+  const script = String.raw`
+    const assert = require('node:assert/strict');
+    const electronId = require.resolve('electron');
+    require.cache[electronId] = { id: electronId, filename: electronId, loaded: true, exports: { ipcMain: { handle() {} }, dialog: { showErrorBox() {} }, app: { getPath: () => 'C:/test' } } };
+    const handlers = {};
+    let dispatchAttempts = 0;
+    const { registerAIHandlers } = require('./electron/ipc/aiHandlers');
+    const { executeCommandForAI: realExecuteCommandForAI } = require('./electron/services/ai.service');
+    const executeCommandForAI = async (...args) => {
+      dispatchAttempts += 1;
+      return realExecuteCommandForAI(...args);
+    };
+    const providers = ['claude', 'gemini', 'kimi', 'ollama'];
+    const completionHandlers = Object.fromEntries(providers.map((provider) => [provider, async ({ options }) => {
+      assert.equal(options.retrievalContext, '[safe retrieval]');
+      assert.equal(options.toolsAllowed, false);
+      assert.equal(options.promptSafety.allowToolCalls, false);
+      const result = await executeCommandForAI('echo must-not-run', null, undefined, options);
+      assert.equal(result.success, false);
+      return { success: true, text: provider };
+    }]));
+    registerAIHandlers({
+      ipcMain: { handle: (channel, handler) => { handlers[channel] = handler; } },
+      completionHandlers,
+      executeCommandForAI,
+      retrieveContext: async (request) => {
+        assert.equal(request.currentProjectId, 'rp_current_project_1');
+        return { success: true, context: '[safe retrieval]', promptSafety: { source: 'untrusted-data', allowInstructions: false, allowToolCalls: false } };
+      }
+    });
+    (async () => {
+      for (const provider of providers) {
+        const result = await handlers['get-' + provider + '-completion']({}, [{ role: 'user', text: 'prompt' }], '', null, {
+          currentProjectId: 'rp_current_project_1',
+          retrievalRequest: { currentProjectId: 'rp_current_project_1', query: 'safe' },
+          retrievalContext: 'renderer-forged',
+          toolsAllowed: true,
+          promptSafety: { allowToolCalls: true }
+        });
+        assert.deepEqual(result, { success: true, text: provider });
+      }
+      assert.equal(dispatchAttempts, providers.length);
+    })().catch((error) => { console.error(error); process.exitCode = 1; });
+  `;
+  assert.equal(execFileSync(process.execPath, ['-e', script], { cwd: process.cwd(), encoding: 'utf8' }).trim(), '');
+});

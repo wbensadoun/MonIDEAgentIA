@@ -151,6 +151,15 @@ const cleanRendererCompletionOptions = (options) => {
     : {};
   delete cleaned.nevenCoreExecutionContext;
   delete cleaned.nevenCoreExecutionPrompt;
+  // Retrieval evidence and its tool policy are main-process outputs. Never
+  // accept renderer-supplied values for these fields, even when they look
+  // restrictive: otherwise a compromised renderer can forge the provenance
+  // contract or smuggle prompt/tool metadata into a provider call.
+  delete cleaned.retrievalContext;
+  delete cleaned.toolsAllowed;
+  delete cleaned.allowToolCalls;
+  delete cleaned.promptSafety;
+  delete cleaned.retrievalPromptSafety;
   return cleaned;
 };
 
