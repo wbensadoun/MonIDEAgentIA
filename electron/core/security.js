@@ -67,6 +67,15 @@ const isTrustedProjectPath = (projectPath) => {
   return !!normalized && trustedProjectPaths.has(normalized);
 };
 
+// Main-process revocation hook. Any future project/session close or logout
+// flow can invalidate local access immediately; retrieval re-checks this set
+// immediately before reading an index.
+const revokeProjectPath = (projectPath) => {
+  const normalized = normalizeProjectPathForTrust(projectPath);
+  if (!normalized) return false;
+  return trustedProjectPaths.delete(normalized);
+};
+
 const ensureTrustedProjectPath = async (projectPath) => {
   const normalized = normalizeProjectPathForTrust(projectPath);
   if (!normalized) throw new Error('Chemin projet manquant ou invalide');
@@ -293,6 +302,7 @@ module.exports = {
   normalizeProjectPathForTrust,
   trustProjectPath,
   isTrustedProjectPath,
+  revokeProjectPath,
   ensureTrustedProjectPath,
   resolveOptionalTrustedProjectPath,
   requestProjectPathApproval,

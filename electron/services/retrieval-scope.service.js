@@ -1,6 +1,8 @@
 'use strict';
 
-const fs = require('fs').promises;
+const fs = require('fs');
+const fsp = fs.promises;
+const crypto = require('crypto');
 const path = require('path');
 const {
   assertSafePath,
@@ -14,6 +16,9 @@ const MAX_OPEN_PROJECTS = 16;
 const MAX_QUERY_LENGTH = 4000;
 const MAX_TOP_K = 20;
 const MAX_RETRIEVED_TEXT_LENGTH = 12000;
+const MAX_INDEX_BYTES = 25 * 1024 * 1024;
+const MAX_TOTAL_CHUNKS = 200;
+const MAX_CONTEXT_LENGTH = 60000;
 const INDEX_RELATIVE_PATH = path.join('.vibe-workspace', 'rag_index.json');
 
 const RETRIEVAL_SCOPE_ERRORS = Object.freeze({
@@ -45,6 +50,16 @@ const normalizeQuery = (value) => {
   return query;
 };
 
+const queryTokens = (query) => [...new Set(String(query || '').toLowerCase()
+  .split(/[^\p{L}\p{N}_.$/-]+/u)
+  .map((token) => token.trim())
+  .filter((token) => token.length >= 2))];
+
+const scoreEntry = (text, tokens) => {
+  const normalized = String(text || '').toLowerCase();
+  return tokens.reduce((score, token) => score + (normalized.includes(token) ? 1 : 0), 0);
+};
+
 /**
  * The renderer may request a retrieval operation, but it cannot provide an
  * arbitrary context payload. This is the only IPC input accepted by the
@@ -56,17 +71,22 @@ const sanitizeRetrievalRequest = (payload = {}) => {
   const currentProjectPath = payload.currentProjectPath == null
     ? null
     : normalizePathInput(payload.currentProjectPath, 'Projet courant');
-  const requestedOpenProjects = payload.openProjectPaths == null ? [] : payload.openProjectPaths;
+  if (Object.prototype.hasOwnProperty.call(payload, 'openProjectPaths')) {
+    throw new Error(RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST);
+  }
+  const requestedOpenProjects = payload.openProjectIds == null ? [] : payload.openProjectIds;
   if (!Array.isArray(requestedOpenProjects) || requestedOpenProjects.length > MAX_OPEN_PROJECTS) {
     throw new Error(RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST);
   }
-  const openProjectPaths = [];
-  const seen = new Set(currentProjectPath ? [currentProjectPath] : []);
+  const openProjectIds = [];
+  const seen = new Set();
   for (const value of requestedOpenProjects) {
-    const normalized = normalizePathInput(value, 'Projet ouvert');
-    if (seen.has(normalized)) continue;
-    seen.add(normalized);
-    openProjectPaths.push(normalized);
+    if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(value)) {
+      throw new Error(RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST);
+    }
+    if (seen.has(value)) continue;
+    seen.add(value);
+    openProjectIds.push(value);
   }
 
   const topK = payload.topK == null ? 8 : Number(payload.topK);
@@ -76,7 +96,7 @@ const sanitizeRetrievalRequest = (payload = {}) => {
 
   return Object.freeze({
     currentProjectPath,
-    openProjectPaths: Object.freeze(openProjectPaths),
+    openProjectIds: Object.freeze(openProjectIds),
     includeOpenProjects: payload.includeOpenProjects === true,
     // Neven is a capability marker only. Raw Neven context is intentionally
     // not accepted from the renderer and must be resolved by the main process.
@@ -86,19 +106,49 @@ const sanitizeRetrievalRequest = (payload = {}) => {
   });
 };
 
-const freezeProject = (kind, projectPath) => Object.freeze({
+const freezeProject = (kind, projectPath, projectId = null) => Object.freeze({
   kind,
-  projectPath
+  projectPath,
+  projectId
 });
+
+/** Main-process registry: renderers receive opaque ids, never an open-project
+ * path list that they can alter or use as an authorization claim. */
+const createRetrievalProjectRegistry = ({
+  ensureProject = ensureTrustedProjectPath,
+  isProjectAccessible = async () => true
+} = {}) => {
+  const projects = new Map();
+  return Object.freeze({
+    register: async (projectPath) => {
+      const normalized = normalizePathInput(projectPath, 'Projet');
+      const trustedPath = normalizePathInput(await ensureProject(normalized), 'Projet autorise');
+      if (trustedPath !== normalized || !(await isProjectAccessible(trustedPath))) {
+        const error = new Error(RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED);
+        error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
+        throw error;
+      }
+      const id = `rp_${crypto.randomUUID()}`;
+      projects.set(id, trustedPath);
+      return id;
+    },
+    resolve: (projectId) => projects.get(projectId) || null,
+    isActive: async (projectId, projectPath) => (
+      projects.get(projectId) === projectPath && (await isProjectAccessible(projectPath))
+    ),
+    revoke: (projectId) => projects.delete(projectId)
+  });
+};
 
 const buildRetrievalScope = async (payload, {
   ensureProject = ensureTrustedProjectPath,
   isProjectAccessible = async () => true,
-  resolveNevenContext = async () => null
+  resolveNevenContext = async () => null,
+  resolveProjectId = () => null
 } = {}) => {
   const request = sanitizeRetrievalRequest(payload);
   const projectEntries = [];
-  const authorize = async (projectPath, kind) => {
+  const authorize = async (projectPath, kind, projectId = null) => {
     let trustedPath;
     try {
       trustedPath = await ensureProject(projectPath);
@@ -113,13 +163,19 @@ const buildRetrievalScope = async (payload, {
       error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
       throw error;
     }
-    projectEntries.push(freezeProject(kind, normalizedTrusted));
+    projectEntries.push(freezeProject(kind, normalizedTrusted, projectId));
   };
 
   if (request.currentProjectPath) await authorize(request.currentProjectPath, 'current-project');
   if (request.includeOpenProjects) {
-    for (const projectPath of request.openProjectPaths) {
-      await authorize(projectPath, 'open-project');
+    for (const projectId of request.openProjectIds) {
+      const projectPath = await resolveProjectId(projectId);
+      if (!projectPath) {
+        const error = new Error(RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED);
+        error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
+        throw error;
+      }
+      await authorize(projectPath, 'open-project', projectId);
     }
   }
 
@@ -163,6 +219,153 @@ const getIndexPath = (projectPath) => {
 
 const isMissingFileError = (error) => error?.code === 'ENOENT' || error?.code === 'ENOTDIR';
 
+const validateWorkspaceLocation = async (projectPath) => {
+  let workspaceStat;
+  try {
+    workspaceStat = await fsp.lstat(projectPath);
+  } catch (error) {
+    if (isMissingFileError(error)) throw error;
+    throw error;
+  }
+  if (!workspaceStat.isDirectory() || workspaceStat.isSymbolicLink()) {
+    const error = new Error(RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED);
+    error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
+    throw error;
+  }
+  // Resolve both forms to avoid rejecting Windows 8.3/case aliases while
+  // still proving that the selected root itself was not a symlink/junction.
+  const realPath = await fsp.realpath(projectPath);
+  const canonicalInput = await fsp.realpath(path.resolve(projectPath));
+  const canonicalReal = await fsp.realpath(realPath);
+  if (path.resolve(canonicalInput) !== path.resolve(canonicalReal)) {
+    const error = new Error(RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED);
+    error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
+    throw error;
+  }
+};
+
+const validateIndexLocation = async (projectPath, indexPath) => {
+  const metadataDir = path.dirname(indexPath);
+  try {
+    const metadataStat = await fsp.lstat(metadataDir);
+    if (!metadataStat.isDirectory() || metadataStat.isSymbolicLink()) {
+      const error = new Error(RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED);
+      error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
+      throw error;
+    }
+    const indexStat = await fsp.lstat(indexPath);
+    if (indexStat.isSymbolicLink() || !indexStat.isFile()) {
+      const error = new Error(RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED);
+      error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
+      throw error;
+    }
+    if (indexStat.size > MAX_INDEX_BYTES) {
+      const error = new Error(RETRIEVAL_SCOPE_ERRORS.INDEX_UNAVAILABLE);
+      error.code = RETRIEVAL_SCOPE_ERRORS.INDEX_UNAVAILABLE;
+      throw error;
+    }
+  } catch (error) {
+    if (isMissingFileError(error)) return false;
+    throw error;
+  }
+  return true;
+};
+
+const scanJsonValueEnd = (source, start) => {
+  const first = source[start];
+  if (first === '{' || first === '[') {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < source.length; index += 1) {
+      const char = source[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+      } else if (char === '{' || char === '[') {
+        depth += 1;
+      } else if (char === '}' || char === ']') {
+        depth -= 1;
+        if (depth === 0) return index + 1;
+      }
+    }
+    return null;
+  }
+  const match = source.slice(start).match(/^(?:true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/);
+  return match ? start + match[0].length : null;
+};
+
+const scanStringEnd = (source, start) => {
+  if (source[start] !== '"') return null;
+  let escaped = false;
+  for (let index = start + 1; index < source.length; index += 1) {
+    const char = source[index];
+    if (escaped) escaped = false;
+    else if (char === '\\') escaped = true;
+    else if (char === '"') return index + 1;
+  }
+  return null;
+};
+
+/** Stream top-level JSON members so a retrieval request never materializes
+ * every chunk in memory. The existing local index is a JSON object keyed by
+ * file path, so only one file entry is parsed at a time. */
+const streamIndexEntries = async function* (indexPath) {
+  const stream = fs.createReadStream(indexPath, { encoding: 'utf8' });
+  let buffer = '';
+  let position = 0;
+  let started = false;
+  for await (const piece of stream) {
+    buffer += piece;
+    while (true) {
+      while (/\s/.test(buffer[position] || '')) position += 1;
+      if (!started) {
+        if (!buffer[position]) break;
+        if (buffer[position] !== '{') throw new Error('Index retrieval invalide');
+        started = true;
+        position += 1;
+        continue;
+      }
+      while (/\s/.test(buffer[position] || '')) position += 1;
+      if (buffer[position] === '}') return;
+      const keyEnd = scanStringEnd(buffer, position);
+      if (keyEnd == null) break;
+      const key = JSON.parse(buffer.slice(position, keyEnd));
+      position = keyEnd;
+      while (/\s/.test(buffer[position] || '')) position += 1;
+      if (!buffer[position]) break;
+      if (buffer[position] !== ':') throw new Error('Index retrieval invalide');
+      position += 1;
+      while (/\s/.test(buffer[position] || '')) position += 1;
+      if (!buffer[position]) break;
+      const valueEnd = scanJsonValueEnd(buffer, position);
+      if (valueEnd == null) break;
+      const value = JSON.parse(buffer.slice(position, valueEnd));
+      position = valueEnd;
+      yield [key, value];
+      while (/\s/.test(buffer[position] || '')) position += 1;
+      if (buffer[position] === ',') {
+        position += 1;
+        continue;
+      }
+      if (buffer[position] === '}') return;
+      if (!buffer[position]) break;
+      throw new Error('Index retrieval invalide');
+    }
+    if (position > 1024 * 1024) {
+      buffer = buffer.slice(position);
+      position = 0;
+    }
+  }
+  while (/\s/.test(buffer[position] || '')) position += 1;
+  if (!started || buffer[position] !== '}') throw new Error('Index retrieval invalide');
+};
+
 const normalizeIndexFilePath = (projectPath, relativeFilePath) => {
   if (typeof relativeFilePath !== 'string' || !relativeFilePath.trim()) return null;
   try {
@@ -200,7 +403,11 @@ const formatUntrustedRetrievedContext = (entries) => {
  */
 const readScopedIndexes = async (
   scope,
-  { readFile = fs.readFile, ensureProject = null, isProjectAccessible = async () => true } = {}
+  {
+    ensureProject = null,
+    isProjectAccessible = async () => true,
+    verifyScopeProject = async () => true
+  } = {}
 ) => {
   if (!scope || scope.version !== RETRIEVAL_SCOPE_VERSION) {
     throw new Error(RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST);
@@ -210,6 +417,9 @@ const readScopedIndexes = async (
     ...(Array.isArray(scope.openProjects) ? scope.openProjects : [])
   ];
   const indexes = [];
+  const tokens = queryTokens(scope.query);
+  let totalChunks = 0;
+  let totalContextLength = 0;
   for (const project of projects) {
     // Re-check immediately before the filesystem read. Scope objects are
     // immutable, but local trust/membership can still be revoked after scope
@@ -224,34 +434,56 @@ const readScopedIndexes = async (
         throw wrapped;
       }
       if (normalizePathInput(reauthorizedPath, 'Projet autorise') !== project.projectPath
-        || !(await isProjectAccessible(project.projectPath))) {
+        || !(await isProjectAccessible(project.projectPath))
+        || !(await verifyScopeProject(project))) {
         const error = new Error(RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED);
         error.code = RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED;
         throw error;
       }
     }
     const indexPath = getIndexPath(project.projectPath);
+    await validateWorkspaceLocation(project.projectPath);
     try {
-      const raw = await readFile(indexPath, 'utf8');
-      const parsed = JSON.parse(raw);
-      if (!isPlainObject(parsed)) throw new Error('Index retrieval invalide');
+      const exists = await validateIndexLocation(project.projectPath, indexPath);
+      if (!exists) {
+        indexes.push(Object.freeze({
+          projectKind: project.kind,
+          projectPath: project.projectPath,
+          status: 'missing',
+          code: RETRIEVAL_SCOPE_ERRORS.INDEX_UNAVAILABLE,
+          entries: Object.freeze([])
+        }));
+        continue;
+      }
       const entries = [];
-      for (const [filePath, fileEntry] of Object.entries(parsed)) {
+      for await (const [filePath, fileEntry] of streamIndexEntries(indexPath)) {
+        if (totalChunks >= MAX_TOTAL_CHUNKS) break;
         const safeFilePath = normalizeIndexFilePath(project.projectPath, filePath);
         if (!safeFilePath || !isPlainObject(fileEntry)) continue;
         const chunks = Array.isArray(fileEntry.chunks) ? fileEntry.chunks : [];
         for (const chunk of chunks) {
+          if (totalChunks >= MAX_TOTAL_CHUNKS) break;
           if (!isPlainObject(chunk) || typeof chunk.text !== 'string') continue;
+          totalChunks += 1;
+          const score = scoreEntry(chunk.text, tokens);
+          if (score === 0) continue;
+          const text = sanitizeRetrievedText(chunk.text);
+          const remainingContext = Math.max(0, MAX_CONTEXT_LENGTH - totalContextLength);
+          if (remainingContext <= 0) break;
+          const boundedText = text.slice(0, remainingContext);
+          totalContextLength += boundedText.length;
           entries.push({
             projectKind: project.kind,
             projectPath: project.projectPath,
             filePath: safeFilePath,
-            text: sanitizeRetrievedText(chunk.text),
+            text: boundedText,
             sanitized: true,
+            score,
             hash: typeof fileEntry.hash === 'string' ? fileEntry.hash.slice(0, 128) : null
           });
         }
       }
+      entries.sort((left, right) => right.score - left.score);
       indexes.push(Object.freeze({ projectKind: project.kind, projectPath: project.projectPath, status: 'ready', entries: Object.freeze(entries) }));
     } catch (error) {
       if (!isMissingFileError(error)) throw error;
@@ -264,7 +496,16 @@ const readScopedIndexes = async (
       }));
     }
   }
-  return Object.freeze({ indexes: Object.freeze(indexes), context: formatUntrustedRetrievedContext(indexes.flatMap((index) => index.entries)) });
+  const entries = indexes.flatMap((index) => index.entries);
+  entries.sort((left, right) => right.score - left.score);
+  const selected = entries.slice(0, scope.topK);
+  return Object.freeze({
+    indexes: Object.freeze(indexes.map((index) => Object.freeze({ ...index, entries: Object.freeze(index.entries.filter((entry) => selected.includes(entry))) }))),
+    context: formatUntrustedRetrievedContext(selected),
+    toolsAllowed: false,
+    promptSafety: Object.freeze({ source: 'untrusted-data', allowInstructions: false, allowToolCalls: false }),
+    retrievalStatus: selected.length > 0 ? 'evidence-found' : 'no-evidence'
+  });
 };
 
 module.exports = {
@@ -273,6 +514,7 @@ module.exports = {
   MAX_OPEN_PROJECTS,
   MAX_TOP_K,
   sanitizeRetrievalRequest,
+  createRetrievalProjectRegistry,
   buildRetrievalScope,
   getIndexPath,
   sanitizeRetrievedText,

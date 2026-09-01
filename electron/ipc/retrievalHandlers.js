@@ -4,14 +4,16 @@ const {
   sanitizeRetrievalRequest,
   buildRetrievalScope,
   readScopedIndexes,
-  RETRIEVAL_SCOPE_ERRORS
+  RETRIEVAL_SCOPE_ERRORS,
+  createRetrievalProjectRegistry
 } = require('../services/retrieval-scope.service');
 
 const registerRetrievalHandlers = ({
   ipcMain,
   ensureProject,
   isProjectAccessible,
-  resolveNevenContext
+  resolveNevenContext,
+  projectRegistry = createRetrievalProjectRegistry({ ensureProject, isProjectAccessible })
 } = {}) => {
   if (!ipcMain || typeof ipcMain.handle !== 'function') throw new Error('ipcMain requis');
   if (typeof ensureProject !== 'function') throw new Error('Autorisation projet requise');
@@ -21,19 +23,57 @@ const registerRetrievalHandlers = ({
     ipcMain.handle(channel, listener);
   };
 
+  const publicError = (error) => {
+    const code = error?.code || RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST;
+    const messages = {
+      [RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST]: 'Requête retrieval invalide.',
+      [RETRIEVAL_SCOPE_ERRORS.NO_AUTHORIZED_PROJECT]: 'Aucun projet autorisé.',
+      [RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED]: 'Accès retrieval refusé.',
+      [RETRIEVAL_SCOPE_ERRORS.INDEX_UNAVAILABLE]: 'Index retrieval indisponible.'
+    };
+    return { code, error: messages[code] || 'Retrieval refusé.' };
+  };
+
+  handle('retrieval:register-project', async (_event, payload = {}) => {
+    try {
+      const projectPath = payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? payload.projectPath
+        : null;
+      const id = await projectRegistry.register(projectPath);
+      return { success: true, projectId: id };
+    } catch (error) {
+      const safe = publicError(error);
+      console.error('[Retrieval] register refused:', error?.message || error);
+      return { success: false, ...safe };
+    }
+  });
+
+  handle('retrieval:revoke-project', async (_event, projectId) => {
+    const revoked = typeof projectId === 'string' && projectRegistry.revoke(projectId);
+    return revoked
+      ? { success: true }
+      : { success: false, ...publicError({ code: RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED }) };
+  });
+
   handle('retrieval:read-index', async (_event, payload = {}) => {
     try {
       const request = sanitizeRetrievalRequest(payload);
       const scope = await buildRetrievalScope(request, {
         ensureProject,
         isProjectAccessible,
-        resolveNevenContext
+        resolveNevenContext,
+        resolveProjectId: projectRegistry.resolve
       });
-      const indexes = await readScopedIndexes(scope, { ensureProject, isProjectAccessible });
+      const indexes = await readScopedIndexes(scope, {
+        ensureProject,
+        isProjectAccessible,
+        verifyScopeProject: async (project) => !project.projectId || projectRegistry.isActive(project.projectId, project.projectPath)
+      });
       return { success: true, scope, ...indexes };
     } catch (error) {
-      const code = error?.code || RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST;
-      return { success: false, code, error: error?.message || 'Retrieval refuse.' };
+      const safe = publicError(error);
+      console.error('[Retrieval] read refused:', error?.message || error);
+      return { success: false, ...safe };
     }
   });
 };

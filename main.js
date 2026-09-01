@@ -27,8 +27,9 @@ const {
 const {
   assertSafePath, toPositiveInt,
   trustProjectPath, ensureTrustedProjectPath,
-  resolveOptionalTrustedProjectPath,
+  resolveOptionalTrustedProjectPath, isTrustedProjectPath,
 } = require('./electron/core/security');
+const { createRetrievalProjectRegistry } = require('./electron/services/retrieval-scope.service');
 const { listAgents, listSkills } = require('./electron/services/agent.service');
 const {
   ensureEditPermission,
@@ -192,10 +193,15 @@ registerBrainGraphHandlers({
 // Retrieval must pass through the same trusted-project boundary as file and
 // graph reads. The current desktop app has no separate identity provider for
 // local projects, so trust is the permission source for this bounded slice.
+const retrievalProjectRegistry = createRetrievalProjectRegistry({
+  ensureProject: ensureTrustedProjectPath,
+  isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath)
+});
 registerRetrievalHandlers({
   ipcMain,
   ensureProject: ensureTrustedProjectPath,
-  isProjectAccessible: async (projectPath) => Boolean(projectPath),
+  isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath),
+  projectRegistry: retrievalProjectRegistry,
   resolveNevenContext: async () => ({ available: false })
 });
 

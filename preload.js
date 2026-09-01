@@ -192,6 +192,8 @@ try {
     brainGraphPath: (projectPath) => ipcRenderer.invoke('brain-graph:path', projectPath),
     // Retrieval is authorized and scoped in the main process. The renderer
     // only supplies a bounded request; raw Neven context is never accepted.
+    retrievalRegisterProject: (payload) => ipcRenderer.invoke('retrieval:register-project', payload),
+    retrievalRevokeProject: (projectId) => ipcRenderer.invoke('retrieval:revoke-project', projectId),
     retrievalReadIndex: (payload) => ipcRenderer.invoke('retrieval:read-index', payload),
 
     // Agents APIs

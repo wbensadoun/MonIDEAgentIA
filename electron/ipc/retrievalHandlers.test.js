@@ -57,4 +57,27 @@ test('retrieval IPC returns a fail-closed error when project permission is revok
   });
   assert.equal(result.success, false);
   assert.equal(result.code, 'RETRIEVAL_ACCESS_REVOKED');
+  assert.equal(result.error.includes(project), false);
+  assert.equal(result.error, 'Accès retrieval refusé.');
+});
+
+test('renderer receives an opaque managed project id and revocation is enforced', async () => {
+  const project = await makeProject('managed-id');
+  const ipc = makeIpc();
+  registerRetrievalHandlers({
+    ipcMain: ipc,
+    ensureProject: async (value) => value,
+    isProjectAccessible: async () => true
+  });
+  const registered = await ipc.handlers.get('retrieval:register-project')(null, { projectPath: project });
+  assert.equal(registered.success, true);
+  assert.match(registered.projectId, /^rp_[A-Za-z0-9_-]{16,}$/);
+  assert.equal((await ipc.handlers.get('retrieval:revoke-project')(null, registered.projectId)).success, true);
+  const result = await ipc.handlers.get('retrieval:read-index')(null, {
+    includeOpenProjects: true,
+    openProjectIds: [registered.projectId],
+    query: 'secret'
+  });
+  assert.equal(result.success, false);
+  assert.equal(result.code, 'RETRIEVAL_ACCESS_REVOKED');
 });

@@ -8,6 +8,7 @@ const test = require('node:test');
 const {
   RETRIEVAL_SCOPE_ERRORS,
   buildRetrievalScope,
+  createRetrievalProjectRegistry,
   getIndexPath,
   sanitizeRetrievalRequest,
   sanitizeRetrievedText,
@@ -28,11 +29,15 @@ const makeScope = async (payload, trusted = new Set()) => buildRetrievalScope(pa
     if (!trusted.has(projectPath)) throw new Error('project revoked');
     return projectPath;
   },
-  isProjectAccessible: async (projectPath) => trusted.has(projectPath)
+  isProjectAccessible: async (projectPath) => trusted.has(projectPath),
+  resolveProjectId: async (projectId) => ({
+    rp_current_project_1: [...trusted][0],
+    rp_neighbor_project_1: [...trusted][1]
+  }[projectId] || null)
 });
 
-test('IPC request rejects traversal, raw context and unbounded values', () => {
-  assert.throws(() => sanitizeRetrievalRequest({ query: 'x', currentProjectPath: 'C:/project', openProjectPaths: Array(17).fill('C:/project') }), /RETRIEVAL_INVALID_REQUEST/);
+test('IPC request rejects path lists, raw context and unbounded values', () => {
+  assert.throws(() => sanitizeRetrievalRequest({ query: 'x', currentProjectPath: 'C:/project', openProjectIds: Array(17).fill('rp_project_123456') }), /RETRIEVAL_INVALID_REQUEST/);
   const request = sanitizeRetrievalRequest({
     query: '  find auth\u0000 logic ',
     currentProjectPath: 'C:/project',
@@ -56,7 +61,7 @@ test('scope keeps the current project isolated from neighboring projects by defa
 
   const scope = await makeScope({
     currentProjectPath: current,
-    openProjectPaths: [neighbor],
+    openProjectIds: ['rp_neighbor_project_1'],
     includeOpenProjects: false,
     query: 'current'
   }, trusted);
@@ -110,6 +115,21 @@ test('missing index is reported explicitly instead of becoming empty successful 
   assert.deepEqual(result.indexes[0].entries, []);
 });
 
+test('query filtering and topK are applied before context leaves the main process', async () => {
+  const current = await makeProject('top-k');
+  const trusted = new Set([current]);
+  await writeIndex(current, {
+    'one.md': { chunks: [{ text: 'auth token handling' }] },
+    'two.md': { chunks: [{ text: 'auth session handling' }] },
+    'three.md': { chunks: [{ text: 'unrelated documentation' }] }
+  });
+  const scope = await makeScope({ currentProjectPath: current, query: 'auth', topK: 1 }, trusted);
+  const result = await readScopedIndexes(scope);
+  assert.equal(result.retrievalStatus, 'evidence-found');
+  assert.equal(result.indexes[0].entries.length, 1);
+  assert.equal(result.context.includes('unrelated documentation'), false);
+});
+
 test('explicitly enabled open projects remain separately labeled', async () => {
   const current = await makeProject('current-open');
   const open = await makeProject('open');
@@ -118,7 +138,7 @@ test('explicitly enabled open projects remain separately labeled', async () => {
   await writeIndex(open, { 'open.md': { chunks: [{ text: 'open' }] } });
   const scope = await makeScope({
     currentProjectPath: current,
-    openProjectPaths: [open],
+    openProjectIds: ['rp_neighbor_project_1'],
     includeOpenProjects: true,
     query: 'context'
   }, trusted);
@@ -126,4 +146,22 @@ test('explicitly enabled open projects remain separately labeled', async () => {
   assert.deepEqual(scope.openProjects.map((entry) => entry.kind), ['open-project']);
   const result = await readScopedIndexes(scope);
   assert.deepEqual(result.indexes.map((index) => index.projectKind), ['current-project', 'open-project']);
+});
+
+test('main-process project id revocation invalidates an open-project scope', async () => {
+  const project = await makeProject('registry-revoke');
+  const registry = createRetrievalProjectRegistry({
+    ensureProject: async (projectPath) => projectPath,
+    isProjectAccessible: async () => true
+  });
+  const projectId = await registry.register(project);
+  assert.equal(registry.revoke(projectId), true);
+  await assert.rejects(
+    () => buildRetrievalScope({ currentProjectPath: null, openProjectIds: [projectId], includeOpenProjects: true, query: 'x' }, {
+      ensureProject: async (projectPath) => projectPath,
+      resolveProjectId: registry.resolve,
+      isProjectAccessible: async () => true
+    }),
+    (error) => error.code === RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED
+  );
 });
