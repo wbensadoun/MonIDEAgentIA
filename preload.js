@@ -195,6 +195,7 @@ try {
     retrievalRegisterProject: (payload) => ipcRenderer.invoke('retrieval:register-project', payload),
     retrievalRevokeProject: (projectId) => ipcRenderer.invoke('retrieval:revoke-project', projectId),
     retrievalReadIndex: (payload) => ipcRenderer.invoke('retrieval:read-index', payload),
+    closeProject: (projectPath) => ipcRenderer.invoke('close-project', projectPath),
 
     // Agents APIs
     listAgents: (projectPath) => ipcRenderer.invoke('list-agents', projectPath),

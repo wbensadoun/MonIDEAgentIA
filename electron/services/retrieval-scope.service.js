@@ -160,6 +160,11 @@ const buildRetrievalScope = async (payload, {
   resolveProjectId = () => null
 } = {}) => {
   const request = sanitizeRetrievalRequest(payload);
+  if (!request.currentProjectId) {
+    const error = new Error(RETRIEVAL_SCOPE_ERRORS.NO_AUTHORIZED_PROJECT);
+    error.code = RETRIEVAL_SCOPE_ERRORS.NO_AUTHORIZED_PROJECT;
+    throw error;
+  }
   const projectEntries = [];
   const authorize = async (projectPath, kind, projectId = null) => {
     let trustedPath;
@@ -453,7 +458,6 @@ const readScopedIndexes = async (
   const indexes = [];
   const tokens = queryTokens(scope.query);
   let totalChunks = 0;
-  let totalContextLength = 0;
   for (const project of projects) {
     // Re-check immediately before the filesystem read. Scope objects are
     // immutable, but local trust/membership can still be revoked after scope
@@ -502,15 +506,11 @@ const readScopedIndexes = async (
           const score = scoreEntry(chunk.text, tokens);
           if (score === 0) continue;
           const text = sanitizeRetrievedText(chunk.text);
-          const remainingContext = Math.max(0, MAX_CONTEXT_LENGTH - totalContextLength);
-          if (remainingContext <= 0) break;
-          const boundedText = text.slice(0, remainingContext);
-          totalContextLength += boundedText.length;
           entries.push({
             projectKind: project.kind,
             projectPath: project.projectPath,
             filePath: safeFilePath,
-            text: boundedText,
+            text,
             sanitized: true,
             score,
             hash: typeof fileEntry.hash === 'string' ? fileEntry.hash.slice(0, 128) : null
@@ -533,9 +533,10 @@ const readScopedIndexes = async (
   const entries = indexes.flatMap((index) => index.entries);
   entries.sort((left, right) => right.score - left.score);
   const selected = entries.slice(0, scope.topK);
+  const context = formatUntrustedRetrievedContext(selected).slice(0, MAX_CONTEXT_LENGTH);
   return Object.freeze({
     indexes: Object.freeze(indexes.map((index) => Object.freeze({ ...index, entries: Object.freeze(index.entries.filter((entry) => selected.includes(entry))) }))),
-    context: formatUntrustedRetrievedContext(selected),
+    context,
     toolsAllowed: false,
     promptSafety: Object.freeze({ source: 'untrusted-data', allowInstructions: false, allowToolCalls: false }),
     retrievalStatus: selected.length > 0 ? 'evidence-found' : 'no-evidence'

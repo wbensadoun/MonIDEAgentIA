@@ -70,11 +70,14 @@ test('renderer receives an opaque managed project id and revocation is enforced'
     ensureProject: async (value) => value,
     isProjectAccessible: async () => true
   });
+  const current = await ipc.handlers.get('retrieval:register-project')(null, { projectPath: project });
   const registered = await ipc.handlers.get('retrieval:register-project')(null, { projectPath: project });
+  assert.equal(current.success, true);
   assert.equal(registered.success, true);
   assert.match(registered.projectId, /^rp_[A-Za-z0-9_-]{16,}$/);
   assert.equal((await ipc.handlers.get('retrieval:revoke-project')(null, registered.projectId)).success, true);
   const result = await ipc.handlers.get('retrieval:read-index')(null, {
+    currentProjectId: current.projectId,
     includeOpenProjects: true,
     openProjectIds: [registered.projectId],
     query: 'secret'

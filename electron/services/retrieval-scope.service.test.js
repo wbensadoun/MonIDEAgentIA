@@ -52,6 +52,15 @@ test('IPC request rejects path lists, raw context and unbounded values', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(request, 'nevenContext'), false);
 });
 
+test('Neven context cannot bypass the mandatory current project scope', async () => {
+  await assert.rejects(
+    () => buildRetrievalScope({ includeNevenContext: true, query: 'anything' }, {
+      resolveNevenContext: async () => ({ available: true, id: 'neven-context' })
+    }),
+    (error) => error.code === RETRIEVAL_SCOPE_ERRORS.NO_AUTHORIZED_PROJECT
+  );
+});
+
 test('scope keeps the current project isolated from neighboring projects by default', async () => {
   const current = await makeProject('current');
   const neighbor = await makeProject('neighbor');
@@ -168,7 +177,7 @@ test('main-process project id revocation invalidates an open-project scope', asy
       resolveProjectId: registry.resolve,
       isProjectAccessible: async () => true
     }),
-    (error) => error.code === RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED
+    (error) => error.code === RETRIEVAL_SCOPE_ERRORS.NO_AUTHORIZED_PROJECT
   );
 });
 
@@ -236,6 +245,17 @@ test('index and metadata parent symlinks are refused', async (t) => {
   const indexLink = getIndexPath(project);
   const linkType = process.platform === 'win32' ? 'junction' : 'dir';
   try {
+    const rootLink = path.join(path.dirname(project), `${path.basename(project)}-root-link`);
+    await fs.symlink(targetDir, rootLink, linkType);
+    const rootScope = {
+      version: RETRIEVAL_SCOPE_VERSION,
+      currentProject: { kind: 'current-project', projectPath: rootLink, projectId: null },
+      openProjects: [],
+      query: 'safe',
+      topK: 1
+    };
+    await assert.rejects(() => readScopedIndexes(rootScope), (error) => error.code === RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED);
+    await fs.rm(rootLink, { recursive: true, force: true });
     await fs.rm(metadataDir, { recursive: true, force: true });
     await fs.symlink(targetDir, metadataDir, linkType);
   } catch (error) {

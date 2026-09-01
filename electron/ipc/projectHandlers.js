@@ -6,6 +6,7 @@ const { app, ipcMain, dialog } = require('electron');
 const {
   trustProjectPath,
   requestProjectPathApproval,
+  revokeProjectPath,
 } = require('../core/security');
 
 const registerProjectHandlers = ({ getMainWindow, projectState = null }) => {
@@ -47,6 +48,15 @@ const registerProjectHandlers = ({ getMainWindow, projectState = null }) => {
     } catch (error) {
       return { success: false, error: error.message };
     }
+  });
+
+  ipcMain.handle('close-project', async (_event, projectPath) => {
+    if (!projectState?.isOpen?.(projectPath)) {
+      return { success: false, error: 'Projet non ouvert.' };
+    }
+    projectState.markClosed(projectPath);
+    revokeProjectPath(projectPath);
+    return { success: true };
   });
 };
 

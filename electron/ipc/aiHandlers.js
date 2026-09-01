@@ -221,7 +221,8 @@ const registerProviderCompletionHandler = ({
   listAgents,
   listSkills,
   completionHandlers = providerHandlers,
-  managedCompletionRunner
+  managedCompletionRunner,
+  retrieveContext = null
 }) => {
   const handler = completionHandlers[provider];
   if (typeof handler !== 'function') {
@@ -239,11 +240,29 @@ const registerProviderCompletionHandler = ({
         listAgents,
         listSkills
       });
+      if (executionOptions.retrievalRequest) {
+        if (typeof retrieveContext !== 'function') {
+          return { success: false, error: 'Retrieval indisponible.' };
+        }
+        const retrieval = await retrieveContext(executionOptions.retrievalRequest);
+        if (!retrieval?.success) return retrieval || { success: false, error: 'Retrieval refuse.' };
+        executionOptions = {
+          ...executionOptions,
+          retrievalContext: retrieval.context,
+          toolsAllowed: false,
+          promptSafety: retrieval.promptSafety || { source: 'untrusted-data', allowInstructions: false, allowToolCalls: false }
+        };
+      }
       const response = executionOptions.credentialMode === 'managed'
         ? await managedCompletionRunner?.({
           workspaceId: executionOptions.workspaceId || executionOptions.projectPath,
           profile: executionOptions.nevenCoreExecutionContext?.profile || executionOptions.providerPolicy?.profile,
-          payload: { mode: 'chat', provider, history, currentCode, allProjectFiles }
+          payload: {
+            mode: 'chat', provider, history, currentCode, allProjectFiles,
+            retrievalContext: executionOptions.retrievalContext,
+            toolsAllowed: executionOptions.toolsAllowed,
+            promptSafety: executionOptions.promptSafety
+          }
         }) || { success: false, error: 'Execution managed Neven indisponible.' }
         : await handler({
         history,
@@ -276,7 +295,8 @@ const registerAIHandlers = ({
   listSkills = defaultListSkills,
   completionHandlers = providerHandlers,
   completionRunner = runSingleCompletionProvider,
-  managedCompletionRunner
+  managedCompletionRunner,
+  retrieveContext
 } = {}) => {
   ipcMain.handle('list-gemini-models', async (_event, apiKey) => listGeminiModels(apiKey));
 
@@ -300,7 +320,7 @@ const registerAIHandlers = ({
     listAgents,
     listSkills,
     completionHandlers
-    ,managedCompletionRunner
+    ,managedCompletionRunner, retrieveContext
   });
   registerProviderCompletionHandler({
     ipcMain,
@@ -311,7 +331,7 @@ const registerAIHandlers = ({
     listAgents,
     listSkills,
     completionHandlers
-    ,managedCompletionRunner
+    ,managedCompletionRunner, retrieveContext
   });
   registerProviderCompletionHandler({
     ipcMain,
@@ -322,7 +342,7 @@ const registerAIHandlers = ({
     listAgents,
     listSkills,
     completionHandlers
-    ,managedCompletionRunner
+    ,managedCompletionRunner, retrieveContext
   });
   registerProviderCompletionHandler({
     ipcMain,
@@ -333,7 +353,7 @@ const registerAIHandlers = ({
     listAgents,
     listSkills,
     completionHandlers
-    ,managedCompletionRunner
+    ,managedCompletionRunner, retrieveContext
   });
 
   ipcMain.handle('get-inline-completion', async (_event, prompt, code, options = {}) => {

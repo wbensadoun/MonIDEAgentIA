@@ -55,7 +55,41 @@ const registerRetrievalHandlers = ({
       : { success: false, ...publicError({ code: RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED }) };
   });
 
+  const resolveRetrievalContext = createRetrievalContextResolver({
+    ensureProject,
+    isProjectAccessible,
+    resolveNevenContext,
+    projectRegistry
+  });
+
   handle('retrieval:read-index', async (_event, payload = {}) => {
+    try {
+      return await resolveRetrievalContext(payload);
+    } catch (error) {
+      const safe = publicError(error);
+      console.error('[Retrieval] read refused:', safe.code);
+      return { success: false, ...safe };
+    }
+  });
+};
+
+const createRetrievalContextResolver = ({
+  ensureProject,
+  isProjectAccessible,
+  resolveNevenContext,
+  projectRegistry
+} = {}) => {
+  const publicError = (error) => {
+    const code = error?.code || RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST;
+    const messages = {
+      [RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST]: 'Requête retrieval invalide.',
+      [RETRIEVAL_SCOPE_ERRORS.NO_AUTHORIZED_PROJECT]: 'Aucun projet autorisé.',
+      [RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED]: 'Accès retrieval refusé.',
+      [RETRIEVAL_SCOPE_ERRORS.INDEX_UNAVAILABLE]: 'Index retrieval indisponible.'
+    };
+    return { code, error: messages[code] || 'Retrieval refusé.' };
+  };
+  return async (payload = {}) => {
     try {
       const request = sanitizeRetrievalRequest(payload);
       const scope = await buildRetrievalScope(request, {
@@ -72,10 +106,10 @@ const registerRetrievalHandlers = ({
       return { success: true, scope, ...indexes };
     } catch (error) {
       const safe = publicError(error);
-      console.error('[Retrieval] read refused:', safe.code);
+      console.error('[Retrieval] resolve refused:', safe.code);
       return { success: false, ...safe };
     }
-  });
+  };
 };
 
-module.exports = { registerRetrievalHandlers };
+module.exports = { registerRetrievalHandlers, createRetrievalContextResolver };

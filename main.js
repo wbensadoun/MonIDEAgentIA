@@ -16,7 +16,7 @@ const { registerSkillHandlers } = require('./electron/ipc/skillHandlers');
 const { registerGitHandlers } = require('./electron/ipc/gitHandlers');
 const { registerWorkflowHandlers } = require('./electron/ipc/workflowHandlers');
 const { registerBrainGraphHandlers } = require('./electron/ipc/brainGraphHandlers');
-const { registerRetrievalHandlers } = require('./electron/ipc/retrievalHandlers');
+const { registerRetrievalHandlers, createRetrievalContextResolver } = require('./electron/ipc/retrievalHandlers');
 const {
   configureAIService,
   getN8nCatalogEntries,
@@ -200,6 +200,12 @@ const retrievalProjectRegistry = createRetrievalProjectRegistry({
   isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath),
   isProjectOpen: async (projectPath) => projectWindowState.isOpen(projectPath)
 });
+const resolveRetrievalContext = createRetrievalContextResolver({
+  ensureProject: ensureTrustedProjectPath,
+  isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath),
+  projectRegistry: retrievalProjectRegistry,
+  resolveNevenContext: async () => ({ available: false })
+});
 registerRetrievalHandlers({
   ipcMain,
   ensureProject: ensureTrustedProjectPath,
@@ -230,7 +236,12 @@ registerFileHandlers();
 registerSnapshotHandlers();
 registerAgentHandlers(() => mainWindow);
 registerOllamaHandlers(() => mainWindow);
-registerAIHandlers({ getMainWindow: () => mainWindow, executeCommandForAI, managedCompletionRunner: runManagedNevenCompletion });
+registerAIHandlers({
+  getMainWindow: () => mainWindow,
+  executeCommandForAI,
+  managedCompletionRunner: runManagedNevenCompletion,
+  retrieveContext: resolveRetrievalContext
+});
 registerSkillHandlers();
 registerRouterHandlers({
   ipcMain,
