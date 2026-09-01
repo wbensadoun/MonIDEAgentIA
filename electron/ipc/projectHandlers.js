@@ -9,7 +9,7 @@ const {
   revokeProjectPath,
 } = require('../core/security');
 
-const registerProjectHandlers = ({ getMainWindow, projectState = null, registerRetrievalPath = null, revokeRetrievalPath = null }) => {
+const registerProjectHandlers = ({ getMainWindow, projectState = null, registerRetrievalPath = null, scheduleRagIndex = null, revokeRetrievalPath = null }) => {
   const registerProjectIdentity = async (projectPath) => (
     typeof registerRetrievalPath === 'function'
       ? registerRetrievalPath(projectPath)
@@ -27,7 +27,9 @@ const registerProjectHandlers = ({ getMainWindow, projectState = null, registerR
     const trustedPath = trustProjectPath(filePaths[0]);
     projectState?.markOpened?.(trustedPath);
     try {
-      return { success: true, path: trustedPath, projectId: await registerProjectIdentity(trustedPath) };
+      const projectId = await registerProjectIdentity(trustedPath);
+      scheduleRagIndex?.(projectId, trustedPath);
+      return { success: true, path: trustedPath, projectId };
     } catch {
       return { success: false, error: 'Identite projet indisponible.' };
     }
@@ -44,7 +46,9 @@ const registerProjectHandlers = ({ getMainWindow, projectState = null, registerR
       fs.mkdirSync(defaultRoot, { recursive: true });
       const trustedPath = trustProjectPath(defaultRoot);
       projectState?.markOpened?.(trustedPath);
-      return { success: true, path: trustedPath, projectId: await registerProjectIdentity(trustedPath) };
+      const projectId = await registerProjectIdentity(trustedPath);
+      scheduleRagIndex?.(projectId, trustedPath);
+      return { success: true, path: trustedPath, projectId };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -56,7 +60,9 @@ const registerProjectHandlers = ({ getMainWindow, projectState = null, registerR
       if (result?.success) {
         projectState?.markOpened?.(result.path);
         try {
-          return { ...result, projectId: await registerProjectIdentity(result.path) };
+          const projectId = await registerProjectIdentity(result.path);
+          scheduleRagIndex?.(projectId, result.path);
+          return { ...result, projectId };
         } catch {
           return { success: false, error: 'Identite projet indisponible.' };
         }

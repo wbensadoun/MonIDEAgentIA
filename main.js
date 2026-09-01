@@ -17,6 +17,7 @@ const { registerGitHandlers } = require('./electron/ipc/gitHandlers');
 const { registerWorkflowHandlers } = require('./electron/ipc/workflowHandlers');
 const { registerBrainGraphHandlers } = require('./electron/ipc/brainGraphHandlers');
 const { registerRetrievalHandlers, createRetrievalContextResolver } = require('./electron/ipc/retrievalHandlers');
+const { registerLocalRagIndexHandlers } = require('./electron/ipc/localRagIndexHandlers');
 const {
   configureAIService,
   getN8nCatalogEntries,
@@ -31,6 +32,7 @@ const {
   resolveOptionalTrustedProjectPath, isTrustedProjectPath,
 } = require('./electron/core/security');
 const { createRetrievalProjectRegistry } = require('./electron/services/retrieval-scope.service');
+const { createLocalRagJobManager, buildLocalRagIndex } = require('./electron/services/local-rag-index.service');
 const { listAgents, listSkills } = require('./electron/services/agent.service');
 const {
   ensureEditPermission,
@@ -97,6 +99,7 @@ const providerSecretVault = new ProviderSecretVault({
   filePath: ProviderSecretVault.defaultFilePath(app.getPath('userData'))
 });
 const projectWindowState = createProjectWindowState();
+const localRagJobs = createLocalRagJobManager({ build: buildLocalRagIndex });
 // Le control plane Neven reste dans le main process. Il ne retourne jamais de
 // cle fournisseur au renderer : uniquement un droit court vers la passerelle
 // Neven, conservé en mémoire et destiné aux futures exécutions managed.
@@ -213,6 +216,11 @@ registerRetrievalHandlers({
   projectRegistry: retrievalProjectRegistry,
   resolveNevenContext: async () => ({ available: false })
 });
+registerLocalRagIndexHandlers({
+  ipcMain,
+  projectRegistry: retrievalProjectRegistry,
+  jobManager: localRagJobs
+});
 
 registerGitHandlers({
   ipcMain,
@@ -230,6 +238,9 @@ registerProjectHandlers({
   getMainWindow: () => mainWindow,
   projectState: projectWindowState,
   registerRetrievalPath: retrievalProjectRegistry.register,
+  scheduleRagIndex: (projectId, projectPath) => {
+    if (projectId && projectPath) localRagJobs.enqueue(projectId, projectPath);
+  },
   revokeRetrievalPath: retrievalProjectRegistry.revokePath
 });
 registerProcessHandlers(processService);

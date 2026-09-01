@@ -1,0 +1,327 @@
+'use strict';
+
+const fs = require('fs');
+const fsp = fs.promises;
+const path = require('path');
+const crypto = require('crypto');
+const { assertSafePath, safeResolvePath, ensureTrustedProjectPath } = require('../core/security');
+
+const LOCAL_RAG_INDEX_VERSION = 1;
+const MAX_FILES = 5000;
+const MAX_FILE_BYTES = 350000;
+const MAX_INDEX_BYTES = 25 * 1024 * 1024;
+const MAX_TOTAL_CHUNKS = 20000;
+const CHUNK_SIZE = 1200;
+const CHUNK_OVERLAP = 200;
+const VECTOR_DIMENSIONS = 32;
+const INDEX_RELATIVE_PATH = path.join('.vibe-workspace', 'rag_index.json');
+
+const ALLOWED_EXTENSIONS = new Set([
+  '.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx',
+  '.html', '.css', '.scss', '.sass', '.less',
+  '.json', '.md', '.mdx', '.txt', '.xml', '.yml', '.yaml', '.toml', '.ini',
+  '.py', '.java', '.go', '.rs', '.rb', '.php', '.c', '.h', '.cpp', '.hpp',
+  '.sql', '.sh', '.bat', '.ps1', '.vue', '.svelte', '.astro'
+]);
+
+const ALLOWED_NAMES = new Set(['readme', 'readme.md', 'dockerfile', 'makefile']);
+const IGNORED_DIRECTORIES = new Set([
+  '.git', '.hg', '.svn', 'node_modules', 'dist', 'build', 'out', 'coverage',
+  '.next', '.nuxt', '.vite', '.cache', '.turbo', '.parcel-cache', 'target',
+  'vendor', '.vibe-workspace'
+]);
+const SECRET_SUFFIXES = new Set(['.pem', '.key', '.p12', '.pfx', '.jks', '.keystore']);
+const SECRET_PARTS = new Set(['credentials', 'credential', 'secrets', 'secret', 'passwords', 'password']);
+
+const toRelativePath = (projectPath, candidate) => path.relative(projectPath, candidate).replace(/\\/g, '/');
+
+const isSensitiveName = (name) => {
+  const lower = String(name || '').toLowerCase();
+  if (lower === '.env' || lower.startsWith('.env.')) return true;
+  if ([...SECRET_SUFFIXES].some((suffix) => lower.endsWith(suffix))) return true;
+  if (lower.includes('id_rsa') || lower.includes('id_ed25519')) return true;
+  return SECRET_PARTS.has(lower.replace(path.extname(lower), ''));
+};
+
+const isAllowedFile = (name) => {
+  const lower = String(name || '').toLowerCase();
+  if (isSensitiveName(lower)) return false;
+  return ALLOWED_NAMES.has(lower) || ALLOWED_EXTENSIONS.has(path.extname(lower));
+};
+
+const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
+
+const tokenize = (text) => [...new Set(String(text || '').toLowerCase()
+  .split(/[^\p{L}\p{N}_$.-]+/u)
+  .map((token) => token.trim())
+  .filter((token) => token.length >= 2))].slice(0, 256);
+
+// A deterministic local vector is deliberately used here: it needs no
+// network/model credential and makes the on-disk contract vector-ready. The
+// retrieval layer may later replace it with a model embedding without
+// changing file/chunk identity or the security boundary.
+const buildLocalVector = (tokens) => {
+  const vector = Array(VECTOR_DIMENSIONS).fill(0);
+  for (const token of tokens) {
+    const digest = crypto.createHash('sha256').update(token).digest();
+    for (let index = 0; index < 4; index += 1) {
+      const slot = digest[index] % VECTOR_DIMENSIONS;
+      vector[slot] += digest[index + 4] / 255;
+    }
+  }
+  const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
+  return vector.map((value) => Number((value / norm).toFixed(6)));
+};
+
+const parseGitignore = (content) => String(content || '').split(/\r?\n/)
+  .map((line) => line.trim())
+  .filter((line) => line && !line.startsWith('#'))
+  .map((line) => ({ negated: line.startsWith('!'), pattern: line.replace(/^!/, '').replace(/^\//, '') }))
+  .filter(({ pattern }) => pattern && !pattern.includes('..'));
+
+const escapeGlobPattern = (pattern) => String(pattern || '').replace(/\\/g, '/')
+  .replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+
+const globToRegExp = (pattern, directory) => {
+  const escaped = escapeGlobPattern(pattern);
+  return new RegExp(directory ? `(^|/)${escaped.replace(/\/$/, '')}(/|$)` : `(^|/)${escaped}$`, 'i');
+};
+
+const isGitignored = (relativePath, isDirectory, rules) => {
+  const normalized = String(relativePath || '').replace(/\\/g, '/').replace(/^\.\//, '');
+  let ignored = false;
+  for (const rule of rules) {
+    const pattern = rule.pattern;
+    const matches = globToRegExp(pattern, isDirectory).test(normalized)
+      || (!pattern.includes('/') && new RegExp(`(^|/)${escapeGlobPattern(pattern)}(?:$|/)`, 'i').test(normalized));
+    if (matches) ignored = !rule.negated;
+  }
+  return ignored;
+};
+
+const detectLanguage = (relativePath) => {
+  const ext = path.extname(relativePath).toLowerCase();
+  return ext ? ext.slice(1) : 'text';
+};
+
+const parseStructure = (content, relativePath) => {
+  const source = String(content || '');
+  const imports = [...source.matchAll(/(?:import\s+(?:[^'"\n]+?\s+from\s+)?|require\s*\(|from\s+)['"]([^'"]+)['"]/g)]
+    .map((match) => match[1]).filter(Boolean).slice(0, 100);
+  const symbols = [...source.matchAll(/\b(?:function|class|interface|type|const|let|var|def|func)\s+([A-Za-z_$][\w$]*)/g)]
+    .map((match) => match[1]).filter(Boolean).slice(0, 200);
+  return { language: detectLanguage(relativePath), imports: [...new Set(imports)], symbols: [...new Set(symbols)] };
+};
+
+const chunkText = (content) => {
+  const source = String(content || '');
+  if (!source) return [];
+  const chunks = [];
+  const step = Math.max(1, CHUNK_SIZE - CHUNK_OVERLAP);
+  for (let start = 0; start < source.length && chunks.length < MAX_TOTAL_CHUNKS; start += step) {
+    chunks.push(source.slice(start, start + CHUNK_SIZE));
+  }
+  return chunks;
+};
+
+const buildChunks = (content, relativePath, structure) => chunkText(content).map((text, index) => {
+  const tokens = tokenize(text);
+  return {
+    id: `${sha256(relativePath)}:${index}`,
+    text,
+    hash: sha256(text),
+    start: index * Math.max(1, CHUNK_SIZE - CHUNK_OVERLAP),
+    tokens,
+    vector: buildLocalVector(tokens),
+    symbols: structure.symbols.slice(0, 32)
+  };
+});
+
+const getIndexPath = (projectPath) => safeResolvePath(projectPath, INDEX_RELATIVE_PATH).resolved;
+
+const readExistingIndex = async (indexPath) => {
+  try {
+    const stat = await fsp.lstat(indexPath);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_INDEX_BYTES) return {};
+    const parsed = JSON.parse(await fsp.readFile(indexPath, 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return {};
+    return {};
+  }
+};
+
+const validateProjectRoot = async (projectPath) => {
+  const trusted = await ensureTrustedProjectPath(projectPath);
+  const stat = await fsp.lstat(trusted);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Projet retrieval indisponible');
+  const real = await fsp.realpath(trusted);
+  if (path.resolve(real) !== path.resolve(await fsp.realpath(path.resolve(trusted)))) {
+    throw new Error('Projet retrieval indisponible');
+  }
+  return trusted;
+};
+
+const scanProject = async (projectPath, previous = {}) => {
+  const gitignorePath = path.join(projectPath, '.gitignore');
+  let gitignore = [];
+  try { gitignore = parseGitignore(await fsp.readFile(gitignorePath, 'utf8')); } catch { /* optional */ }
+  const files = new Map();
+  let scanned = 0;
+  let skipped = 0;
+  let hitLimit = false;
+  let totalChunks = 0;
+
+  const visit = async (directory, depth = 0) => {
+    if (files.size >= MAX_FILES) { hitLimit = true; return; }
+    if (depth > 60) return;
+    let entries;
+    try { entries = await fsp.readdir(directory, { withFileTypes: true }); } catch { skipped += 1; return; }
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      if (files.size >= MAX_FILES) { hitLimit = true; return; }
+      if (entry.isSymbolicLink?.()) { skipped += 1; continue; }
+      const absolute = path.join(directory, entry.name);
+      const relative = toRelativePath(projectPath, absolute);
+      if (!relative || relative.startsWith('../') || isSensitiveName(entry.name)) { skipped += 1; continue; }
+      if (entry.isDirectory()) {
+        if (IGNORED_DIRECTORIES.has(entry.name.toLowerCase()) || isGitignored(relative, true, gitignore)) { skipped += 1; continue; }
+        await visit(absolute, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || !isAllowedFile(entry.name) || isGitignored(relative, false, gitignore)) { skipped += 1; continue; }
+      scanned += 1;
+      try {
+        const stat = await fsp.lstat(absolute);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES) { skipped += 1; continue; }
+        const content = await fsp.readFile(absolute, 'utf8');
+        const hash = sha256(content);
+        const old = previous[relative];
+        if (old && old.hash === hash && Array.isArray(old.chunks)) {
+          const chunks = old.chunks.slice(0, Math.max(0, MAX_TOTAL_CHUNKS - totalChunks));
+          totalChunks += chunks.length;
+          files.set(relative, { ...old, chunks });
+          continue;
+        }
+        const structure = parseStructure(content, relative);
+        const chunks = buildChunks(content, relative, structure)
+          .slice(0, Math.max(0, MAX_TOTAL_CHUNKS - totalChunks));
+        totalChunks += chunks.length;
+        files.set(relative, {
+          hash,
+          size: stat.size,
+          language: structure.language,
+          imports: structure.imports,
+          symbols: structure.symbols,
+          chunks,
+          indexedAt: new Date().toISOString()
+        });
+      } catch { skipped += 1; }
+    }
+  };
+
+  await visit(projectPath);
+  const tombstones = {};
+  for (const [relative, old] of Object.entries(previous)) {
+    if (relative.startsWith('_') || files.has(relative) || !old || old.tombstone) continue;
+    tombstones[relative] = {
+      tombstone: true,
+      hash: typeof old.hash === 'string' ? old.hash : null,
+      deletedAt: new Date().toISOString(),
+      chunks: []
+    };
+  }
+  return { files, tombstones, stats: { scanned, indexed: files.size, chunks: totalChunks, skipped, hitLimit } };
+};
+
+const writeIndexAtomically = async (projectPath, index) => {
+  const indexPath = getIndexPath(projectPath);
+  const workspaceDir = path.dirname(indexPath);
+  await fsp.mkdir(workspaceDir, { recursive: true });
+  const dirStat = await fsp.lstat(workspaceDir);
+  if (!dirStat.isDirectory() || dirStat.isSymbolicLink()) throw new Error('Index retrieval indisponible');
+  assertSafePath(projectPath, indexPath);
+  const serialized = JSON.stringify(index);
+  if (Buffer.byteLength(serialized, 'utf8') > MAX_INDEX_BYTES) throw new Error('Index retrieval trop volumineux');
+  const temporaryPath = `${indexPath}.${crypto.randomUUID()}.tmp`;
+  await fsp.writeFile(temporaryPath, serialized, { encoding: 'utf8', flag: 'wx' });
+  try {
+    await fsp.rename(temporaryPath, indexPath);
+  } catch (error) {
+    await fsp.rm(temporaryPath, { force: true }).catch(() => {});
+    throw error;
+  }
+  return indexPath;
+};
+
+const buildLocalRagIndex = async (projectPath) => {
+  const trustedProjectPath = await validateProjectRoot(projectPath);
+  const indexPath = getIndexPath(trustedProjectPath);
+  const previous = await readExistingIndex(indexPath);
+  const scan = await scanProject(trustedProjectPath, previous);
+  const output = {
+    _meta: {
+      version: LOCAL_RAG_INDEX_VERSION,
+      generatedAt: new Date().toISOString(),
+      vector: 'hash-v1',
+      vectorDimensions: VECTOR_DIMENSIONS,
+      stats: scan.stats
+    },
+    ...Object.fromEntries(scan.files),
+    ...scan.tombstones
+  };
+  await writeIndexAtomically(trustedProjectPath, output);
+  return { indexPath, stats: scan.stats, files: scan.files.size, tombstones: Object.keys(scan.tombstones).length };
+};
+
+const createLocalRagJobManager = ({ build = buildLocalRagIndex } = {}) => {
+  const jobs = new Map();
+  const activeByProject = new Map();
+  const enqueue = (projectId, projectPath) => {
+    const active = activeByProject.get(projectId);
+    if (active) return { ...active, deduplicated: true };
+    const jobId = `rag_${crypto.randomUUID()}`;
+    const job = { jobId, projectId, status: 'queued', createdAt: new Date().toISOString() };
+    jobs.set(jobId, job);
+    activeByProject.set(projectId, job);
+    setImmediate(async () => {
+      job.status = 'running';
+      try {
+        job.result = await build(projectPath);
+        job.status = 'completed';
+      } catch (error) {
+        job.status = 'failed';
+        job.error = 'Indexation retrieval echouee.';
+      } finally {
+        job.finishedAt = new Date().toISOString();
+        activeByProject.delete(projectId);
+      }
+    });
+    return { ...job };
+  };
+  return Object.freeze({
+    enqueue,
+    get: (jobId) => {
+      const job = jobs.get(jobId);
+      return job ? { ...job, result: job.status === 'completed' ? job.result : undefined } : null;
+    }
+  });
+};
+
+module.exports = {
+  LOCAL_RAG_INDEX_VERSION,
+  MAX_FILES,
+  MAX_FILE_BYTES,
+  MAX_INDEX_BYTES,
+  MAX_TOTAL_CHUNKS,
+  VECTOR_DIMENSIONS,
+  isSensitiveName,
+  isAllowedFile,
+  parseGitignore,
+  isGitignored,
+  parseStructure,
+  buildChunks,
+  buildLocalRagIndex,
+  createLocalRagJobManager,
+  getIndexPath
+};

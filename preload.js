@@ -196,6 +196,8 @@ try {
     retrievalRevokeProject: (projectId) => ipcRenderer.invoke('retrieval:revoke-project', projectId),
     retrievalReadIndex: (payload) => ipcRenderer.invoke('retrieval:read-index', payload),
     closeProject: (projectPath) => ipcRenderer.invoke('close-project', projectPath),
+    startRagIndex: (projectId) => ipcRenderer.invoke('rag:index-project', { projectId }),
+    getRagIndexStatus: (projectId, jobId) => ipcRenderer.invoke('rag:index-status', { projectId, jobId }),
 
     // Agents APIs
     listAgents: (projectPath) => ipcRenderer.invoke('list-agents', projectPath),
