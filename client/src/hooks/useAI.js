@@ -238,6 +238,9 @@ export const useAI = (
         }
         effectiveProjectPath = response.path;
         useProjectStore.getState().setCurrentProjectPath(effectiveProjectPath);
+        // The retrieval scope is identified only by the opaque ID minted in
+        // the main process; never derive it from the renderer path.
+        useProjectStore.getState().setCurrentProjectId(response.projectId || '');
         showMessage(`Espace de travail créé: "${effectiveProjectPath}"`, 3000);
       } catch (error) {
         showMessage(`⚠️ Erreur création espace de travail: ${error.message}`, 5000);

@@ -272,7 +272,7 @@ export const useFileOperations = (
       const response = await window.electronAPI.openFolderDialog();
       if (response.success && response.path) {
         showMessage(`Dossier ouvert: "${response.path}"`);
-        return response.path;
+        return { path: response.path, projectId: response.projectId || '' };
       } else if (response.error) {
         showMessage(`Erreur: ${response.error}`, 5000);
         return null;

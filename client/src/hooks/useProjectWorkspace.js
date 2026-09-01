@@ -87,6 +87,7 @@ const useProjectWorkspace = ({
         if (cancelled) return;
         if (response?.success && response.path) {
           setCurrentProjectPath(response.path);
+          if (typeof setCurrentProjectId === 'function') setCurrentProjectId(response.projectId || '');
           resetEditorSession();
           return;
         }
@@ -113,6 +114,7 @@ const useProjectWorkspace = ({
     currentProjectPath,
     isElectronApiAvailable,
     resetEditorSession,
+    setCurrentProjectId,
     setCurrentProjectPath,
     showMessage
   ]);
@@ -153,10 +155,15 @@ const useProjectWorkspace = ({
           showMessage(`Projet non autorise: ${response?.error || 'refuse'}`, 4000);
           return false;
         }
+        if (typeof setCurrentProjectId === 'function') setCurrentProjectId(response.projectId || '');
       } catch (error) {
         showMessage(`Erreur autorisation: ${error.message}`, 4000);
         return false;
       }
+    } else if (typeof setCurrentProjectId === 'function') {
+      // Without a main-process registration there is no valid identity to
+      // carry over from the previously selected project.
+      setCurrentProjectId('');
     }
 
     setCurrentProjectPath(projectPath);
@@ -167,18 +174,23 @@ const useProjectWorkspace = ({
     currentProjectPath,
     isElectronApiAvailable,
     resetEditorSession,
+    setCurrentProjectId,
     setCurrentProjectPath,
     showMessage
   ]);
 
   const handleOpenFolder = useCallback(async () => {
-    const projectPath = await openFolder();
+    const opened = await openFolder();
+    const projectPath = typeof opened === 'string' ? opened : opened?.path;
     if (!projectPath) return;
 
     setCurrentProjectPath(projectPath);
+    if (typeof setCurrentProjectId === 'function') {
+      setCurrentProjectId(typeof opened === 'string' ? '' : (opened.projectId || ''));
+    }
     resetEditorSession();
     persistLastProjectPath(projectPath);
-  }, [openFolder, resetEditorSession, setCurrentProjectPath]);
+  }, [openFolder, resetEditorSession, setCurrentProjectId, setCurrentProjectPath]);
 
   const handleOpenConversation = useCallback(async (projectPath, fileName) => {
     if (projectPath === currentProjectPath) {

@@ -229,6 +229,7 @@ registerLogHandlers({ getLogsDir, getLatestLogPath });
 registerProjectHandlers({
   getMainWindow: () => mainWindow,
   projectState: projectWindowState,
+  registerRetrievalPath: retrievalProjectRegistry.register,
   revokeRetrievalPath: retrievalProjectRegistry.revokePath
 });
 registerProcessHandlers(processService);

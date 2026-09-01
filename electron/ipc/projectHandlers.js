@@ -9,7 +9,13 @@ const {
   revokeProjectPath,
 } = require('../core/security');
 
-const registerProjectHandlers = ({ getMainWindow, projectState = null, revokeRetrievalPath = null }) => {
+const registerProjectHandlers = ({ getMainWindow, projectState = null, registerRetrievalPath = null, revokeRetrievalPath = null }) => {
+  const registerProjectIdentity = async (projectPath) => (
+    typeof registerRetrievalPath === 'function'
+      ? registerRetrievalPath(projectPath)
+      : null
+  );
+
   ipcMain.handle('open-folder-dialog', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(getMainWindow(), {
       properties: ['openDirectory']
@@ -20,7 +26,11 @@ const registerProjectHandlers = ({ getMainWindow, projectState = null, revokeRet
 
     const trustedPath = trustProjectPath(filePaths[0]);
     projectState?.markOpened?.(trustedPath);
-    return { success: true, path: trustedPath };
+    try {
+      return { success: true, path: trustedPath, projectId: await registerProjectIdentity(trustedPath) };
+    } catch {
+      return { success: false, error: 'Identite projet indisponible.' };
+    }
   });
 
   // Espace de travail scratch créé/réutilisé quand l'utilisateur envoie un
@@ -34,7 +44,7 @@ const registerProjectHandlers = ({ getMainWindow, projectState = null, revokeRet
       fs.mkdirSync(defaultRoot, { recursive: true });
       const trustedPath = trustProjectPath(defaultRoot);
       projectState?.markOpened?.(trustedPath);
-      return { success: true, path: trustedPath };
+      return { success: true, path: trustedPath, projectId: await registerProjectIdentity(trustedPath) };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -43,7 +53,14 @@ const registerProjectHandlers = ({ getMainWindow, projectState = null, revokeRet
   ipcMain.handle('authorize-project-path', async (_event, projectPath) => {
     try {
       const result = await requestProjectPathApproval(projectPath, { dialog, getMainWindow });
-      if (result?.success) projectState?.markOpened?.(result.path);
+      if (result?.success) {
+        projectState?.markOpened?.(result.path);
+        try {
+          return { ...result, projectId: await registerProjectIdentity(result.path) };
+        } catch {
+          return { success: false, error: 'Identite projet indisponible.' };
+        }
+      }
       return result;
     } catch (error) {
       return { success: false, error: error.message };
