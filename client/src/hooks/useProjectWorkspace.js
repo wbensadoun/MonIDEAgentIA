@@ -26,7 +26,9 @@ const getProjectName = (projectPath) => (
 
 const useProjectWorkspace = ({
   currentProjectPath,
+  currentProjectId,
   setCurrentProjectPath,
+  setCurrentProjectId,
   isElectronApiAvailable,
   showMessage,
   openFolder,
@@ -197,7 +199,9 @@ const useProjectWorkspace = ({
     if (isElectronApiAvailable && typeof window.electronAPI?.closeProject === 'function') {
       try {
         const response = await window.electronAPI.closeProject(projectPath);
-        if (!response?.success) {
+        const historicalWorkspace = response?.code === 'PROJECT_NOT_OPEN'
+          || response?.error === 'Projet non ouvert.';
+        if (!response?.success && !historicalWorkspace) {
           showMessage(`Projet non ferme: ${response?.error || 'refuse'}`, 3500);
           return false;
         }
@@ -213,8 +217,14 @@ const useProjectWorkspace = ({
       delete next[projectPath];
       return next;
     });
+    if (projectPath === currentProjectPath) {
+      setCurrentProjectPath('');
+      if (typeof setCurrentProjectId === 'function') setCurrentProjectId('');
+      resetEditorSession();
+      persistLastProjectPath('');
+    }
     return true;
-  }, [isElectronApiAvailable, showMessage]);
+  }, [currentProjectId, currentProjectPath, isElectronApiAvailable, resetEditorSession, setCurrentProjectId, setCurrentProjectPath, showMessage]);
 
   return {
     workspaces,

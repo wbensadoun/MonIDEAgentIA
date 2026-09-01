@@ -51,13 +51,16 @@ const registerProjectHandlers = ({ getMainWindow, projectState = null, revokeRet
   });
 
   ipcMain.handle('close-project', async (_event, projectPath) => {
-    if (!projectState?.isOpen?.(projectPath)) {
-      return { success: false, error: 'Projet non ouvert.' };
-    }
-    projectState.markClosed(projectPath);
+    const wasOpen = projectState?.isOpen?.(projectPath) === true;
+    if (wasOpen) projectState.markClosed(projectPath);
+    // A historical workspace may no longer be present in the window state,
+    // but it can still have a registered retrieval identity. Revoke by path
+    // regardless, then let the renderer remove its local history entry.
     revokeProjectPath(projectPath);
     revokeRetrievalPath?.(projectPath);
-    return { success: true };
+    return wasOpen
+      ? { success: true }
+      : { success: false, code: 'PROJECT_NOT_OPEN', error: 'Projet non ouvert.' };
   });
 };
 

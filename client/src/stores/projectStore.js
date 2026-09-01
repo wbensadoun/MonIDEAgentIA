@@ -3,6 +3,10 @@ import { create } from 'zustand';
 const useProjectStore = create((set) => ({
   currentProjectPath: '',
   setCurrentProjectPath: (path) => set({ currentProjectPath: path }),
+  // Opaque main-process retrieval identity. It is cleared whenever the
+  // corresponding project is closed so a revoked scope cannot be reused.
+  currentProjectId: '',
+  setCurrentProjectId: (projectId) => set({ currentProjectId: projectId || '' }),
 
   workspaces: [],
   setWorkspaces: (workspaces) => set({ workspaces }),

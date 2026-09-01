@@ -32,6 +32,8 @@ const AppContent = () => {
   // currentProjectPath in global store — accessible from any component
   const currentProjectPath = useProjectStore(state => state.currentProjectPath);
   const setCurrentProjectPath = useProjectStore(state => state.setCurrentProjectPath);
+  const currentProjectId = useProjectStore(state => state.currentProjectId);
+  const setCurrentProjectId = useProjectStore(state => state.setCurrentProjectId);
   const [newItemName, setNewItemName] = useState('');
   // Which content the left sidebar shows in 'ide' viewMode — driven by the
   // ActivityBar rail (Explorer / Search / Source Control).
@@ -447,7 +449,9 @@ const AppContent = () => {
     handleRemoveProject
   } = useProjectWorkspace({
     currentProjectPath,
+    currentProjectId,
     setCurrentProjectPath,
+    setCurrentProjectId,
     isElectronApiAvailable,
     showMessage,
     openFolder,
