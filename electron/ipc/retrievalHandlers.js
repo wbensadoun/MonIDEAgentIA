@@ -13,6 +13,7 @@ const registerRetrievalHandlers = ({
   ensureProject,
   isProjectAccessible,
   resolveNevenContext,
+  onProjectRevoked = null,
   projectRegistry = createRetrievalProjectRegistry({ ensureProject, isProjectAccessible })
 } = {}) => {
   if (!ipcMain || typeof ipcMain.handle !== 'function') throw new Error('ipcMain requis');
@@ -50,6 +51,7 @@ const registerRetrievalHandlers = ({
 
   handle('retrieval:revoke-project', async (_event, projectId) => {
     const revoked = typeof projectId === 'string' && projectRegistry.revoke(projectId);
+    if (revoked) onProjectRevoked?.(projectId);
     return revoked
       ? { success: true }
       : { success: false, ...publicError({ code: RETRIEVAL_SCOPE_ERRORS.ACCESS_REVOKED }) };

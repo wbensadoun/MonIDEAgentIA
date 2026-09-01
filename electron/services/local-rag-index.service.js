@@ -13,7 +13,8 @@ const MAX_INDEX_BYTES = 25 * 1024 * 1024;
 const MAX_TOTAL_CHUNKS = 20000;
 const CHUNK_SIZE = 1200;
 const CHUNK_OVERLAP = 200;
-const VECTOR_DIMENSIONS = 32;
+const LEXICAL_FINGERPRINT_DIMENSIONS = 32;
+const MAX_RETAINED_JOBS = 100;
 const INDEX_RELATIVE_PATH = path.join('.vibe-workspace', 'rag_index.json');
 
 const ALLOWED_EXTENSIONS = new Set([
@@ -32,6 +33,13 @@ const IGNORED_DIRECTORIES = new Set([
 ]);
 const SECRET_SUFFIXES = new Set(['.pem', '.key', '.p12', '.pfx', '.jks', '.keystore']);
 const SECRET_PARTS = new Set(['credentials', 'credential', 'secrets', 'secret', 'passwords', 'password']);
+const SECRET_CONTENT_PATTERNS = [
+  /-----BEGIN[^\r\n]+PRIVATE KEY-----/i,
+  /\b(?:OPENAI|ANTHROPIC|GEMINI|TOGETHER|AWS|AZURE|GOOGLE_APPLICATION)_?(?:API_?)?KEY\s*[:=]\s*["']?[A-Za-z0-9_./+=:-]{12,}/i,
+  /\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|service[_-]?account|client[_-]?secret|password)\s*[:=]\s*["']?[^\s"']{16,}/i,
+  /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_-]{16,}|xox[baprs]-[A-Za-z0-9-]{16,}|AKIA[A-Z0-9]{16})\b/,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b/i
+];
 
 const toRelativePath = (projectPath, candidate) => path.relative(projectPath, candidate).replace(/\\/g, '/');
 
@@ -40,8 +48,12 @@ const isSensitiveName = (name) => {
   if (lower === '.env' || lower.startsWith('.env.')) return true;
   if ([...SECRET_SUFFIXES].some((suffix) => lower.endsWith(suffix))) return true;
   if (lower.includes('id_rsa') || lower.includes('id_ed25519')) return true;
+  if (/(^|[._-])(service[-_]?account|private[-_]?keys?|openai[-_]?keys?|access[-_]?tokens?|auth[-_]?tokens?|api[-_]?tokens?|api[-_]?keys?)([._-]|$)/i.test(lower)) return true;
+  if (/(^|[._-])(token|tokens|secret|secrets|credential|credentials|password|passwords)([._-]|$)/i.test(lower)) return true;
   return SECRET_PARTS.has(lower.replace(path.extname(lower), ''));
 };
+
+const containsSecretMaterial = (content) => SECRET_CONTENT_PATTERNS.some((pattern) => pattern.test(String(content || '')));
 
 const isAllowedFile = (name) => {
   const lower = String(name || '').toLowerCase();
@@ -56,16 +68,14 @@ const tokenize = (text) => [...new Set(String(text || '').toLowerCase()
   .map((token) => token.trim())
   .filter((token) => token.length >= 2))].slice(0, 256);
 
-// A deterministic local vector is deliberately used here: it needs no
-// network/model credential and makes the on-disk contract vector-ready. The
-// retrieval layer may later replace it with a model embedding without
-// changing file/chunk identity or the security boundary.
-const buildLocalVector = (tokens) => {
-  const vector = Array(VECTOR_DIMENSIONS).fill(0);
+// This is a lexical fingerprint only, not a semantic embedding. It must not
+// be advertised or routed as vector-search evidence.
+const buildLexicalFingerprint = (tokens) => {
+  const vector = Array(LEXICAL_FINGERPRINT_DIMENSIONS).fill(0);
   for (const token of tokens) {
     const digest = crypto.createHash('sha256').update(token).digest();
     for (let index = 0; index < 4; index += 1) {
-      const slot = digest[index] % VECTOR_DIMENSIONS;
+      const slot = digest[index] % LEXICAL_FINGERPRINT_DIMENSIONS;
       vector[slot] += digest[index + 4] / 255;
     }
   }
@@ -132,22 +142,43 @@ const buildChunks = (content, relativePath, structure) => chunkText(content).map
     hash: sha256(text),
     start: index * Math.max(1, CHUNK_SIZE - CHUNK_OVERLAP),
     tokens,
-    vector: buildLocalVector(tokens),
+    lexicalFingerprint: buildLexicalFingerprint(tokens),
     symbols: structure.symbols.slice(0, 32)
   };
 });
 
 const getIndexPath = (projectPath) => safeResolvePath(projectPath, INDEX_RELATIVE_PATH).resolved;
 
+const quarantineIndex = async (indexPath) => {
+  const quarantinePath = `${indexPath}.corrupt-${Date.now()}-${crypto.randomUUID()}.json`;
+  await fsp.rename(indexPath, quarantinePath);
+};
+
 const readExistingIndex = async (indexPath) => {
   try {
     const stat = await fsp.lstat(indexPath);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_INDEX_BYTES) return {};
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_INDEX_BYTES) {
+      if (stat.isFile() && !stat.isSymbolicLink()) await quarantineIndex(indexPath);
+      const error = new Error('Index retrieval corrompu');
+      error.code = 'RAG_INDEX_CORRUPT';
+      throw error;
+    }
     const parsed = JSON.parse(await fsp.readFile(indexPath, 'utf8'));
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Index retrieval corrompu');
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key.startsWith('_')) continue;
+      if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.chunks)) {
+        throw new Error('Index retrieval corrompu');
+      }
+    }
+    return parsed;
   } catch (error) {
     if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return {};
-    return {};
+    if (error?.code === 'RAG_INDEX_CORRUPT') throw error;
+    try { await quarantineIndex(indexPath); } catch { /* retain corruption failure */ }
+    const corrupt = new Error('Index retrieval corrompu');
+    corrupt.code = 'RAG_INDEX_CORRUPT';
+    throw corrupt;
   }
 };
 
@@ -162,7 +193,15 @@ const validateProjectRoot = async (projectPath) => {
   return trusted;
 };
 
-const scanProject = async (projectPath, previous = {}) => {
+const throwIfCancelled = (signal) => {
+  if (signal?.aborted) {
+    const error = new Error('Indexation retrieval annulee.');
+    error.code = 'RAG_INDEX_CANCELLED';
+    throw error;
+  }
+};
+
+const scanProject = async (projectPath, previous = {}, { signal, isProjectActive = async () => true } = {}) => {
   const gitignorePath = path.join(projectPath, '.gitignore');
   let gitignore = [];
   try { gitignore = parseGitignore(await fsp.readFile(gitignorePath, 'utf8')); } catch { /* optional */ }
@@ -173,12 +212,24 @@ const scanProject = async (projectPath, previous = {}) => {
   let totalChunks = 0;
 
   const visit = async (directory, depth = 0) => {
+    throwIfCancelled(signal);
+    if (!(await isProjectActive())) {
+      const error = new Error('Projet retrieval revoque.');
+      error.code = 'RAG_PROJECT_REVOKED';
+      throw error;
+    }
     if (files.size >= MAX_FILES) { hitLimit = true; return; }
     if (depth > 60) return;
     let entries;
     try { entries = await fsp.readdir(directory, { withFileTypes: true }); } catch { skipped += 1; return; }
     entries.sort((left, right) => left.name.localeCompare(right.name));
     for (const entry of entries) {
+      throwIfCancelled(signal);
+      if (!(await isProjectActive())) {
+        const error = new Error('Projet retrieval revoque.');
+        error.code = 'RAG_PROJECT_REVOKED';
+        throw error;
+      }
       if (files.size >= MAX_FILES) { hitLimit = true; return; }
       if (entry.isSymbolicLink?.()) { skipped += 1; continue; }
       const absolute = path.join(directory, entry.name);
@@ -195,6 +246,7 @@ const scanProject = async (projectPath, previous = {}) => {
         const stat = await fsp.lstat(absolute);
         if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES) { skipped += 1; continue; }
         const content = await fsp.readFile(absolute, 'utf8');
+        if (content.includes('\0') || containsSecretMaterial(content)) { skipped += 1; continue; }
         const hash = sha256(content);
         const old = previous[relative];
         if (old && old.hash === hash && Array.isArray(old.chunks)) {
@@ -234,7 +286,13 @@ const scanProject = async (projectPath, previous = {}) => {
   return { files, tombstones, stats: { scanned, indexed: files.size, chunks: totalChunks, skipped, hitLimit } };
 };
 
-const writeIndexAtomically = async (projectPath, index) => {
+const writeIndexAtomically = async (projectPath, index, { signal, isProjectActive = async () => true } = {}) => {
+  throwIfCancelled(signal);
+  if (!(await isProjectActive())) {
+    const error = new Error('Projet retrieval revoque.');
+    error.code = 'RAG_PROJECT_REVOKED';
+    throw error;
+  }
   const indexPath = getIndexPath(projectPath);
   const workspaceDir = path.dirname(indexPath);
   await fsp.mkdir(workspaceDir, { recursive: true });
@@ -246,6 +304,12 @@ const writeIndexAtomically = async (projectPath, index) => {
   const temporaryPath = `${indexPath}.${crypto.randomUUID()}.tmp`;
   await fsp.writeFile(temporaryPath, serialized, { encoding: 'utf8', flag: 'wx' });
   try {
+    throwIfCancelled(signal);
+    if (!(await isProjectActive())) {
+      const error = new Error('Projet retrieval revoque.');
+      error.code = 'RAG_PROJECT_REVOKED';
+      throw error;
+    }
     await fsp.rename(temporaryPath, indexPath);
   } catch (error) {
     await fsp.rm(temporaryPath, { force: true }).catch(() => {});
@@ -254,56 +318,129 @@ const writeIndexAtomically = async (projectPath, index) => {
   return indexPath;
 };
 
-const buildLocalRagIndex = async (projectPath) => {
+const buildLocalRagIndex = async (projectPath, { signal, isProjectActive = async () => true } = {}) => {
+  throwIfCancelled(signal);
+  if (!(await isProjectActive())) {
+    const error = new Error('Projet retrieval revoque.');
+    error.code = 'RAG_PROJECT_REVOKED';
+    throw error;
+  }
   const trustedProjectPath = await validateProjectRoot(projectPath);
   const indexPath = getIndexPath(trustedProjectPath);
   const previous = await readExistingIndex(indexPath);
-  const scan = await scanProject(trustedProjectPath, previous);
+  const scan = await scanProject(trustedProjectPath, previous, { signal, isProjectActive });
+  throwIfCancelled(signal);
+  if (!(await isProjectActive())) {
+    const error = new Error('Projet retrieval revoque.');
+    error.code = 'RAG_PROJECT_REVOKED';
+    throw error;
+  }
   const output = {
     _meta: {
       version: LOCAL_RAG_INDEX_VERSION,
       generatedAt: new Date().toISOString(),
-      vector: 'hash-v1',
-      vectorDimensions: VECTOR_DIMENSIONS,
+      vector: null,
+      vectorMode: 'lexical-placeholder-v1',
+      vectorDimensions: 0,
       stats: scan.stats
     },
     ...Object.fromEntries(scan.files),
     ...scan.tombstones
   };
-  await writeIndexAtomically(trustedProjectPath, output);
+  await writeIndexAtomically(trustedProjectPath, output, { signal, isProjectActive });
   return { indexPath, stats: scan.stats, files: scan.files.size, tombstones: Object.keys(scan.tombstones).length };
 };
 
-const createLocalRagJobManager = ({ build = buildLocalRagIndex } = {}) => {
+const createLocalRagJobManager = ({ build = buildLocalRagIndex, isProjectActive: projectIsActive = async () => true } = {}) => {
   const jobs = new Map();
-  const activeByProject = new Map();
+  const activeByCanonicalPath = new Map();
+  const canonicalize = (projectPath) => {
+    const resolved = path.resolve(String(projectPath || ''));
+    try { return fs.realpathSync.native(resolved).toLowerCase(); } catch { return resolved.toLowerCase(); }
+  };
+  const publicJob = (job) => {
+    const { projectIds, controller, canonicalPath, ...safe } = job;
+    return { ...safe, projectIds: [...projectIds] };
+  };
+  const pruneFinished = () => {
+    const finished = [...jobs.values()]
+      .filter((job) => job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled')
+      .sort((left, right) => String(left.finishedAt || '').localeCompare(String(right.finishedAt || '')));
+    while (jobs.size > MAX_RETAINED_JOBS && finished.length > 0) jobs.delete(finished.shift().jobId);
+  };
   const enqueue = (projectId, projectPath) => {
-    const active = activeByProject.get(projectId);
-    if (active) return { ...active, deduplicated: true };
+    const canonicalPath = canonicalize(projectPath);
+    const active = activeByCanonicalPath.get(canonicalPath);
+    if (active) {
+      active.projectIds.add(projectId);
+      return { ...publicJob(active), deduplicated: true };
+    }
     const jobId = `rag_${crypto.randomUUID()}`;
-    const job = { jobId, projectId, status: 'queued', createdAt: new Date().toISOString() };
+    const controller = new AbortController();
+    const job = {
+      jobId,
+      projectId,
+      projectIds: new Set([projectId]),
+      canonicalPath,
+      controller,
+      status: 'queued',
+      createdAt: new Date().toISOString()
+    };
     jobs.set(jobId, job);
-    activeByProject.set(projectId, job);
+    activeByCanonicalPath.set(canonicalPath, job);
     setImmediate(async () => {
       job.status = 'running';
       try {
-        job.result = await build(projectPath);
+        const isProjectActive = async () => {
+          for (const id of job.projectIds) {
+            if (await projectIsActive(id, projectPath)) return true;
+          }
+          return false;
+        };
+        throwIfCancelled(controller.signal);
+        if (!(await isProjectActive())) {
+          const error = new Error('Projet retrieval revoque.');
+          error.code = 'RAG_PROJECT_REVOKED';
+          throw error;
+        }
+        job.result = await build(projectPath, { signal: controller.signal, isProjectActive });
         job.status = 'completed';
       } catch (error) {
-        job.status = 'failed';
-        job.error = 'Indexation retrieval echouee.';
+        job.status = error?.code === 'RAG_INDEX_CANCELLED' || error?.code === 'RAG_PROJECT_REVOKED'
+          ? 'cancelled'
+          : 'failed';
+        job.error = job.status === 'cancelled' ? 'Indexation retrieval annulee.' : 'Indexation retrieval echouee.';
       } finally {
         job.finishedAt = new Date().toISOString();
-        activeByProject.delete(projectId);
+        if (activeByCanonicalPath.get(canonicalPath) === job) activeByCanonicalPath.delete(canonicalPath);
+        pruneFinished();
       }
     });
-    return { ...job };
+    return publicJob(job);
+  };
+  const cancel = (projectId) => {
+    let cancelled = false;
+    for (const job of jobs.values()) {
+      if (job.projectIds.has(projectId) && !job.controller.signal.aborted) {
+        job.controller.abort();
+        cancelled = true;
+      }
+    }
+    return cancelled;
+  };
+  const cancelPath = (projectPath) => {
+    const job = activeByCanonicalPath.get(canonicalize(projectPath));
+    if (!job || job.controller.signal.aborted) return false;
+    job.controller.abort();
+    return true;
   };
   return Object.freeze({
     enqueue,
+    cancel,
+    cancelPath,
     get: (jobId) => {
       const job = jobs.get(jobId);
-      return job ? { ...job, result: job.status === 'completed' ? job.result : undefined } : null;
+      return job ? { ...publicJob(job), result: job.status === 'completed' ? job.result : undefined } : null;
     }
   });
 };
@@ -314,7 +451,7 @@ module.exports = {
   MAX_FILE_BYTES,
   MAX_INDEX_BYTES,
   MAX_TOTAL_CHUNKS,
-  VECTOR_DIMENSIONS,
+  LEXICAL_FINGERPRINT_DIMENSIONS,
   isSensitiveName,
   isAllowedFile,
   parseGitignore,

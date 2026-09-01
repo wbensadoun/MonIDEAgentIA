@@ -9,7 +9,7 @@ const {
   revokeProjectPath,
 } = require('../core/security');
 
-const registerProjectHandlers = ({ getMainWindow, projectState = null, registerRetrievalPath = null, scheduleRagIndex = null, revokeRetrievalPath = null }) => {
+const registerProjectHandlers = ({ getMainWindow, projectState = null, registerRetrievalPath = null, scheduleRagIndex = null, cancelRagIndex = null, revokeRetrievalPath = null }) => {
   const registerProjectIdentity = async (projectPath) => (
     typeof registerRetrievalPath === 'function'
       ? registerRetrievalPath(projectPath)
@@ -75,6 +75,7 @@ const registerProjectHandlers = ({ getMainWindow, projectState = null, registerR
 
   ipcMain.handle('close-project', async (_event, projectPath) => {
     const wasOpen = projectState?.isOpen?.(projectPath) === true;
+    cancelRagIndex?.(projectPath);
     if (wasOpen) projectState.markClosed(projectPath);
     // A historical workspace may no longer be present in the window state,
     // but it can still have a registered retrieval identity. Revoke by path

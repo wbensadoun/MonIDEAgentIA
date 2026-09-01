@@ -99,7 +99,10 @@ const providerSecretVault = new ProviderSecretVault({
   filePath: ProviderSecretVault.defaultFilePath(app.getPath('userData'))
 });
 const projectWindowState = createProjectWindowState();
-const localRagJobs = createLocalRagJobManager({ build: buildLocalRagIndex });
+const localRagJobs = createLocalRagJobManager({
+  build: buildLocalRagIndex,
+  isProjectActive: (projectId, projectPath) => retrievalProjectRegistry.isActive(projectId, projectPath)
+});
 // Le control plane Neven reste dans le main process. Il ne retourne jamais de
 // cle fournisseur au renderer : uniquement un droit court vers la passerelle
 // Neven, conservé en mémoire et destiné aux futures exécutions managed.
@@ -207,6 +210,7 @@ const resolveRetrievalContext = createRetrievalContextResolver({
   ensureProject: ensureTrustedProjectPath,
   isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath),
   projectRegistry: retrievalProjectRegistry,
+  onProjectRevoked: (projectId) => localRagJobs.cancel(projectId),
   resolveNevenContext: async () => ({ available: false })
 });
 registerRetrievalHandlers({
@@ -241,6 +245,7 @@ registerProjectHandlers({
   scheduleRagIndex: (projectId, projectPath) => {
     if (projectId && projectPath) localRagJobs.enqueue(projectId, projectPath);
   },
+  cancelRagIndex: localRagJobs.cancelPath,
   revokeRetrievalPath: retrievalProjectRegistry.revokePath
 });
 registerProcessHandlers(processService);
