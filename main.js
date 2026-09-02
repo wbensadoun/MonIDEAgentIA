@@ -105,7 +105,14 @@ const providerSecretVault = new ProviderSecretVault({
 const projectWindowState = createProjectWindowState();
 // Embeddings are opt-in and constructed only in main. In particular no
 // renderer payload can enable a provider, choose an endpoint or supply BYOK.
-const embeddingProviderCatalogue = createEmbeddingProviderCatalogue();
+const embeddingProviderCatalogue = createEmbeddingProviderCatalogue({
+  vault: providerSecretVault,
+  userPolicy: {
+    // Explicit operator/user policy: existing vault credentials are not
+    // sufficient to exfiltrate project chunks to a remote embedding service.
+    prioritizeUserKeys: process.env.CODE_COMPANION_BYOK_EMBEDDINGS_POLICY === 'enabled'
+  }
+});
 const embeddingCapability = embeddingProviderCatalogue.capability;
 const embeddingAdapter = createEmbeddingAdapterFromCapability(embeddingCapability);
 const localRagJobs = createLocalRagJobManager({

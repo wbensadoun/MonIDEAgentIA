@@ -2,6 +2,8 @@
 
 const { createEmbeddingCapability } = require('./embedding-capability.service');
 const { createOllamaEmbeddingProvider } = require('./ollama-embedding-provider.service');
+const { createOpenAIByokEmbeddingProvider } = require('./openai-byok-embedding-provider.service');
+const { getCredentialId } = require('./provider-policy.service');
 
 const readPositiveInteger = (value) => {
   const parsed = Number.parseInt(String(value || ''), 10);
@@ -15,7 +17,16 @@ const readPositiveInteger = (value) => {
  * explicit. Remote/BYOK descriptors remain unavailable unless a future
  * main-process provider factory supplies its own vault-bound transport.
  */
-const createEmbeddingProviderCatalogue = ({ env = process.env, createOllama = createOllamaEmbeddingProvider } = {}) => {
+const createEmbeddingProviderCatalogue = ({
+  env = process.env,
+  vault = null,
+  // This is a main-process policy object. A renderer cannot pass it through
+  // retrieval IPC, and an enabled completion key never implicitly enables
+  // remote indexing.
+  userPolicy = {},
+  createOllama = createOllamaEmbeddingProvider,
+  createOpenAIByok = createOpenAIByokEmbeddingProvider
+} = {}) => {
   const enabled = env.CODE_COMPANION_OLLAMA_EMBEDDINGS_ENABLED === 'true';
   const model = String(env.CODE_COMPANION_OLLAMA_EMBEDDING_MODEL || '').trim();
   const dimensions = readPositiveInteger(env.CODE_COMPANION_OLLAMA_EMBEDDING_DIMENSIONS);
@@ -23,6 +34,43 @@ const createEmbeddingProviderCatalogue = ({ env = process.env, createOllama = cr
   const version = readPositiveInteger(env.CODE_COMPANION_OLLAMA_EMBEDDING_VERSION) || 1;
   let capability = null;
   let unavailableReason = 'disabled-by-default';
+  const byokEnabled = env.CODE_COMPANION_BYOK_EMBEDDINGS_ENABLED === 'true';
+  const byokWorkspaceId = String(env.CODE_COMPANION_BYOK_EMBEDDING_WORKSPACE_ID || '').trim();
+  const byokModel = String(env.CODE_COMPANION_BYOK_EMBEDDING_MODEL || '').trim();
+  const byokDimensions = readPositiveInteger(env.CODE_COMPANION_BYOK_EMBEDDING_DIMENSIONS);
+  const byokTokenizerVersion = String(env.CODE_COMPANION_BYOK_EMBEDDING_TOKENIZER || '').trim();
+  const byokVersion = readPositiveInteger(env.CODE_COMPANION_BYOK_EMBEDDING_VERSION) || 1;
+  const allowByok = userPolicy.prioritizeUserKeys === true;
+  let byokReason = 'disabled-by-default';
+  let byokMetadata = null;
+  if (byokEnabled && !allowByok) byokReason = 'user-policy-disabled';
+  else if (byokEnabled && (!vault || !byokWorkspaceId || !byokModel || !byokDimensions || !byokTokenizerVersion)) {
+    byokReason = 'missing-required-byok-configuration';
+  } else if (byokEnabled) {
+    try {
+      const secretId = getCredentialId({ workspaceId: byokWorkspaceId, provider: 'openai' });
+      capability = createEmbeddingCapability({
+        provider: createOpenAIByok({
+          vault,
+          secretId,
+          model: byokModel,
+          dimensions: byokDimensions,
+          tokenizerVersion: byokTokenizerVersion,
+          version: byokVersion
+        })
+      });
+      byokMetadata = capability.metadata();
+      byokReason = null;
+    } catch {
+      capability = null;
+      byokReason = 'invalid-byok-configuration';
+    }
+  }
+  // A user-opted BYOK embedding provider wins. Local Ollama remains an
+  // explicit opt-in fallback when BYOK is absent or policy-disabled.
+  if (capability) {
+    unavailableReason = null;
+  } else
   if (enabled && model && dimensions) {
     try {
       capability = createEmbeddingCapability({
@@ -48,16 +96,22 @@ const createEmbeddingProviderCatalogue = ({ env = process.env, createOllama = cr
   return Object.freeze({
     capability,
     metadata: () => metadata,
-    list: () => Object.freeze([Object.freeze({
-      providerId: 'ollama',
-      kind: 'local',
-      enabled: metadata?.enabled === true,
-      model: metadata?.model || null,
-      dimensions: metadata?.dimensions || null,
-      tokenizerVersion: metadata?.tokenizerVersion || null,
-      providerVersion: metadata?.providerVersion || null,
-      reason: unavailableReason
-    })])
+    list: () => Object.freeze([
+      Object.freeze({
+        providerId: 'openai', kind: 'byok', enabled: byokMetadata?.enabled === true,
+        model: byokMetadata?.model || null, dimensions: byokMetadata?.dimensions || null,
+        tokenizerVersion: byokMetadata?.tokenizerVersion || null,
+        providerVersion: byokMetadata?.providerVersion || null, reason: byokReason
+      }),
+      Object.freeze({
+        providerId: 'ollama', kind: 'local', enabled: metadata?.providerId === 'ollama' && metadata.enabled === true,
+        model: metadata?.providerId === 'ollama' ? metadata.model : null,
+        dimensions: metadata?.providerId === 'ollama' ? metadata.dimensions : null,
+        tokenizerVersion: metadata?.providerId === 'ollama' ? metadata.tokenizerVersion : null,
+        providerVersion: metadata?.providerId === 'ollama' ? metadata.providerVersion : null,
+        reason: metadata?.providerId === 'ollama' ? unavailableReason : (enabled ? unavailableReason : 'disabled-by-default')
+      })
+    ])
   });
 };
 
