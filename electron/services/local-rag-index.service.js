@@ -11,6 +11,7 @@ const MAX_FILES = 5000;
 const MAX_FILE_BYTES = 350000;
 const MAX_INDEX_BYTES = 25 * 1024 * 1024;
 const MAX_TOTAL_CHUNKS = 20000;
+const MAX_TRAVERSAL_ENTRIES = 10000;
 const CHUNK_SIZE = 1200;
 const CHUNK_OVERLAP = 200;
 const LEXICAL_FINGERPRINT_DIMENSIONS = 32;
@@ -35,8 +36,8 @@ const SECRET_SUFFIXES = new Set(['.pem', '.key', '.p12', '.pfx', '.jks', '.keyst
 const SECRET_PARTS = new Set(['credentials', 'credential', 'secrets', 'secret', 'passwords', 'password']);
 const SECRET_CONTENT_PATTERNS = [
   /-----BEGIN[^\r\n]+PRIVATE KEY-----/i,
-  /\b(?:OPENAI|ANTHROPIC|GEMINI|TOGETHER|AWS|AZURE|GOOGLE_APPLICATION)_?(?:API_?)?KEY\s*[:=]\s*["']?[A-Za-z0-9_./+=:-]{12,}/i,
-  /\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|service[_-]?account|client[_-]?secret|password)\s*[:=]\s*["']?[^\s"']{16,}/i,
+  /["']?\b(?:OPENAI|ANTHROPIC|GEMINI|TOGETHER|AWS|AZURE|GOOGLE_APPLICATION)_?(?:API[_-]?)?KEY\b["']?\s*[:=]\s*["']?[A-Za-z0-9_./+=:-]{12,}/i,
+  /["']?\b(?:api[_-]?keys?|access[_-]?tokens?|auth[_-]?tokens?|service[_-]?accounts?|client[_-]?secrets?|private[_-]?keys?|passwords?)\b["']?\s*[:=]\s*["']?[^\s"'{}\r\n,]{16,}/i,
   /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_-]{16,}|xox[baprs]-[A-Za-z0-9-]{16,}|AKIA[A-Z0-9]{16})\b/,
   /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b/i
 ];
@@ -201,7 +202,11 @@ const throwIfCancelled = (signal) => {
   }
 };
 
-const scanProject = async (projectPath, previous = {}, { signal, isProjectActive = async () => true } = {}) => {
+const scanProject = async (projectPath, previous = {}, {
+  signal,
+  isProjectActive = async () => true,
+  maxTraversalEntries = MAX_TRAVERSAL_ENTRIES
+} = {}) => {
   const gitignorePath = path.join(projectPath, '.gitignore');
   let gitignore = [];
   try { gitignore = parseGitignore(await fsp.readFile(gitignorePath, 'utf8')); } catch { /* optional */ }
@@ -210,6 +215,11 @@ const scanProject = async (projectPath, previous = {}, { signal, isProjectActive
   let skipped = 0;
   let hitLimit = false;
   let totalChunks = 0;
+  let traversalEntries = 0;
+  const traversalBudget = Math.min(
+    MAX_TRAVERSAL_ENTRIES,
+    Number.isInteger(maxTraversalEntries) && maxTraversalEntries > 0 ? maxTraversalEntries : MAX_TRAVERSAL_ENTRIES
+  );
 
   const visit = async (directory, depth = 0) => {
     throwIfCancelled(signal);
@@ -230,7 +240,11 @@ const scanProject = async (projectPath, previous = {}, { signal, isProjectActive
         error.code = 'RAG_PROJECT_REVOKED';
         throw error;
       }
-      if (files.size >= MAX_FILES) { hitLimit = true; return; }
+      if (files.size >= MAX_FILES || traversalEntries >= traversalBudget) {
+        hitLimit = true;
+        return;
+      }
+      traversalEntries += 1;
       if (entry.isSymbolicLink?.()) { skipped += 1; continue; }
       const absolute = path.join(directory, entry.name);
       const relative = toRelativePath(projectPath, absolute);
@@ -283,7 +297,11 @@ const scanProject = async (projectPath, previous = {}, { signal, isProjectActive
       chunks: []
     };
   }
-  return { files, tombstones, stats: { scanned, indexed: files.size, chunks: totalChunks, skipped, hitLimit } };
+  return {
+    files,
+    tombstones,
+    stats: { scanned, indexed: files.size, chunks: totalChunks, skipped, traversalEntries, hitLimit }
+  };
 };
 
 const writeIndexAtomically = async (projectPath, index, { signal, isProjectActive = async () => true } = {}) => {
@@ -318,7 +336,11 @@ const writeIndexAtomically = async (projectPath, index, { signal, isProjectActiv
   return indexPath;
 };
 
-const buildLocalRagIndex = async (projectPath, { signal, isProjectActive = async () => true } = {}) => {
+const buildLocalRagIndex = async (projectPath, {
+  signal,
+  isProjectActive = async () => true,
+  maxTraversalEntries = MAX_TRAVERSAL_ENTRIES
+} = {}) => {
   throwIfCancelled(signal);
   if (!(await isProjectActive())) {
     const error = new Error('Projet retrieval revoque.');
@@ -328,7 +350,7 @@ const buildLocalRagIndex = async (projectPath, { signal, isProjectActive = async
   const trustedProjectPath = await validateProjectRoot(projectPath);
   const indexPath = getIndexPath(trustedProjectPath);
   const previous = await readExistingIndex(indexPath);
-  const scan = await scanProject(trustedProjectPath, previous, { signal, isProjectActive });
+  const scan = await scanProject(trustedProjectPath, previous, { signal, isProjectActive, maxTraversalEntries });
   throwIfCancelled(signal);
   if (!(await isProjectActive())) {
     const error = new Error('Projet retrieval revoque.');
@@ -451,6 +473,7 @@ module.exports = {
   MAX_FILE_BYTES,
   MAX_INDEX_BYTES,
   MAX_TOTAL_CHUNKS,
+  MAX_TRAVERSAL_ENTRIES,
   LEXICAL_FINGERPRINT_DIMENSIONS,
   isSensitiveName,
   isAllowedFile,
@@ -458,6 +481,7 @@ module.exports = {
   isGitignored,
   parseStructure,
   buildChunks,
+  scanProject,
   buildLocalRagIndex,
   createLocalRagJobManager,
   getIndexPath

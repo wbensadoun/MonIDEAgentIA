@@ -36,7 +36,10 @@ const registerLocalRagIndexHandlers = ({
       : null;
     if (typeof projectId !== 'string' || typeof jobId !== 'string') return invalid();
     const job = jobManager.get(jobId);
-    if (!job || job.projectId !== projectId) return invalid();
+    const associatedProjectIds = Array.isArray(job?.projectIds)
+      ? job.projectIds
+      : [job?.projectId];
+    if (!job || !associatedProjectIds.includes(projectId)) return invalid();
     const projectPath = projectRegistry.resolve(projectId);
     if (!projectPath || !(await projectRegistry.isActive(projectId, projectPath))) return invalid();
     return { success: true, job };

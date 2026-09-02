@@ -46,15 +46,26 @@ test('index status is bound to the opaque project identity', async () => {
   registerLocalRagIndexHandlers({
     ipcMain: ipc,
     projectRegistry: {
-      resolve: (projectId) => projectId === 'rp_current_project_id' ? 'C:/trusted' : null,
+      resolve: (projectId) => ['rp_current_project_id', 'rp_second_project_id'].includes(projectId) ? 'C:/trusted' : null,
       isActive: async () => true
     },
     jobManager: {
-      enqueue: () => ({ jobId: 'rag_job_id', projectId: 'rp_current_project_id', status: 'queued' }),
-      get: (jobId) => jobId === 'rag_job_id' ? { jobId, projectId: 'rp_current_project_id', status: 'completed' } : null
+      enqueue: () => ({
+        jobId: 'rag_job_id',
+        projectId: 'rp_current_project_id',
+        projectIds: ['rp_current_project_id', 'rp_second_project_id'],
+        status: 'queued'
+      }),
+      get: (jobId) => jobId === 'rag_job_id' ? {
+        jobId,
+        projectId: 'rp_current_project_id',
+        projectIds: ['rp_current_project_id', 'rp_second_project_id'],
+        status: 'completed'
+      } : null
     }
   });
   const handler = ipc.handlers.get('rag:index-status');
   assert.equal((await handler(null, { projectId: 'rp_current_project_id', jobId: 'rag_job_id' })).success, true);
+  assert.equal((await handler(null, { projectId: 'rp_second_project_id', jobId: 'rag_job_id' })).success, true);
   assert.equal((await handler(null, { projectId: 'rp_other_project_id', jobId: 'rag_job_id' })).success, false);
 });

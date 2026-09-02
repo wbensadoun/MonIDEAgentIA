@@ -88,6 +88,8 @@ test('secret material in otherwise allowlisted files is excluded fail-closed', a
   await fs.writeFile(path.join(project, 'openai_keys.json'), '{"value":"not-indexed"}', 'utf8');
   await fs.writeFile(path.join(project, 'private_keys.txt'), 'not-indexed', 'utf8');
   await fs.writeFile(path.join(project, 'tokens.txt'), 'not-indexed', 'utf8');
+  await fs.writeFile(path.join(project, 'quoted-api-key.json'), '{"apiKey":"abcdefghijklmnop1234"}', 'utf8');
+  await fs.writeFile(path.join(project, 'quoted-service-account.json'), '{"serviceAccount":"abcdefghijklmnop1234"}', 'utf8');
   await fs.writeFile(path.join(project, 'safe.json'), '{"name":"safe"}', 'utf8');
   await buildLocalRagIndex(project);
   const index = JSON.parse(await fs.readFile(getIndexPath(project), 'utf8'));
@@ -96,7 +98,23 @@ test('secret material in otherwise allowlisted files is excluded fail-closed', a
   assert.equal(index['openai_keys.json'], undefined);
   assert.equal(index['private_keys.txt'], undefined);
   assert.equal(index['tokens.txt'], undefined);
+  assert.equal(index['quoted-api-key.json'], undefined);
+  assert.equal(index['quoted-service-account.json'], undefined);
   assert.ok(index['safe.json']);
+});
+
+test('global traversal budget counts ignored hostile entries', async () => {
+  const project = await makeProject('traversal-budget');
+  await fs.writeFile(path.join(project, '.gitignore'), 'ignored-*.js\n', 'utf8');
+  for (let index = 0; index < 20; index += 1) {
+    await fs.writeFile(path.join(project, `ignored-${String(index).padStart(2, '0')}.js`), 'export const ignored = true;', 'utf8');
+  }
+  await fs.writeFile(path.join(project, 'z-after-budget.js'), 'export const shouldNotBeReached = true;', 'utf8');
+  const result = await buildLocalRagIndex(project, { maxTraversalEntries: 10 });
+  const index = JSON.parse(await fs.readFile(getIndexPath(project), 'utf8'));
+  assert.equal(result.stats.traversalEntries, 10);
+  assert.equal(result.stats.hitLimit, true);
+  assert.equal(index['z-after-budget.js'], undefined);
 });
 
 test('corrupt existing indexes are quarantined and never silently replaced', async () => {
