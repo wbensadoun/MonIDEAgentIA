@@ -22,6 +22,7 @@ const MAX_TOTAL_CHUNKS = 200;
 // structured IPC response when callers inspect `indexes[].entries`.
 const MAX_INDEX_ENTRIES_LENGTH = 120000;
 const MAX_CONTEXT_LENGTH = 60000;
+const MAX_SEMANTIC_VECTOR_DIMENSIONS = 4096;
 const INDEX_RELATIVE_PATH = path.join('.vibe-workspace', 'rag_index.json');
 
 const RETRIEVAL_SCOPE_ERRORS = Object.freeze({
@@ -68,6 +69,13 @@ const queryTokens = (query) => [...new Set(String(query || '').toLowerCase()
 const scoreEntry = (text, tokens) => {
   const normalized = String(text || '').toLowerCase();
   return tokens.reduce((score, token) => score + (normalized.includes(token) ? 1 : 0), 0);
+};
+
+const sanitizeSemanticEmbedding = (value) => {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_SEMANTIC_VECTOR_DIMENSIONS
+    || !value.every((component) => Number.isFinite(component))
+    || !value.some((component) => component !== 0)) return null;
+  return value.slice();
 };
 
 /**
@@ -574,7 +582,13 @@ const readScopedIndexes = async (
             if (totalChunks >= MAX_TOTAL_CHUNKS) break;
             if (!isPlainObject(chunk) || typeof chunk.text !== 'string') continue;
             totalChunks += 1;
-            const score = scoreEntry(chunk.text, tokens);
+            const fileSymbols = Array.isArray(fileEntry.symbols)
+              ? fileEntry.symbols.filter((symbol) => typeof symbol === 'string').slice(0, 32)
+              : [];
+            const semanticEmbedding = sanitizeSemanticEmbedding(fileEntry.embedding);
+            const score = scoreEntry(chunk.text, tokens)
+              + (scoreEntry(safeFilePath, tokens) * 4)
+              + (scoreEntry(fileSymbols.join(' '), tokens) * 3);
             if (score === 0) continue;
             const text = sanitizeRetrievedText(chunk.text);
             entries.push({
@@ -584,6 +598,8 @@ const readScopedIndexes = async (
               text,
               sanitized: true,
               score,
+              symbols: fileSymbols,
+              ...(semanticEmbedding ? { embedding: semanticEmbedding } : {}),
               hash: typeof fileEntry.hash === 'string' ? fileEntry.hash.slice(0, 128) : null
             });
           }

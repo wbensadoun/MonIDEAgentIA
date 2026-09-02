@@ -7,6 +7,7 @@ const {
   RETRIEVAL_SCOPE_ERRORS,
   createRetrievalProjectRegistry
 } = require('../services/retrieval-scope.service');
+const { rankHybridResults } = require('../services/hybrid-rag-retrieval.service');
 
 const registerRetrievalHandlers = ({
   ipcMain,
@@ -105,7 +106,8 @@ const createRetrievalContextResolver = ({
         isProjectAccessible,
         verifyScopeProject: async (project) => !project.projectId || projectRegistry.isActive(project.projectId, project.projectPath)
       });
-      return { success: true, scope, ...indexes };
+      const hybrid = await rankHybridResults(scope, indexes);
+      return { success: true, scope, ...indexes, ...hybrid };
     } catch (error) {
       const safe = publicError(error);
       console.error('[Retrieval] resolve refused:', safe.code);

@@ -41,6 +41,8 @@ test('retrieval IPC builds an authorized scope and never accepts renderer Neven 
   assert.equal(Object.prototype.hasOwnProperty.call(result.scope, 'nevenContext'), true);
   assert.equal(result.scope.nevenContext, null);
   assert.equal(result.indexes[0].entries[0].text, 'safe project context');
+  assert.equal(result.retrievalMode, 'lexical-fallback');
+  assert.equal(result.results[0].filePath, 'src/app.js');
 });
 
 test('retrieval IPC returns a fail-closed error when project permission is revoked', async () => {
