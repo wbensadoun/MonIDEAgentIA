@@ -62,6 +62,29 @@ test('rebuild deduplicates unchanged files and leaves tombstones for deleted fil
   assert.equal(after['src/remove.js'].tombstone, true);
 });
 
+test('semantic indexing stores provider/version metadata and rolls back to lexical-only when disabled', async () => {
+  const project = await makeProject('semantic-metadata');
+  await fs.writeFile(path.join(project, 'app.js'), 'export const semantic = true;', 'utf8');
+  const capability = {
+    metadata: () => ({
+      contract: 'embedding-provider-v1', capabilityVersion: 1, providerId: 'ollama',
+      model: 'nomic-embed-text', dimensions: 2, tokenizerVersion: 'v1', providerVersion: 3, enabled: true
+    }),
+    embed: async (texts) => texts.map((_text, index) => [index + 1, 0])
+  };
+  await buildLocalRagIndex(project, { embeddingCapability: capability });
+  const semantic = JSON.parse(await fs.readFile(getIndexPath(project), 'utf8'));
+  assert.equal(semantic._meta.vectorMode, 'semantic-embedding-v1');
+  assert.equal(semantic._meta.embedding.model, 'nomic-embed-text');
+  assert.deepEqual(semantic['app.js'].chunks[0].embedding, [1, 0]);
+  await buildLocalRagIndex(project);
+  const rolledBack = JSON.parse(await fs.readFile(getIndexPath(project), 'utf8'));
+  assert.equal(rolledBack._meta.vectorMode, 'lexical-placeholder-v1');
+  assert.equal(rolledBack._meta.embedding, null);
+  assert.equal(Object.hasOwn(rolledBack['app.js'].chunks[0], 'embedding'), false);
+  assert.ok(Array.isArray(rolledBack['app.js'].chunks[0].lexicalFingerprint));
+});
+
 test('local indexing jobs are queued asynchronously and deduplicated per project', async () => {
   const calls = [];
   const manager = createLocalRagJobManager({

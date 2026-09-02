@@ -6,7 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { assertSafePath, safeResolvePath, ensureTrustedProjectPath } = require('../core/security');
 
-const LOCAL_RAG_INDEX_VERSION = 1;
+const LOCAL_RAG_INDEX_VERSION = 2;
 const MAX_FILES = 5000;
 const MAX_FILE_BYTES = 350000;
 const MAX_INDEX_BYTES = 25 * 1024 * 1024;
@@ -147,6 +147,43 @@ const buildChunks = (content, relativePath, structure) => chunkText(content).map
     symbols: structure.symbols.slice(0, 32)
   };
 });
+
+const semanticMetadataMatches = (index, embeddingMetadata) => {
+  const current = index?._meta?.embedding;
+  return current && embeddingMetadata
+    && current.contract === embeddingMetadata.contract
+    && current.capabilityVersion === embeddingMetadata.capabilityVersion
+    && current.providerId === embeddingMetadata.providerId
+    && current.model === embeddingMetadata.model
+    && current.dimensions === embeddingMetadata.dimensions
+    && current.tokenizerVersion === embeddingMetadata.tokenizerVersion
+    && current.providerVersion === embeddingMetadata.providerVersion;
+};
+
+const withoutSemanticEmbeddings = (entry) => {
+  const { embedding, semanticEmbedding, ...safeEntry } = entry || {};
+  return safeEntry;
+};
+
+const addSemanticEmbeddings = async (files, embeddingCapability, signal) => {
+  const metadata = embeddingCapability?.metadata?.();
+  if (!metadata || metadata.enabled !== true || typeof embeddingCapability.embed !== 'function') {
+    return { files, metadata: null };
+  }
+  const pending = [];
+  for (const [relativePath, entry] of files.entries()) {
+    for (const chunk of entry.chunks || []) pending.push({ relativePath, chunk, text: chunk.text });
+  }
+  for (let offset = 0; offset < pending.length; offset += 32) {
+    throwIfCancelled(signal);
+    const batch = pending.slice(offset, offset + 32);
+    // The capability validates returned vector dimensions, timeout and
+    // cancellation. There is intentionally no lexical/hash fallback here.
+    const vectors = await embeddingCapability.embed(batch.map((item) => item.text), { signal });
+    for (let index = 0; index < batch.length; index += 1) batch[index].chunk.embedding = vectors[index];
+  }
+  return { files, metadata };
+};
 
 const getIndexPath = (projectPath) => safeResolvePath(projectPath, INDEX_RELATIVE_PATH).resolved;
 
@@ -339,7 +376,8 @@ const writeIndexAtomically = async (projectPath, index, { signal, isProjectActiv
 const buildLocalRagIndex = async (projectPath, {
   signal,
   isProjectActive = async () => true,
-  maxTraversalEntries = MAX_TRAVERSAL_ENTRIES
+  maxTraversalEntries = MAX_TRAVERSAL_ENTRIES,
+  embeddingCapability = null
 } = {}) => {
   throwIfCancelled(signal);
   if (!(await isProjectActive())) {
@@ -357,23 +395,56 @@ const buildLocalRagIndex = async (projectPath, {
     error.code = 'RAG_PROJECT_REVOKED';
     throw error;
   }
+  const embeddingMetadata = embeddingCapability?.metadata?.();
+  const semanticEnabled = embeddingMetadata?.enabled === true;
+  const previousMatchesEmbedding = semanticEnabled && semanticMetadataMatches(previous, embeddingMetadata);
+  const filesForOutput = new Map([...scan.files.entries()].map(([relativePath, entry]) => {
+    // An embedding provider/model/tokenizer change always reindexes every
+    // chunk. Keeping only the lexical fingerprint gives an explicit, safe
+    // rollback path when the capability is disabled or changes.
+    if (!previousMatchesEmbedding || !semanticEnabled) {
+      return [relativePath, { ...withoutSemanticEmbeddings(entry), chunks: (entry.chunks || []).map(withoutSemanticEmbeddings) }];
+    }
+    return [relativePath, entry];
+  }));
+  const embedded = await addSemanticEmbeddings(filesForOutput, embeddingCapability, signal);
   const output = {
     _meta: {
       version: LOCAL_RAG_INDEX_VERSION,
       generatedAt: new Date().toISOString(),
-      vector: null,
-      vectorMode: 'lexical-placeholder-v1',
-      vectorDimensions: 0,
+      // lexicalFingerprint remains for backward-compatible lexical ranking;
+      // it is never a semantic vector. A disabled/new provider therefore
+      // rolls back cleanly to lexical-only retrieval.
+      vector: embedded.metadata ? {
+        providerId: embedded.metadata.providerId,
+        model: embedded.metadata.model,
+        tokenizerVersion: embedded.metadata.tokenizerVersion,
+        dimensions: embedded.metadata.dimensions,
+        providerVersion: embedded.metadata.providerVersion
+      } : null,
+      vectorMode: embedded.metadata ? 'semantic-embedding-v1' : 'lexical-placeholder-v1',
+      vectorDimensions: embedded.metadata?.dimensions || 0,
+      embedding: embedded.metadata || null,
       stats: scan.stats
     },
-    ...Object.fromEntries(scan.files),
+    ...Object.fromEntries(embedded.files),
     ...scan.tombstones
   };
   await writeIndexAtomically(trustedProjectPath, output, { signal, isProjectActive });
-  return { indexPath, stats: scan.stats, files: scan.files.size, tombstones: Object.keys(scan.tombstones).length };
+  return {
+    indexPath,
+    stats: scan.stats,
+    files: embedded.files.size,
+    tombstones: Object.keys(scan.tombstones).length,
+    embedding: embedded.metadata || null
+  };
 };
 
-const createLocalRagJobManager = ({ build = buildLocalRagIndex, isProjectActive: projectIsActive = async () => true } = {}) => {
+const createLocalRagJobManager = ({
+  build = buildLocalRagIndex,
+  isProjectActive: projectIsActive = async () => true,
+  embeddingCapability = null
+} = {}) => {
   const jobs = new Map();
   const activeByCanonicalPath = new Map();
   const canonicalize = (projectPath) => {
@@ -425,7 +496,11 @@ const createLocalRagJobManager = ({ build = buildLocalRagIndex, isProjectActive:
           error.code = 'RAG_PROJECT_REVOKED';
           throw error;
         }
-        job.result = await build(projectPath, { signal: controller.signal, isProjectActive });
+        job.result = await build(projectPath, {
+          signal: controller.signal,
+          isProjectActive,
+          embeddingCapability
+        });
         job.status = 'completed';
       } catch (error) {
         job.status = error?.code === 'RAG_INDEX_CANCELLED' || error?.code === 'RAG_PROJECT_REVOKED'

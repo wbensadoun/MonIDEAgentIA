@@ -33,6 +33,10 @@ const {
 } = require('./electron/core/security');
 const { createRetrievalProjectRegistry } = require('./electron/services/retrieval-scope.service');
 const { createLocalRagJobManager, buildLocalRagIndex } = require('./electron/services/local-rag-index.service');
+const {
+  createEmbeddingProviderCatalogue,
+  createEmbeddingAdapterFromCapability
+} = require('./electron/services/embedding-provider-catalogue.service');
 const { listAgents, listSkills } = require('./electron/services/agent.service');
 const {
   ensureEditPermission,
@@ -99,9 +103,15 @@ const providerSecretVault = new ProviderSecretVault({
   filePath: ProviderSecretVault.defaultFilePath(app.getPath('userData'))
 });
 const projectWindowState = createProjectWindowState();
+// Embeddings are opt-in and constructed only in main. In particular no
+// renderer payload can enable a provider, choose an endpoint or supply BYOK.
+const embeddingProviderCatalogue = createEmbeddingProviderCatalogue();
+const embeddingCapability = embeddingProviderCatalogue.capability;
+const embeddingAdapter = createEmbeddingAdapterFromCapability(embeddingCapability);
 const localRagJobs = createLocalRagJobManager({
   build: buildLocalRagIndex,
-  isProjectActive: (projectId, projectPath) => retrievalProjectRegistry.isActive(projectId, projectPath)
+  isProjectActive: (projectId, projectPath) => retrievalProjectRegistry.isActive(projectId, projectPath),
+  embeddingCapability
 });
 // Le control plane Neven reste dans le main process. Il ne retourne jamais de
 // cle fournisseur au renderer : uniquement un droit court vers la passerelle
@@ -210,6 +220,7 @@ const resolveRetrievalContext = createRetrievalContextResolver({
   ensureProject: ensureTrustedProjectPath,
   isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath),
   projectRegistry: retrievalProjectRegistry,
+  embeddingAdapter,
   onProjectRevoked: (projectId) => localRagJobs.cancel(projectId),
   resolveNevenContext: async () => ({ available: false })
 });
@@ -218,6 +229,7 @@ registerRetrievalHandlers({
   ensureProject: ensureTrustedProjectPath,
   isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath),
   projectRegistry: retrievalProjectRegistry,
+  embeddingAdapter,
   resolveNevenContext: async () => ({ available: false })
 });
 registerLocalRagIndexHandlers({
@@ -274,4 +286,4 @@ registerRouterHandlers({
   resolveOptionalTrustedProjectPath
 });
 registerPtyHandlers(ptyService);
-registerProviderHandlers({ app, vault: providerSecretVault });
+registerProviderHandlers({ app, vault: providerSecretVault, embeddingCatalogue: embeddingProviderCatalogue });

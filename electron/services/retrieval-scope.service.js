@@ -585,11 +585,16 @@ const readScopedIndexes = async (
             const fileSymbols = Array.isArray(fileEntry.symbols)
               ? fileEntry.symbols.filter((symbol) => typeof symbol === 'string').slice(0, 32)
               : [];
-            const semanticEmbedding = sanitizeSemanticEmbedding(fileEntry.embedding);
+            // Vectors are chunk-scoped. Reading a file-level field would
+            // silently disconnect the real indexer from hybrid retrieval.
+            const semanticEmbedding = sanitizeSemanticEmbedding(chunk.embedding);
             const score = scoreEntry(chunk.text, tokens)
               + (scoreEntry(safeFilePath, tokens) * 4)
               + (scoreEntry(fileSymbols.join(' '), tokens) * 3);
-            if (score === 0) continue;
+            // Preserve genuine semantic candidates even when they have no
+            // lexical overlap; the hybrid ranker applies the query vector in
+            // the main process. Lexical fingerprints never satisfy this.
+            if (score === 0 && !semanticEmbedding) continue;
             const text = sanitizeRetrievedText(chunk.text);
             entries.push({
               projectKind: project.kind,

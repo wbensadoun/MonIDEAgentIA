@@ -15,7 +15,8 @@ const registerRetrievalHandlers = ({
   isProjectAccessible,
   resolveNevenContext,
   onProjectRevoked = null,
-  projectRegistry = createRetrievalProjectRegistry({ ensureProject, isProjectAccessible })
+  projectRegistry = createRetrievalProjectRegistry({ ensureProject, isProjectAccessible }),
+  embeddingAdapter = null
 } = {}) => {
   if (!ipcMain || typeof ipcMain.handle !== 'function') throw new Error('ipcMain requis');
   if (typeof ensureProject !== 'function') throw new Error('Autorisation projet requise');
@@ -62,7 +63,8 @@ const registerRetrievalHandlers = ({
     ensureProject,
     isProjectAccessible,
     resolveNevenContext,
-    projectRegistry
+    projectRegistry,
+    embeddingAdapter
   });
 
   handle('retrieval:read-index', async (_event, payload = {}) => {
@@ -80,7 +82,8 @@ const createRetrievalContextResolver = ({
   ensureProject,
   isProjectAccessible,
   resolveNevenContext,
-  projectRegistry
+  projectRegistry,
+  embeddingAdapter = null
 } = {}) => {
   const publicError = (error) => {
     const code = error?.code || RETRIEVAL_SCOPE_ERRORS.INVALID_REQUEST;
@@ -106,7 +109,7 @@ const createRetrievalContextResolver = ({
         isProjectAccessible,
         verifyScopeProject: async (project) => !project.projectId || projectRegistry.isActive(project.projectId, project.projectPath)
       });
-      const hybrid = await rankHybridResults(scope, indexes);
+      const hybrid = await rankHybridResults(scope, indexes, { embeddingAdapter });
       return { success: true, scope, ...indexes, ...hybrid };
     } catch (error) {
       const safe = publicError(error);

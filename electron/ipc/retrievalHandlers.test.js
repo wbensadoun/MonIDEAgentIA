@@ -87,3 +87,28 @@ test('renderer receives an opaque managed project id and revocation is enforced'
   assert.equal(result.success, false);
   assert.equal(result.code, 'RETRIEVAL_ACCESS_REVOKED');
 });
+
+test('retrieval IPC consumes chunk semantic vectors only through a main-process adapter', async () => {
+  const project = await makeProject('semantic-index');
+  const indexPath = getIndexPath(project);
+  await fs.mkdir(path.dirname(indexPath), { recursive: true });
+  await fs.writeFile(indexPath, JSON.stringify({
+    _meta: { version: 2, vectorMode: 'semantic-embedding-v1' },
+    'src/vector.js': { chunks: [{ text: 'unrelated lexical words', embedding: [1, 0] }] }
+  }), 'utf8');
+  const ipc = makeIpc();
+  registerRetrievalHandlers({
+    ipcMain: ipc,
+    ensureProject: async (value) => value,
+    isProjectAccessible: async () => true,
+    embeddingAdapter: { enabled: true, name: 'main-only-test', embed: async () => [1, 0] }
+  });
+  const registered = await ipc.handlers.get('retrieval:register-project')(null, { projectPath: project });
+  const result = await ipc.handlers.get('retrieval:read-index')(null, {
+    currentProjectId: registered.projectId,
+    query: 'semantic-query'
+  });
+  assert.equal(result.success, true);
+  assert.equal(result.retrievalMode, 'hybrid');
+  assert.equal(result.results[0].filePath, 'src/vector.js');
+});

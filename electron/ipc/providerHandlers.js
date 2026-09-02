@@ -6,7 +6,7 @@ const { getCredentialId } = require('../services/provider-policy.service');
 
 const normalizeProvider = (provider) => String(provider || '').trim().toLowerCase();
 
-const registerProviderHandlers = ({ ipc = ipcMain, app, vault } = {}) => {
+const registerProviderHandlers = ({ ipc = ipcMain, app, vault, embeddingCatalogue = null } = {}) => {
   const getVault = () => vault || new ProviderSecretVault({
     filePath: ProviderSecretVault.defaultFilePath(app.getPath('userData'))
   });
@@ -44,6 +44,14 @@ const registerProviderHandlers = ({ ipc = ipcMain, app, vault } = {}) => {
       return { success: false, error: error.message };
     }
   });
+
+  // Safe catalogue only: no endpoint, credential identifier or secret leaves
+  // the main process. It lets the UI report whether semantic indexing is
+  // genuinely available instead of implying a hash-vector fallback.
+  ipc.handle('provider:list-embedding-capabilities', async () => ({
+    success: true,
+    providers: embeddingCatalogue?.list?.() || []
+  }));
 
   return getVault;
 };
