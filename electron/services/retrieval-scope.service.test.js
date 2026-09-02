@@ -131,7 +131,7 @@ test('missing index is reported explicitly instead of becoming empty successful 
   assert.deepEqual(result.indexes[0].entries, []);
 });
 
-test('query filtering and topK are applied before context leaves the main process', async () => {
+test('authorized semantic-only candidates reach hybrid ranking without lexical prefiltering', async () => {
   const current = await makeProject('top-k');
   const trusted = new Set([current]);
   await writeIndex(current, {
@@ -142,8 +142,8 @@ test('query filtering and topK are applied before context leaves the main proces
   const scope = await makeScope({ currentProjectId: CURRENT_PROJECT_ID, query: 'auth', topK: 1 }, trusted);
   const result = await readScopedIndexes(scope);
   assert.equal(result.retrievalStatus, 'evidence-found');
-  assert.equal(result.indexes[0].entries.length, 1);
-  assert.equal(result.context.includes('unrelated documentation'), false);
+  assert.equal(result.indexes[0].entries.length, 3);
+  assert.equal(result.indexes[0].entries.some((entry) => entry.text === 'unrelated documentation'), true);
 });
 
 test('structured index entries have an independent payload bound', async () => {

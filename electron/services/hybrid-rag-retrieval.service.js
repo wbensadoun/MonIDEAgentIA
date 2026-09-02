@@ -6,6 +6,9 @@ const {
   formatUntrustedRetrievedContext
 } = require('./retrieval-scope.service');
 
+// `readScopedIndexes` already limits the trusted on-disk data it returns. Do
+// not apply a lexical candidate cut here: a chunk can be semantically relevant
+// while having no lexical overlap with the query.
 const MAX_HYBRID_CANDIDATES = 200;
 const MAX_HYBRID_TOP_K = 20;
 const MAX_HYBRID_CONTEXT_LENGTH = 60000;
@@ -107,7 +110,7 @@ const rankHybridResults = async (scope, retrievalData, { embeddingAdapter = null
   ensureScope(scope);
   const indexes = Array.isArray(retrievalData?.indexes) ? retrievalData.indexes : [];
   const candidates = indexes.flatMap((index) => Array.isArray(index?.entries)
-    ? index.entries.slice(0, MAX_HYBRID_CANDIDATES).map((entry) => ({ ...entry, projectKind: index.projectKind }))
+    ? index.entries.map((entry) => ({ ...entry, projectKind: index.projectKind }))
     : []).slice(0, MAX_HYBRID_CANDIDATES);
   const tokens = queryTokens(scope.query);
   const adapter = embeddingAdapter && embeddingAdapter.enabled === true
@@ -116,11 +119,13 @@ const rankHybridResults = async (scope, retrievalData, { embeddingAdapter = null
     : createEmbeddingAdapter();
   const vectorCandidates = candidates.filter((entry) => readCandidateVector(entry));
   let queryVector = null;
+  let embeddingUnavailable = false;
   if (adapter.enabled && vectorCandidates.length > 0) {
     try {
       const generated = await adapter.embed(scope.query);
       queryVector = validVector(generated) ? generated : null;
     } catch {
+      embeddingUnavailable = true;
       queryVector = null;
     }
   }
@@ -151,7 +156,8 @@ const rankHybridResults = async (scope, retrievalData, { embeddingAdapter = null
   const mode = vectorActive ? 'hybrid' : 'lexical-fallback';
   const routeReason = vectorActive
     ? 'semantic-embedding-adapter-and-index-vectors-available'
-    : (adapter.enabled ? 'index-has-no-semantic-vectors' : 'no-local-embedding-adapter');
+    : (embeddingUnavailable ? 'embedding-query-unavailable'
+      : (adapter.enabled ? 'index-has-no-semantic-vectors' : 'no-local-embedding-adapter'));
   const context = formatUntrustedRetrievedContext(selected).slice(0, MAX_HYBRID_CONTEXT_LENGTH);
   return Object.freeze({
     retrievalMode: mode,

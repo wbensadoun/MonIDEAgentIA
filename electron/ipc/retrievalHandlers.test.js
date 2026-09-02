@@ -7,6 +7,7 @@ const path = require('node:path');
 const test = require('node:test');
 const { registerRetrievalHandlers } = require('./retrievalHandlers');
 const { getIndexPath } = require('../services/retrieval-scope.service');
+const { createEmbeddingAdapter } = require('../services/hybrid-rag-retrieval.service');
 
 const makeProject = async (name) => fs.mkdtemp(path.join(os.tmpdir(), `code-companion-ipc-${name}-`));
 
@@ -86,4 +87,33 @@ test('renderer receives an opaque managed project id and revocation is enforced'
   });
   assert.equal(result.success, false);
   assert.equal(result.code, 'RETRIEVAL_ACCESS_REVOKED');
+});
+
+test('main-process embedding adapter ranks a semantic-only candidate without renderer control', async () => {
+  const project = await makeProject('semantic-adapter');
+  const indexPath = getIndexPath(project);
+  await fs.mkdir(path.dirname(indexPath), { recursive: true });
+  await fs.writeFile(indexPath, JSON.stringify({
+    'src/identity.ts': {
+      embedding: [1, 0],
+      chunks: [{ text: 'credentials session handshake' }]
+    }
+  }), 'utf8');
+  const ipc = makeIpc();
+  const embeddingAdapter = createEmbeddingAdapter({ name: 'main-process-test', embed: async () => [1, 0] });
+  registerRetrievalHandlers({
+    ipcMain: ipc,
+    ensureProject: async (value) => value,
+    isProjectAccessible: async () => true,
+    embeddingAdapter
+  });
+  const registered = await ipc.handlers.get('retrieval:register-project')(null, { projectPath: project });
+  const result = await ipc.handlers.get('retrieval:read-index')(null, {
+    currentProjectId: registered.projectId,
+    query: 'authentication'
+  });
+  assert.equal(result.success, true);
+  assert.equal(result.retrievalMode, 'hybrid');
+  assert.equal(result.vector.adapter, 'main-process-test');
+  assert.equal(result.results[0].filePath, 'src/identity.ts');
 });

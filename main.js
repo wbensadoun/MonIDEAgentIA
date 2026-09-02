@@ -33,6 +33,8 @@ const {
 } = require('./electron/core/security');
 const { createRetrievalProjectRegistry } = require('./electron/services/retrieval-scope.service');
 const { createLocalRagJobManager, buildLocalRagIndex } = require('./electron/services/local-rag-index.service');
+const { createOllamaEmbeddingAdapter } = require('./electron/services/ollama-embedding-adapter.service');
+const { OLLAMA_BASE_URL } = require('./electron/services/ollama.service');
 const { listAgents, listSkills } = require('./electron/services/agent.service');
 const {
   ensureEditPermission,
@@ -206,10 +208,19 @@ const retrievalProjectRegistry = createRetrievalProjectRegistry({
   isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath),
   isProjectOpen: async (projectPath) => projectWindowState.isOpen(projectPath)
 });
+// Local embeddings require an explicit owner opt-in and a deliberately
+// configured embedding model. Without both values retrieval remains lexical
+// fallback; it never manufactures a pseudo-semantic vector.
+const localEmbeddingAdapter = createOllamaEmbeddingAdapter({
+  enabled: process.env.CODE_COMPANION_ENABLE_LOCAL_EMBEDDINGS === 'true',
+  model: process.env.CODE_COMPANION_LOCAL_EMBEDDING_MODEL,
+  baseUrl: OLLAMA_BASE_URL
+});
 const resolveRetrievalContext = createRetrievalContextResolver({
   ensureProject: ensureTrustedProjectPath,
   isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath),
   projectRegistry: retrievalProjectRegistry,
+  embeddingAdapter: localEmbeddingAdapter,
   onProjectRevoked: (projectId) => localRagJobs.cancel(projectId),
   resolveNevenContext: async () => ({ available: false })
 });
@@ -218,6 +229,7 @@ registerRetrievalHandlers({
   ensureProject: ensureTrustedProjectPath,
   isProjectAccessible: async (projectPath) => isTrustedProjectPath(projectPath),
   projectRegistry: retrievalProjectRegistry,
+  embeddingAdapter: localEmbeddingAdapter,
   resolveNevenContext: async () => ({ available: false })
 });
 registerLocalRagIndexHandlers({

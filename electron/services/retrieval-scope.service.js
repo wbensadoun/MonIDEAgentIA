@@ -589,7 +589,6 @@ const readScopedIndexes = async (
             const score = scoreEntry(chunk.text, tokens)
               + (scoreEntry(safeFilePath, tokens) * 4)
               + (scoreEntry(fileSymbols.join(' '), tokens) * 3);
-            if (score === 0) continue;
             const text = sanitizeRetrievedText(chunk.text);
             entries.push({
               projectKind: project.kind,
@@ -607,7 +606,6 @@ const readScopedIndexes = async (
       } finally {
         await fileHandle.close().catch(() => {});
       }
-      entries.sort((left, right) => right.score - left.score);
       indexes.push(Object.freeze({ projectKind: project.kind, projectPath: project.projectPath, status: 'ready', entries: Object.freeze(entries) }));
     } catch (error) {
       if (!isMissingFileError(error)) throw error;
@@ -620,31 +618,17 @@ const readScopedIndexes = async (
       }));
     }
   }
-  const entries = indexes.flatMap((index) => index.entries);
-  entries.sort((left, right) => right.score - left.score);
-  const selected = [];
-  const selectedByIdentity = new Map();
-  let entriesBudget = MAX_INDEX_ENTRIES_LENGTH;
-  for (const entry of entries.slice(0, scope.topK)) {
-    if (entriesBudget <= 0) break;
-    const text = entry.text.slice(0, entriesBudget);
-    entriesBudget -= text.length;
-    const boundedEntry = text === entry.text ? entry : { ...entry, text };
-    selected.push(boundedEntry);
-    selectedByIdentity.set(entry, boundedEntry);
-  }
-  const context = formatUntrustedRetrievedContext(selected).slice(0, MAX_CONTEXT_LENGTH);
+  // Ranking, including the requested topK, belongs to rankHybridResults.
+  // Returning every bounded, authorized candidate ensures semantic-only chunks
+  // can reach vector reranking instead of being dropped by lexical filtering.
+  const candidates = indexes.flatMap((index) => index.entries);
+  const context = formatUntrustedRetrievedContext(candidates).slice(0, MAX_CONTEXT_LENGTH);
   return Object.freeze({
-    indexes: Object.freeze(indexes.map((index) => Object.freeze({
-      ...index,
-      entries: Object.freeze(index.entries
-        .filter((entry) => selectedByIdentity.has(entry))
-        .map((entry) => selectedByIdentity.get(entry)))
-    }))),
+    indexes: Object.freeze(indexes),
     context,
     toolsAllowed: false,
     promptSafety: Object.freeze({ source: 'untrusted-data', allowInstructions: false, allowToolCalls: false }),
-    retrievalStatus: selected.length > 0 ? 'evidence-found' : 'no-evidence'
+    retrievalStatus: candidates.length > 0 ? 'evidence-found' : 'no-evidence'
   });
 };
 
