@@ -195,6 +195,11 @@ try {
     retrievalRegisterProject: (payload) => ipcRenderer.invoke('retrieval:register-project', payload),
     retrievalRevokeProject: (projectId) => ipcRenderer.invoke('retrieval:revoke-project', projectId),
     retrievalReadIndex: (payload) => ipcRenderer.invoke('retrieval:read-index', payload),
+    // Wansia retrieval interop. Identity and tenant scope are resolved in the
+    // main process; these methods accept no client-supplied identity claims.
+    wansiaRetrievalMetadata: () => ipcRenderer.invoke('wansia:retrieval:metadata'),
+    wansiaRetrievalNegotiate: (peerVersions) => ipcRenderer.invoke('wansia:retrieval:negotiate', { peerVersions }),
+    wansiaRetrievalQuery: (payload) => ipcRenderer.invoke('wansia:retrieval:query', payload),
     closeProject: (projectPath) => ipcRenderer.invoke('close-project', projectPath),
     startRagIndex: (projectId) => ipcRenderer.invoke('rag:index-project', { projectId }),
     getRagIndexStatus: (projectId, jobId) => ipcRenderer.invoke('rag:index-status', { projectId, jobId }),

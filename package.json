@@ -1,6 +1,6 @@
 {
   "name": "code-companion",
-  "version": "2.8.1",
+  "version": "2.9.0",
   "main": "main.js",
   "scripts": {
     "start": "concurrently \"npm:start-react\" \"npm:electron-dev\"",
@@ -17,7 +17,7 @@
     "logs-server": "bash scripts/logs-server.sh",
     "postinstall": "node scripts/postinstall.js",
     "test": "npm test --prefix client -- --watchAll=false --runInBand",
-    "test:electron": "node --test electron/services/provider-management.test.js electron/services/router.service.test.js electron/services/neven-control-plane.service.test.js electron/services/neven-core.service.test.js electron/services/retrieval-scope.service.test.js electron/services/local-rag-index.service.test.js electron/services/hybrid-rag-retrieval.service.test.js electron/services/embedding-capability.service.test.js electron/services/ollama-embedding-provider.service.test.js electron/ipc/retrievalHandlers.test.js electron/ipc/localRagIndexHandlers.test.js electron/core/security.retrieval.test.js electron/ipc/aiHandlers.test.js",
+    "test:electron": "node --test electron/services/provider-management.test.js electron/services/router.service.test.js electron/services/neven-control-plane.service.test.js electron/services/neven-core.service.test.js electron/services/retrieval-scope.service.test.js electron/services/local-rag-index.service.test.js electron/services/hybrid-rag-retrieval.service.test.js electron/services/embedding-capability.service.test.js electron/services/ollama-embedding-provider.service.test.js electron/services/wansia-retrieval-capability.service.test.js electron/ipc/retrievalHandlers.test.js electron/ipc/localRagIndexHandlers.test.js electron/ipc/wansiaRetrievalHandlers.test.js electron/core/security.retrieval.test.js electron/ipc/aiHandlers.test.js",
     "lint:css": "npm run lint:css --prefix client",
     "check:design-debt": "bash scripts/check-design-debt.sh"
   },

@@ -18,6 +18,8 @@ const { registerWorkflowHandlers } = require('./electron/ipc/workflowHandlers');
 const { registerBrainGraphHandlers } = require('./electron/ipc/brainGraphHandlers');
 const { registerRetrievalHandlers, createRetrievalContextResolver } = require('./electron/ipc/retrievalHandlers');
 const { registerLocalRagIndexHandlers } = require('./electron/ipc/localRagIndexHandlers');
+const { registerWansiaRetrievalHandlers } = require('./electron/ipc/wansiaRetrievalHandlers');
+const { createWansiaRetrievalCapability } = require('./electron/services/wansia-retrieval-capability.service');
 const {
   configureAIService,
   getN8nCatalogEntries,
@@ -224,6 +226,13 @@ registerLocalRagIndexHandlers({
   ipcMain,
   projectRegistry: retrievalProjectRegistry,
   jobManager: localRagJobs
+});
+// No Wansia transport or authenticated subject is bundled in Code Companion.
+// Keep the contract discoverable while queries remain unavailable until a
+// trusted main-process adapter is configured.
+registerWansiaRetrievalHandlers({
+  ipcMain,
+  capability: createWansiaRetrievalCapability()
 });
 
 registerGitHandlers({
