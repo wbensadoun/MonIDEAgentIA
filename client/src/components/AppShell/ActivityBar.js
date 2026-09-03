@@ -1,6 +1,6 @@
 import React from 'react';
 import './ActivityBar.css';
-import { IconFolder, IconSearch, IconChat, IconAgents, IconGit, IconAudit, IconFlow, IconSettings } from '../ComponentLibrary/icons';
+import { IconFolder, IconSearch, IconChat, IconAgents, IconGit, IconAudit, IconFlow, IconPlug, IconSettings } from '../ComponentLibrary/icons';
 
 /**
  * ActivityBar — fixed 48px vertical icon rail, always visible at the far
@@ -81,6 +81,13 @@ const ActivityBar = ({
       icon: IconAudit,
       isActive: activeSidebarSection === 'ai-changes',
       onClick: () => goToSidebarSection('ai-changes'),
+    },
+    {
+      id: 'extensions',
+      label: 'Extensions & Connecteurs',
+      icon: IconPlug,
+      isActive: activeSidebarSection === 'extensions',
+      onClick: () => goToSidebarSection('extensions'),
     },
     {
       id: 'workflows',

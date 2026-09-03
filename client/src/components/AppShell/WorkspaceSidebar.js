@@ -3,7 +3,8 @@ import FileExplorer from '../FileExplorer';
 import WorkspacePanel from '../WorkspacePanel';
 import GitPanel from '../GitPanel';
 import AIChangesPanel from '../AIChangesPanel';
-import { IconFolder, IconSearch, IconGit, IconAudit, IconChevronDown } from '../ComponentLibrary/icons';
+import ExtensionsPanel from '../ExtensionsPanel';
+import { IconFolder, IconSearch, IconGit, IconAudit, IconChevronDown, IconPlug } from '../ComponentLibrary/icons';
 
 /** Flattens the project tree into a flat list of files, keeping the full path. */
 const flattenFileList = (items, acc = []) => {
@@ -119,6 +120,8 @@ const WorkspaceSidebar = ({
   gitPanelProps,
   // AIChangesPanel props (only used when activeSection === 'ai-changes')
   aiChangesPanelProps,
+  // ExtensionsPanel props (only used when activeSection === 'extensions')
+  extensionsPanelProps,
 }) => {
   const [showProjects, setShowProjects] = useState(false);
   const [isSectionOpen, setIsSectionOpen] = useState(true);
@@ -146,6 +149,7 @@ const WorkspaceSidebar = ({
     search: { icon: IconSearch, label: 'Recherche' },
     git: { icon: IconGit, label: 'Source Control' },
     'ai-changes': { icon: IconAudit, label: 'AI Changes' },
+    extensions: { icon: IconPlug, label: 'Extensions & Connecteurs' },
   }[activeSection] || { icon: IconFolder, label: 'Explorateur', count: fileCount };
 
   return (
@@ -175,6 +179,8 @@ const WorkspaceSidebar = ({
           {activeSection === 'git' && <GitPanel {...gitPanelProps} />}
 
           {activeSection === 'ai-changes' && <AIChangesPanel {...aiChangesPanelProps} />}
+
+          {activeSection === 'extensions' && <ExtensionsPanel {...extensionsPanelProps} />}
 
           {activeSection === 'explorer' && (
             <>

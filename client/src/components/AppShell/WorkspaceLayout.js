@@ -136,6 +136,7 @@ const WorkspaceLayout = ({
   terminalProps,
   gitPanelProps,
   aiChangesPanelProps,
+  extensionsPanelProps,
   brainGraphProps,
   workflowProps,
   aiChatProps,
@@ -323,6 +324,7 @@ const WorkspaceLayout = ({
           workspacePanelProps={workspacePanelProps}
           gitPanelProps={gitPanelProps}
           aiChangesPanelProps={aiChangesPanelProps}
+          extensionsPanelProps={extensionsPanelProps}
         />
       )}
 

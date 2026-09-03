@@ -1,0 +1,102 @@
+.extensions-panel {
+  min-height: 100%;
+  padding: var(--space-3);
+  color: var(--text-main);
+}
+
+.extensions-panel-intro,
+.extensions-panel-title,
+.extensions-panel-section-heading {
+  display: flex;
+  align-items: flex-start;
+}
+
+.extensions-panel-intro {
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.extensions-panel-title {
+  gap: var(--space-2);
+}
+
+.extensions-panel-icon {
+  display: inline-flex;
+  color: var(--accent);
+  margin-top: 2px;
+}
+
+.extensions-panel h2,
+.extensions-panel h3,
+.extensions-panel p {
+  margin: 0;
+}
+
+.extensions-panel h2 {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+}
+
+.extensions-panel h3 {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.extensions-panel p {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.extensions-packs-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-2);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+}
+
+.extensions-packs-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.extensions-panel-section {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+}
+
+.extensions-panel-section-heading {
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.extensions-panel-badge {
+  border: 1px solid color-mix(in srgb, var(--success) 45%, transparent);
+  border-radius: var(--radius-full);
+  padding: 2px var(--space-2);
+  color: var(--success);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.extensions-panel .mcp-settings {
+  min-width: 0;
+  padding: 0;
+}
+
+@media (max-width: 700px) {
+  .extensions-panel-intro {
+    flex-direction: column;
+  }
+}
