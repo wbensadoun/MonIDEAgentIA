@@ -32,6 +32,7 @@ import {
   extractStreamingWorkflowDraft,
   fromLegacyPermission
 } from '../../utils/streamParsing';
+import { OPAQUE_AI_LABEL } from '../../utils/rendererOpacity';
 
 // ─── ReasoningBlock ─────────────────────────────────────────────────────────
 // Le raisonnement du modèle, replié par défaut. Visible seulement quand le
@@ -1201,10 +1202,8 @@ const AIChat = ({
     return change.filePath === activeFile;
   };
 
-  const buildAgentBadgeLabel = (msg, baseLabel) => {
-    if (autoRoute) return baseLabel;
-    const provider = String(msg?.agentProvider || '').trim();
-    return provider ? `${baseLabel} (${provider})` : baseLabel;
+  const buildAgentBadgeLabel = () => {
+    return OPAQUE_AI_LABEL;
   };
 
   // ─── 1.4c : swap gardé de la liste de messages ────────────────────────────

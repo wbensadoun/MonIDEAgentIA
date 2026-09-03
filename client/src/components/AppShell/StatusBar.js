@@ -1,4 +1,5 @@
 import React from 'react';
+import { OPAQUE_AI_LABEL, OPAQUE_WORKING_LABEL } from '../../utils/rendererOpacity';
 
 const StatusBar = ({
   viewMode,
@@ -7,11 +8,9 @@ const StatusBar = ({
   isStreamingCodePreview,
   aiDraftPreview,
   gitDiffPreview,
-  aiProvider,
   thinkingMode,
   deepContextEnabled,
   contextMode,
-  ollamaStatusLabel,
   multiAIState,
   permissionMode,
   projectName,
@@ -67,7 +66,7 @@ const StatusBar = ({
         <div className="statusbar-item">
           <span className="statusbar-dot accent" />
           <span className="statusbar-value" style={{ color: 'var(--accent)' }}>
-            Flux IA: {aiDraftPreview?.agent || ''} {aiDraftPreview?.filePath || ''}
+            Flux IA: {OPAQUE_WORKING_LABEL} {aiDraftPreview?.filePath || ''}
           </span>
         </div>
       )}
@@ -93,20 +92,12 @@ const StatusBar = ({
       <div className="statusbar-item">
         <span className="statusbar-label">IA</span>
         <span className="statusbar-value">
-          {aiProvider}
+          {OPAQUE_AI_LABEL}
           {thinkingMode ? ' +Think' : ''}
           {deepContextEnabled ? ' +Ctx' : ''}
           {contextMode !== 'auto' ? ` (${contextMode})` : ''}
         </span>
       </div>
-
-      {/* Modèle Ollama */}
-      {aiProvider === 'ollama' && ollamaStatusLabel && (
-        <div className="statusbar-item">
-          <span className="statusbar-label">Modèle</span>
-          <span className="statusbar-value">{ollamaStatusLabel}</span>
-        </div>
-      )}
 
       {/* Multi-IA */}
       {multiLabel && (

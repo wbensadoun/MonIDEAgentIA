@@ -44,8 +44,7 @@ export interface ChatMessage {
   role: MessageRole;
   blocks: ChatMessageBlock[];
   timestamp: number;
-  /** Provider/model badge, e.g. "gemini/2.5-pro" — mirrors the existing
-   *  badgeClass/bubbleClass convention in AIChat/index.js:772. */
+  /** Libellé opaque de rôle, quand une réponse spécialisée doit être signalée. */
   agentLabel?: string;
   /** Position dans l'historique brut. Les actions par message d'index.js
    *  (copier/relancer) sont indexees dessus — cf. utils/chatMessages.js. */

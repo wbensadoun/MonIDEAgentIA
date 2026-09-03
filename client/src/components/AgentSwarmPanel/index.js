@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './AgentSwarmPanel.css';
 import { IconAgents, IconX, IconCheck } from '../ComponentLibrary/icons';
+import { opaqueStepLabel } from '../../utils/rendererOpacity';
 
 /**
  * Formate une durée en ms façon "12s" / "1m 24s".
@@ -76,7 +77,7 @@ const AgentSwarmPanel = ({ multiAIState, width, onClose }) => {
   const events = useMemo(() => (Array.isArray(rawEvents) ? rawEvents : []), [rawEvents]);
   const reversedEvents = useMemo(() => [...events].reverse(), [events]);
 
-  const eyebrow = multiAIState?.mode === 'ollama-multi' ? 'Swarm Ollama' : 'Équipe multi-agent';
+  const eyebrow = 'Équipe multi-agent';
 
   // Déterminer quel step doit montrer son détail
   const toggleDetail = (stepKey) => {
@@ -93,7 +94,7 @@ const AgentSwarmPanel = ({ multiAIState, width, onClose }) => {
       <div className="swarm-header">
         <div className="swarm-header-text">
           <div className="swarm-eyebrow">{eyebrow}</div>
-          <div className="swarm-run-label">{multiAIState?.runLabel || 'Run multi-agents'}</div>
+          <div className="swarm-run-label">Équipe en cours</div>
         </div>
         <button
           type="button"
@@ -121,7 +122,7 @@ const AgentSwarmPanel = ({ multiAIState, width, onClose }) => {
               {multiAIState?.currentPhase && (
                 <>
                   <span className="swarm-meta-sep" aria-hidden="true">·</span>
-                  <span className="swarm-meta-item swarm-meta-phase">{multiAIState.currentPhase}</span>
+                  <span className="swarm-meta-item swarm-meta-phase">Phase active</span>
                 </>
               )}
               <span className="swarm-meta-sep" aria-hidden="true">·</span>
@@ -142,7 +143,6 @@ const AgentSwarmPanel = ({ multiAIState, width, onClose }) => {
                 const hasDetail = Boolean(step.detail);
                 const canShowDetail = (status === 'active' || status === 'error') && hasDetail;
                 const isDetailOpen = canShowDetail && expandedDetailKey === (step.key || index);
-                const providerModel = [step.provider, step.model].filter(Boolean).join(' · ');
                 const stepKey = step.key || index;
 
                 return (
@@ -173,26 +173,22 @@ const AgentSwarmPanel = ({ multiAIState, width, onClose }) => {
                             onClick={() => toggleDetail(stepKey)}
                             aria-expanded={isDetailOpen}
                             title={isDetailOpen ? 'Masquer le détail' : 'Afficher le détail'}
-                            aria-label={`Détails pour ${step.label}`}
+                            aria-label={`Détails pour ${opaqueStepLabel(index)}`}
                           >
                             ▸
                           </button>
                         )}
                         <div className={`swarm-step-label ${status === 'active' ? 'swarm-step-label-shimmer' : ''}`}>
-                          {step.label}
+                          {opaqueStepLabel(index)}
                         </div>
                       </div>
 
-                      {/* Meta (provider · model) très discret, aligné à droite */}
-                      {providerModel && (
-                        <div className="swarm-step-meta">{providerModel}</div>
-                      )}
                     </div>
 
                     {/* Détail : se déplie seulement si ouvert */}
                     {canShowDetail && (
                       <div className={`swarm-step-detail-wrap ${isDetailOpen ? 'is-open' : ''}`}>
-                        <div className="swarm-step-detail">{step.detail}</div>
+                        <div className="swarm-step-detail">Détails masqués</div>
                       </div>
                     )}
                   </li>
@@ -210,8 +206,7 @@ const AgentSwarmPanel = ({ multiAIState, width, onClose }) => {
                     <li key={ev.id} className="swarm-journal-item">
                       <span className={`swarm-journal-dot swarm-journal-dot-${ev.status}`} aria-hidden="true" />
                       <div className="swarm-journal-text">
-                        <span className="swarm-journal-label">{ev.label}</span>
-                        {ev.detail && <span className="swarm-journal-detail">{ev.detail}</span>}
+                      <span className="swarm-journal-label">Étape terminée</span>
                       </div>
                     </li>
                   ))}
@@ -227,7 +222,7 @@ const AgentSwarmPanel = ({ multiAIState, width, onClose }) => {
           <IconAgents size={44} className="swarm-empty-icon" />
           <div className="swarm-empty-title">Aucun run multi-agents en cours</div>
           <p className="swarm-empty-text">
-            Basculez le provider sur « Multi-IA » pour voir apparaître ici, en direct, la progression de chaque sous-agent.
+            Activez le mode multi-agent pour voir apparaître ici, en direct, la progression de chaque rôle.
           </p>
         </div>
       )}

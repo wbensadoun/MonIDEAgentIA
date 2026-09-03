@@ -15,10 +15,11 @@
  *      pas du texte visible ;
  *   2. une reponse assistant vide produit un bloc `empty` explicite plutot
  *      qu'une bulle blanche (garde-fou ollama, index.js:1435) ;
- *   3. le badge agent concatene le provider quand il est present
- *      (buildAgentBadgeLabel, index.js:1112).
+ *   3. le badge agent reste neutre : le provider et le nom interne ne sont
+ *      jamais affiches dans une bulle de conversation.
  */
 import { splitReasoningSegments } from './streamParsing';
+import { OPAQUE_AGENT_LABEL } from './rendererOpacity';
 
 /** `model` est le role renvoyé par useAI ; MessageViewer parle `assistant`. */
 export const normalizeRole = (role) => {
@@ -35,8 +36,7 @@ export const normalizeRole = (role) => {
 export const buildAgentLabel = (entry) => {
   const name = String(entry?.agentName || '').trim();
   const provider = String(entry?.agentProvider || '').trim();
-  if (name && provider) return `${name} (${provider})`;
-  return name || provider || undefined;
+  return name || provider ? OPAQUE_AGENT_LABEL : undefined;
 };
 
 /**
