@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useState, useMemo, useCallback } from 'react';
 import './AIChat.css';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -701,6 +701,16 @@ const AIChat = ({
   const [editingText, setEditingText] = useState('');
   const editTextareaRef = useRef(null);
 
+  // COD-70 B.11 — fenetre glissante : on ne rend que les N derniers messages
+  // pour preserver le scroll/le rendu sur les longues conversations (le
+  // pattern recommande par Vercel chatbot / assistant-ui). Les indices
+  // ABSOLUS dans conversationHistory sont conserves (messages hors fenetre ->
+  // null, pas slice), sinon historicalTerminalActions[index], lastAssistantIndex,
+  // messageFeedback et editingIndex se decales.
+  const RECENT_WINDOW = 50;
+  const [visibleCount, setVisibleCount] = useState(RECENT_WINDOW);
+  const pendingScrollRestoreRef = useRef(null);
+
   const flushStreamingBuffer = useCallback(() => {
     streamingFlushRafRef.current = null;
     const chunk = streamingBufferRef.current;
@@ -745,6 +755,28 @@ const AIChat = ({
       conversationHistoryRef.current.scrollTop = conversationHistoryRef.current.scrollHeight;
     }
   };
+
+  // COD-70 B.11 — reveler les messages plus anciens sans deplacer le viewport :
+  // on mesure la hauteur avant, on agrandit la fenetre, puis en layout (avant
+  // peinture) on rehausse scrollTop de la hauteur ajoutee au-dessus.
+  const revealEarlier = useCallback(() => {
+    const el = conversationHistoryRef.current;
+    if (el) pendingScrollRestoreRef.current = el.scrollHeight - el.scrollTop;
+    setVisibleCount((c) => c + RECENT_WINDOW);
+  }, []);
+
+  useLayoutEffect(() => {
+    const delta = pendingScrollRestoreRef.current;
+    if (delta == null) return;
+    const el = conversationHistoryRef.current;
+    if (el) el.scrollTop = el.scrollHeight - delta;
+    pendingScrollRestoreRef.current = null;
+  }, [visibleCount]);
+
+  // COD-70 B.11 — nouvelle session : la fenetre repart a sa taille par defaut.
+  useEffect(() => {
+    setVisibleCount(RECENT_WINDOW);
+  }, [activeSessionId]);
 
   // Register AI terminal IPC events
   useEffect(() => {
@@ -1885,7 +1917,24 @@ const AIChat = ({
                 );
               }}
             />
-          ) : conversationHistory.map((msg, index) => {
+          ) : (() => {
+            // COD-70 B.11 — fenetre glissante : slice() mais on conserve
+            // l'index ABSOLU (startIndex + offset) pour que toutes les
+            // callbacks basees sur l'index (terminal actions, feedback,
+            // edition, copie) restent alignees sur conversationHistory.
+            const startIndex = Math.max(0, conversationHistory.length - visibleCount);
+            const hiddenCount = startIndex;
+            return (
+            <>
+            {hiddenCount > 0 && (
+              <div className="ai-messages-earlier">
+                <button type="button" className="ai-msg-action is-primary" onClick={revealEarlier}>
+                  Afficher {hiddenCount} message{hiddenCount > 1 ? 's' : ''} plus ancien{hiddenCount > 1 ? 's' : ''}
+                </button>
+              </div>
+            )}
+            {conversationHistory.slice(startIndex).map((msg, offset) => {
+            const index = startIndex + offset;
             const meta = getRoleMeta(msg);
             const isUser = msg.role === 'user';
             return (
@@ -2068,6 +2117,9 @@ const AIChat = ({
               </div>
             );
           })}
+            </>
+            );
+          })()}
 
           {/* AI Terminal Action Cards (ReAct Loop) — tour EN COURS */}
           {isLoading && terminalActions.length > 0 && (

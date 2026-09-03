@@ -525,6 +525,17 @@
   font-size: 10px;
 }
 
+/* COD-70 B.11 — bouton de fenetre glissante (messages plus anciens caches). */
+.ai-messages-earlier {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 10px;
+}
+
+.ai-messages-earlier .ai-msg-action.is-primary {
+  color: var(--text-invert, #fff);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ai-message-actions { transition: none; }
 }
@@ -1538,7 +1549,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--danger);
   border: none;
   border-radius: 50%;
   color: var(--text-invert, #fff);
@@ -1548,7 +1559,7 @@
 }
 
 .ai-input-image-remove:hover {
-  background: var(--danger);
+  filter: brightness(1.1);
 }
 
 /* COD-70 — banniere "message en attente" (etait en styles inline). */
