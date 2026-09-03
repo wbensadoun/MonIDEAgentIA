@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.7.0] — Dialogs de confirmation des workflows
+
+### Fixed
+
+- Les confirmations d’installation groupée et de suppression de workflow utilisent désormais le `Dialog` partagé et ne dépendent plus de `window.confirm`.
+- Les actions interactives du WorkflowManager déclarent explicitement leur type de bouton.
+
 ## [4.6.0] — Dialog de création dans l’explorateur
 
 ### Fixed
