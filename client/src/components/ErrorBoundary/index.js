@@ -50,10 +50,10 @@ class ErrorBoundary extends React.Component {
               </details>
             )}
             <div className="error-actions">
-              <button onClick={this.handleReset} className="error-button primary">
+              <button type="button" onClick={this.handleReset} className="error-button primary">
                 Ressayer
               </button>
-              <button onClick={this.handleReload} className="error-button secondary">
+              <button type="button" onClick={this.handleReload} className="error-button secondary">
                 Recharger l&apos;application
               </button>
             </div>

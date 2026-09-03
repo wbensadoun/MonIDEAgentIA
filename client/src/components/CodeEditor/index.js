@@ -490,7 +490,7 @@ const CodeEditor = ({
               </>
             )}
             {!isDiffMode && activeFile && previousCode && (
-              <button onClick={onUndo} className="btn btn-warning">
+              <button type="button" onClick={onUndo} className="btn btn-warning">
                 Annuler IA (Undo)
               </button>
             )}

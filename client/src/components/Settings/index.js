@@ -448,7 +448,7 @@ const Settings = ({
           <div className="settings-title">Settings</div>
           <div className="settings-subtitle">Configuration IA et projet</div>
         </div>
-        <button onClick={onClose} className="settings-close" title="Fermer l'onglet Paramètres">X</button>
+        <button type="button" onClick={onClose} className="settings-close" title="Fermer l'onglet Paramètres">X</button>
       </div>
 
         <div className="settings-tabs">
@@ -995,7 +995,7 @@ const Settings = ({
         </div>
 
         <div className="settings-footer">
-          <button onClick={onClose} className="btn btn-ghost">
+          <button type="button" onClick={onClose} className="btn btn-ghost">
             Annuler
           </button>
           <button

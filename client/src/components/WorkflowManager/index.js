@@ -350,7 +350,7 @@ ${formData.body}`;
                 {editingWorkflow?.scope === 'global' ? 'Global' : 'Workspace'}
               </div>
             </div>
-            <button onClick={() => setIsEditing(false)} className="workflow-close">X</button>
+            <button type="button" onClick={() => setIsEditing(false)} className="workflow-close">X</button>
           </div>
 
           <div className="workflow-body custom-scrollbar">
@@ -387,7 +387,7 @@ ${formData.body}`;
           </div>
 
           <div className="workflow-footer">
-            <button onClick={() => setIsEditing(false)} className="btn btn-ghost">
+            <button type="button" onClick={() => setIsEditing(false)} className="btn btn-ghost">
               Annuler
             </button>
             <button
@@ -408,7 +408,7 @@ ${formData.body}`;
       <div className="workflow-modal">
         <div className="workflow-header">
           <div className="workflow-title">Workflows</div>
-          <button onClick={onClose} className="workflow-close">X</button>
+          <button type="button" onClick={onClose} className="workflow-close">X</button>
         </div>
 
         <div className="workflow-tabs">

@@ -273,12 +273,12 @@ export const ErrorAnimation = ({ message, onRetry, onDismiss }) => {
       <p className="error-message">{message}</p>
       <div className="error-actions">
         {onRetry && (
-          <button onClick={onRetry} className="error-btn retry">
+          <button type="button" onClick={onRetry} className="error-btn retry">
             Réessayer
           </button>
         )}
         {onDismiss && (
-          <button onClick={onDismiss} className="error-btn dismiss">
+          <button type="button" onClick={onDismiss} className="error-btn dismiss">
             Fermer
           </button>
         )}

@@ -1173,7 +1173,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                     />
                 </div>
                 <div className="vw-toolbar-right">
-                    <button className="vw-btn vw-btn-primary" onClick={() => togglePanel('add')}>
+                    <button type="button" className="vw-btn vw-btn-primary" onClick={() => togglePanel('add')}>
                         + Nœud
                     </button>
                     {!isRunning ? (
@@ -1186,32 +1186,32 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                             <IconPlay size={14} /> Exécuter
                         </button>
                     ) : (
-                        <button className="vw-btn vw-btn-danger" onClick={stopWorkflow} title="Arrêter">
+                        <button type="button" className="vw-btn vw-btn-danger" onClick={stopWorkflow} title="Arrêter">
                             <IconStop size={14} /> Arrêter
                         </button>
                     )}
-                    <button className="vw-btn vw-btn-success" onClick={saveWorkflow} title="Sauvegarder">
+                    <button type="button" className="vw-btn vw-btn-success" onClick={saveWorkflow} title="Sauvegarder">
                         <IconSave size={14} /> Sauver
                     </button>
-                    <button className="vw-btn" onClick={() => togglePanel('saved')} title="Ouvrir un workflow sauvegardé">
+                    <button type="button" className="vw-btn" onClick={() => togglePanel('saved')} title="Ouvrir un workflow sauvegardé">
                         <IconFolder size={14} /> Ouvrir {savedWorkflows.length > 0 && <span className="vw-badge">{savedWorkflows.length}</span>}
                     </button>
-                    <button className="vw-btn vw-btn-catalog" onClick={() => togglePanel('catalog')} title="Galerie de templates">
+                    <button type="button" className="vw-btn vw-btn-catalog" onClick={() => togglePanel('catalog')} title="Galerie de templates">
                         <IconPackage size={14} /> Templates
                     </button>
-                    <button className={`vw-btn vw-btn-ai ${activePanel === 'ai' ? 'active' : ''}`} onClick={() => togglePanel('ai')} title="Générer un workflow avec l'IA">
+                    <button type="button" className={`vw-btn vw-btn-ai ${activePanel === 'ai' ? 'active' : ''}`} onClick={() => togglePanel('ai')} title="Générer un workflow avec l'IA">
                         <IconBot size={14} /> IA
                     </button>
-                    <button className="vw-btn" onClick={deleteSelected} title="Supprimer la sélection">
+                    <button type="button" className="vw-btn" onClick={deleteSelected} title="Supprimer la sélection">
                         <IconTrash size={14} />
                     </button>
-                    <button className="vw-btn" onClick={exportWorkflow} title="Exporter en JSON">
+                    <button type="button" className="vw-btn" onClick={exportWorkflow} title="Exporter en JSON">
                         <IconUpload size={14} />
                     </button>
-                    <button className="vw-btn" onClick={triggerImport} title="Importer un fichier JSON">
+                    <button type="button" className="vw-btn" onClick={triggerImport} title="Importer un fichier JSON">
                         <IconDownload size={14} />
                     </button>
-                    <button className="vw-btn vw-btn-danger" onClick={clearAll} title="Tout effacer">
+                    <button type="button" className="vw-btn vw-btn-danger" onClick={clearAll} title="Tout effacer">
                         <IconX size={14} />
                     </button>
                 </div>
@@ -1243,14 +1243,14 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                             ou importez depuis la <strong>galerie de templates</strong>.
                         </div>
                         <div className="vw-empty-actions">
-                            <button className="vw-btn vw-btn-primary" onClick={() => togglePanel('add')}>
+                            <button type="button" className="vw-btn vw-btn-primary" onClick={() => togglePanel('add')}>
                                 + Commencer
                             </button>
-                            <button className="vw-btn vw-btn-catalog" onClick={() => togglePanel('catalog')}>
+                            <button type="button" className="vw-btn vw-btn-catalog" onClick={() => togglePanel('catalog')}>
                                 <IconPackage size={14} /> Explorer la galerie
                             </button>
                             {savedWorkflows.length > 0 && (
-                                <button className="vw-btn" onClick={() => togglePanel('saved')}>
+                                <button type="button" className="vw-btn" onClick={() => togglePanel('saved')}>
                                     <IconFolder size={14} /> Mes Workflows ({savedWorkflows.length})
                                 </button>
                             )}
@@ -1292,7 +1292,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                     <div className="vw-add-panel">
                         <div className="vw-add-header">
                             <span className="vw-add-title">Ajouter un nœud</span>
-                            <button className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
+                            <button type="button" className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
                         </div>
                         {Object.entries(catalogByCategory).map(([category, items]) => (
                             <div key={category}>
@@ -1320,7 +1320,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                     <div className="vw-add-panel">
                         <div className="vw-add-header">
                             <span className="vw-add-title"><IconFolder size={14} /> Mes Workflows</span>
-                            <button className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
+                            <button type="button" className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
                         </div>
                         {savedWorkflows.length === 0 ? (
                             <div className="vw-catalog-empty">Aucun workflow sauvegardé. Utilisez &quot;Sauver&quot; pour enregistrer.</div>
@@ -1361,7 +1361,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                     <div className="vw-add-panel vw-catalog-panel">
                         <div className="vw-add-header">
                             <span className="vw-add-title"><IconPackage size={14} /> Galerie de templates</span>
-                            <button className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
+                            <button type="button" className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
                         </div>
                         <div className="vw-catalog-search">
                             <input
@@ -1401,7 +1401,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                     <div className="vw-add-panel vw-ai-panel">
                         <div className="vw-add-header">
                             <span className="vw-add-title"><IconBot size={14} /> Générer par IA</span>
-                            <button className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
+                            <button type="button" className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
                         </div>
                         <div className="vw-ai-body">
                             <textarea
@@ -1421,9 +1421,9 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                             </button>
                             <div className="vw-ai-hints">
                                 <span className="vw-ai-hint-title">Exemples :</span>
-                                <button className="vw-ai-hint" onClick={() => setAiPrompt('Un workflow CI/CD: npm install, npm test, si OK npm build, puis notification de succès')}>CI/CD Pipeline</button>
-                                <button className="vw-ai-hint" onClick={() => setAiPrompt('Analyser le code du projet avec l\'IA, générer un rapport, et l\'enregistrer dans un fichier')}>Analyse IA du code</button>
-                                <button className="vw-ai-hint" onClick={() => setAiPrompt('Surveiller un dossier, quand un fichier arrive, le lire, le traiter avec l\'IA, et notifier')}>Traitement de fichiers</button>
+                                <button type="button" className="vw-ai-hint" onClick={() => setAiPrompt('Un workflow CI/CD: npm install, npm test, si OK npm build, puis notification de succès')}>CI/CD Pipeline</button>
+                                <button type="button" className="vw-ai-hint" onClick={() => setAiPrompt("Analyser le code du projet avec l'IA, générer un rapport, et l'enregistrer dans un fichier")}>Analyse IA du code</button>
+                                <button type="button" className="vw-ai-hint" onClick={() => setAiPrompt("Surveiller un dossier, quand un fichier arrive, le lire, le traiter avec l'IA, et notifier")}>Traitement de fichiers</button>
                             </div>
                         </div>
                     </div>
@@ -1439,8 +1439,8 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                             {isRunning && <span className="vw-log-running"> ● En cours</span>}
                         </span>
                         <div className="vw-log-actions">
-                            <button className="vw-add-close" onClick={clearLog} title="Vider le journal"><IconTrash size={14} /></button>
-                            <button className="vw-add-close" onClick={() => setShowLog(false)} title="Fermer"><IconX size={14} /></button>
+                            <button type="button" className="vw-add-close" onClick={clearLog} title="Vider le journal"><IconTrash size={14} /></button>
+                            <button type="button" className="vw-add-close" onClick={() => setShowLog(false)} title="Fermer"><IconX size={14} /></button>
                         </div>
                     </div>
                     <div className="vw-log-body">

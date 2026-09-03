@@ -18,8 +18,8 @@ const OnboardingModal = ({ onOpenSettings, onComplete }) => (
         <p>2. Choisir un mode permissions adapte (lecture seule / edition / edition+terminal).</p>
         <p>3. Activer les quality gates si vous voulez valider lint/test/build avant application IA.</p>
         <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
-          <button className="btn btn-primary" onClick={onOpenSettings}>Ouvrir settings</button>
-          <button className="btn btn-ghost" onClick={onComplete}>Terminer</button>
+          <button type="button" className="btn btn-primary" onClick={onOpenSettings}>Ouvrir settings</button>
+          <button type="button" className="btn btn-ghost" onClick={onComplete}>Terminer</button>
         </div>
       </div>
   </Dialog>
