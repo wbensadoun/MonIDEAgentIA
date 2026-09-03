@@ -1,6 +1,6 @@
 {
   "name": "code-companion",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "main": "main.js",
   "scripts": {
     "start": "concurrently \"npm:start-react\" \"npm:electron-dev\"",
