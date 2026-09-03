@@ -5,6 +5,8 @@ const path = require('path');
 const { app, ipcMain, dialog } = require('electron');
 const {
   trustProjectPath,
+  isInternalProjectPath,
+  assertNotInternalProjectPath,
   requestProjectPathApproval,
   revokeProjectPath,
 } = require('../core/security');
@@ -24,6 +26,14 @@ const registerProjectHandlers = ({ getMainWindow, projectState = null, registerR
       return { success: true, path: null };
     }
 
+    if (isInternalProjectPath(filePaths[0])) {
+      return { success: false, error: 'Chemin interne .agent interdit' };
+    }
+    try {
+      await assertNotInternalProjectPath(filePaths[0], filePaths[0]);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
     const trustedPath = trustProjectPath(filePaths[0]);
     projectState?.markOpened?.(trustedPath);
     try {

@@ -4,7 +4,11 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const readline = require('readline');
-const { ensureTrustedProjectPath, assertSafePath } = require('../core/security');
+const {
+  ensureTrustedProjectPath,
+  assertSafePath,
+  assertNotInternalProjectPath
+} = require('../core/security');
 const { ensureEditPermission } = require('./settings.service');
 const { applyBlock: applySearchReplaceBlock } = require('../../client/src/utils/applySearchReplace');
 
@@ -30,6 +34,21 @@ const TEXT_FILE_NAMES = new Set([
   '.prettierrc', '.eslintrc', '.babelrc',
   '.env.example', '.env.sample', '.env.template', '.env.dist'
 ]);
+
+// Agent definitions are an internal back-end implementation detail. They must
+// remain loadable by agent.service.js, but must never be exposed through the
+// project file APIs consumed by the renderer.
+const isInternalDirectoryName = (name) => String(name || '').toLowerCase() === '.agent';
+
+const isInternalDirectoryPath = (relativePath) =>
+  String(relativePath || '')
+    .split(/[\\/]+/)
+    .some((segment) => isInternalDirectoryName(segment));
+
+const assertRendererFilePath = async (root, candidate) => {
+  assertSafePath(root, candidate);
+  await assertNotInternalProjectPath(root, candidate);
+};
 
 const isSensitiveFileName = (name) => {
   const lower = String(name || '').toLowerCase();
@@ -62,6 +81,7 @@ const shouldReadAsText = (name) => {
 const makeShouldSkipDirectory = ({ includeGit, includeNodeModules, includeBuild }) =>
   (name) => {
     if (!name) return true;
+    if (isInternalDirectoryName(name)) return true;
     if (!includeGit && name === '.git') return true;
     if (!includeNodeModules && name === 'node_modules') return true;
     if (!includeBuild &&
@@ -92,10 +112,12 @@ const getAllFiles = async (folderPath) => {
       const treeItems = [];
 
       for (const item of items) {
+        if (item.isSymbolicLink && item.isSymbolicLink()) continue;
         const itemPath = path.join(dirPath, item.name);
         const relativeItemPath = relativePath ? path.join(relativePath, item.name) : item.name;
 
         if (item.isDirectory()) {
+          if (isInternalDirectoryName(item.name)) continue;
           treeItems.push({
             name: item.name,
             type: 'directory',
@@ -141,13 +163,20 @@ const getFolderChildren = async (projectPath, folderPath) => {
       : path.join(trustedProjectPath, folderPath);
     assertSafePath(trustedProjectPath, resolvedFolderPath);
 
+    if (isInternalDirectoryPath(path.relative(trustedProjectPath, resolvedFolderPath))) {
+      return { success: true, children: [] };
+    }
+    await assertNotInternalProjectPath(trustedProjectPath, resolvedFolderPath);
+
     async function getChildren(dirPath) {
       const items = await fs.readdir(dirPath, { withFileTypes: true });
       const children = [];
       for (const item of items) {
+        if (item.isSymbolicLink && item.isSymbolicLink()) continue;
         const itemPath = path.join(dirPath, item.name);
         const relativeItemPath = basePath ? path.relative(basePath, itemPath) : item.name;
         if (item.isDirectory()) {
+          if (isInternalDirectoryName(item.name)) continue;
           children.push({
             name: item.name,
             type: 'directory',
@@ -373,7 +402,7 @@ const SYMBOL_TEXT_EXTENSIONS = new Set([
   '.json', '.md', '.yml', '.yaml'
 ]);
 
-const SYMBOL_SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'out', '.next', 'coverage']);
+const SYMBOL_SKIP_DIRS = new Set(['.agent', '.git', 'node_modules', 'dist', 'build', 'out', '.next', 'coverage']);
 
 const SYMBOL_MATCHERS = [
   { kind: 'function', regex: /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/ },
@@ -409,6 +438,7 @@ const searchSymbols = async (projectPath, query, options = {}) => {
 
       for (const entry of entries) {
         if (hitLimit) return;
+        if (entry.isSymbolicLink && entry.isSymbolicLink()) continue;
         const fullPath = path.join(dirPath, entry.name);
         const relPath = relativePath ? path.join(relativePath, entry.name) : entry.name;
 
@@ -465,7 +495,7 @@ const readFile = async (projectPath, filename) => {
   try {
     const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     const filePath = path.join(trustedProjectPath, filename);
-    assertSafePath(trustedProjectPath, filePath);
+    await assertRendererFilePath(trustedProjectPath, filePath);
     await fs.access(filePath);
     const stats = await fs.stat(filePath);
     const content = await fs.readFile(filePath, 'utf-8');
@@ -492,7 +522,7 @@ const writeFile = async (projectPath, filename, content, writeOptions = {}) => {
     await ensureEditPermission();
     const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     const filePath = path.join(trustedProjectPath, filename);
-    assertSafePath(trustedProjectPath, filePath);
+    await assertRendererFilePath(trustedProjectPath, filePath);
 
     const expectedMtimeMsRaw = Number(writeOptions?.expectedMtimeMs);
     const hasExpectedMtime = Number.isFinite(expectedMtimeMsRaw);
@@ -541,7 +571,7 @@ const deleteFile = async (projectPath, filename, deleteOptions = {}) => {
     await ensureEditPermission();
     const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     const filePath = path.join(trustedProjectPath, filename);
-    assertSafePath(trustedProjectPath, filePath);
+    await assertRendererFilePath(trustedProjectPath, filePath);
 
     const expectedMtimeMsRaw = Number(deleteOptions?.expectedMtimeMs);
     if (Number.isFinite(expectedMtimeMsRaw)) {
@@ -576,7 +606,7 @@ const createNewFile = async (projectPath, filename, initialContent = '') => {
     await ensureEditPermission();
     const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     const filePath = path.join(trustedProjectPath, filename);
-    assertSafePath(trustedProjectPath, filePath);
+    await assertRendererFilePath(trustedProjectPath, filePath);
 
     console.log(`Tentative de création du fichier: ${filePath}`);
     const dirPath = path.dirname(filePath);
@@ -611,7 +641,7 @@ const createDirectory = async (projectPath, dirname) => {
     await ensureEditPermission();
     const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     const dirPath = path.join(trustedProjectPath, dirname);
-    assertSafePath(trustedProjectPath, dirPath);
+    await assertRendererFilePath(trustedProjectPath, dirPath);
 
     try {
       await fs.access(dirPath);
@@ -635,7 +665,7 @@ const deleteDirectory = async (projectPath, dirname) => {
     await ensureEditPermission();
     const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     const dirPath = path.join(trustedProjectPath, dirname);
-    assertSafePath(trustedProjectPath, dirPath);
+    await assertRendererFilePath(trustedProjectPath, dirPath);
     await fs.rm(dirPath, { recursive: true, force: true });
     return { success: true };
   } catch (error) {
@@ -653,7 +683,7 @@ const editFile = async (projectPath, filename, searchText, replaceText) => {
     await ensureEditPermission();
     const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     const filePath = path.join(trustedProjectPath, filename);
-    assertSafePath(trustedProjectPath, filePath);
+    await assertRendererFilePath(trustedProjectPath, filePath);
 
     const currentContent = await fs.readFile(filePath, 'utf-8');
     const result = applySearchReplaceBlock(currentContent, searchText, replaceText);
@@ -679,8 +709,8 @@ const renameFile = async (projectPath, oldFilename, newFilename) => {
     const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     const oldPath = path.join(trustedProjectPath, oldFilename);
     const newPath = path.join(trustedProjectPath, newFilename);
-    assertSafePath(trustedProjectPath, oldPath);
-    assertSafePath(trustedProjectPath, newPath);
+    await assertRendererFilePath(trustedProjectPath, oldPath);
+    await assertRendererFilePath(trustedProjectPath, newPath);
 
     try { await fs.access(oldPath); } catch {
       return { success: false, error: `Le fichier "${oldFilename}" n'existe pas` };
@@ -709,8 +739,8 @@ const copyFile = async (projectPath, sourceFilename, destFilename) => {
     const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     const sourcePath = path.join(trustedProjectPath, sourceFilename);
     const destPath = path.join(trustedProjectPath, destFilename);
-    assertSafePath(trustedProjectPath, sourcePath);
-    assertSafePath(trustedProjectPath, destPath);
+    await assertRendererFilePath(trustedProjectPath, sourcePath);
+    await assertRendererFilePath(trustedProjectPath, destPath);
 
     try { await fs.access(sourcePath); } catch {
       return { success: false, error: `Le fichier source "${sourceFilename}" n'existe pas` };
@@ -741,8 +771,8 @@ const moveFile = async (projectPath, sourceFilename, destFilename) => {
     const trustedProjectPath = await ensureTrustedProjectPath(projectPath);
     const sourcePath = path.join(trustedProjectPath, sourceFilename);
     const destPath = path.join(trustedProjectPath, destFilename);
-    assertSafePath(trustedProjectPath, sourcePath);
-    assertSafePath(trustedProjectPath, destPath);
+    await assertRendererFilePath(trustedProjectPath, sourcePath);
+    await assertRendererFilePath(trustedProjectPath, destPath);
 
     try { await fs.access(sourcePath); } catch {
       return { success: false, error: `Le fichier source "${sourceFilename}" n'existe pas` };
