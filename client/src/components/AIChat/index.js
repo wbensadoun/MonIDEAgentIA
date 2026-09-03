@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useState, useMemo, useCallback } from 'react';
 import './AIChat.css';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -615,6 +615,19 @@ const AIChat = ({
   const [showContextSuggestions, setShowContextSuggestions] = useState(false);
   const [contextFilter, setContextFilter] = useState('');
   const [explicitContext, setExplicitContext] = useState([]); // List of explicitly mentioned files
+
+  // COD-70 — navigation clavier des suggestions (@fichier / /workflow) :
+  // index de l'option surlignee, reinitialise a chaque changement de filtre.
+  const [activeSuggestion, setActiveSuggestion] = useState(0);
+  // COD-70 — historique de prompts (↑/↓ dans un composer vide, standard VS Code).
+  const [historyIndex, setHistoryIndex] = useState(-1); // -1 = saisie libre
+  const liveDraftRef = useRef('');
+  // COD-70 — glisser-deposer de fichiers/images sur le composer.
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const dragDepthRef = useRef(0);
+  // COD-70 — brouillon persistant par session (sessionStorage, cf. A.5).
+  const skipDraftSaveRef = useRef(true);
+
   const [isApplyingPending, setIsApplyingPending] = useState(false);
   const [isBulkApplyingPending, setIsBulkApplyingPending] = useState(false);
 
@@ -641,8 +654,64 @@ const AIChat = ({
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [thinkingLabel, setThinkingLabel] = useState('Réflexion');
 
+  // ── COD-70 A.1 — autosize du textarea ────────────────────────────────────
+  // rows={2} + max-height CSS fixes rendaient tout prompt long inexploitable
+  // (micro-scroll interne). Le champ grandit avec son contenu jusqu'a un cap,
+  // puis le scroll reapparait au-dela — comportement standard (VS Code chat).
+  useEffect(() => {
+    const el = promptInputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [prompt]);
+
+  // ── COD-70 A.5 — brouillon persistant par session ────────────────────────
+  // Un prompt en cours etait perdu au changement d'onglet/projet. Stocke dans
+  // sessionStorage (jamais dans le workspace user), restaure au remontage.
+  const draftKey = `cc.draft.${activeSessionId || currentProjectPath || 'default'}`;
+  useEffect(() => {
+    let restored = null;
+    try {
+      restored = window.sessionStorage.getItem(draftKey);
+    } catch {
+      restored = null; // sessionStorage indisponible (mode prive) : on ignore
+    }
+    skipDraftSaveRef.current = true;
+    if (restored) onPromptChange(restored);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
+  useEffect(() => {
+    if (skipDraftSaveRef.current) {
+      skipDraftSaveRef.current = false;
+      return;
+    }
+    try {
+      if (prompt) window.sessionStorage.setItem(draftKey, prompt);
+      else window.sessionStorage.removeItem(draftKey);
+    } catch { /* idem */ }
+  }, [draftKey, prompt]);
+
+
   const [copiedMessageIndex, setCopiedMessageIndex] = useState(null);
   const copyResetTimerRef = useRef(null);
+  // COD-70 B.13 — retour 👍/👎 par reponse de l'agent. Stocke en memoire pour
+  // l'instant (index -> 'up' | 'down') ; l'ingest vers l'analyse de qualite du
+  // routeur depend de COD-54 (contrat d'evenements) — a brancher ici ensuite.
+  const [messageFeedback, setMessageFeedback] = useState({});
+  // COD-70 B.12 — index du message user en cours de reedition inline.
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [editingText, setEditingText] = useState('');
+  const editTextareaRef = useRef(null);
+
+  // COD-70 B.11 — fenetre glissante : on ne rend que les N derniers messages
+  // pour preserver le scroll/le rendu sur les longues conversations (le
+  // pattern recommande par Vercel chatbot / assistant-ui). Les indices
+  // ABSOLUS dans conversationHistory sont conserves (messages hors fenetre ->
+  // null, pas slice), sinon historicalTerminalActions[index], lastAssistantIndex,
+  // messageFeedback et editingIndex se decales.
+  const RECENT_WINDOW = 50;
+  const [visibleCount, setVisibleCount] = useState(RECENT_WINDOW);
+  const pendingScrollRestoreRef = useRef(null);
 
   const flushStreamingBuffer = useCallback(() => {
     streamingFlushRafRef.current = null;
@@ -688,6 +757,28 @@ const AIChat = ({
       conversationHistoryRef.current.scrollTop = conversationHistoryRef.current.scrollHeight;
     }
   };
+
+  // COD-70 B.11 — reveler les messages plus anciens sans deplacer le viewport :
+  // on mesure la hauteur avant, on agrandit la fenetre, puis en layout (avant
+  // peinture) on rehausse scrollTop de la hauteur ajoutee au-dessus.
+  const revealEarlier = useCallback(() => {
+    const el = conversationHistoryRef.current;
+    if (el) pendingScrollRestoreRef.current = el.scrollHeight - el.scrollTop;
+    setVisibleCount((c) => c + RECENT_WINDOW);
+  }, []);
+
+  useLayoutEffect(() => {
+    const delta = pendingScrollRestoreRef.current;
+    if (delta == null) return;
+    const el = conversationHistoryRef.current;
+    if (el) el.scrollTop = el.scrollHeight - delta;
+    pendingScrollRestoreRef.current = null;
+  }, [visibleCount]);
+
+  // COD-70 B.11 — nouvelle session : la fenetre repart a sa taille par defaut.
+  useEffect(() => {
+    setVisibleCount(RECENT_WINDOW);
+  }, [activeSessionId]);
 
   // Register AI terminal IPC events
   useEffect(() => {
@@ -886,6 +977,14 @@ const AIChat = ({
   const handlePromptChange = (value) => {
     onPromptChange(value);
 
+    // COD-70 — toute nouvelle frappe quitte la navigation dans l'historique.
+    if (historyIndex !== -1) {
+      liveDraftRef.current = value;
+      setHistoryIndex(-1);
+    }
+    // COD-70 — la suggestion surlignee repart au debut a chaque changement.
+    setActiveSuggestion(0);
+
     // Slash command detection
     if (value.startsWith('/') && parseSlashCommand) {
       const parsed = parseSlashCommand(value);
@@ -917,6 +1016,38 @@ const AIChat = ({
   const filteredWorkflows = workflows.filter(w =>
     w.name.toLowerCase().includes(workflowFilter.toLowerCase())
   );
+
+  // COD-70 A.4 — historique de prompts : ↑ dans un composer vide (ou en
+  // navigation) rappelle le message precedent, ↓ revient a la saisie en cours.
+  const userPromptHistory = useMemo(
+    () => conversationHistory
+      .filter((m) => m.role === 'user' && String(m.text || '').trim())
+      .map((m) => m.text),
+    [conversationHistory]
+  );
+
+  const recallHistory = useCallback((direction) => {
+    if (direction === 'up') {
+      if (!userPromptHistory.length) return;
+      const nextIndex = historyIndex === -1
+        ? userPromptHistory.length - 1
+        : Math.max(0, historyIndex - 1);
+      if (historyIndex === -1) liveDraftRef.current = prompt;
+      setHistoryIndex(nextIndex);
+      setShowWorkflowSuggestions(false);
+      setShowContextSuggestions(false);
+      onPromptChange(userPromptHistory[nextIndex]);
+    } else if (historyIndex !== -1) {
+      const nextIndex = historyIndex + 1;
+      if (nextIndex >= userPromptHistory.length) {
+        setHistoryIndex(-1);
+        onPromptChange(liveDraftRef.current);
+      } else {
+        setHistoryIndex(nextIndex);
+        onPromptChange(userPromptHistory[nextIndex]);
+      }
+    }
+  }, [historyIndex, userPromptHistory, prompt, onPromptChange]);
 
   const handleSelectWorkflow = async (workflow) => {
     if (getWorkflow) {
@@ -955,17 +1086,16 @@ const AIChat = ({
     if ((prompt.trim() || explicitContext.length > 0 || pendingImages.length > 0) && !isLoading) {
       setShowWorkflowSuggestions(false);
       setShowContextSuggestions(false);
-      // We'll pass explicitContext via onSend if needed, or modify the prompt
-      // Let's modify the prompt to prepend the explicit context requested
+      // COD-70 — onSend (useAI.generateAIResponse) accepte deja un prompt
+      // effectif en argument : le contexte force est passe directement, plus
+      // de course state/setTimeout(onSend, 50) (l'ancien "Hack:" dans ce bloc).
       if (explicitContext.length > 0 && typeof onSend === 'function') {
         const contextString = `[Contexte forcé: ${explicitContext.join(', ')}]\n\n`;
-        // Hack: trigger onSend with context. We need to update useAI to handle this or just modify state.
-        // Easiest is to modify prompt immediately before send, or let useAI handle it.
-        // Actually since onSend reads state, let's just append it to the prompt.
-        const augmentedPrompt = contextString + prompt;
-        onPromptChange(augmentedPrompt);
         setExplicitContext([]);
-        setTimeout(() => onSend(augmentedPrompt), 50);
+        // generateAIResponse(overridePrompt) ne vide pas le champ lui-meme
+        // (chemin normal : setPrompt('') seulement si overridePrompt indefini).
+        onPromptChange('');
+        onSend(contextString + prompt);
       } else {
         onSend();
       }
@@ -998,10 +1128,117 @@ const AIChat = ({
   };
 
   const handleKeyDown = (e) => {
+    // COD-70 A.2 — pendant une composition IME (CJK, accents), Enter valide
+    // la composition, pas l'envoi du message.
+    if (e.nativeEvent && e.nativeEvent.isComposing) return;
+
+    // COD-70 A.3 — navigation clavier dans les suggestions @fichier / /workflow.
+    const suggestionsOpen = showWorkflowSuggestions || showContextSuggestions;
+    if (suggestionsOpen) {
+      const items = showWorkflowSuggestions ? filteredWorkflows : filteredContextFiles;
+      const activeItem = items[Math.min(activeSuggestion, Math.max(0, items.length - 1))];
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveSuggestion((i) => (items.length ? (i + 1) % items.length : 0));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveSuggestion((i) => (items.length ? (i - 1 + items.length) % items.length : 0));
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (activeItem) {
+          if (showWorkflowSuggestions) handleSelectWorkflow(activeItem);
+          else handleSelectContextFile(activeItem);
+          return;
+        }
+        handleSend();
+        return;
+      }
+      if (e.key === 'Tab') {
+        if (activeItem) {
+          e.preventDefault();
+          if (showWorkflowSuggestions) handleSelectWorkflow(activeItem);
+          else handleSelectContextFile(activeItem);
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowWorkflowSuggestions(false);
+        setShowContextSuggestions(false);
+        return;
+      }
+    }
+
+    // COD-70 A.4 — historique de prompts (↑/↓), hors suggestions.
+    if (e.key === 'ArrowUp' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      const el = e.currentTarget;
+      const caretOnFirstLine = !el.value.slice(0, el.selectionStart).includes('\n');
+      if (caretOnFirstLine && (historyIndex !== -1 || !el.value.trim())) {
+        e.preventDefault();
+        recallHistory('up');
+        return;
+      }
+    }
+    if (e.key === 'ArrowDown' && historyIndex !== -1 && !e.shiftKey) {
+      const el = e.currentTarget;
+      const caretOnLastLine = !el.value.slice(el.selectionEnd).includes('\n');
+      if (caretOnLastLine) {
+        e.preventDefault();
+        recallHistory('down');
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  // COD-70 A.6 — glisser-deposer d'images sur le composer (parite avec le
+  // collage : memes callbacks onPasteImage, meme pipeline de lecture).
+  const hasFilePayload = (dataTransfer) =>
+    Array.from(dataTransfer?.types || []).includes('Files');
+
+  const handleComposerDrop = (e) => {
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingFiles(false);
+    if (!onPasteImage) return;
+    const files = Array.from(e.dataTransfer?.files || []);
+    files.forEach((file) => {
+      if (!file.type || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result;
+        if (typeof result === 'string') {
+          onPasteImage(result);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleComposerDragOver = (e) => {
+    if (!onPasteImage || !hasFilePayload(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleComposerDragEnter = (e) => {
+    if (!onPasteImage || !hasFilePayload(e.dataTransfer)) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDraggingFiles(true);
+  };
+
+  const handleComposerDragLeave = () => {
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingFiles(false);
   };
 
   const handleStop = () => {
@@ -1039,6 +1276,46 @@ const AIChat = ({
     if (!text.trim() || isLoading || typeof onSend !== 'function') return;
     onSend(text);
   }, [findPrecedingUserText, isLoading, onSend]);
+
+  // COD-70 B.13 — bascule du pouce (re-clic sur le meme pouce = retire).
+  const handleToggleFeedback = useCallback((index, kind) => {
+    setMessageFeedback((prev) => {
+      const next = { ...prev };
+      if (next[index] === kind) delete next[index];
+      else next[index] = kind;
+      return next;
+    });
+  }, []);
+
+  // COD-70 B.12 — "Modifier" un message user : edition inline non-destructive
+  // (le fil n'est pas tronque, cf. pipeline generateAIResponse). Valider
+  // remplace le message en memoire puis relance une reponse a partir de la
+  // version editees ; Echap annule.
+  const beginEditUserMessage = useCallback((index, text) => {
+    if (isLoading) return;
+    setEditingIndex(index);
+    setEditingText(String(text || ''));
+    requestAnimationFrame(() => {
+      const el = editTextareaRef.current;
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    });
+  }, [isLoading]);
+
+  const cancelEditUserMessage = useCallback(() => {
+    setEditingIndex(null);
+    setEditingText('');
+  }, []);
+
+  const commitEditUserMessage = useCallback((index) => {
+    const nextText = editingText.trim();
+    const original = conversationHistory[index];
+    setEditingIndex(null);
+    setEditingText('');
+    if (!nextText || !original || nextText === String(original.text || '')) return;
+    // Re-envoi non-destructif : le texte edite part comme nouveau tour.
+    if (typeof onSend === 'function' && !isLoading) onSend(nextText);
+  }, [editingText, conversationHistory, onSend, isLoading]);
+
 
   const canApplyPending = permissionMode !== 'read_only';
   const currentWorkflowAnimStep = WORKFLOW_STREAM_STEPS[workflowAnimStep] || WORKFLOW_STREAM_STEPS[0];
@@ -1640,7 +1917,24 @@ const AIChat = ({
                 );
               }}
             />
-          ) : conversationHistory.map((msg, index) => {
+          ) : (() => {
+            // COD-70 B.11 — fenetre glissante : slice() mais on conserve
+            // l'index ABSOLU (startIndex + offset) pour que toutes les
+            // callbacks basees sur l'index (terminal actions, feedback,
+            // edition, copie) restent alignees sur conversationHistory.
+            const startIndex = Math.max(0, conversationHistory.length - visibleCount);
+            const hiddenCount = startIndex;
+            return (
+            <>
+            {hiddenCount > 0 && (
+              <div className="ai-messages-earlier">
+                <button type="button" className="ai-msg-action is-primary" onClick={revealEarlier}>
+                  Afficher {hiddenCount} message{hiddenCount > 1 ? 's' : ''} plus ancien{hiddenCount > 1 ? 's' : ''}
+                </button>
+              </div>
+            )}
+            {conversationHistory.slice(startIndex).map((msg, offset) => {
+            const index = startIndex + offset;
             const meta = getRoleMeta(msg);
             const isUser = msg.role === 'user';
             return (
@@ -1656,7 +1950,30 @@ const AIChat = ({
                   <span className="ai-message-role">{meta.label}</span>
                 </div>
                 <div className="ai-message-body">
-                  {(() => {
+                  {isUser && editingIndex === index ? (
+                    <div className="ai-message-edit">
+                      <textarea
+                        ref={editTextareaRef}
+                        className="ai-message-edit-textarea"
+                        value={editingText}
+                        onChange={(e) => setEditingText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent && e.nativeEvent.isComposing)) {
+                            e.preventDefault();
+                            commitEditUserMessage(index);
+                          }
+                          if (e.key === 'Escape') { e.preventDefault(); cancelEditUserMessage(); }
+                        }}
+                        rows={Math.min(10, Math.max(2, editingText.split('\n').length))}
+                        aria-label="Modifier le message"
+                      />
+                      <div className="ai-message-edit-actions">
+                        <button type="button" className="ai-msg-action" onClick={cancelEditUserMessage}>Annuler</button>
+                        <button type="button" className="ai-msg-action is-primary" onClick={() => commitEditUserMessage(index)} disabled={!editingText.trim()}>Envoyer</button>
+                      </div>
+                    </div>
+                  ) : (
+                  (() => {
                     const segments = splitReasoningSegments(msg.text);
                     // Garde-fou : un provider peut renvoyer success avec un
                     // texte vide (cf. ollama.provider, 8 tours d'outils sans
@@ -1699,7 +2016,7 @@ const AIChat = ({
                         />
                       );
                     });
-                  })()}
+                  })())}
                 </div>
 
                 {!isUser && msg.role !== 'system' && (
@@ -1727,6 +2044,55 @@ const AIChat = ({
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                     </button>
+                    <span className="ai-msg-action-sep" aria-hidden="true" />
+                    <button
+                      type="button"
+                      className={`ai-msg-action ai-msg-feedback${messageFeedback[index] === 'up' ? ' is-active is-up' : ''}`}
+                      onClick={() => handleToggleFeedback(index, 'up')}
+                      aria-pressed={messageFeedback[index] === 'up'}
+                      title="Réponse utile"
+                      aria-label="Réponse utile"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" /></svg>
+                    </button>
+                    <button
+                      type="button"
+                      className={`ai-msg-action ai-msg-feedback${messageFeedback[index] === 'down' ? ' is-active is-down' : ''}`}
+                      onClick={() => handleToggleFeedback(index, 'down')}
+                      aria-pressed={messageFeedback[index] === 'down'}
+                      title="Réponse peu utile"
+                      aria-label="Réponse peu utile"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zM17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" /></svg>
+                    </button>
+                  </div>
+                )}
+
+                {isUser && editingIndex !== index && (
+                  <div className="ai-message-actions">
+                    <button
+                      type="button"
+                      className="ai-msg-action"
+                      onClick={() => handleCopyMessage(index, msg.text)}
+                      title={copiedMessageIndex === index ? 'Copié' : 'Copier le message'}
+                      aria-label="Copier le message"
+                    >
+                      {copiedMessageIndex === index ? (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="ai-msg-action"
+                      onClick={() => beginEditUserMessage(index, msg.text)}
+                      disabled={isLoading}
+                      title="Modifier et renvoyer"
+                      aria-label="Modifier et renvoyer"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                    </button>
                   </div>
                 )}
 
@@ -1751,6 +2117,9 @@ const AIChat = ({
               </div>
             );
           })}
+            </>
+            );
+          })()}
 
           {/* AI Terminal Action Cards (ReAct Loop) — tour EN COURS */}
           {isLoading && terminalActions.length > 0 && (
@@ -1815,16 +2184,12 @@ const AIChat = ({
         <div className="ai-reading-col ai-input-bar-inner">
           {/* Pending message indicator */}
           {pendingMessage && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
-              background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
-              borderRadius: 4, fontSize: 10, color: 'var(--warning)',
-            }}>
+            <div className="ai-input-pending-banner" role="status">
               <span><IconHourglass size={11} /></span>
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span className="ai-input-pending-text">
                 En attente&#x202F;: <em>{pendingMessage.text}</em>
               </span>
-              <span style={{ opacity: 0.6, fontSize: 9 }}>sera envoyé automatiquement</span>
+              <span className="ai-input-pending-hint">sera envoyé automatiquement</span>
             </div>
           )}
 
@@ -1832,14 +2197,13 @@ const AIChat = ({
           {pendingImages && pendingImages.length > 0 && (
             <div className="ai-input-images">
               {pendingImages.map((img, idx) => (
-                <div key={idx} style={{ position: 'relative' }}>
-                  <img src={img.dataUrl} alt="Pending" className="ai-input-image" />
+                <div key={idx} className="ai-input-image-wrap">
+                  <img src={img.dataUrl} alt={`Image jointe ${idx + 1}`} className="ai-input-image" />
                   <button
+                    type="button"
+                    className="ai-input-image-remove"
+                    aria-label={`Retirer l'image ${idx + 1}`}
                     onClick={() => onRemovePendingImage && onRemovePendingImage(idx)}
-                    style={{
-                      position: 'absolute', top: 1, right: 1, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff',
-                      borderRadius: '50%', width: 14, height: 14, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                    }}
                   >×</button>
                 </div>
               ))}
@@ -1854,7 +2218,12 @@ const AIChat = ({
                 return (
                   <span key={filePath} className="ai-message-file-ref" title={filePath}>
                     @{fileName}
-                    <span className="ai-message-file-ref-close" onClick={() => removeExplicitContext(filePath)}>×</span>
+                    <button
+                      type="button"
+                      className="ai-message-file-ref-close"
+                      aria-label={`Retirer ${fileName} du contexte`}
+                      onClick={() => removeExplicitContext(filePath)}
+                    >×</button>
                   </span>
                 );
               })}
@@ -1862,7 +2231,18 @@ const AIChat = ({
           )}
 
           {/* Composer: un seul bloc arrondi = textarea + rangée [+] [mode] [modèle] [autonomie] [Envoyer] */}
-          <div className={`ai-composer${isLoading ? ' is-working' : ''}`}>
+          <div
+            className={`ai-composer${isLoading ? ' is-working' : ''}${isDraggingFiles ? ' is-drop-target' : ''}`}
+            onDrop={handleComposerDrop}
+            onDragOver={handleComposerDragOver}
+            onDragEnter={handleComposerDragEnter}
+            onDragLeave={handleComposerDragLeave}
+          >
+          {isDraggingFiles && (
+            <div className="ai-composer-drop-hint" aria-hidden="true">
+              Déposez vos images ici
+            </div>
+          )}
           {/* Textarea */}
           <textarea
             ref={promptInputRef}
@@ -1872,28 +2252,42 @@ const AIChat = ({
             onChange={(e) => handlePromptChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder="Votre requête... (@ pour un fichier, / pour un workflow)"
+            placeholder="Votre requête... (@ fichier, / workflow — Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)"
             rows={2}
+            role="combobox"
+            aria-expanded={showWorkflowSuggestions || showContextSuggestions}
+            aria-controls="ai-suggest-listbox"
+            aria-autocomplete="list"
+            aria-activedescendant={
+              ((showWorkflowSuggestions && filteredWorkflows.length > 0) ||
+                (showContextSuggestions && filteredContextFiles.length > 0))
+                ? `ai-suggest-opt-${activeSuggestion}`
+                : undefined
+            }
           />
 
           {/* Workflow suggestions */}
           {showWorkflowSuggestions && filteredWorkflows.length > 0 && (
             <div className="ai-suggest-overlay">
-              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
-                <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Workflows disponibles</div>
-                {filteredWorkflows.map((workflow) => (
-                  <button
-                    key={`${workflow.scope}-${workflow.name}`}
-                    onClick={() => handleSelectWorkflow(workflow)}
-                    style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '5px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
-                  >
-                    <div>
-                      <span style={{ color: 'var(--accent)', fontWeight: 600 }}>/{workflow.name}</span>
-                      {workflow.description && <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>{workflow.description}</span>}
-                    </div>
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)', padding: '1px 5px', background: 'var(--surface)', borderRadius: 3 }}>{workflow.scope}</span>
-                  </button>
-                ))}
+              <div className="ai-suggest-panel">
+                <div className="ai-suggest-header">Workflows disponibles</div>
+                <ul className="ai-suggest-list" id="ai-suggest-listbox" role="listbox" aria-label="Workflows disponibles">
+                  {filteredWorkflows.map((workflow, i) => (
+                    <li
+                      key={`${workflow.scope}-${workflow.name}`}
+                      id={`ai-suggest-opt-${i}`}
+                      role="option"
+                      aria-selected={i === activeSuggestion}
+                      className={`ai-suggest-item${i === activeSuggestion ? ' is-active' : ''}`}
+                      onMouseEnter={() => setActiveSuggestion(i)}
+                      onClick={() => handleSelectWorkflow(workflow)}
+                    >
+                      <span className="ai-suggest-item-name">/{workflow.name}</span>
+                      {workflow.description && <span className="ai-suggest-item-desc">{workflow.description}</span>}
+                      <span className="ai-suggest-item-scope">{workflow.scope}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           )}
@@ -1901,24 +2295,31 @@ const AIChat = ({
           {/* Context file suggestions */}
           {showContextSuggestions && (
             <div className="ai-suggest-overlay">
-              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
-                <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Fichiers du projet</div>
-                {filteredContextFiles.length === 0 && (
-                  <div style={{ padding: '8px 10px', fontSize: 10, color: 'var(--text-muted)' }}>Aucun fichier pour {contextFilter}</div>
+              <div className="ai-suggest-panel">
+                <div className="ai-suggest-header">Fichiers du projet</div>
+                {filteredContextFiles.length === 0 ? (
+                  <div className="ai-suggest-empty">Aucun fichier pour {contextFilter}</div>
+                ) : (
+                  <ul className="ai-suggest-list" id="ai-suggest-listbox" role="listbox" aria-label="Fichiers du projet">
+                    {filteredContextFiles.map((filePath, i) => {
+                      const fileName = filePath.split(/[\\/]/).pop() || filePath;
+                      return (
+                        <li
+                          key={filePath}
+                          id={`ai-suggest-opt-${i}`}
+                          role="option"
+                          aria-selected={i === activeSuggestion}
+                          className={`ai-suggest-item${i === activeSuggestion ? ' is-active' : ''}`}
+                          onMouseEnter={() => setActiveSuggestion(i)}
+                          onClick={() => handleSelectContextFile(filePath)}
+                        >
+                          <span className="ai-suggest-item-name">@{fileName}</span>
+                          <span className="ai-suggest-item-path">{filePath}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
-                {filteredContextFiles.map((filePath) => {
-                  const fileName = filePath.split(/[\\/]/).pop() || filePath;
-                  return (
-                    <button
-                      key={filePath}
-                      onClick={() => handleSelectContextFile(filePath)}
-                      style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      <span style={{ color: 'var(--accent)' }}>@{fileName}</span>
-                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{filePath}</span>
-                    </button>
-                  );
-                })}
               </div>
             </div>
           )}
@@ -2024,6 +2425,14 @@ const AIChat = ({
                   / Workflow
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* COD-70 A.10 — raison explicite quand l'envoi est indisponible
+              (le bouton disabled seul ne disait rien a l'utilisateur). */}
+          {!isElectronApiAvailable && (
+            <div className="ai-input-warning" role="alert">
+              IA indisponible&nbsp;: l&apos;application Electron n&apos;est pas connectée.
             </div>
           )}
         </div>
