@@ -34,6 +34,7 @@ export interface ChatInterfaceProps {
   onExecutionModeChange: (mode: ExecutionModeId) => void;
   autonomyLevel: AutonomyLevel;
   onAutonomyLevelChange: (level: AutonomyLevel) => void;
+  isDeveloperMode?: boolean;
   agents?: AgentPersona[];
   activeAgent?: AgentPersona | null;
   onActiveAgentChange?: (agent: AgentPersona | null) => void;
@@ -77,6 +78,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onExecutionModeChange,
   autonomyLevel,
   onAutonomyLevelChange,
+  isDeveloperMode = false,
   agents,
   activeAgent,
   onActiveAgentChange,
@@ -108,6 +110,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         onExecutionModeChange={onExecutionModeChange}
         autonomyLevel={autonomyLevel}
         onAutonomyLevelChange={onAutonomyLevelChange}
+        isDeveloperMode={isDeveloperMode}
         agents={agents}
         activeAgent={activeAgent}
         onActiveAgentChange={onActiveAgentChange}

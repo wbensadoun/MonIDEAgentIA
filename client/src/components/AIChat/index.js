@@ -217,9 +217,8 @@ const TerminalActionCard = ({ action }) => {
 };
 
 // ─── AgentModePill ──────────────────────────────────────────────────────────
-// Single fused control replacing the old separate ModePill (Ask/Plan/Agent)
-// + the "Agent" persona picker: one dropdown, top section = execution modes,
-// bottom section = custom agent personas (mirrors VS Code's Agent selector).
+// Single fused control for product modes. Internal personas are only listed in
+// the explicit developer/advanced surface; normal chat stays back-routed.
 const AgentModePill = ({
   executionMode,
   onExecutionModeChange,
@@ -227,12 +226,13 @@ const AgentModePill = ({
   onActiveAgentChange,
   agents,
   onOpenAgentManager,
+  isDeveloperMode = false,
   disabled
 }) => {
   const { open, setOpen, wrapRef } = usePillMenu();
   const currentMode = EXECUTION_MODES.find((m) => m.id === executionMode) || EXECUTION_MODES[0];
-  const label = activeAgent ? activeAgent.name : (currentMode?.label || 'Agent');
-  const icon = activeAgent ? <IconUser size={13} /> : (currentMode?.icon || <IconWrench size={13} />);
+  const label = currentMode?.label || 'Agent';
+  const icon = currentMode?.icon || <IconWrench size={13} />;
 
   const selectMode = (modeId) => {
     if (typeof onExecutionModeChange === 'function') onExecutionModeChange(modeId);
@@ -258,7 +258,7 @@ const AgentModePill = ({
         className="ai-pill"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        title="Mode d'exécution / Agent"
+          title="Mode d'exécution"
       >
         <span aria-hidden="true">{icon}</span>
         {label}
@@ -278,7 +278,7 @@ const AgentModePill = ({
               <span aria-hidden="true">{mode.icon}</span> {mode.label}
             </button>
           ))}
-          {(agents || []).length > 0 && (
+          {isDeveloperMode && (agents || []).length > 0 && (
             <>
               <div className="ai-pill-menu-separator" />
               {agents.map((agent) => (
@@ -296,7 +296,7 @@ const AgentModePill = ({
               ))}
             </>
           )}
-          {typeof onOpenAgentManager === 'function' && (
+          {isDeveloperMode && typeof onOpenAgentManager === 'function' && (
             <>
               <div className="ai-pill-menu-separator" />
               <button
@@ -538,6 +538,7 @@ const AIChat = ({
   executionMode = 'agent',
   onExecutionModeChange,
   autoRoute = false,
+  isDeveloperMode = false,
   // eslint-disable-next-line no-unused-vars
   onAutoRouteChange,
   routerDecision = null,
@@ -1941,6 +1942,7 @@ const AIChat = ({
               onActiveAgentChange={onActiveAgentChange}
               agents={agents}
               onOpenAgentManager={onOpenAgentManager}
+              isDeveloperMode={isDeveloperMode}
               disabled={isLoading}
             />
 

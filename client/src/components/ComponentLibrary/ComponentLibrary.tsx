@@ -224,6 +224,7 @@ export const ComponentLibrary: React.FC = () => {
               onExecutionModeChange={setExecutionMode}
               autonomyLevel={autonomyLevel}
               onAutonomyLevelChange={setAutonomyLevel}
+              isDeveloperMode={false}
             />
             {renderInspect('autonomy')}
           </section>

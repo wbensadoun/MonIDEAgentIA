@@ -725,6 +725,7 @@ const AppContent = () => {
     availableActiveModels,
     onActiveModelChange: handleActiveModelChange,
     isExpertMode,
+    isDeveloperMode: isExpertMode,
     onOpenAgentManager: () => setIsAgentverseOpen(true)
   };
 
