@@ -21,6 +21,9 @@
  * call sites still expecting the old strings keep working during
  * migration. See decisions[] in the design-system report.
  *
+ * Agent personas are an advanced/developer-only surface. Normal users keep
+ * the product modes while the back router resolves any internal agent.
+ *
  * Placement: top of the chat column, above MessageViewer, per the
  * mandated hierarchy Autonomy Controls → Chat Area → Input.
  * ------------------------------------------------------------------------
@@ -56,13 +59,14 @@ export interface AutonomyControlsProps {
   onAutonomyLevelChange: (level: AutonomyLevel) => void;
   /** Disables all controls while a run is in flight (isLoading upstream). */
   disabled?: boolean;
+  /** Developer/advanced mode may expose the internal agent manager. */
+  isDeveloperMode?: boolean;
   /** Optional override of the execution-mode option list; defaults to the
    *  canonical four modes so this stays in sync with agentModes.js without
    *  importing a .js file into a strict .tsx (kept prop-driven by design —
    *  see decisions[] on JS/TS boundary). */
   executionModes?: ExecutionModeOption[];
-  /** Personas custom disponibles. Vide/absent ⇒ la rangée « Agent » n'est pas
-   *  rendue du tout (pas de contrôle vide affiché à l'utilisateur). */
+  /** Personas custom disponibles, visibles uniquement en mode développeur. */
   agents?: AgentPersona[];
   /** Persona actuellement active, ou null pour « Aucun » (mode seul). */
   activeAgent?: AgentPersona | null;
@@ -107,6 +111,7 @@ export const AutonomyControls: React.FC<AutonomyControlsProps> = ({
   autonomyLevel,
   onAutonomyLevelChange,
   disabled = false,
+  isDeveloperMode = false,
   executionModes = DEFAULT_MODES,
   agents,
   activeAgent = null,
@@ -232,71 +237,73 @@ export const AutonomyControls: React.FC<AutonomyControlsProps> = ({
         </div>
       </div>
 
-      {agentOptions.length > 0 && (
+      {isDeveloperMode && (agentOptions.length > 0 || onOpenAgentManager) && (
         <div className="autonomy-controls__row">
-          <span className="autonomy-controls__eyebrow" id={`${groupId}-agent-label`}>
-            Agent
-          </span>
-          <div
-            className="autonomy-controls__segmented"
-            role="radiogroup"
-            aria-labelledby={`${groupId}-agent-label`}
-            onKeyDown={(event) =>
-              handleModeKeyDown(
-                event,
-                ['none', ...agentOptions.map((a) => `agent:${a.name}`)],
-                activeAgent ? `agent:${activeAgent.name}` : 'none',
-                (id) =>
-                  selectAgent(
-                    id === 'none' ? null : agentOptions.find((a) => `agent:${a.name}` === id) ?? null
+          {agentOptions.length > 0 && (
+            <>
+              <span className="autonomy-controls__eyebrow" id={`${groupId}-agent-label`}>
+                Agent
+              </span>
+              <div
+                className="autonomy-controls__segmented"
+                role="radiogroup"
+                aria-labelledby={`${groupId}-agent-label`}
+                onKeyDown={(event) =>
+                  handleModeKeyDown(
+                    event,
+                    ['none', ...agentOptions.map((a) => `agent:${a.name}`)],
+                    activeAgent ? `agent:${activeAgent.name}` : 'none',
+                    (id) =>
+                      selectAgent(
+                        id === 'none' ? null : agentOptions.find((a) => `agent:${a.name}` === id) ?? null
+                      )
                   )
-              )
-            }
-          >
-            <button
-              ref={(el) => {
-                if (el) buttonRefs.current.none = el;
-              }}
-              type="button"
-              role="radio"
-              aria-checked={!activeAgent}
-              data-focus-ring
-              tabIndex={!activeAgent ? 0 : -1}
-              className={`autonomy-controls__segment${!activeAgent ? ' is-active' : ''}`}
-              disabled={disabled}
-              title="Utiliser le mode d'exécution seul, sans persona."
-              onClick={() => selectAgent(null)}
-            >
-              Aucun
-            </button>
-            {agentOptions.map((agent) => {
-              const isActive = activeAgent?.name === agent.name;
-              return (
+                }
+              >
                 <button
-                  // Les personas peuvent partager un nom entre scopes : la clé
-                  // inclut le scope, comme dans AgentModePill (index.js:279).
-                  key={`${agent.scope || ''}:${agent.name}`}
                   ref={(el) => {
-                    if (el) buttonRefs.current[`agent:${agent.name}`] = el;
+                    if (el) buttonRefs.current.none = el;
                   }}
                   type="button"
                   role="radio"
-                  aria-checked={isActive}
+                  aria-checked={!activeAgent}
                   data-focus-ring
-                  tabIndex={isActive ? 0 : -1}
-                  className={`autonomy-controls__segment${isActive ? ' is-active' : ''}`}
+                  tabIndex={!activeAgent ? 0 : -1}
+                  className={`autonomy-controls__segment${!activeAgent ? ' is-active' : ''}`}
                   disabled={disabled}
-                  title={agent.description}
-                  onClick={() => selectAgent(agent)}
+                  title="Utiliser le mode d'exécution seul, sans persona."
+                  onClick={() => selectAgent(null)}
                 >
-                  <span className="autonomy-controls__segment-icon" aria-hidden="true">
-                    👤
-                  </span>
-                  {agent.name}
+                  Aucun
                 </button>
-              );
-            })}
-          </div>
+                {agentOptions.map((agent) => {
+                  const isActive = activeAgent?.name === agent.name;
+                  return (
+                    <button
+                      key={`${agent.scope || ''}:${agent.name}`}
+                      ref={(el) => {
+                        if (el) buttonRefs.current[`agent:${agent.name}`] = el;
+                      }}
+                      type="button"
+                      role="radio"
+                      aria-checked={isActive}
+                      data-focus-ring
+                      tabIndex={isActive ? 0 : -1}
+                      className={`autonomy-controls__segment${isActive ? ' is-active' : ''}`}
+                      disabled={disabled}
+                      title={agent.description}
+                      onClick={() => selectAgent(agent)}
+                    >
+                      <span className="autonomy-controls__segment-icon" aria-hidden="true">
+                        👤
+                      </span>
+                      {agent.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
           {onOpenAgentManager && (
             <button
               type="button"
