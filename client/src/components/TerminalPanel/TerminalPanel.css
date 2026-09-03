@@ -50,6 +50,13 @@
   color: var(--text-main);
 }
 
+.bottom-terminal-title-btn:focus-visible,
+.terminal-pill:focus-visible,
+.terminal-toggle:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
 .bottom-terminal-title-btn.is-active {
   color: var(--accent);
   border-bottom-color: var(--accent);

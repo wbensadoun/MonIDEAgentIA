@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.4.0] — Focus clavier sur les contrôles CSS ciblés
+
+### Fixed
+
+- Ajout d’anneaux `:focus-visible` cohérents sur les contrôles interactifs du graphe, de l’aperçu live, du terminal, de l’écran d’erreur et du rendu Markdown.
+
 ## [4.3.0] — UI Kit/a11y : contrôles de toolbar sûrs
 
 ### Fixed

@@ -63,6 +63,15 @@
   border-color: var(--accent);
 }
 
+.brain-btn:focus-visible,
+.brain-hotspot:focus-visible,
+.brain-selected-row:focus-visible,
+.brain-flow .react-flow__controls button:focus-visible,
+.brain-rel-block button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
 .brain-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
