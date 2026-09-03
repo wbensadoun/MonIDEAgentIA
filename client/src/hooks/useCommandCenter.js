@@ -185,6 +185,15 @@ const useCommandCenter = ({
       }
     },
     {
+      id: 'extensions',
+      label: 'Extensions: Ouvrir',
+      hint: 'Ctrl+Shift+X',
+      action: () => {
+        setActiveSidebarSection('extensions');
+        if (isLeftCollapsed) toggleLeftPanel();
+      }
+    },
+    {
       id: 'view-brain',
       label: 'Vue Brain Graph',
       action: () => {
@@ -572,6 +581,11 @@ const useCommandCenter = ({
         setFilePaletteOpen(false);
         setSymbolOpen(false);
       }
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'x') {
+        event.preventDefault();
+        setActiveSidebarSection('extensions');
+        if (isLeftCollapsed) toggleLeftPanel && toggleLeftPanel();
+      }
       if ((event.ctrlKey || event.metaKey) && key === 't') {
         event.preventDefault();
         setSymbolOpen(true);
@@ -617,7 +631,14 @@ const useCommandCenter = ({
 
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, [toggleLeftPanel, setIsTerminalOpen, activateShortcutTab, closeShortcutTab]);
+  }, [
+    toggleLeftPanel,
+    setIsTerminalOpen,
+    activateShortcutTab,
+    closeShortcutTab,
+    isLeftCollapsed,
+    setActiveSidebarSection
+  ]);
 
   const runCommand = useCallback((cmd) => {
     if (!cmd || typeof cmd.action !== 'function') return;

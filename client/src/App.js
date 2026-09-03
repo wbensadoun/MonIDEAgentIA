@@ -743,7 +743,12 @@ const AppContent = () => {
     routerClassifierModel,
     onRouterClassifierModelChange: setRouterClassifierModel,
     routerComplexityThreshold,
-    onRouterComplexityThresholdChange: setRouterComplexityThreshold
+    onRouterComplexityThresholdChange: setRouterComplexityThreshold,
+    onOpenExtensions: () => {
+      closeSettings();
+      setActiveSidebarSection('extensions');
+      if (isLeftCollapsed) toggleLeftPanel();
+    }
   };
 
   return (
@@ -864,6 +869,11 @@ const AppContent = () => {
             terminalProps={terminalPanelProps}
             gitPanelProps={gitPanelProps}
             aiChangesPanelProps={aiChangesPanelProps}
+            extensionsPanelProps={{
+              isElectronApiAvailable,
+              showMessage,
+              onOpenPackManager: () => setWorkflowManagerOpen(true)
+            }}
             brainGraphProps={brainGraphPanelProps}
             workflowProps={workflowPanelProps}
             aiChatProps={aiChatProps}

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './Settings.css';
 import ThemeSwitcher from '../AppShell/ThemeSwitcher';
-import McpSettings from './McpSettings';
 import {
   IconSettings,
   IconMoon,
@@ -64,6 +63,7 @@ const SHORTCUT_LIST = [
   { keys: 'Ctrl+T', action: 'Recherche de symboles' },
   { keys: 'Ctrl+B', action: 'Basculer le panneau de gauche' },
   { keys: 'Ctrl+J', action: 'Basculer le terminal' },
+  { keys: 'Ctrl+Shift+X', action: 'Ouvrir Extensions & Connecteurs' },
   { keys: 'Ctrl+W', action: "Fermer l'onglet actif" },
   { keys: 'Ctrl+Tab', action: 'Onglet suivant' },
   { keys: 'Ctrl+Shift+Tab', action: 'Onglet précédent' },
@@ -84,7 +84,8 @@ const Settings = ({
   routerClassifierModel = null,
   onRouterClassifierModelChange,
   routerComplexityThreshold = 0.5,
-  onRouterComplexityThresholdChange
+  onRouterComplexityThresholdChange,
+  onOpenExtensions = () => {}
 }) => {
   const [settings, setSettings] = useState({
     defaultProvider: 'gemini',
@@ -951,7 +952,16 @@ const Settings = ({
           </>)}
 
           {activeTab === 'mcp' && (
-            <McpSettings isElectronApiAvailable={isElectronApiAvailable} showMessage={showMessage} />
+            <div className="settings-section">
+              <label className="settings-label">Connecteurs MCP</label>
+              <p className="settings-hint">
+                La gestion des connecteurs, du registre et des statuts live a été déplacée dans la vue
+                Extensions &amp; Connecteurs.
+              </p>
+              <button type="button" className="btn btn-primary" onClick={onOpenExtensions}>
+                Ouvrir Extensions &amp; Connecteurs
+              </button>
+            </div>
           )}
 
           {activeTab === 'extensions' && (
