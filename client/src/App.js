@@ -26,6 +26,7 @@ import AgentsLayout from './components/AppShell/AgentsLayout';
 import StatusBar from './components/AppShell/StatusBar';
 import OnboardingModal from './components/AppShell/OnboardingModal';
 import CommandCenterOverlays from './components/AppShell/CommandCenterOverlays';
+import Dialog from './components/ComponentLibrary/Dialog';
 import useProjectStore from './stores/projectStore';
 
 const AppContent = () => {
@@ -360,13 +361,18 @@ const AppContent = () => {
     switchSession(sessionId);
   }, [switchSession]);
 
+  const [sessionDialog, setSessionDialog] = useState(null);
+  const [isSessionDialogPending, setIsSessionDialogPending] = useState(false);
+
   const requestRenameSession = React.useCallback((sessionId) => {
     const session = sessions.find((s) => s.id === sessionId);
     if (!session) return;
-    const nextTitle = window.prompt('Renommer la conversation', session.title);
-    if (nextTitle === null) return; // annule
-    renameSession(sessionId, nextTitle);
-  }, [sessions, renameSession]);
+    setSessionDialog({
+      mode: 'rename',
+      sessionId,
+      value: session.title || '',
+    });
+  }, [sessions]);
 
   const requestDuplicateSession = React.useCallback((sessionId) => {
     duplicateSession(sessionId);
@@ -378,13 +384,32 @@ const AppContent = () => {
   const requestDeleteSession = React.useCallback((sessionId) => {
     const session = sessions.find((s) => s.id === sessionId);
     const label = session?.title || 'cette conversation';
-    if (!window.confirm(`Supprimer definitivement "${label}" ? Cette action est irreversible.`)) {
-      return;
+    setSessionDialog({
+      mode: 'delete',
+      sessionId,
+      label,
+    });
+  }, [sessions]);
+
+  const submitSessionDialog = React.useCallback(async () => {
+    if (!sessionDialog || isSessionDialogPending) return;
+    setIsSessionDialogPending(true);
+    try {
+      if (sessionDialog.mode === 'rename') {
+        const nextTitle = String(sessionDialog.value || '').trim();
+        if (nextTitle) renameSession(sessionDialog.sessionId, nextTitle);
+      } else {
+        const wasOpenInTab = openTabs.some(
+          (t) => t.type === 'chat' && t.sessionId === sessionDialog.sessionId
+        );
+        if (wasOpenInTab) closeChatTab(sessionDialog.sessionId);
+        deleteSession(sessionDialog.sessionId);
+      }
+      setSessionDialog(null);
+    } finally {
+      setIsSessionDialogPending(false);
     }
-    const wasOpenInTab = openTabs.some((t) => t.type === 'chat' && t.sessionId === sessionId);
-    if (wasOpenInTab) closeChatTab(sessionId);
-    deleteSession(sessionId);
-  }, [sessions, openTabs, closeChatTab, deleteSession]);
+  }, [closeChatTab, deleteSession, isSessionDialogPending, openTabs, renameSession, sessionDialog]);
 
   // ---- Mise en page vue Chat : sidebar gauche (projets) + panneau agents
   // droit. Raisonne en simple visible/masque (les largeurs de la vue IDE sont
@@ -753,6 +778,88 @@ const AppContent = () => {
 
   return (
     <div className={`app-shell${isAgentverseOpen ? ' app-shell--agents' : ''}`}>
+      {sessionDialog && (
+        <Dialog
+          ariaLabel={sessionDialog.mode === 'rename' ? 'Renommer la conversation' : 'Supprimer la conversation'}
+          onClose={() => !isSessionDialogPending && setSessionDialog(null)}
+          closeOnBackdrop={!isSessionDialogPending}
+          overlayClassName="modal-overlay"
+          className="session-dialog"
+        >
+          {sessionDialog.mode === 'rename' ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitSessionDialog();
+              }}
+            >
+              <div className="modal-header">
+                <h2 className="modal-title">Renommer la conversation</h2>
+              </div>
+              <div className="session-dialog__body">
+                <label className="session-dialog__label" htmlFor="session-rename-title">
+                  Nom
+                </label>
+                <input
+                  id="session-rename-title"
+                  className="session-dialog__input"
+                  value={sessionDialog.value}
+                  onChange={(event) =>
+                    setSessionDialog((prev) => ({ ...prev, value: event.target.value }))
+                  }
+                  autoFocus
+                  autoComplete="off"
+                  disabled={isSessionDialogPending}
+                />
+              </div>
+              <div className="session-dialog__actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setSessionDialog(null)}
+                  disabled={isSessionDialogPending}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={isSessionDialogPending || !sessionDialog.value.trim()}
+                >
+                  Renommer
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div>
+              <div className="modal-header">
+                <h2 className="modal-title">Supprimer la conversation</h2>
+              </div>
+              <div className="session-dialog__body">
+                <p>Supprimer définitivement « {sessionDialog.label} » ? Cette action est irréversible.</p>
+              </div>
+              <div className="session-dialog__actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setSessionDialog(null)}
+                  disabled={isSessionDialogPending}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={submitSessionDialog}
+                  disabled={isSessionDialogPending}
+                >
+                  Supprimer
+                </button>
+              </div>
+            </div>
+          )}
+        </Dialog>
+      )}
       {message && (
         <div className="toast">
           <span className="toast-dot"></span>

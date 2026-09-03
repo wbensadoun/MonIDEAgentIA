@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.8.0] — Dialogs de session accessibles
+
+### Fixed
+
+- Le renommage et la suppression d’une conversation utilisent désormais le `Dialog` partagé avec confirmation explicite, focus clavier et restauration du focus, sans `window.prompt` ni `window.confirm`.
+
 ## [4.7.0] — Dialogs de confirmation des workflows
 
 ### Fixed

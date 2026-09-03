@@ -21,8 +21,8 @@ const excluded = /\.(test|spec)\.[^.]+$/;
 // numbers in source so a baseline change is reviewed alongside the code and
 // CI configuration.
 const budgets = {
-  buttonsWithoutType: 60,
-  nativeDialogs: 8,
+  buttonsWithoutType: 41,
+  nativeDialogs: 3,
   nonSemanticClickTargets: 11,
   nativeTitleAttributes: 132,
 };
