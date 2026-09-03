@@ -692,6 +692,14 @@ const AIChat = ({
 
   const [copiedMessageIndex, setCopiedMessageIndex] = useState(null);
   const copyResetTimerRef = useRef(null);
+  // COD-70 B.13 — retour 👍/👎 par reponse de l'agent. Stocke en memoire pour
+  // l'instant (index -> 'up' | 'down') ; l'ingest vers l'analyse de qualite du
+  // routeur depend de COD-54 (contrat d'evenements) — a brancher ici ensuite.
+  const [messageFeedback, setMessageFeedback] = useState({});
+  // COD-70 B.12 — index du message user en cours de reedition inline.
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [editingText, setEditingText] = useState('');
+  const editTextareaRef = useRef(null);
 
   const flushStreamingBuffer = useCallback(() => {
     streamingFlushRafRef.current = null;
@@ -1234,6 +1242,46 @@ const AIChat = ({
     if (!text.trim() || isLoading || typeof onSend !== 'function') return;
     onSend(text);
   }, [findPrecedingUserText, isLoading, onSend]);
+
+  // COD-70 B.13 — bascule du pouce (re-clic sur le meme pouce = retire).
+  const handleToggleFeedback = useCallback((index, kind) => {
+    setMessageFeedback((prev) => {
+      const next = { ...prev };
+      if (next[index] === kind) delete next[index];
+      else next[index] = kind;
+      return next;
+    });
+  }, []);
+
+  // COD-70 B.12 — "Modifier" un message user : edition inline non-destructive
+  // (le fil n'est pas tronque, cf. pipeline generateAIResponse). Valider
+  // remplace le message en memoire puis relance une reponse a partir de la
+  // version editees ; Echap annule.
+  const beginEditUserMessage = useCallback((index, text) => {
+    if (isLoading) return;
+    setEditingIndex(index);
+    setEditingText(String(text || ''));
+    requestAnimationFrame(() => {
+      const el = editTextareaRef.current;
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    });
+  }, [isLoading]);
+
+  const cancelEditUserMessage = useCallback(() => {
+    setEditingIndex(null);
+    setEditingText('');
+  }, []);
+
+  const commitEditUserMessage = useCallback((index) => {
+    const nextText = editingText.trim();
+    const original = conversationHistory[index];
+    setEditingIndex(null);
+    setEditingText('');
+    if (!nextText || !original || nextText === String(original.text || '')) return;
+    // Re-envoi non-destructif : le texte edite part comme nouveau tour.
+    if (typeof onSend === 'function' && !isLoading) onSend(nextText);
+  }, [editingText, conversationHistory, onSend, isLoading]);
+
 
   const canApplyPending = permissionMode !== 'read_only';
   const currentWorkflowAnimStep = WORKFLOW_STREAM_STEPS[workflowAnimStep] || WORKFLOW_STREAM_STEPS[0];
@@ -1853,7 +1901,30 @@ const AIChat = ({
                   <span className="ai-message-role">{meta.label}</span>
                 </div>
                 <div className="ai-message-body">
-                  {(() => {
+                  {isUser && editingIndex === index ? (
+                    <div className="ai-message-edit">
+                      <textarea
+                        ref={editTextareaRef}
+                        className="ai-message-edit-textarea"
+                        value={editingText}
+                        onChange={(e) => setEditingText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent && e.nativeEvent.isComposing)) {
+                            e.preventDefault();
+                            commitEditUserMessage(index);
+                          }
+                          if (e.key === 'Escape') { e.preventDefault(); cancelEditUserMessage(); }
+                        }}
+                        rows={Math.min(10, Math.max(2, editingText.split('\n').length))}
+                        aria-label="Modifier le message"
+                      />
+                      <div className="ai-message-edit-actions">
+                        <button type="button" className="ai-msg-action" onClick={cancelEditUserMessage}>Annuler</button>
+                        <button type="button" className="ai-msg-action is-primary" onClick={() => commitEditUserMessage(index)} disabled={!editingText.trim()}>Envoyer</button>
+                      </div>
+                    </div>
+                  ) : (
+                  (() => {
                     const segments = splitReasoningSegments(msg.text);
                     // Garde-fou : un provider peut renvoyer success avec un
                     // texte vide (cf. ollama.provider, 8 tours d'outils sans
@@ -1896,7 +1967,7 @@ const AIChat = ({
                         />
                       );
                     });
-                  })()}
+                  })())}
                 </div>
 
                 {!isUser && msg.role !== 'system' && (
@@ -1923,6 +1994,55 @@ const AIChat = ({
                       aria-label="Relancer cette requête"
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                    </button>
+                    <span className="ai-msg-action-sep" aria-hidden="true" />
+                    <button
+                      type="button"
+                      className={`ai-msg-action ai-msg-feedback${messageFeedback[index] === 'up' ? ' is-active is-up' : ''}`}
+                      onClick={() => handleToggleFeedback(index, 'up')}
+                      aria-pressed={messageFeedback[index] === 'up'}
+                      title="Réponse utile"
+                      aria-label="Réponse utile"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" /></svg>
+                    </button>
+                    <button
+                      type="button"
+                      className={`ai-msg-action ai-msg-feedback${messageFeedback[index] === 'down' ? ' is-active is-down' : ''}`}
+                      onClick={() => handleToggleFeedback(index, 'down')}
+                      aria-pressed={messageFeedback[index] === 'down'}
+                      title="Réponse peu utile"
+                      aria-label="Réponse peu utile"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zM17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" /></svg>
+                    </button>
+                  </div>
+                )}
+
+                {isUser && editingIndex !== index && (
+                  <div className="ai-message-actions">
+                    <button
+                      type="button"
+                      className="ai-msg-action"
+                      onClick={() => handleCopyMessage(index, msg.text)}
+                      title={copiedMessageIndex === index ? 'Copié' : 'Copier le message'}
+                      aria-label="Copier le message"
+                    >
+                      {copiedMessageIndex === index ? (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="ai-msg-action"
+                      onClick={() => beginEditUserMessage(index, msg.text)}
+                      disabled={isLoading}
+                      title="Modifier et renvoyer"
+                      aria-label="Modifier et renvoyer"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                     </button>
                   </div>
                 )}
