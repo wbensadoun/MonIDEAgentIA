@@ -31,7 +31,9 @@ const {
 const { listAgents, listSkills } = require('./electron/services/agent.service');
 const {
   ensureEditPermission,
+  ensureTerminalPermission,
   readSettingsSafe,
+  buildSafeSpawnRequest,
 } = require('./electron/services/settings.service');
 const { createProcessService } = require('./electron/services/process.service');
 const { runGit } = require('./electron/services/git.service');
@@ -60,6 +62,7 @@ const {
   isNevenManagedGatewayEnabled
 } = require('./electron/services/neven-managed-gateway.service');
 const { createNevenUsagePublisher } = require('./electron/services/neven-usage-publisher.service');
+const { createWorkflowEngine } = require('./electron/services/workflowEngine.service');
 const {
   NEVEN_INTERNAL_PROFILES,
   buildNevenCorePlan
@@ -154,6 +157,21 @@ const resolveManagedProviderCredential = async ({ origin, provider, workspaceId,
 configureAIService({ dialog, getMainWindow: () => mainWindow });
 const processService = createProcessService({ getMainWindow: () => mainWindow });
 const ptyService = createPtyService({ getMainWindow: () => mainWindow });
+const workflowEngine = createWorkflowEngine({
+  app,
+  fs,
+  path,
+  getMainWindow: () => mainWindow,
+  ensureEditPermission,
+  ensureTerminalPermission,
+  ensureTrustedProjectPath,
+  assertSafePath,
+  readSettingsSafe,
+  runCommandForTask: processService.runCommandForTask,
+  requestTerminalApproval: require('./electron/services/ai.service').requestTerminalApproval,
+  buildSafeSpawnRequest,
+  runSingleCompletionProvider
+});
 
 // Deuxieme passe de configuration : configureAIService fusionne ses deps, et
 // ptyService n'existe pas encore ligne 85. Donne a l'outil <read_terminal> des
@@ -244,6 +262,7 @@ registerWorkflowHandlers({
   ensureTrustedProjectPath,
   assertSafePath,
   toPositiveInt,
+  workflowEngine,
   getN8nCatalogEntries,
   fetchTrustedN8nWorkflow
 });

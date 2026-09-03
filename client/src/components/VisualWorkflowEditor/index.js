@@ -67,15 +67,15 @@ const NODE_CATALOG = [
     { category: 'Intelligence Artificielle', type: 'ai', label: 'Analyser Code', icon: 'search', desc: 'Analyse IA du code source' },
     { category: 'Intelligence Artificielle', type: 'ai', label: 'Générer Code', icon: 'sparkle', desc: 'Génération de code par IA' },
     // Actions
-    { category: 'Actions', type: 'action', label: 'Commande Terminal', icon: 'terminal', desc: 'Exécuter une commande shell' },
-    { category: 'Actions', type: 'action', label: 'Lire Fichier', icon: 'file', desc: 'Lire un fichier du projet' },
-    { category: 'Actions', type: 'action', label: 'Écrire Fichier', icon: 'edit', desc: 'Écrire dans un fichier' },
-    { category: 'Actions', type: 'action', label: 'Requête HTTP', icon: 'link', desc: 'Appel API externe' },
-    { category: 'Actions', type: 'action', label: 'Git Commit', icon: 'git', desc: 'Commit automatique' },
+    { category: 'Actions', type: 'action', actionType: 'shell', label: 'Commande Terminal', icon: 'terminal', desc: 'Exécuter une commande shell' },
+    { category: 'Actions', type: 'action', actionType: 'read_file', label: 'Lire Fichier', icon: 'file', desc: 'Lire un fichier du projet' },
+    { category: 'Actions', type: 'action', actionType: 'write_file', label: 'Écrire Fichier', icon: 'edit', desc: 'Écrire dans un fichier' },
+    { category: 'Actions', type: 'action', actionType: 'http', label: 'Requête HTTP', icon: 'link', desc: 'Appel API externe' },
+    { category: 'Actions', type: 'action', actionType: 'shell', label: 'Git Commit', icon: 'git', desc: 'Commit automatique' },
     // Logique
-    { category: 'Logique', type: 'logic', label: 'Condition Si/Sinon', icon: 'shuffle', desc: 'Branchement conditionnel' },
-    { category: 'Logique', type: 'logic', label: 'Boucle', icon: 'repeat', desc: 'Répéter N fois' },
-    { category: 'Logique', type: 'logic', label: 'Délai', icon: 'hourglass', desc: 'Attendre X secondes' },
+    { category: 'Logique', type: 'logic', actionType: 'condition', label: 'Condition Si/Sinon', icon: 'shuffle', desc: 'Branchement conditionnel' },
+    { category: 'Logique', type: 'logic', actionType: 'loop', label: 'Boucle', icon: 'repeat', desc: 'Répéter N fois' },
+    { category: 'Logique', type: 'logic', actionType: 'delay', label: 'Délai', icon: 'hourglass', desc: 'Attendre X secondes' },
     // Sorties
     { category: 'Sorties', type: 'output', label: 'Notification', icon: 'bell', desc: 'Afficher un message' },
     { category: 'Sorties', type: 'output', label: 'Enregistrer Résultat', icon: 'save', desc: 'Sauvegarder les données' },
@@ -162,27 +162,57 @@ const CustomNode = ({ id, data, selected }) => {
                 )}
 
                 {nodeType === 'action' && (
-                    <div className="vw-node-field">
-                        <span className="vw-node-label">Commande / Chemin</span>
-                        <input
-                            className="vw-node-input"
-                            placeholder="ex: npm test"
-                            value={data.command || ''}
-                            onChange={e => data.onChange?.(id, 'command', e.target.value)}
-                        />
-                    </div>
+                    <>
+                        <div className="vw-node-field">
+                            <span className="vw-node-label">Action backend</span>
+                            <select className="vw-node-select" value={data.actionType || 'shell'} onChange={e => data.onChange?.(id, 'actionType', e.target.value)}>
+                                <option value="shell">Terminal</option>
+                                <option value="read_file">Lire fichier</option>
+                                <option value="write_file">Écrire fichier</option>
+                                <option value="http">HTTP / webhook</option>
+                            </select>
+                        </div>
+                        <div className="vw-node-field">
+                            <span className="vw-node-label">{data.actionType === 'http' ? 'URL' : data.actionType === 'write_file' ? 'Chemin' : 'Commande / Chemin'}</span>
+                            <input
+                                className="vw-node-input"
+                                placeholder={data.actionType === 'http' ? 'https://api.exemple.test/health' : data.actionType === 'write_file' ? 'reports/workflow.txt' : 'ex: npm test'}
+                                value={data.actionType === 'http' ? (data.url || '') : (data.filename || data.command || '')}
+                                onChange={e => data.onChange?.(id, data.actionType === 'http' ? 'url' : data.actionType === 'write_file' ? 'filename' : 'command', e.target.value)}
+                            />
+                        </div>
+                        {data.actionType === 'write_file' && (
+                            <div className="vw-node-field">
+                                <span className="vw-node-label">Contenu</span>
+                                <textarea className="vw-node-input" rows={2} value={data.content || ''} onChange={e => data.onChange?.(id, 'content', e.target.value)} />
+                            </div>
+                        )}
+                    </>
                 )}
 
                 {nodeType === 'logic' && (
-                    <div className="vw-node-field">
-                        <span className="vw-node-label">Condition / Valeur</span>
-                        <input
-                            className="vw-node-input"
-                            placeholder="ex: result.success === true"
-                            value={data.condition || ''}
-                            onChange={e => data.onChange?.(id, 'condition', e.target.value)}
-                        />
-                    </div>
+                    <>
+                        <div className="vw-node-field">
+                            <span className="vw-node-label">Étape backend</span>
+                            <select className="vw-node-select" value={data.actionType || 'condition'} onChange={e => data.onChange?.(id, 'actionType', e.target.value)}>
+                                <option value="condition">Condition</option>
+                                <option value="delay">Délai</option>
+                                <option value="loop">Boucle limitée</option>
+                            </select>
+                        </div>
+                        <div className="vw-node-field">
+                            <span className="vw-node-label">{data.actionType === 'delay' ? 'Secondes' : data.actionType === 'loop' ? 'Itérations' : 'Condition / Valeur'}</span>
+                            <input
+                                className="vw-node-input"
+                                type={data.actionType === 'delay' || data.actionType === 'loop' ? 'number' : 'text'}
+                                min="0"
+                                max={data.actionType === 'delay' ? '300' : '10'}
+                                placeholder={data.actionType === 'delay' ? '5' : data.actionType === 'loop' ? '3' : 'ex: prev === true'}
+                                value={data.actionType === 'delay' ? (data.seconds ?? '') : data.actionType === 'loop' ? (data.count ?? '') : (data.condition || '')}
+                                onChange={e => data.onChange?.(id, data.actionType === 'delay' ? 'seconds' : data.actionType === 'loop' ? 'count' : 'condition', e.target.value)}
+                            />
+                        </div>
+                    </>
                 )}
 
                 {nodeType === 'output' && (
@@ -270,13 +300,14 @@ const VisualWorkflowEditor = ({
         activeNodeId,
         executionLog,
         nodeResults,
-        runWorkflow,
+        startWorkflowRun,
         stopWorkflow,
         clearLog,
     } = useWorkflowRunner({
         isElectronApiAvailable,
         currentProjectPath,
         showMessage,
+        workflowName,
         aiProvider,
         aiModels
     });
@@ -385,6 +416,7 @@ const VisualWorkflowEditor = ({
                 label: catalogItem.label,
                 icon: catalogItem.icon,
                 nodeType: catalogItem.type,
+                actionType: catalogItem.actionType,
                 model: catalogItem.type === 'ai' ? '' : undefined,
                 onChange: handleNodeDataChange,
             },
@@ -1147,7 +1179,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                     {!isRunning ? (
                         <button
                             className="vw-btn vw-btn-run"
-                            onClick={() => { setShowLog(true); runWorkflow(nodes, edges); }}
+                            onClick={() => { setShowLog(true); startWorkflowRun(nodes, edges); }}
                             disabled={nodes.length === 0}
                             title="Exécuter le workflow"
                         >
