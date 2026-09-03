@@ -368,8 +368,14 @@ test('chat, inline and ghost publish bounded usage without delaying their result
 
   assert.equal(events.length, 3);
   for (const event of events) {
-    assert.deepEqual(Object.keys(event).sort(), ['durationMs', 'inputTokens', 'outputTokens', 'providerId', 'success']);
+    assert.deepEqual(Object.keys(event).sort(), ['costEur', 'inputTokens', 'latencyMs', 'origin', 'outputTokens', 'success']);
     assert.equal(event.success, true);
-    assert.equal(event.providerId, 'gemini');
+    assert.equal(Number.isInteger(event.inputTokens), true);
+    assert.equal(Number.isInteger(event.outputTokens), true);
+    assert.equal(event.inputTokens >= 0, true);
+    assert.equal(event.outputTokens >= 0, true);
+    assert.equal(event.providerId, undefined);
+    assert.equal(Number.isFinite(event.costEur), true);
+    assert.equal(event.costEur >= 0, true);
   }
 });

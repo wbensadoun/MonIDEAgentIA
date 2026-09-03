@@ -64,19 +64,52 @@ const releaseRun = (runId, controller) => {
   if (activeRuns.get(runId) === controller) activeRuns.delete(runId);
 };
 
+const PROVIDER_COSTS_EUR_PER_MILLION_TOKENS = Object.freeze({
+  gemini: { input: 1.25, output: 5 },
+  claude: { input: 3, output: 15 },
+  kimi: { input: 0.6, output: 2.5 },
+  ollama: { input: 0, output: 0 }
+});
+
+const estimateCompletionCost = ({ provider, inputTokens, outputTokens, providedCost }) => {
+  const explicitCost = Number(providedCost);
+  if (Number.isFinite(explicitCost) && explicitCost >= 0) return explicitCost;
+  const rates = PROVIDER_COSTS_EUR_PER_MILLION_TOKENS[String(provider || '').toLowerCase()];
+  if (!rates) return 0;
+  return Number(((inputTokens / 1000000) * rates.input + (outputTokens / 1000000) * rates.output).toFixed(6));
+};
+
 // La télémétrie est strictement secondaire : ni le réseau ni une erreur de
 // publication ne doivent retarder ou modifier la réponse IPC.
 const publishCompletionUsage = ({ publishUsageEvent, provider, startedAt, result }) => {
   if (typeof publishUsageEvent !== 'function') return;
   const usage = result?.usage || {};
+  const inputTokens = usage.inputTokens ?? usage.promptTokens ?? 0;
+  const outputTokens = usage.outputTokens ?? usage.completionTokens ?? 0;
   try {
-    Promise.resolve(publishUsageEvent({
-      providerId: provider,
-      inputTokens: usage.inputTokens ?? usage.promptTokens,
-      outputTokens: usage.outputTokens ?? usage.completionTokens,
-      durationMs: Math.max(0, Date.now() - startedAt),
+    const event = {
+      inputTokens,
+      outputTokens,
+      latencyMs: result?.durationMs ?? Math.max(0, Date.now() - startedAt),
+      costEur: estimateCompletionCost({
+        provider,
+        inputTokens: Number(inputTokens) || 0,
+        outputTokens: Number(outputTokens) || 0,
+        providedCost: usage.costEur ?? usage.cost ?? result?.costEur
+      }),
       success: result?.success === true
-    })).catch(() => {});
+    };
+    if (result?.providerId) event.providerId = result.providerId;
+    if (result?.profileId) event.profileId = result.profileId;
+    if (result?.origin) event.origin = result.origin;
+    if (result?.fallbackUsed === true) event.fallbackUsed = true;
+    if (result?.success !== true && result?.error?.code) event.errorCode = result.error.code;
+    if (result?.routingReason) event.routingReason = result.routingReason;
+    Promise.resolve(publishUsageEvent(event)).then((published) => {
+      if (published?.success !== true) console.warn('[AIHandlers] Événement d’usage Neven non transmis.');
+    }).catch(() => {
+      console.warn('[AIHandlers] Événement d’usage Neven non transmis.');
+    });
   } catch {
     // Publication best-effort uniquement.
   }

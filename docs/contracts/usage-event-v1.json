@@ -1,0 +1,16 @@
+{
+  "eventId": "usage-contract-fixture-001",
+  "type": "ai.request.completed",
+  "occurredAt": "2026-09-03T12:00:00.000Z",
+  "workspaceId": "123e4567-e89b-42d3-a456-426614174000",
+  "profileId": null,
+  "providerId": null,
+  "inputTokens": 12,
+  "outputTokens": 4,
+  "costEur": 0.001,
+  "latencyMs": 180,
+  "success": true,
+  "fallbackUsed": false,
+  "errorCode": null,
+  "routingReason": null
+}
