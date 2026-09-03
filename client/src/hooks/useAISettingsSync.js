@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react';
 import { normalizeMultiAgentRoles } from '../utils/multiAgentConfig';
 
-const buildApiKeysFromSettings = (settings = {}) => ({
-  gemini: settings.geminiApiKey || '',
-  kimi: settings.kimiApiKey || '',
-  claude: settings.claudeApiKey || '',
+const buildAISettingsFromSettings = (settings = {}) => ({
   geminiModel: settings.geminiModel || '',
   claudeModel: settings.claudeModel || '',
   kimiModel: settings.kimiModel || '',
@@ -21,10 +18,7 @@ const buildApiKeysFromSettings = (settings = {}) => ({
 });
 
 export const useAISettingsSync = (isElectronApiAvailable) => {
-  const [apiKeys, setApiKeys] = useState({
-    gemini: '',
-    kimi: '',
-    claude: '',
+  const [aiSettings, setAISettings] = useState({
     geminiModel: '',
     claudeModel: '',
     kimiModel: '',
@@ -50,7 +44,7 @@ export const useAISettingsSync = (isElectronApiAvailable) => {
         const response = await window.electronAPI.loadSettings();
         if (response?.success && response.settings) {
           const settings = response.settings;
-          setApiKeys(buildApiKeysFromSettings(settings));
+          setAISettings(buildAISettingsFromSettings(settings));
 
           if (settings.aiContextPreset === 'safe' || settings.aiContextPreset === 'full' || settings.aiContextPreset === 'god') {
             setProjectScanPreset(settings.aiContextPreset);
@@ -72,7 +66,7 @@ export const useAISettingsSync = (isElectronApiAvailable) => {
       const next = event?.detail;
       if (!next || typeof next !== 'object') return;
 
-      setApiKeys(buildApiKeysFromSettings(next));
+      setAISettings(buildAISettingsFromSettings(next));
 
       if (next.aiContextPreset === 'safe' || next.aiContextPreset === 'full' || next.aiContextPreset === 'god') {
         setProjectScanPreset(next.aiContextPreset);
@@ -87,7 +81,7 @@ export const useAISettingsSync = (isElectronApiAvailable) => {
   }, []);
 
   return {
-    apiKeys,
+    aiSettings,
     projectScanPreset,
     projectScanIncludeSecrets,
     projectScanLargeFileStrategy

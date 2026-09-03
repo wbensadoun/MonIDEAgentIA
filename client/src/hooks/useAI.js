@@ -27,7 +27,6 @@ import {
 } from '../utils/agentModes';
 import {
   buildSharedAgentContextOptions,
-  createProviderApiKeyResolver,
   runMultiAgentRole as callMultiAgentRole
 } from '../utils/aiAgentRuntime';
 import { runDynamicMultiAgentFlow } from '../utils/dynamicTeamExecution';
@@ -71,22 +70,19 @@ export const useAI = (
 ) => {
   const [isLoading, setIsLoading] = useState(false);
   const {
-    apiKeys,
+    aiSettings,
     projectScanPreset,
     projectScanIncludeSecrets,
     projectScanLargeFileStrategy
   } = useAISettingsSync(isElectronApiAvailable);
   const {
-    gemini: geminiApiKey,
-    kimi: kimiApiKey,
-    claude: claudeApiKey,
     geminiModel,
     claudeModel,
     kimiModel,
     ollamaModel,
     multiAgentRoles,
     localAI: localAISettings
-  } = apiKeys;
+  } = aiSettings;
   const [multiAIState, setMultiAIState] = useState(createEmptyMultiAIState);
   const [abortController, setAbortController] = useState(null);
   // Run courant. Sert de jeton de validité : quand la réponse revient, si le ref
@@ -260,24 +256,14 @@ export const useAI = (
 
     if (autoRoute) {
       try {
-          const getRouterApiKey = createProviderApiKeyResolver({
-            claudeApiKey,
-            kimiApiKey,
-            geminiApiKey
-          });
           const routed = await window.electronAPI.routeRequest(
             effectiveProjectPath,
             effectivePrompt,
             {
-              provider: aiProvider,
-              apiKey: getRouterApiKey(aiProvider),
               settings: {
                 routerClassifierProvider,
                 routerClassifierModel,
-                routerComplexityThreshold,
-                geminiApiKey,
-                claudeApiKey,
-                kimiApiKey
+                routerComplexityThreshold
               }
             }
           );
@@ -375,16 +361,10 @@ export const useAI = (
           { ...role, provider: effectiveAIProvider, model: effectiveAIProvider === 'neven' ? 'managed' : role.model }
         ]))
         : normalizedMultiAgentRoles;
-      const getProviderApiKey = createProviderApiKeyResolver({
-        claudeApiKey,
-        kimiApiKey,
-        geminiApiKey
-      });
       const runMultiAgentRole = (options = {}) => callMultiAgentRole({
         codeContext: code,
         projectFiles: allProjectFiles,
         normalizedMultiAgentRoles: rolesForRun,
-        getProviderApiKey,
         currentProjectPath: effectiveProjectPath,
         activeAgent: effAgent,
         activeSkill: effSkill,
@@ -447,11 +427,6 @@ export const useAI = (
           activeSkill: effSkill,
           sharedAgentContextOptions,
           models: modelsForRun,
-          apiKeys: {
-            geminiApiKey,
-            claudeApiKey,
-            kimiApiKey
-          }
         });
 
         // Run invalidé entre-temps (Arrêter, ou relance) : on sort AVANT tout
@@ -550,9 +525,6 @@ export const useAI = (
     projectScanPreset,
     projectScanIncludeSecrets,
     projectScanLargeFileStrategy,
-    geminiApiKey,
-    kimiApiKey,
-    claudeApiKey,
     geminiModel,
     claudeModel,
     kimiModel,

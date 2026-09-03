@@ -8,7 +8,8 @@ const { ProviderCredentialAuditLedger } = require('./provider-credential-audit.s
 const CONNECTIVITY_TARGETS = Object.freeze({
   anthropic: { hostname: 'api.anthropic.com', path: '/v1/models', headers: (secretValue) => ({ 'x-api-key': secretValue, 'anthropic-version': '2023-06-01' }) },
   openai: { hostname: 'api.openai.com', path: '/v1/models', headers: (secretValue) => ({ authorization: `Bearer ${secretValue}` }) },
-  google: { hostname: 'generativelanguage.googleapis.com', path: '/v1beta/models', headers: (secretValue) => ({ 'x-goog-api-key': secretValue }) }
+  google: { hostname: 'generativelanguage.googleapis.com', path: '/v1beta/models', headers: (secretValue) => ({ 'x-goog-api-key': secretValue }) },
+  kimi: { hostname: 'api.together.xyz', path: '/v1/models', headers: (secretValue) => ({ authorization: `Bearer ${secretValue}` }) }
 });
 
 const createBoundedConnectivityTester = ({ request = https.request, timeoutMs = 5000 } = {}) => async ({ provider, secretValue, signal }) => {

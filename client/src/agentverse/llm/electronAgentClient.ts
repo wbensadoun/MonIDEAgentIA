@@ -148,14 +148,14 @@ function optionsFor(id: ProviderId, s: Record<string, unknown>): Record<string, 
   const base = { thinkingMode: s.thinkingMode === true };
   switch (id) {
     case 'claude':
-      return { ...base, model: str(s.claudeModel), apiKey: str(s.claudeApiKey) };
+      return { ...base, model: str(s.claudeModel) };
     case 'kimi':
-      return { ...base, model: str(s.kimiModel), apiKey: str(s.kimiApiKey) };
+      return { ...base, model: str(s.kimiModel) };
     case 'ollama':
       return { model: str(s.ollamaModel), lightweightChat: true };
     case 'gemini':
     default:
-      return { ...base, model: str(s.geminiModel), apiKey: str(s.geminiApiKey) };
+      return { ...base, model: str(s.geminiModel) };
   }
 }
 

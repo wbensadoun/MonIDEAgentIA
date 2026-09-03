@@ -20,11 +20,6 @@ const buildBaseArgs = (overrides = {}) => ({
     kimiModel: 'kimi-test',
     ollamaModel: 'ollama-test'
   },
-  apiKeys: {
-    geminiApiKey: 'gemini-key',
-    claudeApiKey: 'claude-key',
-    kimiApiKey: 'kimi-key'
-  },
   electronAPI: {
     getGeminiCompletion: jest.fn().mockResolvedValue({ success: true, text: 'gemini' }),
     getClaudeCompletion: jest.fn().mockResolvedValue({ success: true, text: 'claude' }),
@@ -50,7 +45,6 @@ describe('callSingleAIProvider', () => {
       expect.objectContaining({
         model: 'gemini-test',
         thinkingMode: true,
-        apiKey: 'gemini-key',
         projectPath: 'C:/demo',
         localOnly: false
       })
@@ -81,7 +75,6 @@ describe('callSingleAIProvider', () => {
     expect(history[history.length - 1]).toEqual({ role: 'user', text: 'Prompt enrichi' });
     expect(options).toMatchObject({
       model: 'kimi-test',
-      apiKey: 'kimi-key',
       fastMode: true,
       streamResponse: true,
       contextFilesLimit: 16,
@@ -102,7 +95,6 @@ describe('callSingleAIProvider', () => {
       { files: {} },
       expect.objectContaining({
         model: 'claude-test',
-        apiKey: 'claude-key'
       })
     );
     expect(ollamaArgs.electronAPI.getOllamaCompletion).toHaveBeenCalledWith(

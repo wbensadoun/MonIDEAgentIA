@@ -35,7 +35,7 @@ describe('aiProviderRouting', () => {
     expect(request.provider).toBe('');
   });
 
-  test('passes the selected cloud provider API key when available', () => {
+  test('does not put cloud provider credentials in the renderer invocation', () => {
     const request = buildSingleAIInvocation({
       aiProvider: 'claude',
       models: {
@@ -46,6 +46,6 @@ describe('aiProviderRouting', () => {
 
     expect(request.methodName).toBe('getClaudeCompletion');
     expect(request.options.model).toBe('claude-test');
-    expect(request.options.apiKey).toBe('sk-ant-test');
+    expect(request.options.apiKey).toBeUndefined();
   });
 });

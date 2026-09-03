@@ -15,7 +15,7 @@ const baseSettings = {
   claudeModel: 'claude-sonnet-4-6',
   kimiModel: 'moonshotai/Kimi-K2.7',
   qwenModel: 'qwen-coder-plus',
-  kimiApiKey: 'tgp_v1_test',
+  providerKeyStatus: { kimi: true },
   permissionMode: 'edit_terminal',
   multiAgentRoles: {
     selector: { provider: 'gemini', model: 'gemini-3.1-pro-preview' },
@@ -29,6 +29,7 @@ const renderSettings = ({ listProviderModels } = {}) => {
   window.electronAPI = {
     loadSettings: jest.fn().mockResolvedValue({ success: true, settings: baseSettings }),
     saveSettings: jest.fn().mockResolvedValue({ success: true }),
+    saveProviderKey: jest.fn().mockResolvedValue({ success: true, hasKey: true }),
     listProviderModels: listProviderModels
       || jest.fn().mockResolvedValue({ success: true, valid: false, models: [], error: 'offline' }),
     validateApiKey: jest.fn().mockResolvedValue({ valid: true })
@@ -100,6 +101,24 @@ test('saves read-only permission mode from settings', async () => {
   expect(window.electronAPI.saveSettings.mock.calls[0][0].permissionMode).toBe('read_only');
 });
 
+test('sends a newly entered provider key only through the dedicated secure IPC', async () => {
+  renderSettings();
+
+  fireEvent.click(screen.getByText('Fournisseurs'));
+  const keyInput = await screen.findByLabelText('Clé API Moonshot Kimi');
+  fireEvent.change(keyInput, { target: { value: 'replacement-key' } });
+
+  await act(async () => {
+    fireEvent.click(screen.getByText('Sauvegarder'));
+  });
+
+  await waitFor(() => {
+    expect(window.electronAPI.saveProviderKey).toHaveBeenCalledWith('kimi', 'replacement-key');
+  });
+  const savedSettings = window.electronAPI.saveSettings.mock.calls[0][0];
+  expect(savedSettings.kimiApiKey).toBeUndefined();
+});
+
 test('exposes Neven IA without rendering a direct provider secret or model field', async () => {
   renderSettings();
 
@@ -142,7 +161,7 @@ test('lists models detected from the provider instead of the hardcoded fallback'
 
   // La detection est debouncee : on attend qu'elle ait ete declenchee par fournisseur.
   await waitFor(() => {
-    expect(listProviderModels).toHaveBeenCalledWith('kimi', 'tgp_v1_test');
+    expect(listProviderModels).toHaveBeenCalledWith('kimi');
   }, { timeout: 3000 });
 
   // Un modele inconnu du catalogue code en dur doit apparaitre dans les options.

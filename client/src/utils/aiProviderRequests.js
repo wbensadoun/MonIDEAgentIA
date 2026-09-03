@@ -40,7 +40,6 @@ export const callSingleAIProvider = async ({
   activeSkill,
   sharedAgentContextOptions,
   models,
-  apiKeys,
   electronAPI = window.electronAPI
 }) => {
   if (effectiveAIProvider === 'kimi') {
@@ -51,7 +50,6 @@ export const callSingleAIProvider = async ({
       runId,
       executionMode,
       images,
-      apiKey: apiKeys.kimiApiKey,
       projectPath: currentProjectPath,
       agent: activeAgent,
       skill: activeSkill,
@@ -83,7 +81,6 @@ export const callSingleAIProvider = async ({
       runId,
       executionMode,
       images,
-      apiKey: apiKeys.claudeApiKey,
       projectPath: currentProjectPath,
       agent: activeAgent,
       skill: activeSkill,
@@ -146,7 +143,6 @@ export const callSingleAIProvider = async ({
     thinkingMode,
     runId,
     executionMode,
-    apiKey: apiKeys.geminiApiKey,
     projectPath: currentProjectPath,
     agent: activeAgent,
     skill: activeSkill,

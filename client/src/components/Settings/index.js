@@ -87,9 +87,6 @@ const Settings = ({
   onRouterComplexityThresholdChange
 }) => {
   const [settings, setSettings] = useState({
-    geminiApiKey: '',
-    kimiApiKey: '',
-    claudeApiKey: '',
     defaultProvider: 'gemini',
     thinkingMode: false,
     geminiModel: DEFAULT_GEMINI_MODEL,
@@ -123,6 +120,7 @@ const Settings = ({
 
   const [loading, setLoading] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
+  const [providerKeyStatus, setProviderKeyStatus] = useState({});
   // Le catalogue detecte vit dans un store partage (rafraichi silencieusement
   // au demarrage de l'app) : ce compteur force un re-render ET entre dans les
   // deps des valeurs memoizees ci-dessous, pour qu'elles se recalculent quand
@@ -132,23 +130,27 @@ const Settings = ({
   const [isSystemProfileLoading, setIsSystemProfileLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
 
-  // Les cles sont lues au moment du declenchement, pas capturees dans les deps :
-  // sinon chaque frappe dans un champ sans rapport relancerait la detection.
-  const settingsRef = useRef(settings);
-  settingsRef.current = settings;
+  // Les secrets restent dans les champs non controles jusqu'au clic Sauvegarder.
+  // Ils ne rentrent jamais dans l'etat React ni dans l'evenement settings-updated.
+  const providerSecretRefs = useRef({});
 
   const loadSettings = useCallback(async () => {
     if (!isElectronApiAvailable || !window.electronAPI?.loadSettings) return;
     try {
       const response = await window.electronAPI.loadSettings();
       if (response.success && response.settings) {
+        const safeSettings = { ...response.settings };
+        PROVIDER_CATALOG.forEach((provider) => {
+          if (provider.keyField) delete safeSettings[provider.keyField];
+        });
+        setProviderKeyStatus(safeSettings.providerKeyStatus || {});
         setSettings(prev => ({
           ...prev,
-          ...response.settings,
-          defaultProvider: response.settings.defaultProvider === 'dashscope'
+          ...safeSettings,
+          defaultProvider: safeSettings.defaultProvider === 'dashscope'
             ? 'neven'
-            : (response.settings.defaultProvider || prev.defaultProvider),
-          multiAgentRoles: normalizeMultiAgentRoles(response.settings.multiAgentRoles)
+            : (safeSettings.defaultProvider || prev.defaultProvider),
+          multiAgentRoles: normalizeMultiAgentRoles(safeSettings.multiAgentRoles)
         }));
       }
     } catch (error) {
@@ -170,19 +172,20 @@ const Settings = ({
     return () => window.removeEventListener(PROVIDER_MODELS_UPDATED_EVENT, onUpdate);
   }, []);
 
-  // Signature stable des cles : ne change que si une cle change reellement.
+  // Signature stable des disponibilites : les valeurs de clés ne sont jamais
+  // conservées dans le renderer.
   const providerKeysSignature = PROVIDER_CATALOG
-    .map((provider) => (provider.keyField ? settings[provider.keyField] || '' : ''))
+    .map((provider) => (provider.keyField ? (providerKeyStatus[provider.id] ? '1' : '0') : 'local'))
     .join('|');
 
   useEffect(() => {
     if (!isOpen) return undefined;
     const timers = PROVIDER_CATALOG.map((provider) => setTimeout(() => {
-      const apiKey = provider.keyField ? settingsRef.current[provider.keyField] : null;
-      refreshProviderModel(provider, apiKey);
+      if (provider.keyField && providerKeyStatus[provider.id] !== true) return;
+      refreshProviderModel(provider);
     }, 600));
     return () => timers.forEach(clearTimeout);
-  }, [isOpen, providerKeysSignature]);
+  }, [isOpen, providerKeysSignature, providerKeyStatus]);
 
   const getDetection = (providerId) => getProviderModelsState(providerId);
 
@@ -225,10 +228,31 @@ const Settings = ({
         localAIMaxConcurrentCloud: Math.max(1, Math.min(6, Number(settings.localAIMaxConcurrentCloud || 3))),
         localAIMaxTokens: Math.max(512, Math.min(8192, Number(settings.localAIMaxTokens || 4096)))
       };
+      PROVIDER_CATALOG.forEach((provider) => {
+        if (provider.keyField) delete normalizedSettings[provider.keyField];
+      });
+
       const response = await window.electronAPI.saveSettings(normalizedSettings);
       if (response.success) {
+        const nextProviderKeyStatus = { ...providerKeyStatus };
+        for (const provider of PROVIDER_CATALOG) {
+          if (!provider.keyField) continue;
+          const secret = String(providerSecretRefs.current[provider.id]?.value || '').trim();
+          if (!secret) continue;
+          if (typeof window.electronAPI.saveProviderKey !== 'function') {
+            throw new Error('Enregistrement sécurisé des clés indisponible');
+          }
+          const keyResponse = await window.electronAPI.saveProviderKey(provider.id, secret);
+          if (!keyResponse?.success) {
+            throw new Error(keyResponse?.error || `Clé ${provider.label} non enregistrée`);
+          }
+          nextProviderKeyStatus[provider.id] = true;
+          providerSecretRefs.current[provider.id].value = '';
+        }
+        const safeSettings = { ...normalizedSettings, providerKeyStatus: nextProviderKeyStatus };
+        setProviderKeyStatus(nextProviderKeyStatus);
         showMessage('Parametres sauvegardes', 3000);
-        window.dispatchEvent(new CustomEvent('settings-updated', { detail: normalizedSettings }));
+        window.dispatchEvent(new CustomEvent('settings-updated', { detail: safeSettings }));
         onClose();
       } else {
         showMessage(`Erreur: ${response.error}`, 4000);
@@ -369,12 +393,15 @@ const Settings = ({
             <label className="settings-key-label">Clé API</label>
             <input
               type={showApiKeys ? 'text' : 'password'}
-              value={settings[provider.keyField] || ''}
-              onChange={(e) => handleChange(provider.keyField, e.target.value)}
-              placeholder={provider.keyPlaceholder}
+              ref={(element) => {
+                if (element) providerSecretRefs.current[provider.id] = element;
+              }}
+              defaultValue=""
+              placeholder={providerKeyStatus[provider.id] ? 'Clé enregistrée — saisir pour remplacer' : provider.keyPlaceholder}
               className={`settings-input ${detection.status === 'error' ? 'is-invalid' : ''}`}
               aria-label={`Clé API ${provider.label}`}
             />
+            <div className="settings-hint">Clé conservée dans le coffre local chiffré. Laisser vide pour conserver la clé actuelle.</div>
           </div>
         )}
 

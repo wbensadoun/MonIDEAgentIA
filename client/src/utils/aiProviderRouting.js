@@ -39,13 +39,6 @@ export const getModelForProvider = (provider, models = {}, _sourceProvider = pro
   return normalizeRemoteModelName(models.geminiModel, DEFAULT_GEMINI_MODEL);
 };
 
-export const getApiKeyForProvider = (provider, models = {}) => {
-  if (provider === 'claude') return String(models.claudeApiKey || '').trim();
-  if (provider === 'kimi') return String(models.kimiApiKey || '').trim();
-  if (provider === 'gemini') return String(models.geminiApiKey || '').trim();
-  return '';
-};
-
 export const buildSingleAIInvocation = ({
   aiProvider,
   models = {},
@@ -84,7 +77,6 @@ export const buildSingleAIInvocation = ({
       reason: policy.reason
     };
   }
-  const apiKey = getApiKeyForProvider(provider, models);
   const options = {
     provider,
     sourceProvider,
@@ -100,10 +92,6 @@ export const buildSingleAIInvocation = ({
 
   if (Number.isFinite(Number(temperature))) {
     options.temperature = Number(temperature);
-  }
-
-  if (apiKey) {
-    options.apiKey = apiKey;
   }
 
   if (provider === 'kimi') {

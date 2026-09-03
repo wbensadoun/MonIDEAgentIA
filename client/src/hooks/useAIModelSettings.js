@@ -38,11 +38,6 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
   const [geminiModel, setGeminiModel] = useState(DEFAULT_GEMINI_MODEL);
   const [claudeModel, setClaudeModel] = useState(DEFAULT_CLAUDE_MODEL);
   const [kimiModel, setKimiModel] = useState(DEFAULT_KIMI_MODEL);
-  const [providerApiKeys, setProviderApiKeys] = useState({
-    geminiApiKey: '',
-    claudeApiKey: '',
-    kimiApiKey: ''
-  });
   const [ollamaModel, setOllamaModel] = useState(DEFAULT_OLLAMA_MODEL);
   const [ollamaModels, setOllamaModels] = useState([]);
   const [ollamaFamily, setOllamaFamily] = useState('');
@@ -68,11 +63,6 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     setGeminiModel(normalizeRemoteModelName(settings.geminiModel, DEFAULT_GEMINI_MODEL));
     setClaudeModel(normalizeRemoteModelName(settings.claudeModel, DEFAULT_CLAUDE_MODEL));
     setKimiModel(normalizeRemoteModelName(settings.kimiModel, DEFAULT_KIMI_MODEL));
-    setProviderApiKeys({
-      geminiApiKey: String(settings.geminiApiKey || '').trim(),
-      claudeApiKey: String(settings.claudeApiKey || '').trim(),
-      kimiApiKey: String(settings.kimiApiKey || '').trim()
-    });
     setOllamaModel(normalizeOllamaModelLabel(settings.ollamaModel));
 
     if (typeof settings.thinkingMode === 'boolean') {
@@ -361,13 +351,11 @@ const useAIModelSettings = ({ isElectronApiAvailable, showMessage }) => {
     claudeModel,
     kimiModel,
     ollamaModel: resolvedOllamaModel,
-    resolvedOllamaModel,
-    ...providerApiKeys
+    resolvedOllamaModel
   }), [
     claudeModel,
     geminiModel,
     kimiModel,
-    providerApiKeys,
     resolvedOllamaModel
   ]);
 
