@@ -5,18 +5,28 @@ import {
   getNavigatorDirName,
   isNavigatorDescendant,
   isSameNavigatorPath,
-  joinNavigatorPath
+  joinNavigatorPath,
 } from '../../utils/navigatorPaths';
 
 const FileIcon = () => (
   <svg className="file-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+    />
   </svg>
 );
 
 const FolderIcon = () => (
   <svg className="folder-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+    />
   </svg>
 );
 
@@ -65,7 +75,7 @@ const createContextAction = (id, label, onClick, danger = false) => ({
   id,
   label,
   onClick,
-  danger
+  danger,
 });
 
 const FileItem = ({
@@ -86,13 +96,16 @@ const FileItem = ({
   onCreateInside,
   onDragStart,
   onDragEnterDirectory,
-  onDropIntoDirectory
+  onDropIntoDirectory,
 }) => {
   const itemPath = item.path || item.name;
   const isExpanded = expandedFolders.has(item.path);
   const isActive = activeFile === itemPath;
   const isRenaming = renameState.path && isSameNavigatorPath(renameState.path, itemPath);
-  const isDirectoryDropTarget = item.type === 'directory' && dragState.overPath && isSameNavigatorPath(dragState.overPath, itemPath);
+  const isDirectoryDropTarget =
+    item.type === 'directory' &&
+    dragState.overPath &&
+    isSameNavigatorPath(dragState.overPath, itemPath);
   const paddingLeft = depth * 18;
 
   return (
@@ -135,6 +148,7 @@ const FileItem = ({
           )}
 
           <button
+            type="button"
             onClick={() => {
               if (isRenaming) return;
               if (item.type === 'file') {
@@ -174,6 +188,7 @@ const FileItem = ({
           {item.type === 'directory' && !isReadOnly && (
             <>
               <button
+                type="button"
                 onClick={(event) => {
                   event.stopPropagation();
                   onCreateInside('file', item);
@@ -184,6 +199,7 @@ const FileItem = ({
                 +F
               </button>
               <button
+                type="button"
                 onClick={(event) => {
                   event.stopPropagation();
                   onCreateInside('directory', item);
@@ -196,13 +212,19 @@ const FileItem = ({
             </>
           )}
           <button
+            type="button"
             onClick={() => onDelete(itemPath, item.type)}
             className="file-item-delete"
             disabled={isReadOnly}
             title={isReadOnly ? 'Mode lecture seule' : 'Supprimer'}
           >
             <svg className="file-delete-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
             </svg>
           </button>
         </div>
@@ -255,12 +277,17 @@ const FileExplorer = ({
   onToggleFolder,
   onFileClick,
   onNewItemNameChange,
-  isReadOnly = false
+  isReadOnly = false,
 }) => {
   const [filterQuery, setFilterQuery] = useState('');
   const [renameState, setRenameState] = useState({ path: '', value: '', type: '' });
   const [contextMenu, setContextMenu] = useState(null);
-  const [dragState, setDragState] = useState({ draggedPath: '', draggedType: '', overPath: '', overRoot: false });
+  const [dragState, setDragState] = useState({
+    draggedPath: '',
+    draggedType: '',
+    overPath: '',
+    overRoot: false,
+  });
 
   const flatFiles = useMemo(() => flattenFiles(projectItems, []), [projectItems]);
   const treeStats = useMemo(() => countTree(projectItems), [projectItems]);
@@ -294,26 +321,29 @@ const FileExplorer = ({
     };
   }, []);
 
-  const handleCreate = useCallback(async (type, parentPath = '') => {
-    if (!onCreateItem) return;
-    const itemLabel = type === 'file' ? 'fichier' : 'dossier';
-    const seedValue = parentPath ? '' : newItemName;
-    const rawName = parentPath ? window.prompt(`Nom du ${itemLabel}`, '') : seedValue;
-    const name = String(rawName || '').trim();
-    if (!name) return;
-    const ok = await onCreateItem(type, name, parentPath);
-    if (ok && !parentPath && onNewItemNameChange) {
-      onNewItemNameChange('');
-    }
-    setContextMenu(null);
-  }, [newItemName, onCreateItem, onNewItemNameChange]);
+  const handleCreate = useCallback(
+    async (type, parentPath = '') => {
+      if (!onCreateItem) return;
+      const itemLabel = type === 'file' ? 'fichier' : 'dossier';
+      const seedValue = parentPath ? '' : newItemName;
+      const rawName = parentPath ? window.prompt(`Nom du ${itemLabel}`, '') : seedValue;
+      const name = String(rawName || '').trim();
+      if (!name) return;
+      const ok = await onCreateItem(type, name, parentPath);
+      if (ok && !parentPath && onNewItemNameChange) {
+        onNewItemNameChange('');
+      }
+      setContextMenu(null);
+    },
+    [newItemName, onCreateItem, onNewItemNameChange]
+  );
 
   const beginRename = useCallback((item) => {
     const itemPath = item?.path || item?.name || '';
     setRenameState({
       path: itemPath,
       value: item?.name || getNavigatorBaseName(itemPath),
-      type: item?.type || 'file'
+      type: item?.type || 'file',
     });
     setContextMenu(null);
   }, []);
@@ -333,7 +363,9 @@ const FileExplorer = ({
     }
 
     const parentDir = getNavigatorDirName(renameState.path);
-    const nextPath = parentDir ? joinNavigatorPath(parentDir, nextName, renameState.path) : nextName;
+    const nextPath = parentDir
+      ? joinNavigatorPath(parentDir, nextName, renameState.path)
+      : nextName;
     const result = await onRenameItem(renameState.path, nextPath, renameState.type || 'file');
     if (result?.success) {
       setRenameState({ path: '', value: '', type: '' });
@@ -348,85 +380,112 @@ const FileExplorer = ({
     if (!draggedPath || !targetPath) return false;
     if (isSameNavigatorPath(draggedPath, targetPath)) return false;
     if (isNavigatorDescendant(targetPath, draggedPath)) return false;
-    const destinationPath = joinNavigatorPath(targetPath, getNavigatorBaseName(draggedPath), targetPath);
+    const destinationPath = joinNavigatorPath(
+      targetPath,
+      getNavigatorBaseName(draggedPath),
+      targetPath
+    );
     return !isSameNavigatorPath(destinationPath, draggedPath);
   }, []);
 
-  const handleDragStart = useCallback((event, item) => {
-    if (isReadOnly) {
-      event.preventDefault();
-      return;
-    }
-    const itemPath = item?.path || item?.name;
-    if (!itemPath) {
-      event.preventDefault();
-      return;
-    }
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', itemPath);
-    setDragState({
-      draggedPath: itemPath,
-      draggedType: item?.type || 'file',
-      overPath: '',
-      overRoot: false
-    });
-  }, [isReadOnly]);
+  const handleDragStart = useCallback(
+    (event, item) => {
+      if (isReadOnly) {
+        event.preventDefault();
+        return;
+      }
+      const itemPath = item?.path || item?.name;
+      if (!itemPath) {
+        event.preventDefault();
+        return;
+      }
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', itemPath);
+      setDragState({
+        draggedPath: itemPath,
+        draggedType: item?.type || 'file',
+        overPath: '',
+        overRoot: false,
+      });
+    },
+    [isReadOnly]
+  );
 
   const resetDragState = useCallback(() => {
     setDragState({ draggedPath: '', draggedType: '', overPath: '', overRoot: false });
   }, []);
 
-  const handleDragEnterDirectory = useCallback((event, item) => {
-    if (!dragState.draggedPath || item?.type !== 'directory') return;
-    if (!canDropIntoDirectory(dragState.draggedPath, item.path)) return;
-    event.preventDefault();
-    setDragState((prev) => ({ ...prev, overPath: item.path || '', overRoot: false }));
-  }, [canDropIntoDirectory, dragState.draggedPath]);
+  const handleDragEnterDirectory = useCallback(
+    (event, item) => {
+      if (!dragState.draggedPath || item?.type !== 'directory') return;
+      if (!canDropIntoDirectory(dragState.draggedPath, item.path)) return;
+      event.preventDefault();
+      setDragState((prev) => ({ ...prev, overPath: item.path || '', overRoot: false }));
+    },
+    [canDropIntoDirectory, dragState.draggedPath]
+  );
 
-  const handleDropIntoDirectory = useCallback(async (event, item) => {
-    event.preventDefault();
-    // Drop de fichiers venant de l'OS (pas de dragState interne) -> import dans ce dossier
-    const osFiles = event.dataTransfer?.files;
-    if (!dragState.draggedPath && osFiles && osFiles.length > 0) {
-      resetDragState();
-      if (onImportOsFiles) await onImportOsFiles(Array.from(osFiles), item?.path || '');
-      return;
-    }
-    if (!dragState.draggedPath || item?.type !== 'directory' || !onMoveItem) {
-      resetDragState();
-      return;
-    }
-    if (!canDropIntoDirectory(dragState.draggedPath, item.path)) {
-      resetDragState();
-      return;
-    }
+  const handleDropIntoDirectory = useCallback(
+    async (event, item) => {
+      event.preventDefault();
+      // Drop de fichiers venant de l'OS (pas de dragState interne) -> import dans ce dossier
+      const osFiles = event.dataTransfer?.files;
+      if (!dragState.draggedPath && osFiles && osFiles.length > 0) {
+        resetDragState();
+        if (onImportOsFiles) await onImportOsFiles(Array.from(osFiles), item?.path || '');
+        return;
+      }
+      if (!dragState.draggedPath || item?.type !== 'directory' || !onMoveItem) {
+        resetDragState();
+        return;
+      }
+      if (!canDropIntoDirectory(dragState.draggedPath, item.path)) {
+        resetDragState();
+        return;
+      }
 
-    const destinationPath = joinNavigatorPath(item.path, getNavigatorBaseName(dragState.draggedPath), item.path);
-    await onMoveItem(dragState.draggedPath, destinationPath, dragState.draggedType);
-    resetDragState();
-  }, [canDropIntoDirectory, dragState.draggedPath, dragState.draggedType, onImportOsFiles, onMoveItem, resetDragState]);
+      const destinationPath = joinNavigatorPath(
+        item.path,
+        getNavigatorBaseName(dragState.draggedPath),
+        item.path
+      );
+      await onMoveItem(dragState.draggedPath, destinationPath, dragState.draggedType);
+      resetDragState();
+    },
+    [
+      canDropIntoDirectory,
+      dragState.draggedPath,
+      dragState.draggedType,
+      onImportOsFiles,
+      onMoveItem,
+      resetDragState,
+    ]
+  );
 
-  const handleRootDrop = useCallback(async (event) => {
-    event.preventDefault();
-    // Drop de fichiers venant de l'OS (pas de dragState interne) -> import a la racine du projet
-    const osFiles = event.dataTransfer?.files;
-    if (!dragState.draggedPath && osFiles && osFiles.length > 0) {
+  const handleRootDrop = useCallback(
+    async (event) => {
+      event.preventDefault();
+      // Drop de fichiers venant de l'OS (pas de dragState interne) -> import a la racine du projet
+      const osFiles = event.dataTransfer?.files;
+      if (!dragState.draggedPath && osFiles && osFiles.length > 0) {
+        resetDragState();
+        if (onImportOsFiles) await onImportOsFiles(Array.from(osFiles), '');
+        return;
+      }
+      if (!dragState.draggedPath || !onMoveItem) {
+        resetDragState();
+        return;
+      }
+      const destinationPath = getNavigatorBaseName(dragState.draggedPath);
+      if (isSameNavigatorPath(destinationPath, dragState.draggedPath)) {
+        resetDragState();
+        return;
+      }
+      await onMoveItem(dragState.draggedPath, destinationPath, dragState.draggedType);
       resetDragState();
-      if (onImportOsFiles) await onImportOsFiles(Array.from(osFiles), '');
-      return;
-    }
-    if (!dragState.draggedPath || !onMoveItem) {
-      resetDragState();
-      return;
-    }
-    const destinationPath = getNavigatorBaseName(dragState.draggedPath);
-    if (isSameNavigatorPath(destinationPath, dragState.draggedPath)) {
-      resetDragState();
-      return;
-    }
-    await onMoveItem(dragState.draggedPath, destinationPath, dragState.draggedType);
-    resetDragState();
-  }, [dragState.draggedPath, dragState.draggedType, onImportOsFiles, onMoveItem, resetDragState]);
+    },
+    [dragState.draggedPath, dragState.draggedType, onImportOsFiles, onMoveItem, resetDragState]
+  );
 
   const handleOpenContextMenu = useCallback((event, item) => {
     event.preventDefault();
@@ -434,7 +493,7 @@ const FileExplorer = ({
     setContextMenu({
       x: event.clientX,
       y: event.clientY,
-      item: item || null
+      item: item || null,
     });
   }, []);
 
@@ -444,38 +503,73 @@ const FileExplorer = ({
     const actions = [];
 
     if (item?.type === 'file') {
-      actions.push(createContextAction('open', 'Ouvrir', () => {
-        onFileClick(itemPath);
-        closeContextMenu();
-      }));
+      actions.push(
+        createContextAction('open', 'Ouvrir', () => {
+          onFileClick(itemPath);
+          closeContextMenu();
+        })
+      );
     }
 
     if (item?.type === 'directory') {
-      actions.push(createContextAction('toggle', expandedFolders.has(item.path) ? 'Replier' : 'Deplier', () => {
-        onToggleFolder(item);
-        closeContextMenu();
-      }));
+      actions.push(
+        createContextAction(
+          'toggle',
+          expandedFolders.has(item.path) ? 'Replier' : 'Deplier',
+          () => {
+            onToggleFolder(item);
+            closeContextMenu();
+          }
+        )
+      );
       if (!isReadOnly) {
-        actions.push(createContextAction('new-file', 'Nouveau fichier', () => handleCreate('file', itemPath)));
-        actions.push(createContextAction('new-folder', 'Nouveau dossier', () => handleCreate('directory', itemPath)));
+        actions.push(
+          createContextAction('new-file', 'Nouveau fichier', () => handleCreate('file', itemPath))
+        );
+        actions.push(
+          createContextAction('new-folder', 'Nouveau dossier', () =>
+            handleCreate('directory', itemPath)
+          )
+        );
       }
     }
 
     if (!item && !isReadOnly) {
-      actions.push(createContextAction('new-root-file', 'Nouveau fichier', () => handleCreate('file')));
-      actions.push(createContextAction('new-root-folder', 'Nouveau dossier', () => handleCreate('directory')));
+      actions.push(
+        createContextAction('new-root-file', 'Nouveau fichier', () => handleCreate('file'))
+      );
+      actions.push(
+        createContextAction('new-root-folder', 'Nouveau dossier', () => handleCreate('directory'))
+      );
     }
 
     if (item && !isReadOnly) {
       actions.push(createContextAction('rename', 'Renommer', () => beginRename(item)));
-      actions.push(createContextAction('delete', 'Supprimer', () => {
-        onDeleteItem(itemPath, item.type);
-        closeContextMenu();
-      }, true));
+      actions.push(
+        createContextAction(
+          'delete',
+          'Supprimer',
+          () => {
+            onDeleteItem(itemPath, item.type);
+            closeContextMenu();
+          },
+          true
+        )
+      );
     }
 
     return actions;
-  }, [beginRename, closeContextMenu, contextMenu, expandedFolders, handleCreate, isReadOnly, onDeleteItem, onFileClick, onToggleFolder]);
+  }, [
+    beginRename,
+    closeContextMenu,
+    contextMenu,
+    expandedFolders,
+    handleCreate,
+    isReadOnly,
+    onDeleteItem,
+    onFileClick,
+    onToggleFolder,
+  ]);
 
   return (
     <div className="nav-root">
@@ -486,6 +580,7 @@ const FileExplorer = ({
           {!isReadOnly && (
             <>
               <button
+                type="button"
                 onClick={() => handleCreate('file')}
                 className="nav-header-btn"
                 title="Nouveau fichier"
@@ -494,6 +589,7 @@ const FileExplorer = ({
                 +
               </button>
               <button
+                type="button"
                 onClick={() => handleCreate('directory')}
                 className="nav-header-btn"
                 title="Nouveau dossier"
@@ -503,7 +599,11 @@ const FileExplorer = ({
               </button>
             </>
           )}
-          {isReadOnly && <span className="nav-meta-chip is-warning" style={{fontSize:9}}>Lecture seule</span>}
+          {isReadOnly && (
+            <span className="nav-meta-chip is-warning" style={{ fontSize: 9 }}>
+              Lecture seule
+            </span>
+          )}
         </div>
       </div>
 
@@ -518,7 +618,9 @@ const FileExplorer = ({
           style={{ fontSize: 11, padding: '4px 8px' }}
         />
         {filterQuery && (
-          <div className="nav-hint" style={{ marginTop: 3 }}>{filteredFiles.length} résultat(s)</div>
+          <div className="nav-hint" style={{ marginTop: 3 }}>
+            {filteredFiles.length} résultat(s)
+          </div>
         )}
       </div>
 
@@ -533,7 +635,10 @@ const FileExplorer = ({
       {/* Champ création rapide (si nom saisi en dehors) — conservé pour compat */}
       {newItemName !== undefined && newItemName !== null && (
         <div style={{ display: 'none' }}>
-          <input value={newItemName} onChange={(e) => onNewItemNameChange && onNewItemNameChange(e.target.value)} />
+          <input
+            value={newItemName}
+            onChange={(e) => onNewItemNameChange && onNewItemNameChange(e.target.value)}
+          />
         </div>
       )}
 
@@ -545,7 +650,8 @@ const FileExplorer = ({
         }}
         onDragOver={(event) => {
           if (filterQuery) return;
-          const isOsFileDrag = !dragState.draggedPath && event.dataTransfer?.types?.includes('Files');
+          const isOsFileDrag =
+            !dragState.draggedPath && event.dataTransfer?.types?.includes('Files');
           if (!dragState.draggedPath && !isOsFileDrag) return;
           event.preventDefault();
           setDragState((prev) => ({ ...prev, overPath: '', overRoot: true }));
@@ -554,19 +660,16 @@ const FileExplorer = ({
         onDragEnd={resetDragState}
       >
         {!currentProjectPath ? (
-          <div className="nav-empty">
-            Ouvrez un dossier pour commencer.
-          </div>
+          <div className="nav-empty">Ouvrez un dossier pour commencer.</div>
         ) : filterQuery ? (
           filteredFiles.length === 0 ? (
-            <div className="nav-empty">
-              Aucun fichier trouve.
-            </div>
+            <div className="nav-empty">Aucun fichier trouve.</div>
           ) : (
             <div className="nav-results">
               {filteredFiles.map((file) => (
                 <button
                   key={file.path || file.name}
+                  type="button"
                   className="nav-result"
                   onClick={() => onFileClick(file.path || file.name)}
                   onContextMenu={(event) => handleOpenContextMenu(event, file)}
@@ -578,9 +681,7 @@ const FileExplorer = ({
             </div>
           )
         ) : projectItems.length === 0 ? (
-          <div className="nav-empty">
-            Dossier vide.
-          </div>
+          <div className="nav-empty">Dossier vide.</div>
         ) : (
           <div className="tree-view">
             {projectItems.map((item) => (
@@ -599,7 +700,9 @@ const FileExplorer = ({
                 onRenameCommit={commitRename}
                 onRenameCancel={cancelRename}
                 onOpenContextMenu={handleOpenContextMenu}
-                onCreateInside={(type, folderItem) => handleCreate(type, folderItem.path || folderItem.name || '')}
+                onCreateInside={(type, folderItem) =>
+                  handleCreate(type, folderItem.path || folderItem.name || '')
+                }
                 onDragStart={handleDragStart}
                 onDragEnterDirectory={handleDragEnterDirectory}
                 onDropIntoDirectory={handleDropIntoDirectory}
@@ -612,12 +715,22 @@ const FileExplorer = ({
 
       {/* Bouton Ouvrir dossier en bas */}
       <button
+        type="button"
         onClick={onOpenFolder}
         className="nav-open-folder-btn"
         disabled={!isElectronApiAvailable}
         title="Ouvrir un dossier de projet"
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
         </svg>
         Ouvrir dossier
@@ -633,6 +746,7 @@ const FileExplorer = ({
           {contextActions.map((action) => (
             <button
               key={action.id}
+              type="button"
               className={`nav-context-item ${action.danger ? 'is-danger' : ''}`}
               onClick={action.onClick}
             >

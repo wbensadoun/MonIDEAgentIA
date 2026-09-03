@@ -5,6 +5,7 @@
 ### Fixed
 
 - Les `IconButton` et `Pill` interactifs du UI Kit utilisent désormais `type="button"` par défaut afin de ne pas soumettre accidentellement un formulaire.
+- Les actions de l’explorateur de fichiers utilisent aussi un type explicite, y compris les créations, résultats de recherche, suppressions et actions du menu contextuel.
 - Les `IconButton` sans libellé visible récupèrent un nom accessible depuis leur titre, tout en conservant la possibilité de fournir un `aria-label` explicite.
 - Ajout de tests de contrat pour le type et le nom accessible des contrôles partagés.
 
