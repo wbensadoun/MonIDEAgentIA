@@ -17,8 +17,8 @@ const { registerWorkflowHandlers } = require('./electron/ipc/workflowHandlers');
 const { registerBrainGraphHandlers } = require('./electron/ipc/brainGraphHandlers');
 const {
   configureAIService,
-  getN8nCatalogEntries,
-  fetchTrustedN8nWorkflow,
+  getTemplateCatalogEntries,
+  fetchTrustedCompatibleWorkflow,
   executeCommandForAI,
   runSingleCompletionProvider,
 } = require('./electron/services/ai.service');
@@ -263,8 +263,8 @@ registerWorkflowHandlers({
   assertSafePath,
   toPositiveInt,
   workflowEngine,
-  getN8nCatalogEntries,
-  fetchTrustedN8nWorkflow
+  getTemplateCatalogEntries,
+  fetchTrustedCompatibleWorkflow
 });
 
 registerBrainGraphHandlers({

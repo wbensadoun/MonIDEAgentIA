@@ -118,7 +118,7 @@ export const MULTI_AGENT_ROLE_DEFINITIONS = [
     shortLabel: 'Workflow',
     provider: 'kimi',
     model: DEFAULT_KIMI_MODEL,
-    focus: 'Concoit et valide les workflows visuels, n8n et automatisations.',
+    focus: 'Conçoit et valide les workflows visuels Vibe Flow et les automatisations.',
     stage: 'implementation',
     canWrite: true,
     source: 'native'

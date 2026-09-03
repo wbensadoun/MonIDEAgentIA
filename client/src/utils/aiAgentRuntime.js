@@ -14,11 +14,11 @@ export const buildSharedAgentContextOptions = ({
   disallowProviderFallback: true,
   executionMode,
   includeVisualWorkflows: true,
-  includeN8nCatalog: true,
+  includeTemplateCatalog: true,
   maxVisualWorkflowIndexItems: deepContextEnabled ? 40 : 20,
   maxVisualWorkflowDetailedItems: deepContextEnabled ? 6 : 2,
   maxVisualWorkflowContentChars: deepContextEnabled ? 14000 : 7000,
-  maxN8nCatalogItems: deepContextEnabled ? 200 : 80
+  maxTemplateCatalogItems: deepContextEnabled ? 200 : 80
 });
 
 export const buildSkillsMetadata = (skills) => (

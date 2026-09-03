@@ -21,7 +21,7 @@ import {
     IconChat, IconSend
 } from '../ComponentLibrary/icons';
 
-/* Résout la clé d'icône d'un nœud (catalogue local ou import n8n) vers un
+/* Résout la clé d'icône d'un nœud (catalogue local ou import compatible) vers un
    glyphe tracé de icons.tsx. Les valeurs inconnues (ex: anciens workflows
    sauvegardés avec un emoji) retombent sur IconLightning plutôt que de
    rendre le caractère brut. */
@@ -876,16 +876,16 @@ const VisualWorkflowEditor = ({
         input.click();
     }, [loadWorkflowIntoCanvas, parseWorkflowPayload, showMessage]);
 
-    // ── 📦 Charger le catalogue n8n ──
+    // ── 📦 Charger la galerie de templates ──
     const fetchCatalog = useCallback(async () => {
         if (!api) return;
         setCatalogLoading(true);
         try {
-            const result = await api.fetchN8nCatalog(1, 5000);
+            const result = await api.fetchTemplateCatalog(1, 5000);
             if (result.success) {
                 setCatalogItems(result.items || []);
             } else {
-                if (showMessage) showMessage('Erreur catalogue n8n', 2000);
+                if (showMessage) showMessage('Erreur galerie de templates', 2000);
             }
         } catch (e) {
             if (showMessage) showMessage('Erreur réseau', 2000);
@@ -893,18 +893,18 @@ const VisualWorkflowEditor = ({
         setCatalogLoading(false);
     }, [api, showMessage]);
 
-    // ── Importer un workflow n8n depuis le catalogue ──
-    const importN8nWorkflow = useCallback(async (item) => {
+    // ── Importer un template depuis la galerie ──
+    const importTemplateWorkflow = useCallback(async (item) => {
         if (!api) return;
         if (showMessage) showMessage(`Téléchargement de "${item.name}"...`, 1500);
         try {
-            const result = await api.downloadN8nWorkflow(item.downloadUrl);
+            const result = await api.downloadTemplateWorkflow(item.downloadUrl);
             if (result.success && result.data) {
-                const n8nWf = result.data;
-                // Adapter le format n8n → notre format
+                const importedWorkflow = result.data;
+                // Adapter le format source → notre format
                 const adapted = {
-                    name: n8nWf.name || item.name,
-                    nodes: (n8nWf.nodes || []).map((n, i) => ({
+                    name: importedWorkflow.name || item.name,
+                    nodes: (importedWorkflow.nodes || []).map((n, i) => ({
                         id: `node_${i + 1}`,
                         type: guessNodeType(n.type),
                         label: n.name || n.type,
@@ -918,9 +918,9 @@ const VisualWorkflowEditor = ({
                     })),
                     edges: [],
                 };
-                // Reconstruire les edges à partir des connections n8n
-                if (n8nWf.connections) {
-                    Object.entries(n8nWf.connections).forEach(([sourceName, conns]) => {
+                // Reconstruire les edges à partir des connexions source
+                if (importedWorkflow.connections) {
+                    Object.entries(importedWorkflow.connections).forEach(([sourceName, conns]) => {
                         const sourceNode = adapted.nodes.find(n => n.label === sourceName);
                         if (!sourceNode) return;
                         Object.values(conns).forEach(outputs => {
@@ -937,17 +937,17 @@ const VisualWorkflowEditor = ({
                 }
                 loadWorkflowIntoCanvas(adapted);
                 setActivePanel(null);
-                if (showMessage) showMessage(`Workflow n8n "${adapted.name}" importé !`, 2000);
+                if (showMessage) showMessage(`Template "${adapted.name}" importé !`, 2000);
             }
         } catch (e) {
-            if (showMessage) showMessage('Erreur import n8n', 2000);
+            if (showMessage) showMessage('Erreur import du template', 2000);
         }
     }, [api, loadWorkflowIntoCanvas, showMessage]);
 
-    // ── Helpers pour adapter les types n8n ──
-    const guessNodeType = (n8nType) => {
-        if (!n8nType) return 'action';
-        const t = n8nType.toLowerCase();
+    // ── Helpers pour adapter les types source ──
+    const guessNodeType = (sourceType) => {
+        if (!sourceType) return 'action';
+        const t = sourceType.toLowerCase();
         if (t.includes('trigger') || t.includes('cron') || t.includes('schedule') || t.includes('webhook') || t.includes('manual')) return 'trigger';
         if (t.includes('openai') || t.includes('ai') || t.includes('gpt') || t.includes('llm')) return 'ai';
         if (t.includes('if') || t.includes('switch') || t.includes('merge') || t.includes('loop') || t.includes('wait')) return 'logic';
@@ -955,9 +955,9 @@ const VisualWorkflowEditor = ({
         return 'action';
     };
 
-    const guessNodeIcon = (n8nType) => {
-        if (!n8nType) return 'lightning';
-        const t = n8nType.toLowerCase();
+    const guessNodeIcon = (sourceType) => {
+        if (!sourceType) return 'lightning';
+        const t = sourceType.toLowerCase();
         if (t.includes('trigger') || t.includes('manual')) return 'play';
         if (t.includes('cron') || t.includes('schedule')) return 'clock';
         if (t.includes('webhook')) return 'globe';
@@ -985,7 +985,7 @@ const VisualWorkflowEditor = ({
         return map;
     }, []);
 
-    // ── Filtrer le catalogue n8n ──
+    // ── Filtrer la galerie de templates ──
     const filteredCatalog = useMemo(() => {
         if (!catalogSearch) return catalogItems;
         const q = catalogSearch.toLowerCase();
@@ -1196,8 +1196,8 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                     <button className="vw-btn" onClick={() => togglePanel('saved')} title="Ouvrir un workflow sauvegardé">
                         <IconFolder size={14} /> Ouvrir {savedWorkflows.length > 0 && <span className="vw-badge">{savedWorkflows.length}</span>}
                     </button>
-                    <button className="vw-btn vw-btn-catalog" onClick={() => togglePanel('catalog')} title="Catalogue de workflows n8n">
-                        <IconPackage size={14} /> n8n
+                    <button className="vw-btn vw-btn-catalog" onClick={() => togglePanel('catalog')} title="Galerie de templates">
+                        <IconPackage size={14} /> Templates
                     </button>
                     <button className={`vw-btn vw-btn-ai ${activePanel === 'ai' ? 'active' : ''}`} onClick={() => togglePanel('ai')} title="Générer un workflow avec l'IA">
                         <IconBot size={14} /> IA
@@ -1240,14 +1240,14 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                         <div className="vw-empty-icon"><IconLightning size={28} /></div>
                         <div className="vw-empty-text">
                             Cliquez sur <strong>+ Nœud</strong> pour créer votre flux,
-                            ou importez depuis le <strong>catalogue n8n</strong>.
+                            ou importez depuis la <strong>galerie de templates</strong>.
                         </div>
                         <div className="vw-empty-actions">
                             <button className="vw-btn vw-btn-primary" onClick={() => togglePanel('add')}>
                                 + Commencer
                             </button>
                             <button className="vw-btn vw-btn-catalog" onClick={() => togglePanel('catalog')}>
-                                <IconPackage size={14} /> Explorer n8n
+                                <IconPackage size={14} /> Explorer la galerie
                             </button>
                             {savedWorkflows.length > 0 && (
                                 <button className="vw-btn" onClick={() => togglePanel('saved')}>
@@ -1356,17 +1356,17 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                     </div>
                 )}
 
-                {/* ── n8n Catalog Panel ── */}
+                {/* ── Template Gallery Panel ── */}
                 {activePanel === 'catalog' && (
                     <div className="vw-add-panel vw-catalog-panel">
                         <div className="vw-add-header">
-                            <span className="vw-add-title"><IconPackage size={14} /> Catalogue n8n</span>
+                            <span className="vw-add-title"><IconPackage size={14} /> Galerie de templates</span>
                             <button className="vw-add-close" onClick={() => setActivePanel(null)}><IconX size={14} /></button>
                         </div>
                         <div className="vw-catalog-search">
                             <input
                                 className="vw-node-input"
-                                placeholder="Rechercher un workflow n8n..."
+                                placeholder="Rechercher un template..."
                                 value={catalogSearch}
                                 onChange={e => setCatalogSearch(e.target.value)}
                             />
@@ -1382,7 +1382,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                                     <button
                                         key={item.downloadUrl || `${item.name || 'workflow'}-${idx}`}
                                         className="vw-add-item"
-                                        onClick={() => importN8nWorkflow(item)}
+                                        onClick={() => importTemplateWorkflow(item)}
                                     >
                                         <span className="vw-add-item-icon"><IconPackage size={14} /></span>
                                         <div className="vw-add-item-info">
