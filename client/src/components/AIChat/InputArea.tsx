@@ -5,7 +5,7 @@
  * under either the legacy AIChat/index.js state machine or the new
  * ChatInterface composition without caring which one owns state.
  */
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import './InputArea.css';
 
 export interface AttachedFile {
@@ -38,14 +38,26 @@ export const InputArea: React.FC<InputAreaProps> = ({
   onRemoveAttachment,
   disabled = false,
   isSending = false,
-  placeholder = 'Écrire un message…',
+  placeholder = 'Écrire un message… (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)',
   warning
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // COD-70 A.1 — autosize : le champ grandit avec son contenu (cap ~200 px),
+  // la ref textarea etait declaree mais jamais exploitree.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [value]);
+
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // COD-70 A.2 — Enter pendant une composition IME = fin de composition,
+      // pas d'envoi.
+      if (event.nativeEvent && (event.nativeEvent as WindowEventMap['keydown']).isComposing) return;
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         if (!disabled && !isSending && value.trim()) onSubmit();

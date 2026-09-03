@@ -508,6 +508,12 @@
 }
 
 .ai-message-file-ref-close {
+  /* COD-70 A.7 — l'element est passe de <span onClick> a <button type=button>
+     (accessibilite clavier) : reset des styles natifs du bouton. */
+  appearance: none;
+  background: none;
+  border: none;
+  font: inherit;
   width: 12px;
   height: 12px;
   display: flex;
@@ -517,6 +523,7 @@
   font-size: 11px;
   line-height: 1;
   color: var(--text-muted);
+  cursor: pointer;
 }
 
 .ai-message-file-ref-close:hover {
@@ -670,6 +677,94 @@
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* COD-70 — panneaux de suggestions @fichier / /workflow (remplacent les
+   styles inline de index.js ; liste ARIA 1.2 listbox/option). */
+.ai-suggest-panel {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  max-height: 180px;
+  overflow-y: auto;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.ai-suggest-header {
+  padding: 5px 10px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-suggest-empty {
+  padding: 8px 10px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.ai-suggest-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ai-suggest-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: none;
+  border: none;
+  color: var(--text-main);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-suggest-item.is-active {
+  background: var(--surface);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.ai-suggest-item-name {
+  color: var(--accent);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.ai-suggest-item-desc {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-suggest-item-path {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+.ai-suggest-item-scope {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 9px;
+  color: var(--text-muted);
+  padding: 1px 5px;
+  background: var(--surface);
+  border-radius: var(--radius-xs, 3px);
+}
+
 
 /* Streaming box — container for all streaming-preview modes (workflow/diff/
    code/text). See D1 in the UI review for the workflow "scene" below. */
@@ -1049,12 +1144,36 @@
   box-shadow: var(--shadow-focus-ring);
 }
 
+/* COD-70 A.6 — etat "fichier survole le composer" (glisser-deposer). */
+.ai-composer.is-drop-target {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
+.ai-composer-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+  border-radius: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  pointer-events: none;
+}
+
 .ai-input-bar-textarea {
   width: 100%;
   padding: 10px 12px;
   resize: none;
   min-height: 44px;
-  max-height: 160px;
+  /* COD-70 A.1 — la hauteur est pilotee par l'autosize JS (cap 200px) ;
+     le max-height CSS sert de garde-fou si le JS ne s'execute pas. */
+  max-height: 200px;
+  overflow-y: auto;
   color: var(--text-main);
   font-size: 13px;
   font-family: var(--font-sans);
@@ -1324,6 +1443,10 @@
   flex-wrap: wrap;
 }
 
+.ai-input-image-wrap {
+  position: relative;
+}
+
 .ai-input-image {
   width: 40px;
   height: 40px;
@@ -1332,6 +1455,69 @@
   border: 1px solid var(--border);
   cursor: pointer;
 }
+
+/* COD-70 A.7 — suppression d'une image pending : etait un bouton non
+   accessible en styles inline ; remplace par une classe + aria-label. */
+.ai-input-image-remove {
+  appearance: none;
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  border: none;
+  border-radius: 50%;
+  color: var(--text-invert, #fff);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ai-input-image-remove:hover {
+  background: var(--danger);
+}
+
+/* COD-70 — banniere "message en attente" (etait en styles inline). */
+.ai-input-pending-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
+  border-radius: var(--radius-xs, 4px);
+  font-size: 10px;
+  color: var(--warning);
+}
+
+.ai-input-pending-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-input-pending-hint {
+  opacity: 0.6;
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+/* COD-70 A.10 — avertissement quand l'envoi est indisponible. */
+.ai-input-warning {
+  padding: 5px 10px;
+  font-size: 10px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
+  border-radius: var(--radius-xs, 4px);
+}
+
 
 .ai-pill-menu-separator {
   height: 1px;

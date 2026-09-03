@@ -613,6 +613,19 @@ const AIChat = ({
   const [showContextSuggestions, setShowContextSuggestions] = useState(false);
   const [contextFilter, setContextFilter] = useState('');
   const [explicitContext, setExplicitContext] = useState([]); // List of explicitly mentioned files
+
+  // COD-70 — navigation clavier des suggestions (@fichier / /workflow) :
+  // index de l'option surlignee, reinitialise a chaque changement de filtre.
+  const [activeSuggestion, setActiveSuggestion] = useState(0);
+  // COD-70 — historique de prompts (↑/↓ dans un composer vide, standard VS Code).
+  const [historyIndex, setHistoryIndex] = useState(-1); // -1 = saisie libre
+  const liveDraftRef = useRef('');
+  // COD-70 — glisser-deposer de fichiers/images sur le composer.
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const dragDepthRef = useRef(0);
+  // COD-70 — brouillon persistant par session (sessionStorage, cf. A.5).
+  const skipDraftSaveRef = useRef(true);
+
   const [isApplyingPending, setIsApplyingPending] = useState(false);
   const [isBulkApplyingPending, setIsBulkApplyingPending] = useState(false);
 
@@ -638,6 +651,44 @@ const AIChat = ({
   const isPinnedToBottomRef = useRef(true);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [thinkingLabel, setThinkingLabel] = useState('Réflexion');
+
+  // ── COD-70 A.1 — autosize du textarea ────────────────────────────────────
+  // rows={2} + max-height CSS fixes rendaient tout prompt long inexploitable
+  // (micro-scroll interne). Le champ grandit avec son contenu jusqu'a un cap,
+  // puis le scroll reapparait au-dela — comportement standard (VS Code chat).
+  useEffect(() => {
+    const el = promptInputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [prompt]);
+
+  // ── COD-70 A.5 — brouillon persistant par session ────────────────────────
+  // Un prompt en cours etait perdu au changement d'onglet/projet. Stocke dans
+  // sessionStorage (jamais dans le workspace user), restaure au remontage.
+  const draftKey = `cc.draft.${activeSessionId || currentProjectPath || 'default'}`;
+  useEffect(() => {
+    let restored = null;
+    try {
+      restored = window.sessionStorage.getItem(draftKey);
+    } catch {
+      restored = null; // sessionStorage indisponible (mode prive) : on ignore
+    }
+    skipDraftSaveRef.current = true;
+    if (restored) onPromptChange(restored);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
+  useEffect(() => {
+    if (skipDraftSaveRef.current) {
+      skipDraftSaveRef.current = false;
+      return;
+    }
+    try {
+      if (prompt) window.sessionStorage.setItem(draftKey, prompt);
+      else window.sessionStorage.removeItem(draftKey);
+    } catch { /* idem */ }
+  }, [draftKey, prompt]);
+
 
   const [copiedMessageIndex, setCopiedMessageIndex] = useState(null);
   const copyResetTimerRef = useRef(null);
@@ -884,6 +935,14 @@ const AIChat = ({
   const handlePromptChange = (value) => {
     onPromptChange(value);
 
+    // COD-70 — toute nouvelle frappe quitte la navigation dans l'historique.
+    if (historyIndex !== -1) {
+      liveDraftRef.current = value;
+      setHistoryIndex(-1);
+    }
+    // COD-70 — la suggestion surlignee repart au debut a chaque changement.
+    setActiveSuggestion(0);
+
     // Slash command detection
     if (value.startsWith('/') && parseSlashCommand) {
       const parsed = parseSlashCommand(value);
@@ -915,6 +974,38 @@ const AIChat = ({
   const filteredWorkflows = workflows.filter(w =>
     w.name.toLowerCase().includes(workflowFilter.toLowerCase())
   );
+
+  // COD-70 A.4 — historique de prompts : ↑ dans un composer vide (ou en
+  // navigation) rappelle le message precedent, ↓ revient a la saisie en cours.
+  const userPromptHistory = useMemo(
+    () => conversationHistory
+      .filter((m) => m.role === 'user' && String(m.text || '').trim())
+      .map((m) => m.text),
+    [conversationHistory]
+  );
+
+  const recallHistory = useCallback((direction) => {
+    if (direction === 'up') {
+      if (!userPromptHistory.length) return;
+      const nextIndex = historyIndex === -1
+        ? userPromptHistory.length - 1
+        : Math.max(0, historyIndex - 1);
+      if (historyIndex === -1) liveDraftRef.current = prompt;
+      setHistoryIndex(nextIndex);
+      setShowWorkflowSuggestions(false);
+      setShowContextSuggestions(false);
+      onPromptChange(userPromptHistory[nextIndex]);
+    } else if (historyIndex !== -1) {
+      const nextIndex = historyIndex + 1;
+      if (nextIndex >= userPromptHistory.length) {
+        setHistoryIndex(-1);
+        onPromptChange(liveDraftRef.current);
+      } else {
+        setHistoryIndex(nextIndex);
+        onPromptChange(userPromptHistory[nextIndex]);
+      }
+    }
+  }, [historyIndex, userPromptHistory, prompt, onPromptChange]);
 
   const handleSelectWorkflow = async (workflow) => {
     if (getWorkflow) {
@@ -953,17 +1044,16 @@ const AIChat = ({
     if ((prompt.trim() || explicitContext.length > 0 || pendingImages.length > 0) && !isLoading) {
       setShowWorkflowSuggestions(false);
       setShowContextSuggestions(false);
-      // We'll pass explicitContext via onSend if needed, or modify the prompt
-      // Let's modify the prompt to prepend the explicit context requested
+      // COD-70 — onSend (useAI.generateAIResponse) accepte deja un prompt
+      // effectif en argument : le contexte force est passe directement, plus
+      // de course state/setTimeout(onSend, 50) (l'ancien "Hack:" dans ce bloc).
       if (explicitContext.length > 0 && typeof onSend === 'function') {
         const contextString = `[Contexte forcé: ${explicitContext.join(', ')}]\n\n`;
-        // Hack: trigger onSend with context. We need to update useAI to handle this or just modify state.
-        // Easiest is to modify prompt immediately before send, or let useAI handle it.
-        // Actually since onSend reads state, let's just append it to the prompt.
-        const augmentedPrompt = contextString + prompt;
-        onPromptChange(augmentedPrompt);
         setExplicitContext([]);
-        setTimeout(() => onSend(augmentedPrompt), 50);
+        // generateAIResponse(overridePrompt) ne vide pas le champ lui-meme
+        // (chemin normal : setPrompt('') seulement si overridePrompt indefini).
+        onPromptChange('');
+        onSend(contextString + prompt);
       } else {
         onSend();
       }
@@ -996,10 +1086,117 @@ const AIChat = ({
   };
 
   const handleKeyDown = (e) => {
+    // COD-70 A.2 — pendant une composition IME (CJK, accents), Enter valide
+    // la composition, pas l'envoi du message.
+    if (e.nativeEvent && e.nativeEvent.isComposing) return;
+
+    // COD-70 A.3 — navigation clavier dans les suggestions @fichier / /workflow.
+    const suggestionsOpen = showWorkflowSuggestions || showContextSuggestions;
+    if (suggestionsOpen) {
+      const items = showWorkflowSuggestions ? filteredWorkflows : filteredContextFiles;
+      const activeItem = items[Math.min(activeSuggestion, Math.max(0, items.length - 1))];
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveSuggestion((i) => (items.length ? (i + 1) % items.length : 0));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveSuggestion((i) => (items.length ? (i - 1 + items.length) % items.length : 0));
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (activeItem) {
+          if (showWorkflowSuggestions) handleSelectWorkflow(activeItem);
+          else handleSelectContextFile(activeItem);
+          return;
+        }
+        handleSend();
+        return;
+      }
+      if (e.key === 'Tab') {
+        if (activeItem) {
+          e.preventDefault();
+          if (showWorkflowSuggestions) handleSelectWorkflow(activeItem);
+          else handleSelectContextFile(activeItem);
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowWorkflowSuggestions(false);
+        setShowContextSuggestions(false);
+        return;
+      }
+    }
+
+    // COD-70 A.4 — historique de prompts (↑/↓), hors suggestions.
+    if (e.key === 'ArrowUp' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      const el = e.currentTarget;
+      const caretOnFirstLine = !el.value.slice(0, el.selectionStart).includes('\n');
+      if (caretOnFirstLine && (historyIndex !== -1 || !el.value.trim())) {
+        e.preventDefault();
+        recallHistory('up');
+        return;
+      }
+    }
+    if (e.key === 'ArrowDown' && historyIndex !== -1 && !e.shiftKey) {
+      const el = e.currentTarget;
+      const caretOnLastLine = !el.value.slice(el.selectionEnd).includes('\n');
+      if (caretOnLastLine) {
+        e.preventDefault();
+        recallHistory('down');
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  // COD-70 A.6 — glisser-deposer d'images sur le composer (parite avec le
+  // collage : memes callbacks onPasteImage, meme pipeline de lecture).
+  const hasFilePayload = (dataTransfer) =>
+    Array.from(dataTransfer?.types || []).includes('Files');
+
+  const handleComposerDrop = (e) => {
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingFiles(false);
+    if (!onPasteImage) return;
+    const files = Array.from(e.dataTransfer?.files || []);
+    files.forEach((file) => {
+      if (!file.type || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result;
+        if (typeof result === 'string') {
+          onPasteImage(result);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleComposerDragOver = (e) => {
+    if (!onPasteImage || !hasFilePayload(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleComposerDragEnter = (e) => {
+    if (!onPasteImage || !hasFilePayload(e.dataTransfer)) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDraggingFiles(true);
+  };
+
+  const handleComposerDragLeave = () => {
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingFiles(false);
   };
 
   const handleStop = () => {
@@ -1815,16 +2012,12 @@ const AIChat = ({
         <div className="ai-reading-col ai-input-bar-inner">
           {/* Pending message indicator */}
           {pendingMessage && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
-              background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
-              borderRadius: 4, fontSize: 10, color: 'var(--warning)',
-            }}>
+            <div className="ai-input-pending-banner" role="status">
               <span><IconHourglass size={11} /></span>
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span className="ai-input-pending-text">
                 En attente&#x202F;: <em>{pendingMessage.text}</em>
               </span>
-              <span style={{ opacity: 0.6, fontSize: 9 }}>sera envoyé automatiquement</span>
+              <span className="ai-input-pending-hint">sera envoyé automatiquement</span>
             </div>
           )}
 
@@ -1832,14 +2025,13 @@ const AIChat = ({
           {pendingImages && pendingImages.length > 0 && (
             <div className="ai-input-images">
               {pendingImages.map((img, idx) => (
-                <div key={idx} style={{ position: 'relative' }}>
-                  <img src={img.dataUrl} alt="Pending" className="ai-input-image" />
+                <div key={idx} className="ai-input-image-wrap">
+                  <img src={img.dataUrl} alt={`Image jointe ${idx + 1}`} className="ai-input-image" />
                   <button
+                    type="button"
+                    className="ai-input-image-remove"
+                    aria-label={`Retirer l'image ${idx + 1}`}
                     onClick={() => onRemovePendingImage && onRemovePendingImage(idx)}
-                    style={{
-                      position: 'absolute', top: 1, right: 1, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff',
-                      borderRadius: '50%', width: 14, height: 14, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                    }}
                   >×</button>
                 </div>
               ))}
@@ -1854,7 +2046,12 @@ const AIChat = ({
                 return (
                   <span key={filePath} className="ai-message-file-ref" title={filePath}>
                     @{fileName}
-                    <span className="ai-message-file-ref-close" onClick={() => removeExplicitContext(filePath)}>×</span>
+                    <button
+                      type="button"
+                      className="ai-message-file-ref-close"
+                      aria-label={`Retirer ${fileName} du contexte`}
+                      onClick={() => removeExplicitContext(filePath)}
+                    >×</button>
                   </span>
                 );
               })}
@@ -1862,7 +2059,18 @@ const AIChat = ({
           )}
 
           {/* Composer: un seul bloc arrondi = textarea + rangée [+] [mode] [modèle] [autonomie] [Envoyer] */}
-          <div className={`ai-composer${isLoading ? ' is-working' : ''}`}>
+          <div
+            className={`ai-composer${isLoading ? ' is-working' : ''}${isDraggingFiles ? ' is-drop-target' : ''}`}
+            onDrop={handleComposerDrop}
+            onDragOver={handleComposerDragOver}
+            onDragEnter={handleComposerDragEnter}
+            onDragLeave={handleComposerDragLeave}
+          >
+          {isDraggingFiles && (
+            <div className="ai-composer-drop-hint" aria-hidden="true">
+              Déposez vos images ici
+            </div>
+          )}
           {/* Textarea */}
           <textarea
             ref={promptInputRef}
@@ -1872,28 +2080,42 @@ const AIChat = ({
             onChange={(e) => handlePromptChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder="Votre requête... (@ pour un fichier, / pour un workflow)"
+            placeholder="Votre requête... (@ fichier, / workflow — Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)"
             rows={2}
+            role="combobox"
+            aria-expanded={showWorkflowSuggestions || showContextSuggestions}
+            aria-controls="ai-suggest-listbox"
+            aria-autocomplete="list"
+            aria-activedescendant={
+              ((showWorkflowSuggestions && filteredWorkflows.length > 0) ||
+                (showContextSuggestions && filteredContextFiles.length > 0))
+                ? `ai-suggest-opt-${activeSuggestion}`
+                : undefined
+            }
           />
 
           {/* Workflow suggestions */}
           {showWorkflowSuggestions && filteredWorkflows.length > 0 && (
             <div className="ai-suggest-overlay">
-              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
-                <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Workflows disponibles</div>
-                {filteredWorkflows.map((workflow) => (
-                  <button
-                    key={`${workflow.scope}-${workflow.name}`}
-                    onClick={() => handleSelectWorkflow(workflow)}
-                    style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '5px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
-                  >
-                    <div>
-                      <span style={{ color: 'var(--accent)', fontWeight: 600 }}>/{workflow.name}</span>
-                      {workflow.description && <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>{workflow.description}</span>}
-                    </div>
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)', padding: '1px 5px', background: 'var(--surface)', borderRadius: 3 }}>{workflow.scope}</span>
-                  </button>
-                ))}
+              <div className="ai-suggest-panel">
+                <div className="ai-suggest-header">Workflows disponibles</div>
+                <ul className="ai-suggest-list" id="ai-suggest-listbox" role="listbox" aria-label="Workflows disponibles">
+                  {filteredWorkflows.map((workflow, i) => (
+                    <li
+                      key={`${workflow.scope}-${workflow.name}`}
+                      id={`ai-suggest-opt-${i}`}
+                      role="option"
+                      aria-selected={i === activeSuggestion}
+                      className={`ai-suggest-item${i === activeSuggestion ? ' is-active' : ''}`}
+                      onMouseEnter={() => setActiveSuggestion(i)}
+                      onClick={() => handleSelectWorkflow(workflow)}
+                    >
+                      <span className="ai-suggest-item-name">/{workflow.name}</span>
+                      {workflow.description && <span className="ai-suggest-item-desc">{workflow.description}</span>}
+                      <span className="ai-suggest-item-scope">{workflow.scope}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           )}
@@ -1901,24 +2123,31 @@ const AIChat = ({
           {/* Context file suggestions */}
           {showContextSuggestions && (
             <div className="ai-suggest-overlay">
-              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4, maxHeight: 150, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0, 0, 0, 0.28)' }}>
-                <div style={{ padding: '5px 10px', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>Fichiers du projet</div>
-                {filteredContextFiles.length === 0 && (
-                  <div style={{ padding: '8px 10px', fontSize: 10, color: 'var(--text-muted)' }}>Aucun fichier pour {contextFilter}</div>
+              <div className="ai-suggest-panel">
+                <div className="ai-suggest-header">Fichiers du projet</div>
+                {filteredContextFiles.length === 0 ? (
+                  <div className="ai-suggest-empty">Aucun fichier pour {contextFilter}</div>
+                ) : (
+                  <ul className="ai-suggest-list" id="ai-suggest-listbox" role="listbox" aria-label="Fichiers du projet">
+                    {filteredContextFiles.map((filePath, i) => {
+                      const fileName = filePath.split(/[\\/]/).pop() || filePath;
+                      return (
+                        <li
+                          key={filePath}
+                          id={`ai-suggest-opt-${i}`}
+                          role="option"
+                          aria-selected={i === activeSuggestion}
+                          className={`ai-suggest-item${i === activeSuggestion ? ' is-active' : ''}`}
+                          onMouseEnter={() => setActiveSuggestion(i)}
+                          onClick={() => handleSelectContextFile(filePath)}
+                        >
+                          <span className="ai-suggest-item-name">@{fileName}</span>
+                          <span className="ai-suggest-item-path">{filePath}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
-                {filteredContextFiles.map((filePath) => {
-                  const fileName = filePath.split(/[\\/]/).pop() || filePath;
-                  return (
-                    <button
-                      key={filePath}
-                      onClick={() => handleSelectContextFile(filePath)}
-                      style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', background: 'none', border: 'none', color: 'var(--text-main)', fontSize: 11, cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      <span style={{ color: 'var(--accent)' }}>@{fileName}</span>
-                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{filePath}</span>
-                    </button>
-                  );
-                })}
               </div>
             </div>
           )}
@@ -2023,6 +2252,14 @@ const AIChat = ({
                   / Workflow
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* COD-70 A.10 — raison explicite quand l'envoi est indisponible
+              (le bouton disabled seul ne disait rien a l'utilisateur). */}
+          {!isElectronApiAvailable && (
+            <div className="ai-input-warning" role="alert">
+              IA indisponible&nbsp;: l&apos;application Electron n&apos;est pas connectée.
             </div>
           )}
         </div>
