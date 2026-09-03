@@ -1965,6 +1965,54 @@ select option:checked {
   min-height: 0;
 }
 
+.session-dialog {
+  width: min(420px, 92vw);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-4);
+  overflow: hidden;
+}
+
+.session-dialog__body {
+  padding: var(--space-4) var(--space-5);
+  color: var(--text-dim);
+  line-height: var(--leading-normal);
+}
+
+.session-dialog__body p {
+  margin: 0;
+}
+
+.session-dialog__label {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+.session-dialog__input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  color: var(--text-main);
+}
+
+.session-dialog__input:focus-visible,
+.session-dialog__actions button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.session-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: 0 var(--space-5) var(--space-5);
+}
+
 /* ============================
    SCROLLBAR CUSTOM
    ============================ */
