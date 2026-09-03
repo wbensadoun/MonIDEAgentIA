@@ -408,7 +408,7 @@ const GitPanel = ({
       <div className="git-panel git-empty">
         <div className="git-empty-icon">git</div>
         <div style={{ marginBottom: '12px' }}>Ce projet n&apos;est pas un depot Git</div>
-        <button className="git-btn git-btn-primary" onClick={handleInit} disabled={!canEditGit}>Git Init</button>
+        <button type="button" className="git-btn git-btn-primary" onClick={handleInit} disabled={!canEditGit}>Git Init</button>
       </div>
     );
   }
@@ -421,8 +421,8 @@ const GitPanel = ({
           <span>{branch || 'main'}</span>
         </div>
         <div className="git-header-actions">
-          <button className="git-btn" onClick={handlePull} disabled={isLoading || !canEditGit} title="Pull">Pull</button>
-          <button className="git-btn git-btn-primary" onClick={handlePush} disabled={isLoading || !canEditGit} title="Push">Push</button>
+          <button type="button" className="git-btn" onClick={handlePull} disabled={isLoading || !canEditGit} title="Pull">Pull</button>
+          <button type="button" className="git-btn git-btn-primary" onClick={handlePush} disabled={isLoading || !canEditGit} title="Push">Push</button>
         </div>
       </div>
 
@@ -515,10 +515,10 @@ const GitPanel = ({
       </div>
 
       <div className="git-tabs">
-        <button className={`git-tab${activeTab === 'changes' ? ' is-active' : ''}`} onClick={() => setActiveTab('changes')}>
+        <button type="button" className={`git-tab${activeTab === 'changes' ? ' is-active' : ''}`} onClick={() => setActiveTab('changes')}>
           Modifications {totalChangedFiles > 0 && <span className="git-badge">{totalChangedFiles}</span>}
         </button>
-        <button className={`git-tab${activeTab === 'log' ? ' is-active' : ''}`} onClick={() => setActiveTab('log')}>
+        <button type="button" className={`git-tab${activeTab === 'log' ? ' is-active' : ''}`} onClick={() => setActiveTab('log')}>
           Historique
         </button>
       </div>
@@ -624,7 +624,7 @@ const GitPanel = ({
               aria-label="Message de commit"
             />
             <div className="git-commit-actions">
-              <button className="git-btn" onClick={handleStageAll} disabled={isLoading || !canEditGit}>Stage All</button>
+              <button type="button" className="git-btn" onClick={handleStageAll} disabled={isLoading || !canEditGit}>Stage All</button>
               <button
                 className="git-btn git-btn-primary"
                 onClick={handleCommit}

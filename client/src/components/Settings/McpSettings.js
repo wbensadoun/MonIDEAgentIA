@@ -249,7 +249,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
           <span>Intégrations MCP</span>
         </div>
         <div className="mcp-header-actions">
-          <button className="mcp-btn mcp-btn-import" onClick={openRegistry}>
+          <button type="button" className="mcp-btn mcp-btn-import" onClick={openRegistry}>
             <IconDownload size={12} /> Importer depuis le registre
           </button>
           <div className="mcp-header-stats">
@@ -268,7 +268,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
               <span>Registre MCP Officiel</span>
               <span className="mcp-registry-badge-official">registry.modelcontextprotocol.io</span>
             </div>
-            <button className="mcp-btn mcp-btn-ghost" onClick={() => setShowRegistry(false)}><IconX size={12} /></button>
+            <button type="button" className="mcp-btn mcp-btn-ghost" onClick={() => setShowRegistry(false)}><IconX size={12} /></button>
           </div>
 
           <div className="mcp-registry-search">
@@ -496,7 +496,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
                 rows={3}
               />
             </div>
-            <button className="mcp-btn mcp-btn-connect" onClick={handleAddCustom}>
+            <button type="button" className="mcp-btn mcp-btn-connect" onClick={handleAddCustom}>
               Ajouter et connecter
             </button>
           </div>
