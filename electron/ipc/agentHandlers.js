@@ -13,7 +13,13 @@ const {
   listAgents, getAgent, saveAgent, deleteAgent,
   listSkills, getSkill,
   getPackTargets, collectFilesRecursive, sanitizePackPath,
+  getGlobalSkillsDir, getGlobalWorkflowsDir,
 } = require('../services/agent.service');
+const {
+  getCloudflareAgentsClient,
+  isConfigured: isCloudflareAgentsConfigured,
+  syncEnabled: isCloudflareAgentsSyncEnabled,
+} = require('../services/cloudflare-agents.service');
 
 // Builds the IPC notification callback that sends agent:action events to the renderer.
 const makeNotifyFn = (getMainWindow) => (type, run) => {
@@ -89,12 +95,138 @@ const registerAgentHandlers = (getMainWindow) => {
   });
 
   ipcMain.handle('save-agent', async (_event, name, content, scope, projectPath) => {
-    try { return await saveAgent(name, content, scope, projectPath); }
+    try {
+      const result = await saveAgent(name, content, scope, projectPath);
+      // Auto-push vers l'API Cloudflare (agents.md) si le sync est active.
+      if (result?.success && scope === 'global' && isCloudflareAgentsSyncEnabled() && isCloudflareAgentsConfigured()) {
+        getCloudflareAgentsClient().putAgent(result.name, String(content || '')).catch(() => { /* best effort */ });
+      }
+      return result;
+    }
     catch (error) { return { success: false, error: error.message }; }
   });
 
   ipcMain.handle('delete-agent', async (_event, name, scope, projectPath) => {
-    try { return await deleteAgent(name, scope, projectPath); }
+    try {
+      const result = await deleteAgent(name, scope, projectPath);
+      if (result?.success && scope === 'global' && isCloudflareAgentsSyncEnabled() && isCloudflareAgentsConfigured()) {
+        getCloudflareAgentsClient().deleteAgent(name).catch(() => { /* best effort */ });
+      }
+      return result;
+    }
+    catch (error) { return { success: false, error: error.message }; }
+  });
+
+  // --- Sync Cloudflare (stockage distant des agents.md) ---
+  ipcMain.handle('cloudflare-agents:status', async () => {
+    return { success: true, configured: isCloudflareAgentsConfigured(), enabled: isCloudflareAgentsSyncEnabled() };
+  });
+
+  ipcMain.handle('cloudflare-agents:list', async (_event, type = 'agents') => {
+    try { return await getCloudflareAgentsClient().list(type); }
+    catch (error) { return { success: false, error: error.message }; }
+  });
+
+  ipcMain.handle('cloudflare-agents:get', async (_event, name, type = 'agents') => {
+    try { return await getCloudflareAgentsClient().get(name, type); }
+    catch (error) { return { success: false, error: error.message }; }
+  });
+
+  ipcMain.handle('cloudflare-agents:push', async (_event, name, scope, projectPath) => {
+    try {
+      const local = await getAgent(name, scope, projectPath);
+      if (!local?.success) return local;
+      const result = await getCloudflareAgentsClient().putAgent(name, local.agent.content);
+      return result;
+    }
+    catch (error) { return { success: false, error: error.message }; }
+  });
+
+  // Collecte les ressources globales locales par type (agents *.md,
+  // skills <dir>/SKILL.md, workflows *.md) -> [{ name, content }].
+  const collectGlobalLocalResources = async (type) => {
+    if (type === 'skills') {
+      const dir = getGlobalSkillsDir();
+      const out = [];
+      let entries = [];
+      try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return out; }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        try {
+          const content = await fs.readFile(path.join(dir, entry.name, 'SKILL.md'), 'utf-8');
+          out.push({ name: `${entry.name}.md`, content });
+        } catch { /* skill sans SKILL.md */ }
+      }
+      return out;
+    }
+    const dir = type === 'workflows' ? getGlobalWorkflowsDir() : null;
+    if (type === 'workflows') {
+      const out = [];
+      let files = [];
+      try { files = await fs.readdir(dir); } catch { return out; }
+      for (const file of files) {
+        if (!file.toLowerCase().endsWith('.md')) continue;
+        try { out.push({ name: file, content: await fs.readFile(path.join(dir, file), 'utf-8') }); } catch { /* ignore */ }
+      }
+      return out;
+    }
+    // agents (defaut)
+    const { agents } = await listAgents(null);
+    const out = [];
+    for (const agent of agents.filter((a) => a.scope === 'global')) {
+      const local = await getAgent(agent.name, 'global', null);
+      if (local?.success) out.push({ name: agent.name, content: local.agent.content });
+    }
+    return out;
+  };
+
+  const globalDirForType = (type) =>
+    type === 'skills' ? getGlobalSkillsDir() : type === 'workflows' ? getGlobalWorkflowsDir() : null;
+
+  // Push global : publie toutes les ressources globales locales vers Cloudflare.
+  // type: 'agents' (defaut) | 'skills' | 'workflows'
+  ipcMain.handle('cloudflare-agents:push-all', async (_event, type = 'agents') => {
+    try {
+      const resourceType = ['agents', 'skills', 'workflows'].includes(type) ? type : 'agents';
+      const client = getCloudflareAgentsClient();
+      if (!client.isConfigured()) return { success: false, code: 'not_configured', error: 'API Cloudflare agents non configuree (.env).' };
+      const items = await collectGlobalLocalResources(resourceType);
+      let pushed = 0; let failed = 0;
+      for (const item of items) {
+        const result = await client.put(item.name, item.content, resourceType);
+        if (result?.success) pushed += 1; else failed += 1;
+      }
+      return { success: failed === 0, type: resourceType, pushed, failed, total: items.length };
+    }
+    catch (error) { return { success: false, error: error.message }; }
+  });
+
+  // Pull global : telecharge une ressource distante vers le cache global local.
+  ipcMain.handle('cloudflare-agents:pull', async (_event, name, type = 'agents') => {
+    try {
+      const resourceType = ['agents', 'skills', 'workflows'].includes(type) ? type : 'agents';
+      const client = getCloudflareAgentsClient();
+      if (resourceType === 'agents') {
+        const remote = await client.get(name, 'agents');
+        if (!remote?.success) return remote;
+        return await saveAgent(remote.agent.name, remote.agent.content, 'global', null);
+      }
+      const remote = await client.get(name, resourceType);
+      if (!remote?.success) return remote;
+      const content = remote.agent || remote.skill || remote.workflow;
+      const dir = globalDirForType(resourceType);
+      await fs.mkdir(dir, { recursive: true });
+      const safeName = String(content.name || '').replace(/[<>:"/\\|?*]/g, '_');
+      if (!safeName) return { success: false, error: 'Nom distant invalide' };
+      if (resourceType === 'skills') {
+        const skillDir = path.join(dir, safeName.replace(/\.md$/i, ''));
+        await fs.mkdir(skillDir, { recursive: true });
+        await fs.writeFile(path.join(skillDir, 'SKILL.md'), String(content.content || ''), 'utf-8');
+      } else {
+        await fs.writeFile(path.join(dir, safeName), String(content.content || ''), 'utf-8');
+      }
+      return { success: true, name: safeName, type: resourceType };
+    }
     catch (error) { return { success: false, error: error.message }; }
   });
 

@@ -17,3 +17,4 @@ yarn-error.log*
 # Environment variables
 .env
 /client/.env
+cloudflare/.env.deploy

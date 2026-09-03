@@ -1,0 +1,20 @@
+# Wansia / Code Companion — API back-only (agents.md, skills, workflows)
+# Deploy:  npx wrangler deploy        (depuis ce dossier)
+# Secrets: npx wrangler secret put AGENTS_API_TOKEN
+name = "wansia-agents-api"
+main = "src/index.js"
+compatibility_date = "2026-08-23"
+
+# Sous-domaine public (protége le worker avec Cloudflare Access -> voir README).
+# Le worker échoue fermé (401) sans le Bearer token même si Access était mal configuré.
+workers_dev = true
+
+# Namespace KV de stockage des ressources (créé automatiquement au premier deploy
+# avec --create-if-missing, ou manuellement via wrangler kv namespace create AGENTS_KV).
+[[kv_namespaces]]
+binding = "AGENTS_KV"
+id = "aad89a43b5f743c19fc1406aa017e694"
+
+[vars]
+# Métadonnées publiques non sensibles.
+SERVICE_NAME = "wansia-agents-api"

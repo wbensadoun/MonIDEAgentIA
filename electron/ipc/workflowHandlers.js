@@ -2,6 +2,25 @@ const {
   VISUAL_WORKFLOW_SCHEMA_VERSION,
   sanitizeVisualWorkflowPayload
 } = require('../workflows/visualWorkflowSchema');
+const {
+  getCloudflareAgentsClient,
+  isConfigured: isCloudflareAgentsConfigured,
+  syncEnabled: isCloudflareAgentsSyncEnabled,
+} = require('../services/cloudflare-agents.service');
+
+// Best-effort : publie un workflow global vers l'API Cloudflare (COD-52).
+const cloudflarePushWorkflow = (name, content) => {
+  try {
+    if (!isCloudflareAgentsSyncEnabled() || !isCloudflareAgentsConfigured()) return;
+    getCloudflareAgentsClient().put(`${name}.md`, String(content || ''), 'workflows').catch(() => { /* ignore */ });
+  } catch { /* ignore */ }
+};
+const cloudflareDeleteWorkflow = (name) => {
+  try {
+    if (!isCloudflareAgentsSyncEnabled() || !isCloudflareAgentsConfigured()) return;
+    getCloudflareAgentsClient().remove(`${name}.md`, 'workflows').catch(() => { /* ignore */ });
+  } catch { /* ignore */ }
+};
 
 const parseWorkflowFile = (content) => {
   const lines = String(content || '').split('\n');
@@ -158,6 +177,8 @@ const registerWorkflowHandlers = ({
       const filePath = path.join(dir, `${safeName}.md`);
       await fs.writeFile(filePath, content, 'utf-8');
 
+      if (scope === 'global') cloudflarePushWorkflow(safeName, content);
+
       console.log(`[Workflows] Saved workflow: ${filePath}`);
       return { success: true, path: filePath, name: safeName };
     } catch (error) {
@@ -185,6 +206,7 @@ const registerWorkflowHandlers = ({
       }
 
       await fs.unlink(filePath);
+      if (scope === 'global') cloudflareDeleteWorkflow(safeName);
       console.log(`[Workflows] Deleted workflow: ${filePath}`);
       return { success: true };
     } catch (error) {
