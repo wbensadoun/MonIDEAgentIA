@@ -56,6 +56,47 @@ const normalizeProjectPathForTrust = (projectPath) => {
   return path.resolve(raw);
 };
 
+const isInternalProjectPath = (projectPath) =>
+  normalizeProjectPathForTrust(projectPath)
+    .split(/[\\/]+/)
+    .some((segment) => segment.toLowerCase() === '.agent');
+
+const resolveNearestExistingPath = async (candidate) => {
+  let current = path.resolve(candidate);
+  while (true) {
+    try {
+      return await fs.realpath(current);
+    } catch (error) {
+      if (error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR') throw error;
+      const parent = path.dirname(current);
+      if (parent === current) return current;
+      current = parent;
+    }
+  }
+};
+
+const assertNotInternalProjectPath = async (root, candidate) => {
+  const rootResolved = path.resolve(root);
+  const candidateResolved = path.resolve(candidate);
+  const relativePath = path.relative(rootResolved, candidateResolved);
+  if (isInternalProjectPath(relativePath)) {
+    throw new Error('Chemin interne .agent interdit');
+  }
+
+  const [realRoot, realCandidate] = await Promise.all([
+    resolveNearestExistingPath(rootResolved),
+    resolveNearestExistingPath(candidateResolved)
+  ]);
+  if (isInternalProjectPath(realRoot) || isInternalProjectPath(realCandidate)) {
+    throw new Error('Chemin interne .agent interdit');
+  }
+
+  const realRootPrefix = realRoot.endsWith(path.sep) ? realRoot : `${realRoot}${path.sep}`;
+  if (realCandidate !== realRoot && !realCandidate.startsWith(realRootPrefix)) {
+    throw new Error(`Accès refusé: chemin hors projet "${candidate}"`);
+  }
+};
+
 const trustProjectPath = (projectPath) => {
   const normalized = normalizeProjectPathForTrust(projectPath);
   if (normalized) trustedProjectPaths.add(normalized);
@@ -70,6 +111,8 @@ const isTrustedProjectPath = (projectPath) => {
 const ensureTrustedProjectPath = async (projectPath) => {
   const normalized = normalizeProjectPathForTrust(projectPath);
   if (!normalized) throw new Error('Chemin projet manquant ou invalide');
+  if (isInternalProjectPath(normalized)) throw new Error('Chemin interne .agent interdit');
+  await assertNotInternalProjectPath(normalized, normalized);
   if (!trustedProjectPaths.has(normalized)) {
     throw new Error('Projet non autorise. Ouvrez ce dossier depuis le dialogue natif.');
   }
@@ -90,6 +133,12 @@ const resolveOptionalTrustedProjectPath = async (projectPath) => {
 const requestProjectPathApproval = async (projectPath, { dialog, getMainWindow }) => {
   const normalized = normalizeProjectPathForTrust(projectPath);
   if (!normalized) return { success: false, error: 'Chemin projet invalide' };
+  if (isInternalProjectPath(normalized)) return { success: false, error: 'Chemin interne .agent interdit' };
+  try {
+    await assertNotInternalProjectPath(normalized, normalized);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
   if (trustedProjectPaths.has(normalized)) {
     return { success: true, path: normalized, alreadyTrusted: true };
   }
@@ -286,11 +335,13 @@ const buildProjectIndexContext = (allProjectFiles, maxEntries = 200) => {
 module.exports = {
   // Path guards
   assertSafePath,
+  assertNotInternalProjectPath,
   safeResolvePath,
   toPositiveInt,
   // Trust system
   trustedProjectPaths,
   normalizeProjectPathForTrust,
+  isInternalProjectPath,
   trustProjectPath,
   isTrustedProjectPath,
   ensureTrustedProjectPath,
