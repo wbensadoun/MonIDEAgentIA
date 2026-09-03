@@ -67,23 +67,25 @@ Le `deviceId` et le token de session d'enrôlement sont stockés par le main pro
 ```json
 {
   "eventId": "evt_01HXYZ",
-  "eventType": "usage.recorded",
+  "type": "ai.request.completed",
   "occurredAt": "2026-08-16T10:00:00.000Z",
   "workspaceId": "123e4567-e89b-42d3-a456-426614174000",
-  "usage": {
-    "origin": "neven | byok | local",
-    "providerId": "anthropic",
-    "inputTokens": 120,
-    "outputTokens": 80,
-    "durationMs": 420,
-    "success": true
-  }
+  "profileId": null,
+  "providerId": null,
+  "inputTokens": 120,
+  "outputTokens": 80,
+  "costEur": 0.001,
+  "latencyMs": 420,
+  "success": true,
+  "fallbackUsed": false,
+  "errorCode": null,
+  "routingReason": null
 }
 ```
 
-`eventId` est obligatoire et est aussi envoyé dans l’en-tête `Idempotency-Key` : le backend peut donc dédupliquer une republication du même événement. Le client borne les identifiants, les compteurs et la durée ; il n’envoie jamais de prompt, réponse, clé, jeton, message d’erreur backend ou champ libre.
+`eventId` est obligatoire et est aussi envoyé dans l’en-tête `Idempotency-Key`. Le client demande d’abord une confirmation sur `/api/v1/internal/events/confirmations`, puis envoie le même payload avec cette confirmation à `/api/v1/internal/events` ; le backend peut donc dédupliquer une republication du même événement. Le client borne les identifiants, les compteurs, le coût et la latence ; il n’envoie jamais de prompt, réponse, clé, jeton, message d’erreur backend ou chemin de projet.
 
-L’authentification est un bearer résolu côté backend Electron via `NEVEN_INTERNAL_EVENTS_TOKEN`. Les échecs 401/403, timeout et réseau exposent seulement un résultat générique au consommateur ; aucun détail de transport ou de réponse serveur n’est remonté.
+L’authentification est le bearer de session résolu côté main process via l’identité Neven ; aucun token d’ingestion séparé n’est utilisé. Les échecs 401/403, timeout et réseau exposent seulement un résultat générique au consommateur ; aucun détail de transport ou de réponse serveur n’est remonté.
 
 `NEVEN_WORKSPACE_ID` doit être un UUID configuré côté main process pour publier ces événements. S’il est absent ou invalide, la télémétrie est désactivée localement sans appel réseau. `NEVEN_CONTROL_PLANE_ALLOWED_HOSTS` doit contenir explicitement chaque hôte distant du control plane **et de la passerelle** (liste séparée par des virgules) ; seuls ces hôtes en HTTPS sont acceptés. Les URLs loopback sont réservées au développement.
 

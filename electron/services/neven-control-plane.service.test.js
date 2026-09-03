@@ -6,8 +6,10 @@ process.env.NEVEN_CONTROL_PLANE_ALLOWED_HOSTS = 'api.neven.test,gateway.neven.te
 const {
   NevenControlPlaneClient,
   createNevenAccessResolver,
-  normalizeBaseUrl
+  normalizeBaseUrl,
+  normalizeUsageEvent
 } = require('./neven-control-plane.service');
+const usageFixture = require('../../docs/contracts/usage-event-v1.json');
 
 const jsonResponse = (payload, status = 200) => ({
   ok: status >= 200 && status < 300,
@@ -19,6 +21,10 @@ const DEVICE_ID = '223e4567-e89b-42d3-a456-426614174000';
 const SECOND_DEVICE_ID = '323e4567-e89b-42d3-a456-426614174000';
 const SUBJECT_ID = '423e4567-e89b-42d3-a456-426614174000';
 const GRANT = 'grant-for-cod-34';
+
+test('the shared usage-event fixture matches the client wire normalizer', () => {
+  assert.deepEqual(normalizeUsageEvent({ ...usageFixture, origin: 'neven' }), usageFixture);
+});
 
 test('control plane refuses to operate when no endpoint is configured', async () => {
   const client = new NevenControlPlaneClient({
@@ -79,7 +85,7 @@ test('control plane disables an unallowlisted legacy remote configuration before
   const client = new NevenControlPlaneClient({
     baseUrl: 'https://api.neven.test',
     allowedHosts: [],
-    eventTokenResolver: async () => { tokenRequests += 1; return 'not-used'; }
+    accessTokenResolver: async () => { tokenRequests += 1; return 'not-used'; }
   });
   assert.deepEqual(await client.resolveAccess({ workspaceId: WORKSPACE_ID, deviceId: DEVICE_ID }), {
     success: false,
@@ -247,14 +253,15 @@ test('access resolution ignores a gateway URL injected into the control-plane re
 });
 
 test('usage events use the internal endpoint, backend-only auth and a bounded normalized payload', async () => {
-  let request;
+  const requests = [];
   const client = new NevenControlPlaneClient({
     baseUrl: 'https://api.neven.test',
     accessTokenResolver: async () => 'session-token',
-    eventTokenResolver: async () => 'internal-event-token',
     fetchImpl: async (url, options) => {
-      request = { url, options };
-      return jsonResponse({ accepted: true }, 202);
+      requests.push({ url, options });
+      return url.endsWith('/confirmations')
+        ? jsonResponse({ data: { confirmation: 'confirmation-token' } }, 201)
+        : jsonResponse({ data: { accepted: true } }, 202);
     }
   });
 
@@ -265,6 +272,7 @@ test('usage events use the internal endpoint, backend-only auth and a bounded no
     providerId: 'claude',
     inputTokens: 12.8,
     outputTokens: 7,
+    costEur: 0.001,
     durationMs: 42,
     success: true,
     occurredAt: '2026-08-16T10:00:00.000Z',
@@ -274,22 +282,27 @@ test('usage events use the internal endpoint, backend-only auth and a bounded no
   });
 
   assert.deepEqual(result, { success: true, status: 202 });
-  assert.equal(request.url, 'https://api.neven.test/api/v1/internal/events');
-  assert.equal(request.options.headers.Authorization, 'Bearer internal-event-token');
-  assert.equal(request.options.headers['Idempotency-Key'], 'evt_01HXYZ');
-  assert.deepEqual(JSON.parse(request.options.body), {
+  assert.equal(requests[0].url, 'https://api.neven.test/api/v1/internal/events/confirmations');
+  assert.equal(requests[0].options.headers.Authorization, 'Bearer session-token');
+  assert.equal(requests[1].url, 'https://api.neven.test/api/v1/internal/events');
+  assert.equal(requests[1].options.headers.Authorization, 'Bearer session-token');
+  assert.equal(requests[1].options.headers['x-internal-event-confirmation'], 'confirmation-token');
+  assert.equal(requests[1].options.headers['Idempotency-Key'], 'evt_01HXYZ');
+  assert.deepEqual(JSON.parse(requests[1].options.body), {
     eventId: 'evt_01HXYZ',
-    eventType: 'usage.recorded',
+    type: 'ai.request.completed',
     occurredAt: '2026-08-16T10:00:00.000Z',
     workspaceId: WORKSPACE_ID,
-    usage: {
-      origin: 'neven',
-      providerId: 'claude',
-      inputTokens: 12,
-      outputTokens: 7,
-      durationMs: 42,
-      success: true
-    }
+    profileId: null,
+    providerId: null,
+    inputTokens: 12,
+    outputTokens: 7,
+    costEur: 0.001,
+    latencyMs: 42,
+    success: true,
+    fallbackUsed: false,
+    errorCode: null,
+    routingReason: null
   });
 });
 
@@ -297,14 +310,15 @@ test('usage event authorization failures are not verbose', async () => {
   for (const status of [401, 403]) {
     const client = new NevenControlPlaneClient({
       baseUrl: 'https://api.neven.test',
-      eventTokenResolver: async () => 'internal-event-token',
+      accessTokenResolver: async () => 'session-token',
       fetchImpl: async () => jsonResponse({ detail: 'sensitive backend detail' }, status)
     });
 
     const result = await client.publishUsageEvent({
       eventId: `evt-auth-${status}`,
       workspaceId: WORKSPACE_ID,
-      origin: 'local'
+      origin: 'local',
+      costEur: 0
     });
     assert.deepEqual(result, {
       success: false,
@@ -318,7 +332,7 @@ test('usage event timeout is bounded and does not expose transport details', asy
   const client = new NevenControlPlaneClient({
     baseUrl: 'https://api.neven.test',
     timeoutMs: 1,
-    eventTokenResolver: async () => 'internal-event-token',
+    accessTokenResolver: async () => 'session-token',
     fetchImpl: async (_url, { signal }) => new Promise((_, reject) => {
       signal.addEventListener('abort', () => {
         const error = new Error('socket address must not be exposed');
@@ -331,7 +345,8 @@ test('usage event timeout is bounded and does not expose transport details', asy
   const result = await client.publishUsageEvent({
     eventId: 'evt-timeout',
     workspaceId: WORKSPACE_ID,
-    origin: 'byok'
+    origin: 'byok',
+    costEur: 0
   });
   assert.deepEqual(result, {
     success: false,
@@ -344,7 +359,7 @@ test('usage event validation rejects invalid and oversized values before any req
   let calls = 0;
   const client = new NevenControlPlaneClient({
     baseUrl: 'https://api.neven.test',
-    eventTokenResolver: async () => 'internal-event-token',
+    accessTokenResolver: async () => 'session-token',
     fetchImpl: async () => {
       calls += 1;
       return jsonResponse({});

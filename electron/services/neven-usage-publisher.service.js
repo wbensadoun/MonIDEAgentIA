@@ -11,24 +11,30 @@ const createNevenUsagePublisher = ({
 } = {}) => {
   const normalizedWorkspaceId = String(workspaceId || '').trim();
 
-  return async ({ providerId, inputTokens, outputTokens, durationMs, success } = {}) => {
+  return async ({ providerId, profileId, inputTokens, outputTokens, durationMs, latencyMs, costEur, origin: eventOrigin, fallbackUsed, errorCode, routingReason, success } = {}) => {
     if (!normalizedWorkspaceId) {
       return { success: false, code: 'telemetry_disabled' };
     }
     if (!client || typeof client.publishUsageEvent !== 'function') {
       return { success: false, code: 'telemetry_unavailable' };
     }
-    return client.publishUsageEvent({
+    const event = {
       eventId: createEventId(),
       occurredAt: now(),
       workspaceId: normalizedWorkspaceId,
-      origin,
-      providerId,
+      origin: eventOrigin || origin,
       inputTokens,
       outputTokens,
-      durationMs,
+      latencyMs: latencyMs ?? durationMs,
+      costEur: costEur ?? 0,
       success
-    });
+    };
+    if (providerId !== undefined) event.providerId = providerId;
+    if (profileId !== undefined) event.profileId = profileId;
+    if (fallbackUsed !== undefined) event.fallbackUsed = fallbackUsed;
+    if (errorCode !== undefined) event.errorCode = errorCode;
+    if (routingReason !== undefined) event.routingReason = routingReason;
+    return client.publishUsageEvent(event);
   };
 };
 

@@ -39,7 +39,8 @@ test('main publisher creates the event id and only forwards telemetry fields', a
     providerId: 'ollama',
     inputTokens: 4,
     outputTokens: 2,
-    durationMs: 8,
+    latencyMs: 8,
+    costEur: 0,
     success: false
   });
 });

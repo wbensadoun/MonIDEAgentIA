@@ -3,6 +3,7 @@
 const DEFAULT_ACCESS_PATH = '/api/v1/control-plane/access/resolve';
 const DEFAULT_REVOKE_PATH = '/api/v1/control-plane/access/revoke';
 const DEFAULT_EVENTS_PATH = '/api/v1/internal/events';
+const DEFAULT_CONFIRMATIONS_PATH = '/api/v1/internal/events/confirmations';
 const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_CACHE_SKEW_MS = 15000;
 const DEFAULT_GATEWAY_BASE_PATH = '/api/v1/gateway';
@@ -11,10 +12,10 @@ const GRANT_PATTERN = /^[^\s\r\n]{1,4096}$/;
 const PROFILES = new Set(['haiku', 'luna', 'sol', 'opus']);
 const USAGE_ORIGINS = new Set(['neven', 'byok', 'local']);
 const USAGE_PROVIDERS = new Set(['gemini', 'claude', 'kimi', 'ollama', 'dashscope', 'neven']);
-const MAX_EVENT_ID_LENGTH = 160;
+const MAX_EVENT_ID_LENGTH = 128;
 const MAX_IDENTIFIER_LENGTH = 80;
-const MAX_TOKEN_COUNT = 1000000000;
-const MAX_DURATION_MS = 86400000;
+const MAX_TOKEN_COUNT = 10000000;
+const MAX_DURATION_MS = 3600000;
 
 const isLoopbackHost = (hostname) => ['localhost', '127.0.0.1', '[::1]'].includes(String(hostname).toLowerCase());
 
@@ -106,25 +107,41 @@ const normalizeUsageNumber = (value, max, field) => {
 };
 
 const normalizeUsageEvent = (event = {}, now = () => new Date().toISOString()) => {
-  const origin = String(event.origin || '').trim().toLowerCase();
-  if (!USAGE_ORIGINS.has(origin)) throw new Error('Origine d’usage invalide.');
-
+  const origin = event.origin === undefined || event.origin === null
+    ? null
+    : String(event.origin).trim().toLowerCase();
+  if (origin !== null && !USAGE_ORIGINS.has(origin)) throw new Error('Origine d’usage invalide.');
   const occurredAt = new Date(event.occurredAt || event.recordedAt || now());
   if (!Number.isFinite(occurredAt.getTime())) throw new Error('Date d’usage invalide.');
 
+  const providerId = event.providerId && UUID_PATTERN.test(String(event.providerId).trim())
+    ? String(event.providerId).trim().toLowerCase()
+    : null;
+  const profileId = event.profileId && UUID_PATTERN.test(String(event.profileId).trim())
+    ? String(event.profileId).trim().toLowerCase()
+    : null;
+  const inputTokens = normalizeUsageNumber(event.inputTokens, MAX_TOKEN_COUNT, 'inputTokens') ?? 0;
+  const outputTokens = normalizeUsageNumber(event.outputTokens, MAX_TOKEN_COUNT, 'outputTokens') ?? 0;
+  const costEur = Number(event.costEur);
+  if (!Number.isFinite(costEur) || costEur < 0 || costEur > 1000000) throw new Error('costEur invalide.');
+
   return Object.freeze({
     eventId: normalizeEventId(event.eventId),
-    eventType: 'usage.recorded',
+    type: 'ai.request.completed',
     occurredAt: occurredAt.toISOString(),
     workspaceId: normalizeWorkspaceId(event.workspaceId),
-    usage: Object.freeze({
-      origin,
-      providerId: normalizeUsageIdentifier(event.providerId || 'neven', 'providerId', USAGE_PROVIDERS),
-      inputTokens: normalizeUsageNumber(event.inputTokens, MAX_TOKEN_COUNT, 'inputTokens'),
-      outputTokens: normalizeUsageNumber(event.outputTokens, MAX_TOKEN_COUNT, 'outputTokens'),
-      durationMs: normalizeUsageNumber(event.durationMs, MAX_DURATION_MS, 'durationMs'),
-      success: event.success === undefined ? null : Boolean(event.success)
-    })
+    profileId,
+    providerId,
+    inputTokens,
+    outputTokens,
+    costEur,
+    latencyMs: normalizeUsageNumber(event.latencyMs ?? event.durationMs, MAX_DURATION_MS, 'latencyMs') ?? 0,
+    success: event.success === undefined ? false : Boolean(event.success),
+    fallbackUsed: event.fallbackUsed === true,
+    errorCode: event.errorCode === undefined || event.errorCode === null ? null : normalizeUsageIdentifier(event.errorCode, 'errorCode'),
+    routingReason: event.routingReason === undefined || event.routingReason === null || !String(event.routingReason).trim()
+      ? null
+      : String(event.routingReason).trim().slice(0, 500)
   });
 };
 
@@ -201,7 +218,7 @@ class NevenControlPlaneClient {
     accessPath = DEFAULT_ACCESS_PATH,
     revokePath = DEFAULT_REVOKE_PATH,
     eventsPath = process.env.NEVEN_INTERNAL_EVENTS_PATH || DEFAULT_EVENTS_PATH,
-    eventTokenResolver = async () => process.env.NEVEN_INTERNAL_EVENTS_TOKEN || null
+    confirmationsPath = process.env.NEVEN_INTERNAL_EVENTS_CONFIRMATIONS_PATH || DEFAULT_CONFIRMATIONS_PATH
   } = {}) {
     this.baseUrl = null;
     this.gatewayBaseUrl = null;
@@ -226,7 +243,7 @@ class NevenControlPlaneClient {
     this.accessPath = normalizePath(accessPath, DEFAULT_ACCESS_PATH);
     this.revokePath = normalizePath(revokePath, DEFAULT_REVOKE_PATH);
     this.eventsPath = normalizePath(eventsPath, DEFAULT_EVENTS_PATH);
-    this.eventTokenResolver = eventTokenResolver;
+    this.confirmationsPath = normalizePath(confirmationsPath, DEFAULT_CONFIRMATIONS_PATH);
   }
 
   isConfigured() {
@@ -347,11 +364,29 @@ class NevenControlPlaneClient {
       return failure('invalid_usage_event', 'Événement d’usage Neven invalide.');
     }
 
+    const confirmationResponse = await this.request(this.confirmationsPath, {
+      method: 'POST',
+      body: payload,
+      headers: { 'Idempotency-Key': payload.eventId }
+    });
+    if (!confirmationResponse.success) {
+      if (confirmationResponse.status === 401 || confirmationResponse.status === 403) {
+        return failure('auth_failed', 'Événement Neven non transmis.');
+      }
+      if (confirmationResponse.code === 'timeout') return failure('timeout', 'Événement Neven non transmis.');
+      return failure('event_unavailable', 'Événement Neven non transmis.');
+    }
+    const confirmation = confirmationResponse.data?.data?.confirmation;
+    if (typeof confirmation !== 'string' || !confirmation) {
+      return failure('event_unavailable', 'Événement Neven non transmis.');
+    }
     const response = await this.request(this.eventsPath, {
       method: 'POST',
       body: payload,
-      tokenResolver: this.eventTokenResolver,
-      headers: { 'Idempotency-Key': payload.eventId }
+      headers: {
+        'Idempotency-Key': payload.eventId,
+        'x-internal-event-confirmation': confirmation
+      }
     });
     if (response.success) return { success: true, status: response.status };
     if (response.status === 401 || response.status === 403) {
@@ -431,6 +466,7 @@ module.exports = {
   DEFAULT_ACCESS_PATH,
   DEFAULT_REVOKE_PATH,
   DEFAULT_EVENTS_PATH,
+  DEFAULT_CONFIRMATIONS_PATH,
   DEFAULT_GATEWAY_BASE_PATH,
   DEFAULT_CACHE_SKEW_MS,
   NevenControlPlaneClient,
