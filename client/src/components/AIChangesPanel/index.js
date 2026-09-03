@@ -385,7 +385,7 @@ const AIChangesPanel = ({
           <>
             <div className="ai-review-top">
               <div>
-                <div className="ai-changes-eyebrow">{activeRun.provider || 'IA'} {activeRun.model || ''}</div>
+                <div className="ai-changes-eyebrow">IA</div>
                 <h3>{shortPrompt(activeRun.prompt)}</h3>
               </div>
               <div className="ai-review-actions">

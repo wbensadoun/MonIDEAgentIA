@@ -27,15 +27,15 @@ describe('normalizeRole', () => {
 });
 
 describe('buildAgentLabel', () => {
-  test('nom et provider sont concatenes comme buildAgentBadgeLabel', () => {
+  test('nom et provider deviennent un libelle neutre', () => {
     expect(buildAgentLabel({ agentName: 'reviewer', agentProvider: 'claude' })).toBe(
-      'reviewer (claude)'
+      'Assistant spécialisé'
     );
   });
 
-  test('un seul des deux suffit', () => {
-    expect(buildAgentLabel({ agentProvider: 'gemini' })).toBe('gemini');
-    expect(buildAgentLabel({ agentName: 'reviewer' })).toBe('reviewer');
+  test('un seul des deux suffit sans exposer sa valeur', () => {
+    expect(buildAgentLabel({ agentProvider: 'gemini' })).toBe('Assistant spécialisé');
+    expect(buildAgentLabel({ agentName: 'reviewer' })).toBe('Assistant spécialisé');
   });
 
   test('sans rien a afficher, retourne undefined et pas une chaine vide', () => {

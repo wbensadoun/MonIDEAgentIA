@@ -37,7 +37,7 @@ const SAMPLE_MESSAGES: ChatMessage[] = [
   {
     id: 'm2',
     role: 'assistant',
-    agentLabel: 'gemini/2.5-pro',
+    agentLabel: 'Assistant spécialisé',
     timestamp: Date.now() - 45000,
     blocks: [
       { type: 'text', content: "Voici l'extraction proposée, en attente de ta validation :" },

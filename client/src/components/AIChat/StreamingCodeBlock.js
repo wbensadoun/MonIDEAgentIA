@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { OPAQUE_AI_LABEL } from '../../utils/rendererOpacity';
 
 /**
  * StreamingCodeBlock — animated code streaming with syntax highlighting,
@@ -125,7 +126,7 @@ const StreamingCodeBlock = ({
           {!fileName && filePath && <span className="sc-filename">{filePath}</span>}
         </div>
         <div className="sc-header-right">
-          {agent && <span className="sc-agent">{agent}</span>}
+          {agent && <span className="sc-agent">{OPAQUE_AI_LABEL}</span>}
           <span className="sc-lang">{langLabel}</span>
           <span className="sc-counter">
             {lines.length} ligne{lines.length !== 1 ? 's' : ''}

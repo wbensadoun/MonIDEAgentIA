@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import './LoadingAnimations.css';
 import './AgentProcess.css';
 import {
-  IconDiamond, IconMoon, IconCpu, IconBot, IconDot, IconBrain, IconCheck, IconFile, IconLightning
+  IconBot, IconBrain, IconCheck, IconFile, IconLightning
 } from '../ComponentLibrary/icons';
+import { OPAQUE_AI_LABEL, OPAQUE_WORKING_LABEL, opaqueStepLabel } from '../../utils/rendererOpacity';
 
 // ─────────────────────────────────────────────────────────
-// LoadingSteps (unchanged)
+// LoadingSteps
 // ─────────────────────────────────────────────────────────
 export const LoadingSteps = ({ steps, currentStep }) => {
   const normalizeStatus = (stepStatus) => {
@@ -41,8 +42,7 @@ export const LoadingSteps = ({ steps, currentStep }) => {
               )}
             </div>
             <div className="step-content">
-              <span className="step-label">{step.label}</span>
-              {step.provider && <span className="step-provider">{step.provider}</span>}
+              <span className="step-label">{opaqueStepLabel(index)}</span>
             </div>
           </div>
         );
@@ -73,15 +73,10 @@ export const LoadingPulse = ({ text, variant = 'default' }) => {
 };
 
 // ─────────────────────────────────────────────────────────
-// Provider metadata
+// Renderer metadata : l'icone et la couleur restent animées, le routage reste
+// volontairement opaque côté utilisateur.
 // ─────────────────────────────────────────────────────────
-const PROVIDER_META = {
-  gemini:       { Icon: IconDiamond, label: 'Gemini',        color: '#4285f4' },
-  kimi:         { Icon: IconMoon,    label: 'Kimi K2.5',     color: '#a78bfa' },
-  ollama:       { Icon: IconCpu,     label: 'Ollama',         color: '#f59e0b' },
-  multi:        { Icon: IconBot,     label: 'Multi-IA',       color: '#00f5d4' },
-  claude:       { Icon: IconDot,     label: 'Claude',         color: '#fb923c' },
-};
+const OPAQUE_META = { Icon: IconBot, label: OPAQUE_AI_LABEL, color: '#00f5d4' };
 
 // Rolling phrases that rotate while the AI thinks
 const THINKING_PHRASES = [
@@ -99,7 +94,6 @@ const THINKING_PHRASES = [
 // AgentProcessPanel — Antigravity-style working indicator
 // ─────────────────────────────────────────────────────────
 export const AIWorkingIndicator = ({
-  provider = 'gemini',
   statusText = "L'IA réfléchit...",
   steps = [],
   currentStepIndex = 0,
@@ -136,8 +130,8 @@ export const AIWorkingIndicator = ({
     const ts = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setLogs(prev => {
       const last = prev[prev.length - 1];
-      if (last && last.text === statusText) return prev; // deduplicate
-      return [...prev.slice(-14), { ts, text: statusText, id: Date.now() }];
+      if (last && last.text === OPAQUE_WORKING_LABEL) return prev; // deduplicate
+      return [...prev.slice(-14), { ts, text: OPAQUE_WORKING_LABEL, id: Date.now() }];
     });
   }, [statusText]);
 
@@ -146,7 +140,7 @@ export const AIWorkingIndicator = ({
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  const meta = PROVIDER_META[provider] || { Icon: IconBot, label: provider, color: '#00f5d4' };
+  const meta = OPAQUE_META;
 
   const formatTime = (s) => {
     if (s < 60) return `${s}s`;
@@ -169,7 +163,7 @@ export const AIWorkingIndicator = ({
             <div className="ap-status-line">
               <span className="ap-status-dot" />
               <span className="ap-status-text">
-                {streamingAgent ? `${streamingAgent} travaille...` : THINKING_PHRASES[phraseIdx]}
+                {streamingAgent ? OPAQUE_WORKING_LABEL : THINKING_PHRASES[phraseIdx]}
               </span>
             </div>
             <div className="ap-meta-row">
@@ -212,8 +206,7 @@ export const AIWorkingIndicator = ({
                       <span className="ap-step-num">{i + 1}</span>
                     )}
                   </div>
-                  <span className="ap-step-label">{step.label}</span>
-                  {step.provider && <span className="ap-step-provider">{step.provider}</span>}
+                  <span className="ap-step-label">{opaqueStepLabel(i)}</span>
                 </div>
                 {i < steps.length - 1 && (
                   <div className={`ap-connector ${isDone ? 'is-done' : ''}`} />
