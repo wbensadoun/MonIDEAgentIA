@@ -34,8 +34,7 @@ interface ToolbarSeparatorProps {
   className?: string;
 }
 
-interface IconButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: React.ReactNode;
   label?: string;
   isActive?: boolean | undefined;
@@ -84,6 +83,8 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
       variant = 'default',
       className,
       title,
+      type = 'button',
+      'aria-label': ariaLabel,
       ...rest
     },
     ref
@@ -93,7 +94,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
       `icon-button--${size}`,
       `icon-button--${variant}`,
       isActive && 'icon-button--active',
-      className
+      className,
     ]
       .filter(Boolean)
       .join(' ');
@@ -102,7 +103,9 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
       <button
         ref={ref}
         className={classNames}
+        type={type}
         aria-pressed={isActive === undefined ? undefined : isActive}
+        aria-label={ariaLabel || (!label ? title : undefined)}
         title={title || label}
         {...rest}
       >
@@ -139,6 +142,7 @@ export const Pill = React.forwardRef<HTMLButtonElement, PillProps>(
       clickable = true,
       className,
       onClick,
+      type = 'button',
       ...rest
     },
     ref
@@ -148,7 +152,7 @@ export const Pill = React.forwardRef<HTMLButtonElement, PillProps>(
       `pill--${variant}`,
       isActive && 'pill--active',
       !clickable && 'pill--static',
-      className
+      className,
     ]
       .filter(Boolean)
       .join(' ');
@@ -159,6 +163,7 @@ export const Pill = React.forwardRef<HTMLButtonElement, PillProps>(
       <Tag
         ref={ref}
         className={classNames}
+        {...(clickable ? { type } : {})}
         onClick={clickable ? onClick : undefined}
         {...(clickable ? rest : {})}
       >

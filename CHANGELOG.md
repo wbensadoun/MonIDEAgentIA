@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.3.0] — UI Kit/a11y : contrôles de toolbar sûrs
+
+### Fixed
+
+- Les `IconButton` et `Pill` interactifs du UI Kit utilisent désormais `type="button"` par défaut afin de ne pas soumettre accidentellement un formulaire.
+- Les `IconButton` sans libellé visible récupèrent un nom accessible depuis leur titre, tout en conservant la possibilité de fournir un `aria-label` explicite.
+- Ajout de tests de contrat pour le type et le nom accessible des contrôles partagés.
+
 ## [3.4.0] — Sélecteur d'effort de raisonnement
 
 ### Added
