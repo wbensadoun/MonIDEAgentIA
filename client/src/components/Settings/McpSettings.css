@@ -82,6 +82,53 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
+.mcp-prompt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.mcp-prompt-dialog {
+  width: min(440px, 100%);
+  padding: var(--space-5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-4);
+}
+
+.mcp-prompt-title {
+  margin: 0 0 var(--space-3);
+  color: var(--text-main);
+  font-size: var(--text-lg);
+}
+
+.mcp-prompt-label {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+.mcp-prompt-input:focus-visible,
+.mcp-prompt-actions button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.mcp-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
 .mcp-registry-header {
   display: flex;
   align-items: center;

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './McpSettings.css';
+import Dialog from '../ComponentLibrary/Dialog';
 import {
   IconPlug, IconDownload, IconX, IconSearch, IconKey, IconCheck,
   IconCloud, IconWrench, IconDot
@@ -17,6 +18,22 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
     id: '', name: '', command: '', args: '', env: ''
   });
   const [isLoading, setIsLoading] = useState({});
+  const [promptDialog, setPromptDialog] = useState(null);
+  const promptResolverRef = useRef(null);
+
+  const requestPrompt = useCallback(({ title, label, defaultValue = '', secret = false }) => (
+    new Promise((resolve) => {
+      promptResolverRef.current = resolve;
+      setPromptDialog({ title, label, value: defaultValue, secret });
+    })
+  ), []);
+
+  const resolvePrompt = useCallback((value) => {
+    const resolve = promptResolverRef.current;
+    promptResolverRef.current = null;
+    setPromptDialog(null);
+    resolve?.(value);
+  }, []);
 
   const refreshServers = useCallback(async () => {
     if (!isElectronApiAvailable || !window.electronAPI?.mcpListServers) return;
@@ -93,7 +110,11 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
 
       if (entry?.requiredEnv?.length > 0) {
         for (const key of entry.requiredEnv) {
-          const value = window.prompt(`${entry.name} — Entrez la valeur pour ${key}:`);
+          const value = await requestPrompt({
+            title: entry.name || catalogId,
+            label: `Entrez la valeur pour ${key}`,
+            secret: /key|token|secret|password/i.test(key),
+          });
           if (value === null) {
             showMessage('Annulé', 2000);
             setIsLoading(prev => ({ ...prev, [`catalog-${catalogId}`]: false }));
@@ -145,10 +166,11 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
       if (registryServer.envVars?.length > 0) {
         for (const v of registryServer.envVars) {
           if (v.isRequired || v.isSecret) {
-            const value = window.prompt(
-              `${registryServer.title} — ${v.description || v.name}:`,
-              ''
-            );
+            const value = await requestPrompt({
+              title: registryServer.title,
+              label: v.description || v.name,
+              secret: Boolean(v.isSecret),
+            });
             if (value === null) {
               showMessage('Annulé', 2000);
               setIsLoading(prev => ({ ...prev, [loadKey]: false }));
@@ -243,6 +265,50 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
 
   return (
     <div className="mcp-settings">
+      {promptDialog && (
+        <Dialog
+          ariaLabel={promptDialog.title}
+          onClose={() => resolvePrompt(null)}
+          closeOnBackdrop={false}
+          overlayClassName="mcp-prompt-overlay"
+          className="mcp-prompt-dialog"
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              resolvePrompt(promptDialog.value);
+            }}
+          >
+            <h2 className="mcp-prompt-title">{promptDialog.title}</h2>
+            <label className="mcp-prompt-label" htmlFor="mcp-prompt-value">
+              {promptDialog.label}
+            </label>
+            <input
+              id="mcp-prompt-value"
+              className="mcp-input mcp-prompt-input"
+              type={promptDialog.secret ? 'password' : 'text'}
+              value={promptDialog.value}
+              onChange={(event) =>
+                setPromptDialog((prev) => ({ ...prev, value: event.target.value }))
+              }
+              autoFocus
+              autoComplete={promptDialog.secret ? 'new-password' : 'off'}
+            />
+            <div className="mcp-prompt-actions">
+              <button
+                type="button"
+                className="mcp-btn mcp-btn-ghost"
+                onClick={() => resolvePrompt(null)}
+              >
+                Annuler
+              </button>
+              <button type="submit" className="mcp-btn mcp-btn-connect">
+                Valider
+              </button>
+            </div>
+          </form>
+        </Dialog>
+      )}
       <div className="mcp-header">
         <div className="mcp-header-title">
           <span className="mcp-icon"><IconPlug size={18} /></span>
@@ -283,6 +349,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
               }}
             />
             <button
+              type="button"
               className="mcp-btn mcp-btn-connect"
               onClick={() => searchRegistry(registrySearch)}
               disabled={registryLoading}
@@ -325,6 +392,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
                       <span className="mcp-registry-item-added"><IconCheck size={11} /> Ajouté</span>
                     ) : srv.hasPackage ? (
                       <button
+                        type="button"
                         className="mcp-btn mcp-btn-import-sm"
                         onClick={() => handleRegistryImport(srv)}
                         disabled={isLoading[loadKey]}
@@ -363,6 +431,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
               <div className="mcp-server-actions">
                 {server.status === 'connected' ? (
                   <button
+                    type="button"
                     className="mcp-btn mcp-btn-ghost"
                     onClick={() => handleDisconnect(server.id)}
                   >
@@ -370,6 +439,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
                   </button>
                 ) : (
                   <button
+                    type="button"
                     className="mcp-btn mcp-btn-connect"
                     onClick={() => handleConnect(server.id)}
                     disabled={isLoading[server.id]}
@@ -378,6 +448,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
                   </button>
                 )}
                 <button
+                  type="button"
                   className="mcp-btn mcp-btn-danger"
                   onClick={() => handleRemove(server.id)}
                   title="Supprimer"
@@ -423,6 +494,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
             const isConnected = connectedIds.has(entry.id);
             return (
               <button
+                type="button"
                 key={entry.id}
                 className={`mcp-catalog-item ${isConnected ? 'is-connected' : ''} ${isAdded ? 'is-added' : ''}`}
                 onClick={() => !isAdded && handleQuickAdd(entry.id)}
@@ -442,6 +514,7 @@ const McpSettings = ({ isElectronApiAvailable, showMessage }) => {
       {/* Ajout custom */}
       <div className="mcp-custom">
         <button
+          type="button"
           className="mcp-btn mcp-btn-add"
           onClick={() => setShowAddForm(!showAddForm)}
         >

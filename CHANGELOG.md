@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.9.0] — Dialog de variables MCP
+
+### Fixed
+
+- La saisie des variables d’environnement lors des ajouts MCP utilise désormais un dialog partagé avec support clavier et champ secret, sans `window.prompt`.
+- Les actions MCP modifiées déclarent explicitement leur type de bouton.
+
 ## [4.8.0] — Dialogs de session accessibles
 
 ### Fixed
