@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.6.0] — Dialog de création dans l’explorateur
+
+### Fixed
+
+- La création d’un fichier ou dossier dans un sous-dossier utilise désormais le `Dialog` partagé avec focus, validation et boutons accessibles au clavier, au lieu de `window.prompt`.
+
 ## [4.5.1] — Garde-fou des contrats UI
 
 ### Added
