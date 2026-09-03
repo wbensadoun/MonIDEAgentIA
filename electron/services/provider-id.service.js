@@ -4,6 +4,7 @@ const PROVIDER_ID_ALIASES = Object.freeze({
   anthropic: 'anthropic', claude: 'anthropic',
   google: 'google', gemini: 'google',
   openai: 'openai',
+  together: 'kimi', kimi: 'kimi',
   azure: 'azure', 'azure-openai': 'azure', azureopenai: 'azure',
   ollama: 'ollama-local', 'ollama-local': 'ollama-local', local: 'ollama-local'
 });

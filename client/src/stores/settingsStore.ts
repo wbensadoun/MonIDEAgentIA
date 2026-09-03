@@ -14,10 +14,6 @@ interface SettingsState {
   setModels: (models: Record<string, string>) => void;
   setModel: (provider: string, model: string) => void;
 
-  apiKeys: Record<string, string>;
-  setApiKeys: (keys: Record<string, string>) => void;
-  setApiKey: (provider: string, key: string) => void;
-
   executionMode: ExecutionMode;
   setExecutionMode: (mode: ExecutionMode) => void;
 
@@ -63,12 +59,6 @@ const useSettingsStore = create<SettingsState>((set) => ({
   setModels: (models) => set({ models }),
   setModel: (provider, model) => set((state) => ({
     models: { ...state.models, [provider]: model },
-  })),
-
-  apiKeys: {},
-  setApiKeys: (keys) => set({ apiKeys: keys }),
-  setApiKey: (provider, key) => set((state) => ({
-    apiKeys: { ...state.apiKeys, [provider]: key },
   })),
 
   executionMode: 'auto',

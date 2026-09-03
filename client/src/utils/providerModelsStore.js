@@ -18,18 +18,12 @@ const emitUpdate = () => {
 
 export const getProviderModelsState = (providerId) => state[providerId] || EMPTY_DETECTION;
 
-export const refreshProviderModel = async (provider, apiKey) => {
+export const refreshProviderModel = async (provider) => {
   if (provider.supportsModelDiscovery === false) {
     state[provider.id] = EMPTY_DETECTION;
     return state[provider.id];
   }
   if (!window.electronAPI?.listProviderModels) return getProviderModelsState(provider.id);
-
-  if (provider.keyField && !apiKey) {
-    state[provider.id] = EMPTY_DETECTION;
-    emitUpdate();
-    return state[provider.id];
-  }
 
   // Deux composants (ex: startup + Settings ouvert simultanement) ne doivent
   // pas declencher deux requetes concurrentes pour le meme fournisseur.
@@ -37,7 +31,7 @@ export const refreshProviderModel = async (provider, apiKey) => {
 
   const run = (async () => {
     try {
-      const response = await window.electronAPI.listProviderModels(provider.id, apiKey || null);
+      const response = await window.electronAPI.listProviderModels(provider.id);
       state[provider.id] = response?.success && response?.valid
         ? { status: 'ok', models: response.models || [], error: null }
         : { status: 'error', models: [], error: response?.error || 'Détection impossible' };
@@ -61,9 +55,9 @@ export const refreshProviderModel = async (provider, apiKey) => {
 // de Settings affiche des modeles deja a jour au lieu du repli hors-ligne.
 export const refreshAllProviderModels = (settings = {}) => {
   PROVIDER_CATALOG.forEach((provider) => {
-    const apiKey = provider.keyField ? settings[provider.keyField] : null;
-    if (provider.keyField && !apiKey) return;
-    refreshProviderModel(provider, apiKey).catch(() => {});
+    const hasKey = provider.keyField ? settings.providerKeyStatus?.[provider.id] === true : true;
+    if (provider.keyField && !hasKey) return;
+    refreshProviderModel(provider).catch(() => {});
   });
 };
 

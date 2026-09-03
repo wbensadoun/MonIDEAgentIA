@@ -78,6 +78,9 @@ export interface ElectronAPI {
   // Settings
   loadSettings: () => Promise<Record<string, unknown>>;
   saveSettings: (settings: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
+  saveProviderKey: (provider: string, secretValue: string) => Promise<{ success: boolean; hasKey?: boolean; error?: string }>;
+  validateApiKey: (provider: string) => Promise<{ success: boolean; valid: boolean; modelCount?: number; error?: string }>;
+  listProviderModels: (provider: string) => Promise<{ success: boolean; valid: boolean; models?: string[]; error?: string }>;
 
   // AI completions
   getGeminiCompletion: (history: unknown[], code: string, files: unknown, options: AICompletionOptions) => Promise<{ success: boolean; text?: string; error?: string }>;
@@ -127,7 +130,6 @@ export interface ElectronAPI {
     userPrompt: string,
     options?: {
       provider?: string;
-      apiKey?: string;
       hardwareProfile?: { vramGb?: number; totalGb?: number } | null;
       settings?: Record<string, unknown> | null;
     }

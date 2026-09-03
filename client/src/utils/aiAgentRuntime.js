@@ -29,17 +29,6 @@ export const buildSkillsMetadata = (skills) => (
     : []
 );
 
-export const createProviderApiKeyResolver = ({
-  claudeApiKey,
-  kimiApiKey,
-  geminiApiKey
-}) => (provider) => {
-  if (provider === 'claude') return claudeApiKey;
-  if (provider === 'kimi') return kimiApiKey;
-  if (provider === 'gemini') return geminiApiKey;
-  return undefined;
-};
-
 export const runMultiAgentRole = async ({
   roleKey,
   promptText,
@@ -50,7 +39,6 @@ export const runMultiAgentRole = async ({
   normalizedMultiAgentRoles,
   providerOverride = null,
   modelOverride = null,
-  getProviderApiKey,
   currentProjectPath,
   activeAgent,
   activeSkill,
@@ -67,7 +55,6 @@ export const runMultiAgentRole = async ({
   const providerOptions = {
     model,
     thinkingMode: thinking,
-    apiKey: getProviderApiKey(provider),
     projectPath: currentProjectPath,
     agent: activeAgent,
     skill: activeSkill,

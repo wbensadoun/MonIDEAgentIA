@@ -115,7 +115,7 @@ try {
       ipcRenderer.invoke('get-gemini-completion', history, currentCode, allProjectFiles, options),
 
     // API pour lister les modèles Gemini disponibles
-    listGeminiModels: (apiKey) => ipcRenderer.invoke('list-gemini-models', apiKey),
+    listGeminiModels: () => ipcRenderer.invoke('list-gemini-models'),
 
     // API pour l'appel Kimi K2.5 via Together
     getKimiCompletion: (history, currentCode, allProjectFiles, options) =>
@@ -141,8 +141,9 @@ try {
     saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
     loadSettings: () => ipcRenderer.invoke('load-settings'),
     getSystemAIProfile: (options) => ipcRenderer.invoke('get-system-ai-profile', options),
-    validateApiKey: (provider, apiKey) => ipcRenderer.invoke('validate-api-key', provider, apiKey),
-    listProviderModels: (provider, apiKey) => ipcRenderer.invoke('list-provider-models', provider, apiKey),
+    saveProviderKey: (provider, secretValue) => ipcRenderer.invoke('save-provider-key', provider, secretValue),
+    validateApiKey: (provider) => ipcRenderer.invoke('validate-api-key', provider),
+    listProviderModels: (provider) => ipcRenderer.invoke('list-provider-models', provider),
     listProviderCredentials: () => ipcRenderer.invoke('provider:list-credentials'),
     connectProviderCredential: (payload) => ipcRenderer.invoke('provider:connect', payload),
     revokeProviderCredential: (payload) => ipcRenderer.invoke('provider:revoke', payload),

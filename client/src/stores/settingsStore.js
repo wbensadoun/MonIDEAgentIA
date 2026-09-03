@@ -10,12 +10,6 @@ const useSettingsStore = create((set) => ({
     models: { ...state.models, [provider]: model }
   })),
 
-  apiKeys: {},
-  setApiKeys: (keys) => set({ apiKeys: keys }),
-  setApiKey: (provider, key) => set((state) => ({
-    apiKeys: { ...state.apiKeys, [provider]: key }
-  })),
-
   executionMode: 'auto',
   setExecutionMode: (mode) => set({ executionMode: mode }),
 

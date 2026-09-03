@@ -2,7 +2,6 @@ import {
   buildCompactProjectContext,
   buildSharedAgentContextOptions,
   buildSkillsMetadata,
-  createProviderApiKeyResolver,
   runMultiAgentRole,
   runWithConcurrency
 } from './aiAgentRuntime';
@@ -32,7 +31,7 @@ describe('aiAgentRuntime', () => {
     });
   });
 
-  test('normalizes skills metadata and provider API keys', () => {
+  test('normalizes skills metadata without exposing provider credentials', () => {
     expect(buildSkillsMetadata([
       { name: 'project-skill', scope: 'project', hasSkillMd: true },
       { name: 'hidden-skill', scope: 'global', hasSkillMd: false },
@@ -42,16 +41,6 @@ describe('aiAgentRuntime', () => {
       { name: 'legacy-skill', scope: undefined }
     ]);
 
-    const resolveApiKey = createProviderApiKeyResolver({
-      claudeApiKey: 'claude-key',
-      kimiApiKey: 'kimi-key',
-      geminiApiKey: 'gemini-key'
-    });
-
-    expect(resolveApiKey('claude')).toBe('claude-key');
-    expect(resolveApiKey('kimi')).toBe('kimi-key');
-    expect(resolveApiKey('gemini')).toBe('gemini-key');
-    expect(resolveApiKey('ollama')).toBeUndefined();
   });
 
   test('runs workers with stable result order and builds compact project context', async () => {
@@ -78,7 +67,6 @@ describe('aiAgentRuntime', () => {
       normalizedMultiAgentRoles: {
         frontend: { provider: 'gemini', model: 'gemini-test' }
       },
-      getProviderApiKey: () => 'gemini-key',
       currentProjectPath: 'C:/demo',
       activeAgent: { name: 'agent' },
       activeSkill: { name: 'skill' },
@@ -98,7 +86,6 @@ describe('aiAgentRuntime', () => {
       { files: {} },
       expect.objectContaining({
         model: 'gemini-test',
-        apiKey: 'gemini-key',
         projectPath: 'C:/demo',
         skillsContent: [{ name: 'visible-skill', scope: 'project' }],
         localOnly: false

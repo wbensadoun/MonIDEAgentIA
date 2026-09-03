@@ -289,7 +289,11 @@ registerProjectHandlers({ getMainWindow: () => mainWindow, setWorkspaceContext }
 registerProcessHandlers(processService);
 registerQualityHandlers(processService);
 registerSystemHandlers();
-registerSettingsHandlers();
+registerSettingsHandlers({
+  credentialService: providerCredentialService,
+  resolveWorkspaceContext,
+  legacyMigrationWorkspaceId: nevenIdentity.workspaceId
+});
 registerConversationHandlers();
 registerFileHandlers();
 registerSnapshotHandlers();

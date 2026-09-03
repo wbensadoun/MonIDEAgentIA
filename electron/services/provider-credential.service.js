@@ -5,7 +5,7 @@ const { normalizeCredentialProviderId } = require('./provider-id.service');
 
 // Registration is deliberately separate from connectivity: unsupported providers remain manageable
 // without accepting a renderer-controlled endpoint.
-const PROVIDER_REGISTRY = Object.freeze(['anthropic', 'openai', 'google']);
+const PROVIDER_REGISTRY = Object.freeze(['anthropic', 'openai', 'google', 'kimi']);
 const UNSUPPORTED_PROVIDER_IDS = Object.freeze(['azure', 'ollama-local']);
 const PUBLIC_METADATA_FIELDS = Object.freeze([
   'id', 'provider', 'label', 'permissions', 'limits', 'createdAt', 'updatedAt',
