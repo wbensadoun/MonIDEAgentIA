@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import './WorkflowManager.css';
+import Dialog from '../ComponentLibrary/Dialog';
 
 const WorkflowManager = ({
   workflows,
@@ -29,6 +30,8 @@ const WorkflowManager = ({
   const [packScope, setPackScope] = useState('workspace');
   const [packImportOverwrite, setPackImportOverwrite] = useState(false);
   const [isPackTransferRunning, setIsPackTransferRunning] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [isConfirming, setIsConfirming] = useState(false);
 
   const filteredWorkflows = workflows.filter(w => w.scope === activeTab);
 
@@ -263,17 +266,7 @@ const WorkflowManager = ({
     return installedSkills.workspace.some(s => s.name === safeName);
   };
 
-  const installAllAgentSkills = async () => {
-    if (!isElectronApiAvailable || !window.electronAPI?.installAllSkills) return;
-    if (!Array.isArray(agentSkills) || agentSkills.length === 0) {
-      showMessage && showMessage("Veuillez d'abord charger le catalogue Agent Skills", 3000);
-      return;
-    }
-
-    if (!window.confirm(`Voulez-vous vraiment installer les ${agentSkills.length} skills du catalogue globalement ? Cela peut prendre plusieurs minutes.`)) {
-      return;
-    }
-
+  const runInstallAllAgentSkills = async () => {
     setIsInstalling(true);
     setPacksStatus(`Installation de ${agentSkills.length} skills en cours... (Ne fermez pas cette fenetre)`);
 
@@ -297,6 +290,21 @@ const WorkflowManager = ({
     } finally {
       setIsInstalling(false);
     }
+  };
+
+  const installAllAgentSkills = async () => {
+    if (!isElectronApiAvailable || !window.electronAPI?.installAllSkills) return;
+    if (!Array.isArray(agentSkills) || agentSkills.length === 0) {
+      showMessage && showMessage("Veuillez d'abord charger le catalogue Agent Skills", 3000);
+      return;
+    }
+
+    setConfirmDialog({
+      title: 'Installer tous les skills',
+      message: `Voulez-vous vraiment installer les ${agentSkills.length} skills du catalogue globalement ? Cela peut prendre plusieurs minutes.`,
+      confirmLabel: 'Tout installer',
+      onConfirm: runInstallAllAgentSkills,
+    });
   };
 
   const handleCreate = (scope) => {
@@ -332,8 +340,22 @@ ${formData.body}`;
   };
 
   const handleDelete = async (workflow) => {
-    if (window.confirm(`Supprimer le workflow "${workflow.name}" ?`)) {
-      await onDelete(workflow.name, workflow.scope);
+    setConfirmDialog({
+      title: 'Supprimer le workflow',
+      message: `Supprimer le workflow "${workflow.name}" ?`,
+      confirmLabel: 'Supprimer',
+      onConfirm: () => onDelete(workflow.name, workflow.scope),
+    });
+  };
+
+  const confirmPendingAction = async () => {
+    if (!confirmDialog || isConfirming) return;
+    setIsConfirming(true);
+    try {
+      await confirmDialog.onConfirm();
+      setConfirmDialog(null);
+    } finally {
+      setIsConfirming(false);
     }
   };
 
@@ -391,6 +413,7 @@ ${formData.body}`;
               Annuler
             </button>
             <button
+              type="button"
               onClick={handleSave}
               disabled={!formData.name.trim()}
               className="btn btn-primary"
@@ -405,6 +428,35 @@ ${formData.body}`;
 
   return (
     <div className="workflow-overlay">
+      {confirmDialog && (
+        <Dialog
+          ariaLabel={confirmDialog.title}
+          onClose={() => !isConfirming && setConfirmDialog(null)}
+          overlayClassName="workflow-confirm-overlay"
+          className="workflow-confirm-dialog"
+        >
+          <h2 className="workflow-confirm-title">{confirmDialog.title}</h2>
+          <p className="workflow-confirm-message">{confirmDialog.message}</p>
+          <div className="workflow-confirm-actions">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setConfirmDialog(null)}
+              disabled={isConfirming}
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={confirmPendingAction}
+              disabled={isConfirming}
+            >
+              {isConfirming ? 'En cours…' : confirmDialog.confirmLabel}
+            </button>
+          </div>
+        </Dialog>
+      )}
       <div className="workflow-modal">
         <div className="workflow-header">
           <div className="workflow-title">Workflows</div>
@@ -413,18 +465,21 @@ ${formData.body}`;
 
         <div className="workflow-tabs">
           <button
+            type="button"
             onClick={() => setActiveTab('global')}
             className={`workflow-tab ${activeTab === 'global' ? 'is-active' : ''}`}
           >
             Global
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('workspace')}
             className={`workflow-tab ${activeTab === 'workspace' ? 'is-active' : ''}`}
           >
             Workspace
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveTab('installed_skills');
               loadInstalledSkills();
@@ -434,6 +489,7 @@ ${formData.body}`;
             Installed Skills
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('packs')}
             className={`workflow-tab ${activeTab === 'packs' ? 'is-active' : ''}`}
           >
@@ -460,6 +516,7 @@ ${formData.body}`;
                   </div>
                   <div className="pack-transfer-actions">
                     <button
+                      type="button"
                       className="btn btn-ghost"
                       onClick={exportPack}
                       disabled={!isElectronApiAvailable || isPackTransferRunning}
@@ -467,6 +524,7 @@ ${formData.body}`;
                       {isPackTransferRunning ? '...' : 'Exporter'}
                     </button>
                     <button
+                      type="button"
                       className="btn btn-primary"
                       onClick={importPack}
                       disabled={!isElectronApiAvailable || isPackTransferRunning}
@@ -506,6 +564,7 @@ ${formData.body}`;
                     <div className="pack-card-desc">Installe ~129 personas specialistes (ex: electron-pro, frontend-dev...).</div>
                   </div>
                   <button
+                    type="button"
                     className="btn btn-primary"
                     onClick={syncSubagents}
                     disabled={!isElectronApiAvailable || isInstalling}
@@ -523,6 +582,7 @@ ${formData.body}`;
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button
+                      type="button"
                       className="btn btn-ghost"
                       onClick={() => loadCatalog('agent-skills')}
                       disabled={!isElectronApiAvailable || isAgentSkillsLoading}
@@ -531,6 +591,7 @@ ${formData.body}`;
                     </button>
                     {Array.isArray(agentSkills) && agentSkills.length > 0 && (
                       <button
+                        type="button"
                         className="btn btn-primary"
                         onClick={installAllAgentSkills}
                         disabled={isInstalling || !isElectronApiAvailable}
@@ -561,6 +622,7 @@ ${formData.body}`;
                         </div>
                         <div className="packs-item-actions">
                           <button
+                            type="button"
                             className="workflow-action run"
                             onClick={() => installSkill(entry, 'workspace')}
                             disabled={!currentProjectPath || isInstalling || checkIsSkillInstalled(entry, 'workspace')}
@@ -569,6 +631,7 @@ ${formData.body}`;
                             {checkIsSkillInstalled(entry, 'workspace') ? 'Installé (WS)' : 'Install (WS)'}
                           </button>
                           <button
+                            type="button"
                             className="workflow-action edit"
                             onClick={() => installSkill(entry, 'global')}
                             disabled={isInstalling || checkIsSkillInstalled(entry, 'global')}
@@ -590,6 +653,7 @@ ${formData.body}`;
                     <div className="pack-card-desc">Catalogue (3000+). Tape un terme pour filtrer avant d&apos;installer.</div>
                   </div>
                   <button
+                    type="button"
                     className="btn btn-ghost"
                     onClick={() => loadCatalog('openclaw-skills')}
                     disabled={!isElectronApiAvailable || isOpenclawLoading}
@@ -621,6 +685,7 @@ ${formData.body}`;
                         </div>
                         <div className="packs-item-actions">
                           <button
+                            type="button"
                             className="workflow-action run"
                             onClick={() => installSkill(entry, 'workspace')}
                             disabled={!currentProjectPath || isInstalling || checkIsSkillInstalled(entry, 'workspace')}
@@ -629,6 +694,7 @@ ${formData.body}`;
                             {checkIsSkillInstalled(entry, 'workspace') ? 'Installé (WS)' : 'Install (WS)'}
                           </button>
                           <button
+                            type="button"
                             className="workflow-action edit"
                             onClick={() => installSkill(entry, 'global')}
                             disabled={isInstalling || checkIsSkillInstalled(entry, 'global')}
@@ -782,6 +848,7 @@ ${formData.body}`;
                     </div>
                     <div className="workflow-actions">
                       <button
+                        type="button"
                         onClick={() => onTrigger(workflow)}
                         className="workflow-action run"
                         title="Executer"
@@ -789,6 +856,7 @@ ${formData.body}`;
                         Run
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleEdit(workflow)}
                         className="workflow-action edit"
                         title="Modifier"
@@ -796,6 +864,7 @@ ${formData.body}`;
                         Edit
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleDelete(workflow)}
                         className="workflow-action delete"
                         title="Supprimer"
@@ -812,6 +881,7 @@ ${formData.body}`;
 
         <div className="workflow-footer">
           <button
+            type="button"
             onClick={() => handleCreate(activeTab)}
             disabled={activeTab === 'packs' || activeTab === 'installed_skills' || (activeTab === 'workspace' && !currentProjectPath)}
             className="btn btn-primary workflow-create"
