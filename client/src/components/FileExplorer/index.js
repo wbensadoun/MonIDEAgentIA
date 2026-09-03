@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import './FileExplorer.css';
+import Dialog from '../ComponentLibrary/Dialog';
 import {
   getNavigatorBaseName,
   getNavigatorDirName,
@@ -282,6 +283,8 @@ const FileExplorer = ({
   const [filterQuery, setFilterQuery] = useState('');
   const [renameState, setRenameState] = useState({ path: '', value: '', type: '' });
   const [contextMenu, setContextMenu] = useState(null);
+  const [createDialog, setCreateDialog] = useState(null);
+  const [isCreating, setIsCreating] = useState(false);
   const [dragState, setDragState] = useState({
     draggedPath: '',
     draggedType: '',
@@ -321,22 +324,48 @@ const FileExplorer = ({
     };
   }, []);
 
-  const handleCreate = useCallback(
-    async (type, parentPath = '') => {
-      if (!onCreateItem) return;
-      const itemLabel = type === 'file' ? 'fichier' : 'dossier';
-      const seedValue = parentPath ? '' : newItemName;
-      const rawName = parentPath ? window.prompt(`Nom du ${itemLabel}`, '') : seedValue;
-      const name = String(rawName || '').trim();
-      if (!name) return;
+  const performCreate = useCallback(
+    async (type, name, parentPath = '') => {
+      if (!onCreateItem) return false;
       const ok = await onCreateItem(type, name, parentPath);
       if (ok && !parentPath && onNewItemNameChange) {
         onNewItemNameChange('');
       }
-      setContextMenu(null);
+      if (ok) setContextMenu(null);
+      return ok;
     },
-    [newItemName, onCreateItem, onNewItemNameChange]
+    [onCreateItem, onNewItemNameChange]
   );
+
+  const handleCreate = useCallback(
+    async (type, parentPath = '') => {
+      if (!onCreateItem) return;
+      if (parentPath) {
+        setCreateDialog({ type, parentPath, value: '' });
+        setContextMenu(null);
+        return;
+      }
+
+      const name = String(newItemName || '').trim();
+      if (!name) return;
+      await performCreate(type, name, parentPath);
+    },
+    [newItemName, onCreateItem, performCreate]
+  );
+
+  const submitCreate = useCallback(async () => {
+    if (!createDialog || isCreating) return;
+    const name = String(createDialog.value || '').trim();
+    if (!name) return;
+
+    setIsCreating(true);
+    try {
+      const ok = await performCreate(createDialog.type, name, createDialog.parentPath);
+      if (ok) setCreateDialog(null);
+    } finally {
+      setIsCreating(false);
+    }
+  }, [createDialog, isCreating, performCreate]);
 
   const beginRename = useCallback((item) => {
     const itemPath = item?.path || item?.name || '';
@@ -573,6 +602,57 @@ const FileExplorer = ({
 
   return (
     <div className="nav-root">
+      {createDialog && (
+        <Dialog
+          ariaLabel={`Créer un ${createDialog.type === 'file' ? 'fichier' : 'dossier'}`}
+          onClose={() => !isCreating && setCreateDialog(null)}
+          closeOnBackdrop={false}
+          overlayClassName="nav-dialog-overlay"
+          className="nav-dialog"
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitCreate();
+            }}
+          >
+            <h2 className="nav-dialog-title">
+              Nouveau {createDialog.type === 'file' ? 'fichier' : 'dossier'}
+            </h2>
+            <label className="nav-dialog-label" htmlFor="file-explorer-create-name">
+              Nom
+            </label>
+            <input
+              id="file-explorer-create-name"
+              className="nav-dialog-input"
+              value={createDialog.value}
+              onChange={(event) =>
+                setCreateDialog((prev) => ({ ...prev, value: event.target.value }))
+              }
+              autoFocus
+              autoComplete="off"
+              disabled={isCreating}
+            />
+            <div className="nav-dialog-actions">
+              <button
+                type="button"
+                className="nav-dialog-button is-secondary"
+                onClick={() => setCreateDialog(null)}
+                disabled={isCreating}
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                className="nav-dialog-button is-primary"
+                disabled={isCreating || !createDialog.value.trim()}
+              >
+                {isCreating ? 'Création…' : 'Créer'}
+              </button>
+            </div>
+          </form>
+        </Dialog>
+      )}
       {/* Header compact EXPLORER */}
       <div className="nav-header">
         <span className="nav-header-title">Explorateur</span>
