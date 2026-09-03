@@ -68,7 +68,28 @@ select {
 .theme-violet { color-scheme: dark; }
 .theme-paper  { color-scheme: light; }
 
-select {
+select:not([multiple]):not(.app-view-switcher__select) {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-inline: var(--space-2) 2rem;
+  background-color: var(--surface-2);
+  color: var(--text-main);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+
+select:not([multiple]):not(.app-view-switcher__select):focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+select[multiple] {
   background-color: var(--surface-2);
   color: var(--text-main);
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.5.0] — Selects natifs cohérents
+
+### Fixed
+
+- Les `<select>` natifs utilisent désormais `appearance: none`, une flèche cohérente avec le thème actif et un anneau `:focus-visible` tokenisé, avec conservation du rendu distinct des listes multiples.
+
 ## [4.4.0] — Focus clavier sur les contrôles CSS ciblés
 
 ### Fixed
