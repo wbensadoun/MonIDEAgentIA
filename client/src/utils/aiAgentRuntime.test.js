@@ -15,9 +15,9 @@ describe('aiAgentRuntime', () => {
     })).toMatchObject({
       localOnly: true,
       includeVisualWorkflows: true,
-      includeN8nCatalog: true,
+      includeTemplateCatalog: true,
       maxVisualWorkflowIndexItems: 20,
-      maxN8nCatalogItems: 80
+      maxTemplateCatalogItems: 80
     });
 
     expect(buildSharedAgentContextOptions({
@@ -27,7 +27,7 @@ describe('aiAgentRuntime', () => {
     })).toMatchObject({
       localOnly: false,
       maxVisualWorkflowIndexItems: 40,
-      maxN8nCatalogItems: 200
+      maxTemplateCatalogItems: 200
     });
   });
 

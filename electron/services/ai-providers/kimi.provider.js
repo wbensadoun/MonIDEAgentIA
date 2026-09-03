@@ -12,7 +12,7 @@ const {
 } = require('../agent.service');
 const {
   buildVisualWorkflowContextForPrompt,
-  buildN8nCatalogContextForPrompt,
+  buildTemplateCatalogContextForPrompt,
   pickFilesForContext,
   parseRunCommand,
   parseReadTerminalCall,
@@ -185,7 +185,7 @@ const getKimiCompletion = async ({
     const globalSkillsContent = includeGlobalSkills ? await loadAllGlobalSkillsForCompletion() : '';
     const selectedSkill = await loadSkillForCompletion(options.skill, projectPath);
     const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, String(lastMessage.text), options);
-    const n8nCatalogContext = await buildN8nCatalogContextForPrompt(String(lastMessage.text), options);
+    const templateCatalogContext = await buildTemplateCatalogContextForPrompt(String(lastMessage.text), options);
 
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
@@ -214,7 +214,7 @@ const getKimiCompletion = async ({
       ${skillContext}
       ${projectContext}
       ${visualWorkflowContext}
-      ${n8nCatalogContext}
+      ${templateCatalogContext}
 
       FICHIER ACTUELLEMENT OUVERT :
       --- CODE ACTUEL ---

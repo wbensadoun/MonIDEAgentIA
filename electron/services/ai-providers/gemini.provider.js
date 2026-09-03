@@ -12,7 +12,7 @@ const {
 } = require('../agent.service');
 const {
   buildVisualWorkflowContextForPrompt,
-  buildN8nCatalogContextForPrompt,
+  buildTemplateCatalogContextForPrompt,
   pickFilesForContext,
   parseRunCommand,
   stripRunCommandTags,
@@ -208,7 +208,7 @@ const getGeminiCompletion = async ({
     const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
     const selectedSkill = await loadSkillForCompletion(options.skill, projectPath);
     const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, lastMessage.parts?.[0]?.text || '', options);
-    const n8nCatalogContext = await buildN8nCatalogContextForPrompt(lastMessage.parts?.[0]?.text || '', options);
+    const templateCatalogContext = await buildTemplateCatalogContextForPrompt(lastMessage.parts?.[0]?.text || '', options);
 
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
@@ -241,7 +241,7 @@ const getGeminiCompletion = async ({
       ${skillContext}
       ${projectContext}
       ${visualWorkflowContext}
-      ${n8nCatalogContext}
+      ${templateCatalogContext}
       
       FICHIER ACTUELLEMENT OUVERT :
       --- CODE ACTUEL ---

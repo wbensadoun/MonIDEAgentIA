@@ -222,19 +222,19 @@ const buildVisualWorkflowContextForPrompt = async (projectPath, userText = '', o
 };
 
 // ---------------------------------------------------------------------------
-// n8n catalog prompt context and trusted import helpers
+// Vibe Flow template catalog prompt context and compatible import helpers
 // ---------------------------------------------------------------------------
 
-const N8N_CATALOG_INTENT_REGEX = /\b(n8n|catalog|catalogue|template|templates)\b/i;
-const N8N_CATALOG_REPO_OWNER = 'Danitilahun';
-const N8N_CATALOG_REPO_NAME = 'n8n-workflow-templates';
-const N8N_CATALOG_WORKFLOWS_DIR = 'workflows/';
-const N8N_CATALOG_BRANCH_CANDIDATES = ['main', 'master'];
-const N8N_CATALOG_ALLOWED_RAW_HOST = 'raw.githubusercontent.com';
-const N8N_CATALOG_IMMUTABLE_REF_REGEX = /^[a-f0-9]{40}$/i;
-const N8N_CATALOG_MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024;
-const N8N_IMPORT_MAX_NODES = 500;
-let n8nCatalogPromptCache = {
+const TEMPLATE_CATALOG_INTENT_REGEX = /\b(n8n|catalog|catalogue|template|templates)\b/i;
+const TEMPLATE_CATALOG_REPO_OWNER = 'Danitilahun';
+const TEMPLATE_CATALOG_REPO_NAME = 'n8n-workflow-templates';
+const TEMPLATE_CATALOG_WORKFLOWS_DIR = 'workflows/';
+const TEMPLATE_CATALOG_BRANCH_CANDIDATES = ['main', 'master'];
+const TEMPLATE_CATALOG_ALLOWED_RAW_HOST = 'raw.githubusercontent.com';
+const TEMPLATE_CATALOG_IMMUTABLE_REF_REGEX = /^[a-f0-9]{40}$/i;
+const TEMPLATE_CATALOG_MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024;
+const TEMPLATE_IMPORT_MAX_NODES = 500;
+let templateCatalogPromptCache = {
   fetchedAt: 0,
   items: [],
   total: 0,
@@ -242,7 +242,7 @@ let n8nCatalogPromptCache = {
   truncated: false
 };
 
-const sanitizeN8nImportFilename = (rawName, fallbackName = 'imported_n8n_workflow') => {
+const sanitizeImportedWorkflowFilename = (rawName, fallbackName = 'imported_template_workflow') => {
   const candidate = String(rawName || '').trim() || fallbackName;
   const baseName = path.basename(candidate);
   const withoutExt = baseName.replace(/\.json$/i, '');
@@ -255,19 +255,19 @@ const sanitizeN8nImportFilename = (rawName, fallbackName = 'imported_n8n_workflo
   return `${safe}.json`;
 };
 
-const isTrustedN8nDownloadUrl = (rawUrl) => {
+const isTrustedCompatibleDownloadUrl = (rawUrl) => {
   try {
     const parsed = new URL(String(rawUrl || '').trim());
     if (parsed.protocol !== 'https:') return false;
-    if (parsed.hostname.toLowerCase() !== N8N_CATALOG_ALLOWED_RAW_HOST) return false;
+    if (parsed.hostname.toLowerCase() !== TEMPLATE_CATALOG_ALLOWED_RAW_HOST) return false;
     const parts = parsed.pathname.split('/').filter(Boolean);
     if (parts.length < 5) return false;
-    if (parts[0].toLowerCase() !== N8N_CATALOG_REPO_OWNER.toLowerCase()) return false;
-    if (parts[1].toLowerCase() !== N8N_CATALOG_REPO_NAME.toLowerCase()) return false;
+    if (parts[0].toLowerCase() !== TEMPLATE_CATALOG_REPO_OWNER.toLowerCase()) return false;
+    if (parts[1].toLowerCase() !== TEMPLATE_CATALOG_REPO_NAME.toLowerCase()) return false;
     const immutableRef = parts[2];
-    if (!N8N_CATALOG_IMMUTABLE_REF_REGEX.test(immutableRef)) return false;
+    if (!TEMPLATE_CATALOG_IMMUTABLE_REF_REGEX.test(immutableRef)) return false;
     const relPath = parts.slice(3).join('/');
-    if (!relPath.toLowerCase().startsWith(N8N_CATALOG_WORKFLOWS_DIR)) return false;
+    if (!relPath.toLowerCase().startsWith(TEMPLATE_CATALOG_WORKFLOWS_DIR)) return false;
     if (!relPath.toLowerCase().endsWith('.json')) return false;
     return true;
   } catch {
@@ -275,7 +275,7 @@ const isTrustedN8nDownloadUrl = (rawUrl) => {
   }
 };
 
-const parseN8nWorkflowPayload = (rawData) => {
+const parseCompatibleWorkflowPayload = (rawData) => {
   if (typeof rawData === 'string') {
     try {
       return JSON.parse(rawData);
@@ -286,36 +286,36 @@ const parseN8nWorkflowPayload = (rawData) => {
   return rawData;
 };
 
-const isValidN8nWorkflowPayload = (payload) => {
+const isValidCompatibleWorkflowPayload = (payload) => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
   if (!Array.isArray(payload.nodes)) return false;
-  if (payload.nodes.length === 0 || payload.nodes.length > N8N_IMPORT_MAX_NODES) return false;
+  if (payload.nodes.length === 0 || payload.nodes.length > TEMPLATE_IMPORT_MAX_NODES) return false;
   if (payload.connections !== undefined && (payload.connections === null || typeof payload.connections !== 'object' || Array.isArray(payload.connections))) {
     return false;
   }
   return payload.nodes.every((node) => node && typeof node === 'object' && typeof node.type === 'string');
 };
 
-const fetchTrustedN8nWorkflow = async (downloadUrl, timeoutMs = 15000) => {
-  if (!isTrustedN8nDownloadUrl(downloadUrl)) {
-    throw new Error('URL non autorisee. Utilisez une URL provenant du catalogue n8n configure.');
+const fetchTrustedCompatibleWorkflow = async (downloadUrl, timeoutMs = 15000) => {
+  if (!isTrustedCompatibleDownloadUrl(downloadUrl)) {
+    throw new Error('URL non autorisee. Utilisez une URL provenant de la galerie de templates configuree.');
   }
 
   const response = await axios.get(downloadUrl, {
     timeout: timeoutMs,
     responseType: 'text',
-    maxContentLength: N8N_CATALOG_MAX_DOWNLOAD_BYTES,
-    maxBodyLength: N8N_CATALOG_MAX_DOWNLOAD_BYTES,
+    maxContentLength: TEMPLATE_CATALOG_MAX_DOWNLOAD_BYTES,
+    maxBodyLength: TEMPLATE_CATALOG_MAX_DOWNLOAD_BYTES,
     transformResponse: [(data) => data]
   });
-  const payload = parseN8nWorkflowPayload(response.data);
-  if (!isValidN8nWorkflowPayload(payload)) {
-    throw new Error('Le fichier telecharge ne semble pas etre un workflow n8n valide.');
+  const payload = parseCompatibleWorkflowPayload(response.data);
+  if (!isValidCompatibleWorkflowPayload(payload)) {
+    throw new Error('Le fichier telecharge ne semble pas etre un workflow compatible valide.');
   }
   return payload;
 };
 
-const toN8nCatalogItem = (entryPath, size = 0, ref = 'main') => {
+const toTemplateCatalogItem = (entryPath, size = 0, ref = 'main') => {
   const normalizedPath = String(entryPath || '').replace(/\\/g, '/');
   const filename = path.posix.basename(normalizedPath);
   const rawName = filename.replace(/\.json$/i, '');
@@ -324,13 +324,13 @@ const toN8nCatalogItem = (entryPath, size = 0, ref = 'main') => {
     name,
     filename,
     repoPath: normalizedPath,
-    downloadUrl: `https://raw.githubusercontent.com/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/${ref}/${normalizedPath}`,
+    downloadUrl: `https://raw.githubusercontent.com/${TEMPLATE_CATALOG_REPO_OWNER}/${TEMPLATE_CATALOG_REPO_NAME}/${ref}/${normalizedPath}`,
     size: Number(size) || 0
   };
 };
 
-const fetchN8nBranchCommitSha = async (branch, timeoutMs = 12000) => {
-  const url = `https://api.github.com/repos/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/commits/${branch}`;
+const fetchTemplateBranchCommitSha = async (branch, timeoutMs = 12000) => {
+  const url = `https://api.github.com/repos/${TEMPLATE_CATALOG_REPO_OWNER}/${TEMPLATE_CATALOG_REPO_NAME}/commits/${branch}`;
   const response = await axios.get(url, {
     headers: {
       Accept: 'application/vnd.github.v3+json',
@@ -339,25 +339,25 @@ const fetchN8nBranchCommitSha = async (branch, timeoutMs = 12000) => {
     timeout: timeoutMs
   });
   const sha = String(response.data?.sha || '').trim();
-  if (!N8N_CATALOG_IMMUTABLE_REF_REGEX.test(sha)) {
+  if (!TEMPLATE_CATALOG_IMMUTABLE_REF_REGEX.test(sha)) {
     throw new Error(`SHA commit invalide pour la branche ${branch}`);
   }
   return sha;
 };
 
-const sortN8nCatalogItems = (items) => {
+const sortTemplateCatalogItems = (items) => {
   return Array.isArray(items)
     ? items.slice().sort((a, b) =>
       String(a?.filename || '').localeCompare(String(b?.filename || ''), undefined, { numeric: true, sensitivity: 'base' }))
     : [];
 };
 
-const fetchN8nCatalogFromGitTree = async (timeoutMs = 12000) => {
+const fetchTemplateCatalogFromGitTree = async (timeoutMs = 12000) => {
   let lastError = null;
-  for (const branch of N8N_CATALOG_BRANCH_CANDIDATES) {
+  for (const branch of TEMPLATE_CATALOG_BRANCH_CANDIDATES) {
     try {
-      const commitSha = await fetchN8nBranchCommitSha(branch, timeoutMs);
-      const url = `https://api.github.com/repos/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/git/trees/${commitSha}?recursive=1`;
+      const commitSha = await fetchTemplateBranchCommitSha(branch, timeoutMs);
+      const url = `https://api.github.com/repos/${TEMPLATE_CATALOG_REPO_OWNER}/${TEMPLATE_CATALOG_REPO_NAME}/git/trees/${commitSha}?recursive=1`;
       const response = await axios.get(url, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
@@ -373,13 +373,13 @@ const fetchN8nCatalogFromGitTree = async (timeoutMs = 12000) => {
           entry &&
           entry.type === 'blob' &&
           typeof entry.path === 'string' &&
-          entry.path.toLowerCase().startsWith(N8N_CATALOG_WORKFLOWS_DIR) &&
+          entry.path.toLowerCase().startsWith(TEMPLATE_CATALOG_WORKFLOWS_DIR) &&
           entry.path.toLowerCase().endsWith('.json'))
-        .map((entry) => toN8nCatalogItem(entry.path, entry.size, commitSha));
+        .map((entry) => toTemplateCatalogItem(entry.path, entry.size, commitSha));
 
       if (items.length > 0) {
         return {
-          items: sortN8nCatalogItems(items),
+          items: sortTemplateCatalogItems(items),
           source: `git-tree:${branch}@${commitSha.slice(0, 12)}`,
           truncated
         };
@@ -388,15 +388,15 @@ const fetchN8nCatalogFromGitTree = async (timeoutMs = 12000) => {
       lastError = error;
     }
   }
-  throw lastError || new Error('Impossible de lire le catalogue n8n (git tree)');
+  throw lastError || new Error('Impossible de lire la galerie de templates (git tree)');
 };
 
-const fetchN8nCatalogFromContents = async (timeoutMs = 12000) => {
+const fetchTemplateCatalogFromContents = async (timeoutMs = 12000) => {
   let lastError = null;
-  for (const branch of N8N_CATALOG_BRANCH_CANDIDATES) {
+  for (const branch of TEMPLATE_CATALOG_BRANCH_CANDIDATES) {
     try {
-      const commitSha = await fetchN8nBranchCommitSha(branch, timeoutMs);
-      const url = `https://api.github.com/repos/${N8N_CATALOG_REPO_OWNER}/${N8N_CATALOG_REPO_NAME}/contents/workflows?ref=${commitSha}`;
+      const commitSha = await fetchTemplateBranchCommitSha(branch, timeoutMs);
+      const url = `https://api.github.com/repos/${TEMPLATE_CATALOG_REPO_OWNER}/${TEMPLATE_CATALOG_REPO_NAME}/contents/workflows?ref=${commitSha}`;
       const response = await axios.get(url, {
         headers: {
           Accept: 'application/vnd.github.v3+json',
@@ -412,12 +412,12 @@ const fetchN8nCatalogFromContents = async (timeoutMs = 12000) => {
             typeof entry.name === 'string' &&
             String(entry.name).toLowerCase().endsWith('.json') &&
             typeof entry.path === 'string')
-          .map((entry) => toN8nCatalogItem(entry.path, entry.size, commitSha))
+          .map((entry) => toTemplateCatalogItem(entry.path, entry.size, commitSha))
         : [];
 
       if (items.length > 0) {
         return {
-          items: sortN8nCatalogItems(items),
+          items: sortTemplateCatalogItems(items),
           source: `contents:${branch}@${commitSha.slice(0, 12)}`,
           truncated: false
         };
@@ -426,32 +426,32 @@ const fetchN8nCatalogFromContents = async (timeoutMs = 12000) => {
       lastError = error;
     }
   }
-  throw lastError || new Error('Impossible de lire le catalogue n8n (contents)');
+  throw lastError || new Error('Impossible de lire la galerie de templates (contents)');
 };
 
-const getN8nCatalogEntries = async (timeoutMs = 12000) => {
+const getTemplateCatalogEntries = async (timeoutMs = 12000) => {
   const now = Date.now();
-  const cacheAgeMs = now - Number(n8nCatalogPromptCache.fetchedAt || 0);
+  const cacheAgeMs = now - Number(templateCatalogPromptCache.fetchedAt || 0);
   const cacheFreshMs = 3 * 60 * 1000;
-  if (Array.isArray(n8nCatalogPromptCache.items) && n8nCatalogPromptCache.items.length > 0 && cacheAgeMs < cacheFreshMs) {
+  if (Array.isArray(templateCatalogPromptCache.items) && templateCatalogPromptCache.items.length > 0 && cacheAgeMs < cacheFreshMs) {
     return {
-      items: n8nCatalogPromptCache.items,
-      total: Number(n8nCatalogPromptCache.total) || n8nCatalogPromptCache.items.length,
-      source: n8nCatalogPromptCache.source || 'cache',
-      truncated: !!n8nCatalogPromptCache.truncated,
+      items: templateCatalogPromptCache.items,
+      total: Number(templateCatalogPromptCache.total) || templateCatalogPromptCache.items.length,
+      source: templateCatalogPromptCache.source || 'cache',
+      truncated: !!templateCatalogPromptCache.truncated,
       cached: true
     };
   }
 
   let fetched;
   try {
-    fetched = await fetchN8nCatalogFromGitTree(timeoutMs);
+    fetched = await fetchTemplateCatalogFromGitTree(timeoutMs);
   } catch {
-    fetched = await fetchN8nCatalogFromContents(timeoutMs);
+    fetched = await fetchTemplateCatalogFromContents(timeoutMs);
   }
   const items = Array.isArray(fetched?.items) ? fetched.items : [];
 
-  n8nCatalogPromptCache = {
+  templateCatalogPromptCache = {
     fetchedAt: now,
     items,
     total: items.length,
@@ -468,8 +468,8 @@ const getN8nCatalogEntries = async (timeoutMs = 12000) => {
   };
 };
 
-const fetchN8nCatalogForPrompt = async (maxItems = 50, timeoutMs = 12000) => {
-  const catalog = await getN8nCatalogEntries(timeoutMs);
+const fetchTemplateCatalogForPrompt = async (maxItems = 50, timeoutMs = 12000) => {
+  const catalog = await getTemplateCatalogEntries(timeoutMs);
   return {
     items: catalog.items.slice(0, maxItems),
     total: catalog.total,
@@ -478,22 +478,22 @@ const fetchN8nCatalogForPrompt = async (maxItems = 50, timeoutMs = 12000) => {
   };
 };
 
-const buildN8nCatalogContextForPrompt = async (userText = '', options = {}) => {
+const buildTemplateCatalogContextForPrompt = async (userText = '', options = {}) => {
   const safeOptions = options && typeof options === 'object' ? options : {};
-  if (safeOptions.includeN8nCatalog === false) return '';
+  if (safeOptions.includeTemplateCatalog === false) return '';
 
-  const intent = safeOptions.forceN8nCatalogContext === true
-    || N8N_CATALOG_INTENT_REGEX.test(String(userText || ''));
+  const intent = safeOptions.forceTemplateCatalogContext === true
+    || TEMPLATE_CATALOG_INTENT_REGEX.test(String(userText || ''));
   if (!intent) return '';
 
-  const maxItems = toPositiveInt(safeOptions.maxN8nCatalogItems, 50, 5, 500);
-  const timeoutMs = toPositiveInt(safeOptions.n8nCatalogTimeoutMs, 12000, 2000, 30000);
+  const maxItems = toPositiveInt(safeOptions.maxTemplateCatalogItems, 50, 5, 500);
+  const timeoutMs = toPositiveInt(safeOptions.templateCatalogTimeoutMs, 12000, 2000, 30000);
 
   try {
-    const catalog = await fetchN8nCatalogForPrompt(maxItems, timeoutMs);
+    const catalog = await fetchTemplateCatalogForPrompt(maxItems, timeoutMs);
     const entries = Array.isArray(catalog.items) ? catalog.items : [];
     if (entries.length === 0) {
-      return '\n--- CATALOGUE N8N (COMMUNITY) ---\nAucun workflow trouve.\n--- FIN CATALOGUE N8N ---\n';
+      return '\n--- GALERIE DE TEMPLATES (COMMUNITY) ---\nAucun workflow trouve.\n--- FIN GALERIE DE TEMPLATES ---\n';
     }
 
     const totalCount = Number(catalog.total) || entries.length;
@@ -505,9 +505,9 @@ const buildN8nCatalogContextForPrompt = async (userText = '', options = {}) => {
     const sourceInfo = catalog.source ? `\nSource: ${catalog.source}` : '';
     const truncInfo = catalog.truncated ? '\nAttention: API GitHub signale un arbre tronque.' : '';
     const summary = `Total workflows detectes: ${totalCount}\nAffiches dans ce contexte: ${shownCount}`;
-    return `\n--- CATALOGUE N8N (COMMUNITY) ---\n${summary}${sourceInfo}${truncInfo}\n${lines.join('\n')}\n--- FIN CATALOGUE N8N ---\n`;
+    return `\n--- GALERIE DE TEMPLATES (COMMUNITY) ---\n${summary}${sourceInfo}${truncInfo}\n${lines.join('\n')}\n--- FIN GALERIE DE TEMPLATES ---\n`;
   } catch (error) {
-    return `\n--- CATALOGUE N8N (COMMUNITY) ---\nIndisponible: ${error?.message || 'erreur reseau'}\n--- FIN CATALOGUE N8N ---\n`;
+    return `\n--- GALERIE DE TEMPLATES (COMMUNITY) ---\nIndisponible: ${error?.message || 'erreur reseau'}\n--- FIN GALERIE DE TEMPLATES ---\n`;
   }
 };
 
@@ -939,8 +939,6 @@ Pour exécuter une commande, utilise EXACTEMENT ce format XML (une seule command
 Tu recevras le résultat (stdout/stderr) dans ton prochain tour.
 Règles :
 - Utilise cette capacité pour : lire des fichiers, lancer des builds, installer des packages, vérifier des erreurs, lancer des tests.
-- Spécial: utilise "n8n-search <mot_cle>" pour chercher un workflow n8n (ex: n8n-search slack)
-- Spécial: utilise "n8n-import <url> <nom>" pour télécharger, adapter et importer un workflow n8n du catalogue directement dans le projet. Respecte toujours le mode permissions et le pipeline de validation.
 - N'utilise PAS pour : supprimer des fichiers importants (rm -rf), commandes destructives.
 - Tu peux enchaîner plusieurs commandes en plusieurs tours (max 8 itérations automatiques).
 - Si une commande échoue, analyse l'erreur et essaie une solution alternative.
@@ -1112,10 +1110,10 @@ const requestTerminalApproval = async (commandText, deps = serviceDeps) => {
   }
 };
 
-const buildN8nWorkflowAdapter = (n8nWf, saveName) => {
-  const guessNodeType = (n8nType) => {
-    if (!n8nType) return 'action';
-    const t = n8nType.toLowerCase();
+const buildCompatibleWorkflowAdapter = (importedWorkflow, saveName) => {
+  const guessNodeType = (sourceType) => {
+    if (!sourceType) return 'action';
+    const t = sourceType.toLowerCase();
     if (t.includes('trigger') || t.includes('cron') || t.includes('schedule') || t.includes('webhook') || t.includes('manual')) return 'trigger';
     if (t.includes('openai') || t.includes('ai') || t.includes('gpt') || t.includes('llm')) return 'ai';
     if (t.includes('if') || t.includes('switch') || t.includes('merge') || t.includes('loop') || t.includes('wait')) return 'logic';
@@ -1123,9 +1121,9 @@ const buildN8nWorkflowAdapter = (n8nWf, saveName) => {
     return 'action';
   };
 
-  const guessNodeIcon = (n8nType) => {
-    if (!n8nType) return '⚡';
-    const t = n8nType.toLowerCase();
+  const guessNodeIcon = (sourceType) => {
+    if (!sourceType) return '⚡';
+    const t = sourceType.toLowerCase();
     if (t.includes('trigger') || t.includes('manual')) return '▶️';
     if (t.includes('cron') || t.includes('schedule')) return '⏰';
     if (t.includes('webhook')) return '🌐';
@@ -1139,8 +1137,8 @@ const buildN8nWorkflowAdapter = (n8nWf, saveName) => {
   };
 
   const adapted = {
-    name: n8nWf.name || saveName.replace('.json', ''),
-    nodes: (n8nWf.nodes || []).map((n, i) => ({
+    name: importedWorkflow.name || saveName.replace('.json', ''),
+    nodes: (importedWorkflow.nodes || []).map((n, i) => ({
       id: `node_${i + 1}`,
       type: guessNodeType(n.type),
       label: n.name || n.type,
@@ -1155,8 +1153,8 @@ const buildN8nWorkflowAdapter = (n8nWf, saveName) => {
     edges: []
   };
 
-  if (n8nWf.connections) {
-    Object.entries(n8nWf.connections).forEach(([sourceName, conns]) => {
+  if (importedWorkflow.connections) {
+    Object.entries(importedWorkflow.connections).forEach(([sourceName, conns]) => {
       const sourceNode = adapted.nodes.find(n => n.label === sourceName);
       if (!sourceNode) return;
       Object.values(conns).forEach(outputs => {
@@ -1257,63 +1255,6 @@ const executeCommandForAI = (cmd, projectPath, deps = serviceDeps, runContext = 
       }
     }
 
-    if (spawnRequest.commandName === 'n8n-search') {
-      const query = spawnRequest.args.join(' ').trim().toLowerCase();
-      try {
-        const catalog = await getN8nCatalogEntries(15000);
-        const entries = Array.isArray(catalog.items) ? catalog.items : [];
-        const matched = entries.filter((item) => {
-          if (!query) return true;
-          const haystack = `${item.name} ${item.filename} ${item.repoPath}`.toLowerCase();
-          return haystack.includes(query);
-        });
-        const displayLimit = 120;
-        const shown = matched.slice(0, displayLimit).map((item) =>
-          `- ${item.name} (URL: ${item.downloadUrl})`
-        );
-
-        let out = `[N8N CATALOG SEARCH RESULTS - ${matched.length} trouves | total catalogue: ${catalog.total}]\n`;
-        out += shown.length > 0 ? shown.join('\n') : 'Aucun workflow trouve pour cette requete.';
-        if (matched.length > shown.length) out += `\n...et ${matched.length - shown.length} autres.`;
-        return resolve({ success: true, output: out });
-      } catch (e) {
-        return resolve({ success: false, output: `[N8N SEARCH ERROR] ${e.message}` });
-      }
-    }
-
-    if (spawnRequest.commandName === 'n8n-import') {
-      if (!trustedProjectPath) {
-        return resolve({
-          success: false,
-          output: '[N8N IMPORT ERROR] Projet autorise requis pour importer un workflow.'
-        });
-      }
-      const url = String(spawnRequest.args[0] || '').trim();
-      const requestedName = spawnRequest.args.slice(1).join(' ').trim();
-      const saveName = sanitizeN8nImportFilename(requestedName || 'imported_n8n_workflow');
-
-      if (!url || !isTrustedN8nDownloadUrl(url)) {
-        return resolve({
-          success: false,
-          output: '[N8N IMPORT ERROR] URL non autorisee. Utilise une URL du catalogue n8n configure. Usage: n8n-import <url_du_workflow> <nom_sauvegarde>'
-        });
-      }
-
-      try {
-        const n8nWf = await fetchTrustedN8nWorkflow(url, 15000);
-        const adapted = buildN8nWorkflowAdapter(n8nWf, saveName);
-        const workflowsDir = path.join(trustedProjectPath, '.vibe-workflows');
-        await fs.mkdir(workflowsDir, { recursive: true });
-        const filePath = path.join(workflowsDir, saveName);
-        assertSafePath(workflowsDir, filePath);
-        await fs.writeFile(filePath, JSON.stringify(adapted, null, 2), 'utf-8');
-
-        return resolve({ success: true, output: `[N8N IMPORT SUCCESS] Workflow n8n adapte et sauvegarde sous : ${filePath}` });
-      } catch (e) {
-        return resolve({ success: false, output: `[N8N IMPORT ERROR] ${e.message}` });
-      }
-    }
-
     if (!trustedProjectPath) {
       return resolve({
         success: false,
@@ -1380,11 +1321,11 @@ module.exports = {
   normalizeCompletionProvider,
   stripCompletionMarkdown,
   buildVisualWorkflowContextForPrompt,
-  buildN8nCatalogContextForPrompt,
-  getN8nCatalogEntries,
-  fetchTrustedN8nWorkflow,
-  sanitizeN8nImportFilename,
-  isTrustedN8nDownloadUrl,
+  buildTemplateCatalogContextForPrompt,
+  getTemplateCatalogEntries,
+  fetchTrustedCompatibleWorkflow,
+  sanitizeImportedWorkflowFilename,
+  isTrustedCompatibleDownloadUrl,
   getVisualWorkflowIndex,
   readVisualWorkflowById,
   executeCommandForAI,

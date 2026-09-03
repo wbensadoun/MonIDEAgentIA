@@ -192,8 +192,8 @@ try {
     getWorkflowRun: (runId, projectPath) => ipcRenderer.invoke('get-workflow-run', runId, projectPath),
     onWorkflowRunProgress: (callback) => registerChannelListener('workflow-run-progress', callback),
     onWorkflowRunLog: (callback) => registerChannelListener('workflow-run-log', callback),
-    fetchN8nCatalog: (page, perPage) => ipcRenderer.invoke('fetch-n8n-catalog', page, perPage),
-    downloadN8nWorkflow: (downloadUrl) => ipcRenderer.invoke('download-n8n-workflow', downloadUrl),
+    fetchTemplateCatalog: (page, perPage) => ipcRenderer.invoke('fetch-template-catalog', page, perPage),
+    downloadTemplateWorkflow: (downloadUrl) => ipcRenderer.invoke('download-template-workflow', downloadUrl),
 
     // Brain Graph APIs (local-only project graph, no provider dependency)
     brainGraphIndex: (projectPath, options) => ipcRenderer.invoke('brain-graph:index', projectPath, options),

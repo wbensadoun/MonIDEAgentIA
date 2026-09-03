@@ -13,7 +13,7 @@ const {
 } = require('../agent.service');
 const {
   buildVisualWorkflowContextForPrompt,
-  buildN8nCatalogContextForPrompt,
+  buildTemplateCatalogContextForPrompt,
   pickFilesForContext,
   parseRunCommand,
   stripRunCommandTags,
@@ -111,7 +111,7 @@ const getClaudeCompletion = async ({
     const globalSkillsContent = await loadAllGlobalSkillsForCompletion();
     const selectedSkill = await loadSkillForCompletion(options.skill, projectPath);
     const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, lastUserText, options);
-    const n8nCatalogContext = await buildN8nCatalogContextForPrompt(lastUserText, options);
+    const templateCatalogContext = await buildTemplateCatalogContextForPrompt(lastUserText, options);
 
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
@@ -139,7 +139,7 @@ const getClaudeCompletion = async ({
       ${skillContext}
       ${projectContext}
       ${visualWorkflowContext}
-      ${n8nCatalogContext}
+      ${templateCatalogContext}
       
       FICHIER ACTUELLEMENT OUVERT :
       --- CODE ACTUEL ---

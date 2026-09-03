@@ -36,8 +36,8 @@ const registerWorkflowHandlers = ({
   ensureTrustedProjectPath,
   assertSafePath,
   toPositiveInt,
-  getN8nCatalogEntries,
-  fetchTrustedN8nWorkflow,
+  getTemplateCatalogEntries,
+  fetchTrustedCompatibleWorkflow,
   workflowEngine
 }) => {
   const getGlobalWorkflowsDir = () => path.join(app.getPath('userData'), 'workflows');
@@ -339,11 +339,11 @@ const registerWorkflowHandlers = ({
     }
   });
 
-  handle('fetch-n8n-catalog', async (event, page = 1, perPage = 50) => {
+  handle('fetch-template-catalog', async (event, page = 1, perPage = 50) => {
     try {
       const safePage = toPositiveInt(page, 1, 1, 100000);
       const safePerPage = toPositiveInt(perPage, 50, 1, 5000);
-      const catalog = await getN8nCatalogEntries(15000);
+      const catalog = await getTemplateCatalogEntries(15000);
       const allItems = Array.isArray(catalog.items) ? catalog.items : [];
       const startIndex = (safePage - 1) * safePerPage;
       const pagedItems = allItems.slice(startIndex, startIndex + safePerPage);
@@ -360,17 +360,17 @@ const registerWorkflowHandlers = ({
         truncated: !!catalog.truncated
       };
     } catch (error) {
-      console.error('[n8nCatalog] Error fetching:', error.message);
+      console.error('[templateCatalog] Error fetching:', error.message);
       return { success: false, error: error.message };
     }
   });
 
-  handle('download-n8n-workflow', async (event, downloadUrl) => {
+  handle('download-template-workflow', async (event, downloadUrl) => {
     try {
-      const workflow = await fetchTrustedN8nWorkflow(downloadUrl, 15000);
+      const workflow = await fetchTrustedCompatibleWorkflow(downloadUrl, 15000);
       return { success: true, data: workflow };
     } catch (error) {
-      console.error('[n8nCatalog] Error downloading:', error.message);
+      console.error('[templateCatalog] Error downloading:', error.message);
       return { success: false, error: error.message };
     }
   });

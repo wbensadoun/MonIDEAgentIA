@@ -45,7 +45,7 @@ const {
 } = require('../agent.service');
 const {
   buildVisualWorkflowContextForPrompt,
-  buildN8nCatalogContextForPrompt,
+  buildTemplateCatalogContextForPrompt,
   getVisualWorkflowIndex,
   readVisualWorkflowById,
   parseRunCommand,
@@ -146,9 +146,9 @@ const getOllamaCompletion = async ({
     // Skills globaux : noms seulement — l'agent lit le contenu via outil si besoin.
     // (Meme logique que Multi-Ollama : on ne bourre pas le prompt avec tout le contenu.)
     const skillNamesText = formatAvailableSkillsListForPrompt(options.skillsContent);
-    // Workflows et n8n : charger seulement si l'intention est detectee dans la question.
+    // Workflows et galerie de templates : charger seulement si l'intention est detectee dans la question.
     const visualWorkflowContext = await buildVisualWorkflowContextForPrompt(projectPath, lastUserText, options);
-    const n8nCatalogContext = await buildN8nCatalogContextForPrompt(lastUserText, options);
+    const templateCatalogContext = await buildTemplateCatalogContextForPrompt(lastUserText, options);
 
     const agentContext = agentPrompt
       ? `\n--- AGENT PERSONA (${agentPrompt.name}) ---\n${agentPrompt.body}\n--- FIN AGENT ---\n`
@@ -183,7 +183,7 @@ ${skillContext}
 ${projectContext}
 ${toolContract}
 ${visualWorkflowContext}
-${n8nCatalogContext}
+${templateCatalogContext}
 FICHIER OUVERT: ${currentCode ? currentCode.substring(0, 2000) : 'Aucun'}
 
 ${TERMINAL_CAPABILITY_PROMPT}

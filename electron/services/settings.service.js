@@ -379,8 +379,7 @@ const TERMINAL_ALLOWED_COMMANDS = new Set([
   'go', 'cargo', 'rustc', 'gradlew', 'mvn',
   'ollama',
   'curl',
-  'ls', 'dir', 'cat', 'type', 'echo', 'mkdir',
-  'n8n-search', 'n8n-import'
+  'ls', 'dir', 'cat', 'type', 'echo', 'mkdir'
 ]);
 
 // Terminal en LECTURE SEULE (mode Plan). Le mode Plan doit pouvoir inspecter le
