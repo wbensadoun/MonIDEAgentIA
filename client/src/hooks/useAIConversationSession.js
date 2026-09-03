@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // plan-ia-onglets.md §⑤ 5.5.1 — sessions[] + activeSessionId replace the old
 // single flat `aiConversationHistory`. `aiConversationHistory`/
@@ -9,6 +9,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const DEFAULT_TITLE = 'Nouvelle conversation';
 const TITLE_MAX_LENGTH = 60;
 const STORAGE_PREFIX = 'code_companion_chatSessions:';
+// Reference stable pour l'etat "aucune session active" (evite de recrer un
+// tableau neuf a chaque rendu — cf. aiConversationHistory plus bas).
+const EMPTY_HISTORY = Object.freeze([]);
 
 const genSessionId = () => `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 
@@ -116,7 +119,15 @@ const useAIConversationSession = ({
   }, [currentProjectPath, loadedProjectPath, sessions, activeSessionId]);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0] || null;
-  const aiConversationHistory = activeSession ? activeSession.messages : [];
+  // COD-70 (fix build CI) : sans useMemo, l'expression conditionnelle ci-dessous
+  // recreeait un tableau vide neuf a chaque rendu quand aucune session active
+  // n'existe — warning react-hooks/exhaustive-deps traite en ERREUR par
+  // react-scripts sous CI=true (le build de master etait casse sur ce point).
+  const aiConversationHistory = useMemo(
+    () => (activeSession ? activeSession.messages : EMPTY_HISTORY),
+    [activeSession]
+  );
+
 
   // Vue dérivée compatible avec l'ancienne API plate : useAI.js l'appelle
   // avec un tableau ou avec un updater fonctionnel (prev => [...prev, x]),
