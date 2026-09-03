@@ -185,6 +185,12 @@ try {
     listVisualWorkflows: (projectPath) => ipcRenderer.invoke('list-visual-workflows', projectPath),
     saveVisualWorkflow: (projectPath, workflowJson) => ipcRenderer.invoke('save-visual-workflow', projectPath, workflowJson),
     deleteVisualWorkflow: (projectPath, filename) => ipcRenderer.invoke('delete-visual-workflow', projectPath, filename),
+    startWorkflowRun: (projectPath, workflowJson) => ipcRenderer.invoke('workflow-run', projectPath, workflowJson),
+    stopWorkflowRun: (runId) => ipcRenderer.invoke('workflow-stop', runId),
+    listWorkflowRuns: (projectPath) => ipcRenderer.invoke('list-workflow-runs', projectPath),
+    getWorkflowRun: (runId, projectPath) => ipcRenderer.invoke('get-workflow-run', runId, projectPath),
+    onWorkflowRunProgress: (callback) => registerChannelListener('workflow-run-progress', callback),
+    onWorkflowRunLog: (callback) => registerChannelListener('workflow-run-log', callback),
     fetchN8nCatalog: (page, perPage) => ipcRenderer.invoke('fetch-n8n-catalog', page, perPage),
     downloadN8nWorkflow: (downloadUrl) => ipcRenderer.invoke('download-n8n-workflow', downloadUrl),
 

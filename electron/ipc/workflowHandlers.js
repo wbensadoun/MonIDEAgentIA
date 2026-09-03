@@ -37,7 +37,8 @@ const registerWorkflowHandlers = ({
   assertSafePath,
   toPositiveInt,
   getN8nCatalogEntries,
-  fetchTrustedN8nWorkflow
+  fetchTrustedN8nWorkflow,
+  workflowEngine
 }) => {
   const getGlobalWorkflowsDir = () => path.join(app.getPath('userData'), 'workflows');
   const getWorkspaceWorkflowsDir = (projectPath) => path.join(projectPath, '.agent', 'workflows');
@@ -291,6 +292,50 @@ const registerWorkflowHandlers = ({
     } catch (error) {
       console.error('[VisualWorkflows] Error deleting:', error);
       return { success: false, error: error.message };
+    }
+  });
+
+  handle('workflow-run', async (event, projectPath, workflowPayload) => {
+    try {
+      if (!workflowEngine || typeof workflowEngine.start !== 'function') {
+        return { success: false, error: 'Moteur de workflow indisponible.' };
+      }
+      return await workflowEngine.start(projectPath, workflowPayload);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  handle('workflow-stop', async (event, runId) => {
+    try {
+      if (!workflowEngine || typeof workflowEngine.stop !== 'function') {
+        return { success: false, error: 'Moteur de workflow indisponible.' };
+      }
+      return await workflowEngine.stop(runId);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  handle('list-workflow-runs', async (event, projectPath) => {
+    try {
+      if (!workflowEngine || typeof workflowEngine.list !== 'function') {
+        return { success: false, error: 'Historique de workflow indisponible.' };
+      }
+      return await workflowEngine.list(projectPath);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  handle('get-workflow-run', async (event, runId, projectPath) => {
+    try {
+      if (!workflowEngine || typeof workflowEngine.get !== 'function') {
+        return { success: false, error: 'Historique de workflow indisponible.' };
+      }
+      return await workflowEngine.get(runId, projectPath);
+    } catch {
+      return { success: false, error: 'Workflow introuvable.' };
     }
   });
 
