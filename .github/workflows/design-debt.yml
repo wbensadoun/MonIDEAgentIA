@@ -5,7 +5,8 @@ name: Design system guard-rails
 # 1. design-debt: the distinct-hex-color count in client/src CSS must
 #    never exceed the current budget (regressive, not absolute — see
 #    scripts/check-design-debt.sh for the milestone schedule).
-# 2. stylelint-diff: CSS files touched by this PR must not introduce
+# 2. ui-contracts: source-level accessibility contract counts must not grow.
+# 3. stylelint-diff: CSS files touched by this PR must not introduce
 #    NEW hardcoded colors or !important — enforced only on the diff so
 #    Phase 1 doesn't require fixing the entire pre-existing 259 at once.
 
@@ -21,6 +22,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check hex color budget
         run: bash scripts/check-design-debt.sh
+      - name: Check UI contract budgets
+        run: node scripts/check-ui-contracts.mjs
 
   stylelint-diff:
     runs-on: ubuntu-latest
