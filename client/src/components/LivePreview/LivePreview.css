@@ -105,6 +105,13 @@
   transform: scale(1.05);
 }
 
+.live-preview-refresh-btn:focus-visible,
+.overlay-action-btn:focus-visible,
+.error-retry-btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
 .live-preview-refresh-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
