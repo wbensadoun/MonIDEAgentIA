@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.5.1] — Garde-fou des contrats UI
+
+### Added
+
+- Ajout d’un gate CI cross-platform qui empêche la remontée des boutons sans `type`, dialogs natifs, cibles `onClick` non sémantiques et attributs `title` hérités.
+
 ## [4.5.0] — Selects natifs cohérents
 
 ### Fixed
