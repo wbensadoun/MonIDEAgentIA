@@ -211,3 +211,27 @@ describe('COD-70 — fenetre glissante (B.11)', () => {
     expect(screen.getByText('msg 59')).toBeInTheDocument();
   });
 });
+
+describe('COD-70 — swap ChatInterface garde la parite du composer', () => {
+  beforeEach(() => window.localStorage.setItem('cc.flag.chatInterfaceSwap', '1'));
+  afterEach(() => window.localStorage.clear());
+
+  test('le flag monte ChatInterface et conserve edition, feedback et suggestions', () => {
+    render(
+      <Harness
+        history={[
+          { id: 'u1', role: 'user', text: 'salut' },
+          { id: 'm1', role: 'model', text: 'voila' }
+        ]}
+      />
+    );
+
+    expect(document.querySelector('.chat-interface')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Modifier et renvoyer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Réponse utile' })).toBeInTheDocument();
+
+    const textarea = screen.getByRole('combobox');
+    fireEvent.change(textarea, { target: { value: '@' } });
+    expect(screen.getByRole('listbox', { name: 'Fichiers du projet' })).toBeInTheDocument();
+  });
+});

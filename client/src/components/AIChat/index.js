@@ -10,7 +10,7 @@ import AIDecisionBadge from './AIDecisionBadge';
 import ChatWelcome from './ChatWelcome';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AUTONOMY_LEVELS, toLegacyPermission } from './AutonomyControls';
-import MessageViewer from './MessageViewer';
+import ChatInterface from './ChatInterface';
 import { conversationToChatMessages } from '../../utils/chatMessages';
 import { isChatInterfaceSwapEnabled } from '../../utils/featureFlags';
 import {
@@ -1568,6 +1568,147 @@ const AIChat = ({
     }
   };
 
+  // COD-70 — when the guarded swap is enabled, ChatInterface owns the panel
+  // body. These adapters keep the legacy transport and product-specific
+  // affordances (streaming modes, file mentions, feedback and edit) intact.
+  const swapMessageContent = (message, defaultContent) => {
+    const index = message.sourceIndex;
+    if (message.role !== 'user' || editingIndex !== index) return defaultContent;
+    return (
+      <div className="ai-message-edit">
+        <textarea
+          ref={editTextareaRef}
+          className="ai-message-edit-textarea"
+          value={editingText}
+          onChange={(e) => setEditingText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent && e.nativeEvent.isComposing)) {
+              e.preventDefault();
+              commitEditUserMessage(index);
+            }
+            if (e.key === 'Escape') { e.preventDefault(); cancelEditUserMessage(); }
+          }}
+          rows={Math.min(10, Math.max(2, editingText.split('\n').length))}
+          aria-label="Modifier le message"
+        />
+        <div className="ai-message-edit-actions">
+          <button type="button" className="ai-msg-action" onClick={cancelEditUserMessage}>Annuler</button>
+          <button type="button" className="ai-msg-action is-primary" onClick={() => commitEditUserMessage(index)} disabled={!editingText.trim()}>Envoyer</button>
+        </div>
+      </div>
+    );
+  };
+
+  const swapMessageActions = (message) => {
+    const index = message.sourceIndex;
+    if (!Number.isInteger(index)) return null;
+    if (message.role === 'user') {
+      if (editingIndex === index) return null;
+      return (
+        <div className="ai-message-actions">
+          <button type="button" className="ai-msg-action" onClick={() => handleCopyMessage(index, conversationHistory[index]?.text)} aria-label="Copier le message">Copier</button>
+          <button type="button" className="ai-msg-action" onClick={() => beginEditUserMessage(index, conversationHistory[index]?.text)} disabled={isLoading} aria-label="Modifier et renvoyer">Modifier</button>
+        </div>
+      );
+    }
+    if (message.role !== 'assistant') return null;
+    return (
+      <div className="ai-message-actions">
+        <button type="button" className="ai-msg-action ai-msg-feedback" onClick={() => handleToggleFeedback(index, 'up')} aria-pressed={messageFeedback[index] === 'up'} aria-label="Réponse utile">Utile</button>
+        <button type="button" className="ai-msg-action ai-msg-feedback" onClick={() => handleToggleFeedback(index, 'down')} aria-pressed={messageFeedback[index] === 'down'} aria-label="Réponse peu utile">Pas utile</button>
+      </div>
+    );
+  };
+
+  const renderSwapMessageExtras = (message) => {
+    const source = conversationHistory[message.sourceIndex];
+    const images = Array.isArray(source?.images) ? source.images : [];
+    const actions = historicalTerminalActions[message.sourceIndex];
+    if (!images.length && !(Array.isArray(actions) && actions.length)) return null;
+    return (
+      <>
+        {images.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 26 }}>
+            {images.map((img, i) => (
+              <img key={i} src={img.dataUrl} alt="Collé" style={{ width: 48, height: 48, borderRadius: 4, objectFit: 'cover', border: '1px solid var(--border)' }} />
+            ))}
+          </div>
+        )}
+        {Array.isArray(actions) && actions.length > 0 && (
+          <div style={{ paddingLeft: 26, marginTop: 4 }}>
+            {actions.map((action, i) => <TerminalActionCard key={i} action={action} />)}
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const handleSwapAttach = (files) => {
+    if (!onPasteImage) return;
+    Array.from(files || []).forEach((file) => {
+      if (!file.type || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result;
+        if (typeof result === 'string') onPasteImage(result);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const swapStreamingContent = (
+    <>
+      {isLoading && streamingText && (
+        <div style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          <div className="ai-reading-col">
+            {liveFiles.length > 0 && <div style={{ padding: '8px 0 0' }}><LiveFilesPanel files={liveFiles} /></div>}
+            {renderStreamingBox()}
+          </div>
+        </div>
+      )}
+      {isLoading && terminalActions.length > 0 && (
+        <div style={{ padding: '8px 14px' }}>{terminalActions.map((action, i) => <TerminalActionCard key={i} action={action} />)}</div>
+      )}
+      {isLoading && !multiAIState?.isActive && terminalActions.length > 0 && (
+        <div className="ai-message-loading">
+          <div className="ai-loading-dots"><span className="ai-loading-dot" /><span className="ai-loading-dot" /><span className="ai-loading-dot" /></div>
+          <span>Exécution... ({terminalActions.filter(a => a.type === 'done').length}/{terminalActions.length} commandes)</span>
+        </div>
+      )}
+      {isLoading && !multiAIState?.isActive && terminalActions.length === 0 && !streamingText && (
+        <div className="ai-message-loading">
+          <div className="ai-loading-dots"><span className="ai-loading-dot" /><span className="ai-loading-dot" /><span className="ai-loading-dot" /></div>
+          <span className="ai-loading-label">{elapsedSeconds > 0 ? `${thinkingLabel}… ${elapsedSeconds}s` : `${thinkingLabel}…`}</span>
+        </div>
+      )}
+    </>
+  );
+
+  const swapToolbar = (
+    <div className="ai-input-bar ai-chat-swap-toolbar">
+      <div className="ai-input-bar-toolbar">
+        {autoRoute ? <span className="ai-auto-router-pill" role="status">Neven · Auto</span> : (
+          <>
+            <ProviderPill aiProvider={aiProvider} onProviderChange={onProviderChange} disabled={isLoading} />
+            <ModelPill aiProvider={aiProvider} activeModelValue={activeModelValue} availableActiveModels={availableActiveModels} onActiveModelChange={onActiveModelChange} disabled={isLoading} />
+          </>
+        )}
+        {onReasoningEffortChange && <ReasoningEffortPill reasoningEffort={reasoningEffort} onReasoningEffortChange={onReasoningEffortChange} disabled={isLoading} />}
+      </div>
+    </div>
+  );
+
+  const swapAboveInput = (
+    <>
+      {autoRoute && <AIDecisionBadge decision={routerDecision} />}
+      {pendingMessage && <div className="ai-input-pending-banner" role="status"><span><IconHourglass size={11} /></span><span className="ai-input-pending-text">En attente&#x202F;: <em>{pendingMessage.text}</em></span><span className="ai-input-pending-hint">sera envoyé automatiquement</span></div>}
+      {pendingImages?.length > 0 && <div className="ai-input-images">{pendingImages.map((img, idx) => <div key={idx} className="ai-input-image-wrap"><img src={img.dataUrl} alt={`Image jointe ${idx + 1}`} className="ai-input-image" /><button type="button" className="ai-input-image-remove" aria-label={`Retirer l'image ${idx + 1}`} onClick={() => onRemovePendingImage?.(idx)}>×</button></div>)}</div>}
+      {explicitContext.length > 0 && <div className="ai-message-file-refs">{explicitContext.map((filePath) => { const fileName = filePath.split(/[\\/]/).pop(); return <span key={filePath} className="ai-message-file-ref" title={filePath}>@{fileName}<button type="button" className="ai-message-file-ref-close" aria-label={`Retirer ${fileName} du contexte`} onClick={() => removeExplicitContext(filePath)}>×</button></span>; })}</div>}
+      {showWorkflowSuggestions && filteredWorkflows.length > 0 && <div className="ai-suggest-overlay"><div className="ai-suggest-panel"><div className="ai-suggest-header">Workflows disponibles</div><ul className="ai-suggest-list" id="ai-suggest-listbox" role="listbox" aria-label="Workflows disponibles">{filteredWorkflows.map((workflow, i) => <li key={`${workflow.scope}-${workflow.name}`} id={`ai-suggest-opt-${i}`} role="option" aria-selected={i === activeSuggestion} className={`ai-suggest-item${i === activeSuggestion ? ' is-active' : ''}`} onMouseEnter={() => setActiveSuggestion(i)} onClick={() => handleSelectWorkflow(workflow)}><span className="ai-suggest-item-name">/{workflow.name}</span><span className="ai-suggest-item-scope">{workflow.scope}</span></li>)}</ul></div></div>}
+      {showContextSuggestions && <div className="ai-suggest-overlay"><div className="ai-suggest-panel"><div className="ai-suggest-header">Fichiers du projet</div>{filteredContextFiles.length === 0 ? <div className="ai-suggest-empty">Aucun fichier pour {contextFilter}</div> : <ul className="ai-suggest-list" id="ai-suggest-listbox" role="listbox" aria-label="Fichiers du projet">{filteredContextFiles.map((filePath, i) => { const fileName = filePath.split(/[\\/]/).pop() || filePath; return <li key={filePath} id={`ai-suggest-opt-${i}`} role="option" aria-selected={i === activeSuggestion} className={`ai-suggest-item${i === activeSuggestion ? ' is-active' : ''}`} onMouseEnter={() => setActiveSuggestion(i)} onClick={() => handleSelectContextFile(filePath)}><span className="ai-suggest-item-name">@{fileName}</span><span className="ai-suggest-item-path">{filePath}</span></li>; })}</ul>}</div></div>}
+    </>
+  );
+
   return (
     <div className="ai-chat-root">
       {/* ===== HEADER ===== */}
@@ -1845,7 +1986,7 @@ const AIChat = ({
       )}
 
       {/* ===== STREAMING ===== */}
-      {isLoading && streamingText && (
+      {!chatInterfaceSwap && isLoading && streamingText && (
         <div style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           <div className="ai-reading-col">
             {liveFiles.length > 0 && (
@@ -1859,6 +2000,66 @@ const AIChat = ({
       )}
 
       {/* ===== MESSAGES ===== */}
+      {chatInterfaceSwap ? (
+        <ChatInterface
+          executionMode={executionMode}
+          onExecutionModeChange={setExecutionMode}
+          autonomyLevel={autonomyLevel}
+          onAutonomyLevelChange={handleAutonomyLevelChange}
+          isDeveloperMode={isDeveloperMode}
+          agents={agents}
+          activeAgent={activeAgent}
+          onActiveAgentChange={onActiveAgentChange}
+          onOpenAgentManager={onOpenAgentManager}
+          messages={swapMessages}
+          isStreaming={false}
+          inputSending={isLoading}
+          streamingContent={swapStreamingContent}
+          emptyState={
+            <ChatWelcome
+              onPickSuggestion={(suggestionPrompt) => {
+                handlePromptChange(suggestionPrompt);
+                setTimeout(() => promptInputRef.current?.focus(), 10);
+              }}
+            />
+          }
+          onCopyMessage={(message) => handleCopyMessage(message.sourceIndex, conversationHistory[message.sourceIndex]?.text)}
+          onRerunMessage={(message) => handleRerunMessage(message.sourceIndex)}
+          onApplyCode={canApplyPending && !isApplyingPending && !isBulkApplyingPending && Array.isArray(pendingFileChanges) && pendingFileChanges.length > 0 ? handleApplyMarkdownBlock : undefined}
+          renderMessageContent={swapMessageContent}
+          renderMessageActions={swapMessageActions}
+          renderMessageExtras={renderSwapMessageExtras}
+          toolbarExtra={swapToolbar}
+          aboveInput={swapAboveInput}
+          inputValue={prompt}
+          onInputChange={handlePromptChange}
+          onSubmit={handleSend}
+          onAttach={handleSwapAttach}
+          onInputKeyDown={handleKeyDown}
+          onInputPaste={handlePaste}
+          onDragOver={handleComposerDragOver}
+          onDragEnter={handleComposerDragEnter}
+          onDragLeave={handleComposerDragLeave}
+          onDrop={handleComposerDrop}
+          dropHint={isDraggingFiles ? <div className="ai-composer-drop-hint" aria-hidden="true">Déposez vos images ici</div> : null}
+          onCancel={handleStop}
+          canSubmit={Boolean(prompt.trim() || explicitContext.length > 0 || pendingImages.length > 0)}
+          textareaRef={promptInputRef}
+          textareaProps={{
+            id: 'ai-prompt',
+            role: 'combobox',
+            'aria-expanded': showWorkflowSuggestions || showContextSuggestions,
+            'aria-controls': 'ai-suggest-listbox',
+            'aria-autocomplete': 'list',
+            'aria-activedescendant': ((showWorkflowSuggestions && filteredWorkflows.length > 0) || (showContextSuggestions && filteredContextFiles.length > 0)) ? `ai-suggest-opt-${activeSuggestion}` : undefined
+          }}
+          showAttachButton={Boolean(onPasteImage)}
+          isBusy={isLoading}
+          inputDisabled={false}
+          className="ai-chat-interface-swap"
+        />
+      ) : (
+      <>
       <div
         ref={conversationHistoryRef}
         className="ai-messages custom-scrollbar"
@@ -1874,50 +2075,7 @@ const AIChat = ({
             />
           )}
 
-          {chatInterfaceSwap ? (
-            <MessageViewer
-              messages={swapMessages}
-              // Volontairement sans streamingText : l'aperçu de streaming
-              // existant (renderStreaming*, index.js:1048) gère trois modes
-              // (fichier / workflow / texte) que MessageViewer ne modélise
-              // pas. Lui passer le flux ici l'afficherait deux fois.
-              actionsDisabled={isLoading}
-              onCopyMessage={(message) =>
-                handleCopyMessage(message.sourceIndex, conversationHistory[message.sourceIndex]?.text)
-              }
-              onRerunMessage={(message) => handleRerunMessage(message.sourceIndex)}
-              onApplyCode={
-                canApplyPending && !isApplyingPending && !isBulkApplyingPending
-                  && Array.isArray(pendingFileChanges) && pendingFileChanges.length > 0
-                  ? handleApplyMarkdownBlock
-                  : undefined
-              }
-              renderMessageExtras={(message) => {
-                const source = conversationHistory[message.sourceIndex];
-                const images = Array.isArray(source?.images) ? source.images : [];
-                const actions = historicalTerminalActions[message.sourceIndex];
-                if (!images.length && !(Array.isArray(actions) && actions.length)) return null;
-                return (
-                  <>
-                    {images.length > 0 && (
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 26 }}>
-                        {images.map((img, i) => (
-                          <img key={i} src={img.dataUrl} alt="Collé" style={{ width: 48, height: 48, borderRadius: 4, objectFit: 'cover', border: '1px solid var(--border)' }} />
-                        ))}
-                      </div>
-                    )}
-                    {Array.isArray(actions) && actions.length > 0 && (
-                      <div style={{ paddingLeft: 26, marginTop: 4 }}>
-                        {actions.map((action, i) => (
-                          <TerminalActionCard key={i} action={action} />
-                        ))}
-                      </div>
-                    )}
-                  </>
-                );
-              }}
-            />
-          ) : (() => {
+          {(() => {
             // COD-70 B.11 — fenetre glissante : slice() mais on conserve
             // l'index ABSOLU (startIndex + offset) pour que toutes les
             // callbacks basees sur l'index (terminal actions, feedback,
@@ -2437,6 +2595,8 @@ const AIChat = ({
           )}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };
