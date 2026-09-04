@@ -476,12 +476,14 @@ const CodeEditor = ({
             {diffSource !== 'git' && isDiffMode && previousCode && (
               <>
                 <button
+                  type="button"
                   onClick={onAcceptDiff}
                   className="btn btn-primary"
                 >
                   ✓ Accepter IA
                 </button>
                 <button
+                  type="button"
                   onClick={onUndo}
                   className="btn btn-warning"
                 >

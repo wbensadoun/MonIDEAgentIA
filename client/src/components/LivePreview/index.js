@@ -128,7 +128,7 @@ const LivePreview = ({
           </span>
         </div>
         
-        <button 
+        <button type="button"
           onClick={handleManualRefresh}
           disabled={!isRunning || isReloading}
           className="live-preview-refresh-btn"
@@ -207,7 +207,7 @@ const LivePreview = ({
               
               {/* Bouton d'action si applicable */}
               {isError && (
-                <button 
+                <button type="button"
                   onClick={handleManualRefresh}
                   className="overlay-action-btn"
                 >
@@ -227,7 +227,7 @@ const LivePreview = ({
               </svg>
             </div>
             <p className="error-text">{iframeState.error}</p>
-            <button 
+            <button type="button"
               onClick={handleManualRefresh}
               className="error-retry-btn"
             >

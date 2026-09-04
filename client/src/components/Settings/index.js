@@ -999,6 +999,7 @@ const Settings = ({
             Annuler
           </button>
           <button
+            type="submit"
             onClick={saveSettings}
             disabled={loading}
             className="btn btn-primary"
