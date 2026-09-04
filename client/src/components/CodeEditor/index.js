@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useEffect, useCallback, useState } from 'react'
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import './CodeEditor.css';
 import EditorWelcome from './EditorWelcome';
+import Dialog from '../ComponentLibrary/Dialog';
 import {
   extractEditorSymbols,
   filterEditorSymbols,
@@ -52,6 +53,7 @@ const CodeEditor = ({
   const [symbolIndex, setSymbolIndex] = useState(0);
   const [cursorLine, setCursorLine] = useState(1);
   const [diffRenderSideBySide, setDiffRenderSideBySide] = useState(true);
+  const [completionNotice, setCompletionNotice] = useState(null);
   const editorCompletionConfig = useMemo(() => buildSingleAIInvocation({
     aiProvider,
     models: aiModels,
@@ -91,7 +93,10 @@ const CodeEditor = ({
       try {
         const completionConfig = completionConfigRef.current || editorCompletionConfig;
         if (completionConfig?.disabled) {
-          alert(completionConfig.reason || 'Completion IA indisponible pour ce provider.');
+          setCompletionNotice({
+            title: 'Completion IA indisponible',
+            message: completionConfig.reason || 'Completion IA indisponible pour ce provider.'
+          });
           return;
         }
 
@@ -114,10 +119,17 @@ const CodeEditor = ({
             onCodeChange(editorRef.current.getValue());
           }
         } else {
-          alert("Erreur IA: " + (res?.error || "Inconnue"));
+          setCompletionNotice({
+            title: 'Erreur de completion IA',
+            message: res?.error || 'Erreur inconnue.'
+          });
         }
       } catch (err) {
         console.error(err);
+        setCompletionNotice({
+          title: 'Erreur de completion IA',
+          message: err?.message || 'La completion IA a échoué.'
+        });
       } finally {
         if (inlineRunIdRef.current === runId) inlineRunIdRef.current = null;
         setIsInlineThinking(false);
@@ -414,6 +426,30 @@ const CodeEditor = ({
 
   return (
     <div className="code-editor-root">
+      {completionNotice && (
+        <Dialog
+          ariaLabel={completionNotice.title}
+          onClose={() => setCompletionNotice(null)}
+          overlayClassName="modal-overlay"
+          className="session-dialog"
+        >
+          <div className="modal-header">
+            <h2 className="modal-title">{completionNotice.title}</h2>
+          </div>
+          <div className="session-dialog__body">
+            <p>{completionNotice.message}</p>
+          </div>
+          <div className="session-dialog__actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setCompletionNotice(null)}
+            >
+              Fermer
+            </button>
+          </div>
+        </Dialog>
+      )}
       <div className="code-editor-top">
         {/* Onglets de fichiers + fil d'Ariane : remontés au niveau de la
             coquille (WorkspaceLayout) — ils décrivent le document actif au

@@ -279,12 +279,15 @@ const FileExplorer = ({
   onFileClick,
   onNewItemNameChange,
   isReadOnly = false,
+  allowDangerousActions = false,
 }) => {
   const [filterQuery, setFilterQuery] = useState('');
   const [renameState, setRenameState] = useState({ path: '', value: '', type: '' });
   const [contextMenu, setContextMenu] = useState(null);
   const [createDialog, setCreateDialog] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [dragState, setDragState] = useState({
     draggedPath: '',
     draggedType: '',
@@ -404,6 +407,26 @@ const FileExplorer = ({
   const cancelRename = useCallback(() => {
     setRenameState({ path: '', value: '', type: '' });
   }, []);
+
+  const requestDelete = useCallback((itemPath, itemType) => {
+    if (allowDangerousActions) {
+      onDeleteItem(itemPath, itemType);
+      return;
+    }
+    setDeleteDialog({ path: itemPath, type: itemType });
+    setContextMenu(null);
+  }, [allowDangerousActions, onDeleteItem]);
+
+  const confirmDelete = useCallback(async () => {
+    if (!deleteDialog || isDeleting || !onDeleteItem) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteItem(deleteDialog.path, deleteDialog.type);
+      setDeleteDialog(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [deleteDialog, isDeleting, onDeleteItem]);
 
   const canDropIntoDirectory = useCallback((draggedPath, targetPath) => {
     if (!draggedPath || !targetPath) return false;
@@ -579,8 +602,7 @@ const FileExplorer = ({
           'delete',
           'Supprimer',
           () => {
-            onDeleteItem(itemPath, item.type);
-            closeContextMenu();
+            requestDelete(itemPath, item.type);
           },
           true
         )
@@ -595,13 +617,49 @@ const FileExplorer = ({
     expandedFolders,
     handleCreate,
     isReadOnly,
-    onDeleteItem,
     onFileClick,
     onToggleFolder,
+    requestDelete,
   ]);
 
   return (
     <div className="nav-root">
+      {deleteDialog && (
+        <Dialog
+          ariaLabel={`Supprimer ${deleteDialog.type === 'file' ? 'le fichier' : 'le dossier'}`}
+          onClose={() => !isDeleting && setDeleteDialog(null)}
+          closeOnBackdrop={!isDeleting}
+          overlayClassName="modal-overlay"
+          className="session-dialog"
+        >
+          <div className="modal-header">
+            <h2 className="modal-title">Confirmer la suppression</h2>
+          </div>
+          <div className="session-dialog__body">
+            <p>
+              Supprimer définitivement « {deleteDialog.path} » ? Cette action est irréversible.
+            </p>
+          </div>
+          <div className="session-dialog__actions">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setDeleteDialog(null)}
+              disabled={isDeleting}
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={confirmDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Suppression…' : 'Supprimer'}
+            </button>
+          </div>
+        </Dialog>
+      )}
       {createDialog && (
         <Dialog
           ariaLabel={`Créer un ${createDialog.type === 'file' ? 'fichier' : 'dossier'}`}
@@ -774,7 +832,7 @@ const FileExplorer = ({
                 dragState={dragState}
                 onToggleFolder={onToggleFolder}
                 onFileClick={onFileClick}
-                onDelete={onDeleteItem}
+                onDelete={requestDelete}
                 onBeginRename={beginRename}
                 onRenameChange={(value) => setRenameState((prev) => ({ ...prev, value }))}
                 onRenameCommit={commitRename}
