@@ -440,6 +440,7 @@ const GitPanel = ({
             ))}
           </select>
           <button
+            type="button"
             className="git-btn"
             onClick={() => handleCheckoutBranch()}
             disabled={isLoading || !selectedBranch || !canEditGit}
@@ -447,6 +448,7 @@ const GitPanel = ({
             Checkout
           </button>
           <button
+            type="button"
             className="git-btn"
             onClick={() => refresh()}
             disabled={isLoading}
@@ -465,6 +467,7 @@ const GitPanel = ({
             aria-label="Nom de la nouvelle branche"
           />
           <button
+            type="button"
             className="git-btn"
             onClick={handleCreateBranch}
             disabled={isLoading || !newBranchName.trim() || !canEditGit}
@@ -482,6 +485,7 @@ const GitPanel = ({
             aria-label="Message du stash"
           />
           <button
+            type="button"
             className="git-btn"
             onClick={handleStashSave}
             disabled={isLoading || !canEditGit}
@@ -505,6 +509,7 @@ const GitPanel = ({
             ))}
           </select>
           <button
+            type="button"
             className="git-btn"
             onClick={() => handleStashPop()}
             disabled={isLoading || !selectedStashRef || !canEditGit}
@@ -572,6 +577,7 @@ const GitPanel = ({
                           </span>
                           <div className="git-file-actions">
                             <button
+                              type="button"
                               className="git-icon-btn"
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -582,6 +588,7 @@ const GitPanel = ({
                               Open
                             </button>
                             <button
+                              type="button"
                               className="git-icon-btn"
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -593,6 +600,7 @@ const GitPanel = ({
                             </button>
                             {canEditGit && !entry.conflicted && (
                               <button
+                                type="button"
                                 className="git-icon-btn"
                                 onClick={(event) => {
                                   event.stopPropagation();
@@ -626,6 +634,7 @@ const GitPanel = ({
             <div className="git-commit-actions">
               <button type="button" className="git-btn" onClick={handleStageAll} disabled={isLoading || !canEditGit}>Stage All</button>
               <button
+                type="button"
                 className="git-btn git-btn-primary"
                 onClick={handleCommit}
                 disabled={isLoading || !commitMessage.trim() || !canEditGit}

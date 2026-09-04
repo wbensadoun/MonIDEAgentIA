@@ -76,6 +76,7 @@ const ThemeSwitcher = ({ theme, onThemeChange }) => {
   return (
     <>
       <button
+        type="button"
         ref={btnRef}
         className="topbar-theme-chip"
         onClick={handleOpen}
@@ -99,6 +100,7 @@ const ThemeSwitcher = ({ theme, onThemeChange }) => {
           <div className="theme-dropdown-header">Thème</div>
           {THEMES.map((t) => (
             <button
+              type="button"
               key={t.id}
               className={`theme-option ${t.id === theme ? 'is-active' : ''}`}
               onClick={() => handleSelect(t.id)}

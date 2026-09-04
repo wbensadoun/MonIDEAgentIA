@@ -223,12 +223,14 @@ const TerminalPanel = ({
             return (
               <div key={proc.id} className="terminal-action">
                 <button
+                  type="button"
                   onClick={() => setActiveProcessId(proc.id)}
                   className={`terminal-pill ${isActive ? 'is-active' : ''}`}
                 >
                   {proc.label}
                 </button>
                 <button
+                  type="button"
                   onClick={() => (isRunning ? stop(proc.id) : start(proc))}
                   className={`terminal-toggle ${isRunning ? 'is-running' : ''}`}
                   disabled={!canUseTerminal}
@@ -318,6 +320,7 @@ const TerminalPanel = ({
             const isActive = activeView === tab.id;
             return (
               <button
+                type="button"
                 key={tab.id}
                 onClick={() => setActiveView(tab.id)}
                 className={`bottom-terminal-title-btn ${isActive ? 'is-active' : ''}`}

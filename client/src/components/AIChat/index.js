@@ -1759,6 +1759,7 @@ const AIChat = ({
               </button>
             )}
             <button
+              type="button"
               onClick={onSaveConversation}
               className="ai-header-btn"
               disabled={!currentProjectPath || conversationHistory.length === 0 || !isElectronApiAvailable}

@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.11.0] — Types explicites sur les boutons
+
+### Fixed
+
+- Les boutons d’action du client déclarent désormais explicitement `type="button"` (ou `type="submit"` pour la sauvegarde du formulaire), afin d’éviter les soumissions implicites et les comportements ambigus.
+
 ## [4.10.0] — Swap ChatInterface sous feature flag
 
 ### Fixed

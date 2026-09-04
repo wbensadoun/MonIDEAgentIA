@@ -55,6 +55,7 @@ class FeatureErrorBoundary extends React.Component<Props, State> {
             {this.state.error?.message ?? 'Une erreur inattendue est survenue.'}
           </p>
           <button
+            type="button"
             onClick={() => this.setState({ hasError: false, error: null })}
             style={{
               padding: '0.4rem 1rem',

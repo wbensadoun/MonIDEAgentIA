@@ -69,6 +69,7 @@ const CommandCenterOverlays = ({
             )}
             {filteredCommands.map((cmd, index) => (
               <button
+                type="button"
                 key={cmd.id}
                 className={`command-item ${index === commandIndex ? 'is-active' : ''}`}
                 onClick={() => runCommand(cmd)}
@@ -114,6 +115,7 @@ const CommandCenterOverlays = ({
               const hint = item.hint === 'tab' ? 'tab' : full.replace(/\\/g, '/');
               return (
                 <button
+                  type="button"
                   key={item.id}
                   className={`command-item ${index === filePaletteIndex ? 'is-active' : ''}`}
                   onClick={() => runFilePick(item.id)}
@@ -160,6 +162,7 @@ const CommandCenterOverlays = ({
               const snippet = String(result.text || '');
               return (
                 <button
+                  type="button"
                   key={`${loc}-${index}`}
                   className={`command-item search-item ${index === searchIndex ? 'is-active' : ''}`}
                   onClick={() => runSearchPick(result)}
@@ -206,6 +209,7 @@ const CommandCenterOverlays = ({
             )}
             {!isSymbolLoading && symbolResults.length > 0 && symbolResults.map((result, index) => (
               <button
+                type="button"
                 key={`${result.file}:${result.line}:${result.column}:${result.symbol}`}
                 className={`command-item search-item ${index === symbolIndex ? 'is-active' : ''}`}
                 onClick={() => runSymbolPick(result)}

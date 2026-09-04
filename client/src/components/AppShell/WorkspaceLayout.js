@@ -490,6 +490,7 @@ const WorkspaceLayout = ({
           <div className="editor-tabs-spacer" />
 
           <button
+            type="button"
             onClick={onToggleFocusMode}
             className={`editor-tabs-action ${isFocusMode ? 'is-active' : ''}`}
             title={isFocusMode ? 'Quitter le mode focus' : 'Mode focus'}

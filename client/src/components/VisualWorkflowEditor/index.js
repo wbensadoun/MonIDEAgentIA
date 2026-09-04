@@ -1177,7 +1177,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                         + Nœud
                     </button>
                     {!isRunning ? (
-                        <button
+                        <button type="button"
                             className="vw-btn vw-btn-run"
                             onClick={() => { setShowLog(true); startWorkflowRun(nodes, edges); }}
                             disabled={nodes.length === 0}
@@ -1298,7 +1298,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                             <div key={category}>
                                 <div className="vw-add-category">{category}</div>
                                 {items.map((item) => (
-                                    <button
+                                    <button type="button"
                                         key={`${category}-${item.type}-${item.label}`}
                                         className="vw-add-item"
                                         onClick={() => addNode(item)}
@@ -1330,7 +1330,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                                     key={wf.filename || `${wf.name || 'workflow'}-${idx}`}
                                     className={`vw-saved-item${String(wf.filename || '').toLowerCase() === highlightedWorkflowFilename ? ' is-ai-updated' : ''}`}
                                 >
-                                    <button
+                                    <button type="button"
                                         className="vw-add-item"
                                         onClick={() => loadSavedWorkflow(wf.filename)}
                                     >
@@ -1343,7 +1343,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                                             </span>
                                         </div>
                                     </button>
-                                    <button
+                                    <button type="button"
                                         className="vw-saved-delete"
                                         onClick={(e) => { e.stopPropagation(); deleteSavedWorkflow(wf.filename); }}
                                         title="Supprimer"
@@ -1379,7 +1379,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                             <>
                                 <div className="vw-catalog-count">{filteredCatalog.length} workflows</div>
                                 {filteredCatalog.map((item, idx) => (
-                                    <button
+                                    <button type="button"
                                         key={item.downloadUrl || `${item.name || 'workflow'}-${idx}`}
                                         className="vw-add-item"
                                         onClick={() => importTemplateWorkflow(item)}
@@ -1412,7 +1412,7 @@ Utilise {{prev}} dans les champs pour référencer le résultat du n\u0153ud pr�
                                 rows={5}
                                 onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) generateWithAI(); }}
                             />
-                            <button
+                            <button type="button"
                                 className="vw-ai-generate-btn"
                                 onClick={generateWithAI}
                                 disabled={!aiPrompt.trim() || aiGenerating}
