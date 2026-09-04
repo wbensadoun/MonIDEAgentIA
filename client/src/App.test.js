@@ -8,8 +8,7 @@ beforeEach(() => {
 
 test('renders app without crashing', () => {
   render(<App />);
-  const brandElement = screen.getByText(/Code Companion/i);
-  expect(brandElement).toBeInTheDocument();
+  expect(screen.getAllByText(/Code Companion/i).length).toBeGreaterThan(0);
 });
 
 test('global shortcuts ignore malformed events and form fields', () => {
@@ -60,8 +59,7 @@ test('toggles between IDE and Chat views via the ActivityBar rail', async () => 
 
   // Initially should show IDE view
   await waitFor(() => {
-    const brandElement = screen.getByText(/Code Companion/i);
-    expect(brandElement).toBeInTheDocument();
+    expect(screen.getAllByText(/Code Companion/i).length).toBeGreaterThan(0);
   });
 
   // The persistent ActivityBar rail (replaces the old horizontal
