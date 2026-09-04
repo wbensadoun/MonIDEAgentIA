@@ -238,28 +238,28 @@
 
 .brain-node {
   border: 1px solid rgba(255,255,255,0.12);
-  background: #0f1722;
-  color: #e7eef9;
+  background: var(--surface-2);
+  color: var(--text-main);
   border-radius: 6px;
   padding: 9px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.18);
 }
 
 .brain-node.is-core {
-  border-color: rgba(56,189,248,0.55);
+  border-color: var(--accent);
 }
 
 .brain-node.is-risk {
-  border-color: rgba(245,158,11,0.65);
+  border-color: var(--warning);
 }
 
 .brain-node.is-selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(0,245,212,0.4), 0 14px 32px rgba(0,0,0,0.24);
+  box-shadow: 0 0 0 1px var(--accent-soft), var(--shadow-4);
 }
 
 .brain-node.is-active-file {
-  background: #13231f;
+  background: var(--accent-soft);
 }
 
 .brain-node-kind {
@@ -333,13 +333,13 @@
 .brain-badge.is-core-file,
 .brain-badge.is-workflow-related {
   color: var(--accent);
-  border-color: rgba(0,245,212,0.35);
+  border-color: var(--accent-soft);
 }
 
 .brain-badge.is-test-missing,
 .brain-badge.is-high-coupling {
   color: var(--warning);
-  border-color: rgba(245,158,11,0.35);
+  border-color: var(--warning-soft);
 }
 
 .brain-list-row {

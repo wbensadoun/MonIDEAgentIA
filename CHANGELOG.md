@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.20.0] — Tokens CSS du Brain Graph
+
+### Fixed
+
+- Les nœuds et badges du Brain Graph utilisent désormais les tokens de thème existants, sans couleurs codées en dur qui échappent au contrôle Stylelint.
+
 ## [4.19.0] — Tooltip des IconButton
 
 ### Added
