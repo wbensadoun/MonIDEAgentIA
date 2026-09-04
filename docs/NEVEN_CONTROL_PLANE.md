@@ -31,7 +31,7 @@ sequenceDiagram
 {
   "workspaceId": "123e4567-e89b-42d3-a456-426614174000",
   "deviceId": "223e4567-e89b-42d3-a456-426614174000",
-  "profile": "haiku | luna | sol | opus",
+  "profile": "lumen | luna | sol | astral",
   "capability": "completion"
 }
 ```

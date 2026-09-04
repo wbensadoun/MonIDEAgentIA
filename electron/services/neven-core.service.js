@@ -3,8 +3,8 @@
 const NEVEN_CORE_VERSION = '2.4.1';
 
 const NEVEN_INTERNAL_PROFILES = Object.freeze({
-  haiku: {
-    label: 'Haiku',
+  lumen: {
+    label: 'Lumen',
     fallback: null,
     complexity: 'light',
     executionMode: 'agent',
@@ -12,7 +12,7 @@ const NEVEN_INTERNAL_PROFILES = Object.freeze({
   },
   luna: {
     label: 'Luna',
-    fallback: 'haiku',
+    fallback: 'lumen',
     complexity: 'premium',
     executionMode: 'agent',
     depth: 'fast'
@@ -24,8 +24,8 @@ const NEVEN_INTERNAL_PROFILES = Object.freeze({
     executionMode: 'multi-agent',
     depth: 'deep'
   },
-  opus: {
-    label: 'Opus',
+  astral: {
+    label: 'Astral',
     fallback: 'sol',
     complexity: 'premium',
     executionMode: 'multi-agent',
@@ -45,14 +45,14 @@ const NEVEN_CORE_ROLES = Object.freeze({
     label: 'Luna',
     purpose: 'Implement code changes and bounded fixes',
     preferredProfile: 'luna',
-    fallbackProfile: 'haiku',
+    fallbackProfile: 'lumen',
     keywords: ['code', 'coding', 'bug', 'fix', 'implement', 'implementation', 'component', 'api', 'patch', 'file', 'editor']
   },
   terra: {
     label: 'Terra',
     purpose: 'Analyze, QA and validate outputs',
     preferredProfile: 'luna',
-    fallbackProfile: 'haiku',
+    fallbackProfile: 'lumen',
     keywords: ['qa', 'quality', 'review', 'audit', 'verify', 'validation', 'test', 'tests', 'analysis', 'analyze', 'analyse', 'security', 'risk']
   }
 });
@@ -136,7 +136,7 @@ const isNevenCoreExecutionEnabled = (env = process.env) => {
 const INTENT_PATTERNS = Object.freeze([
   {
     kind: 'critical',
-    profile: 'opus',
+    profile: 'astral',
     primaryRole: 'sol',
     secondaryRole: 'terra',
     regex: /(security|secure|securit|production|payment|migration|auth|authentication|authorization|compliance|critical|risk|incident|data loss|vulnerability|vulnerab)/i
@@ -166,7 +166,7 @@ const INTENT_PATTERNS = Object.freeze([
 
 const DEFAULT_INTENT = Object.freeze({
   kind: 'general',
-  profile: 'haiku',
+  profile: 'lumen',
   primaryRole: 'luna',
   secondaryRole: null,
   reason: 'general'
@@ -223,7 +223,7 @@ const normalizeRoleName = (role) => {
 
 const normalizeProfileName = (profile) => {
   const normalized = String(profile || '').trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(NEVEN_INTERNAL_PROFILES, normalized) ? normalized : 'haiku';
+  return Object.prototype.hasOwnProperty.call(NEVEN_INTERNAL_PROFILES, normalized) ? normalized : 'lumen';
 };
 
 const normalizeCapabilityList = (input) => {

@@ -80,15 +80,15 @@ const PROVIDER_TIER_STATIC_CANDIDATES = Object.freeze({
 const ROUTER_PROFILE_DEFINITIONS = NEVEN_INTERNAL_PROFILES;
 const ROUTER_VALID_PROFILES = new Set(Object.keys(ROUTER_PROFILE_DEFINITIONS));
 const PROFILE_MODEL_PATTERNS = Object.freeze({
-  haiku: ['haiku', 'flash-lite', 'flash'],
+  lumen: ['haiku', 'flash-lite', 'flash'],
   luna: ['sonnet', 'pro', 'k2'],
   sol: ['sonnet', 'pro', 'k2'],
-  opus: ['opus', 'ultra', 'pro', 'sonnet', 'k2']
+  astral: ['opus', 'ultra', 'pro', 'sonnet', 'k2']
 });
 
 const normalizeRouterProfile = (profile) => {
   const normalized = normalizeNevenProfileName(profile);
-  return ROUTER_VALID_PROFILES.has(normalized) ? normalized : 'haiku';
+  return ROUTER_VALID_PROFILES.has(normalized) ? normalized : 'lumen';
 };
 
 // ---------------------------------------------------------------------------
@@ -98,18 +98,18 @@ const normalizeRouterProfile = (profile) => {
 // profil interne plancher, SANS jamais voir ces profils (il ne voit que "Neven
 // IA" ou son BYOK + modèle). 'auto' = le routeur décide seul (comportement
 // historique inchangé). Sémantique PLANCHER : le routeur peut monter au-dessus
-// du niveau demandé (ex. prompt critique → opus même en Low), jamais descendre
+// du niveau demandé (ex. prompt critique → astral même en Low), jamais descendre
 // en dessous. Les profils internes restent une métadonnée backend.
 // ---------------------------------------------------------------------------
 const ROUTER_REASONING_EFFORTS = Object.freeze({
   auto: { floor: null, label: 'Auto' },
   low: { floor: 'luna', label: 'Faible' },
   medium: { floor: 'sol', label: 'Moyen' },
-  high: { floor: 'opus', label: 'Élevé' },
-  ultra: { floor: 'opus', label: 'Ultra' }
+  high: { floor: 'astral', label: 'Élevé' },
+  ultra: { floor: 'astral', label: 'Ultra' }
 });
 const ROUTER_VALID_EFFORTS = new Set(Object.keys(ROUTER_REASONING_EFFORTS));
-const ROUTER_PROFILE_RANK = Object.freeze({ haiku: 0, luna: 1, sol: 2, opus: 3 });
+const ROUTER_PROFILE_RANK = Object.freeze({ lumen: 0, luna: 1, sol: 2, astral: 3 });
 
 const normalizeReasoningEffort = (effort) => {
   const normalized = String(effort || '').trim().toLowerCase();
@@ -143,14 +143,14 @@ const raiseDecisionProfile = (decision, effort) => {
     complexity: definition.complexity,
     mode: definition.executionMode === 'agent'
       ? 'single_agent'
-      : (raised === 'opus' ? 'multi_agent' : 'orchestrator')
+      : (raised === 'astral' ? 'multi_agent' : 'orchestrator')
   };
 };
 
 const deriveProfileFromDecision = ({ mode, complexity }) => {
-  if (mode === 'multi_agent') return 'opus';
+  if (mode === 'multi_agent') return 'astral';
   if (mode === 'orchestrator') return 'sol';
-  return complexity === 'premium' ? 'luna' : 'haiku';
+  return complexity === 'premium' ? 'luna' : 'lumen';
 };
 
 const buildProfileDecision = (profile) => {
@@ -159,7 +159,7 @@ const buildProfileDecision = (profile) => {
   return {
     mode: definition.executionMode === 'agent'
       ? 'single_agent'
-      : (normalizedProfile === 'opus' ? 'multi_agent' : 'orchestrator'),
+      : (normalizedProfile === 'astral' ? 'multi_agent' : 'orchestrator'),
     agent: null,
     skills: [],
     complexity: definition.complexity,
@@ -172,13 +172,13 @@ const buildProfileDecision = (profile) => {
 const classifyPromptProfile = (prompt) => {
   const text = String(prompt || '').trim();
   const lower = text.toLowerCase();
-  if (!text) return { profile: 'haiku', confidence: 'high', reason: 'empty' };
+  if (!text) return { profile: 'lumen', confidence: 'high', reason: 'empty' };
   if (/^(bonjour|bonsoir|salut|hello|hi|merci|thanks|ok|oui|non|ping)\b/i.test(lower)
     && text.split(/\s+/).length <= 5) {
-    return { profile: 'haiku', confidence: 'high', reason: 'small-talk' };
+    return { profile: 'lumen', confidence: 'high', reason: 'small-talk' };
   }
   if (/(production|sécurité|security|vulnér|vulnerab|migration critique|perte de données|data loss|authentification|paiement|compliance|menace|threat)/i.test(text)) {
-    return { profile: 'opus', confidence: 'high', reason: 'critical-risk' };
+    return { profile: 'astral', confidence: 'high', reason: 'critical-risk' };
   }
   if (/(architecture|architect|repository|repo|refactor.*(complet|global|entier)|multi[- ]?étapes|multi[- ]?steps|planifie|planifier|débogage.*(complexe|profond)|debug.*(complex|deep)|plusieurs fichiers|multiple files)/i.test(text)) {
     return { profile: 'sol', confidence: 'high', reason: 'multi-step' };
@@ -187,7 +187,7 @@ const classifyPromptProfile = (prompt) => {
     return { profile: 'luna', confidence: 'medium', reason: 'coding-task' };
   }
   if (text.split(/\s+/).filter(Boolean).length <= 3) {
-    return { profile: 'haiku', confidence: 'medium', reason: 'short-request' };
+    return { profile: 'lumen', confidence: 'medium', reason: 'short-request' };
   }
   return null;
 };
@@ -296,7 +296,7 @@ const resolveModelForTier = async (provider, tier, ctx = {}) => {
 const resolveModelForProfile = async (provider, profile, ctx = {}) => {
   const normalizedProfile = normalizeRouterProfile(profile);
   if (normalizeAIProviderName(provider) === 'neven') return { resolved: null, source: 'managed' };
-  if (normalizedProfile === 'haiku') return resolveModelForTier(provider, 'light', ctx);
+  if (normalizedProfile === 'lumen') return resolveModelForTier(provider, 'light', ctx);
 
   const normalizedProvider = normalizeAIProviderName(provider);
   if (normalizedProvider === 'ollama') return resolveModelForTier(provider, 'premium', ctx);
@@ -317,7 +317,7 @@ const resolveModelForProfile = async (provider, profile, ctx = {}) => {
 
 // Decision de repli SURE : strictement identique au comportement actuel par defaut
 // (agent unique, sans routage) — aucune regression possible en cas d'echec.
-const ROUTER_SAFE_FALLBACK_DECISION = Object.freeze({ mode: 'single_agent', agent: null, skills: [], complexity: 'light', profile: 'haiku' });
+const ROUTER_SAFE_FALLBACK_DECISION = Object.freeze({ mode: 'single_agent', agent: null, skills: [], complexity: 'light', profile: 'lumen' });
 const ROUTER_VALID_MODES = new Set(['single_agent', 'orchestrator', 'multi_agent']);
 const ROUTER_VALID_COMPLEXITY = new Set(['light', 'premium']);
 const ROUTER_MAX_AGENTS_IN_PROMPT = NEVEN_ROUTER_CONTEXT_LIMITS.maxAgents;
@@ -439,12 +439,12 @@ ${routerContext.skillBlock}
 RÈGLES ABSOLUES :
 1. Réponds UNIQUEMENT avec un objet JSON strict, sans aucun texte avant ou après, sans bloc markdown (pas de \`\`\`).
 2. Le JSON doit correspondre EXACTEMENT à ce schéma :
-{"mode":"single_agent"|"orchestrator"|"multi_agent","agent":"<nom exact d'un agent ci-dessus ou null>","skills":["<noms exacts de skills ci-dessus>"],"complexity":"light"|"premium","profile":"haiku"|"luna"|"sol"|"opus"}
+{"mode":"single_agent"|"orchestrator"|"multi_agent","agent":"<nom exact d'un agent ci-dessus ou null>","skills":["<noms exacts de skills ci-dessus>"],"complexity":"light"|"premium","profile":"lumen"|"luna"|"sol"|"astral"}
 3. "mode" : "single_agent" pour une tâche simple confiée à un seul agent (ou aucun agent particulier) ; "orchestrator" si une tâche complexe nécessite une coordination multi-étapes par un chef d'orchestre ; "multi_agent" si plusieurs agents spécialisés doivent collaborer.
 4. "agent" doit être le nom EXACT d'un agent listé ci-dessus, ou null si aucun agent spécifique n'est pertinent.
 5. "skills" est un tableau des noms EXACTS de skills listés ci-dessus pertinents pour la tâche (tableau vide si aucun).
 6. "complexity" = "light" pour une tâche simple/rapide, "premium" pour une tâche complexe qui bénéficierait d'un modèle plus puissant.
-7. "profile" est interne à Neven : haiku pour rapide, luna pour coding courant, sol pour planification/orchestration, opus pour risque critique ou multi-agent réel.
+7. "profile" est interne à Neven : lumen pour rapide, luna pour coding courant, sol pour planification/orchestration, astral pour risque critique ou multi-agent réel.
 8. Si aucun agent ou skill listé n'est pertinent, utilise agent: null et skills: [].`;
 };
 
@@ -487,7 +487,7 @@ const validateRouterDecision = (raw, agentNameSet, skillNameSet) => {
   return {
     mode: profileDefinition.executionMode === 'agent'
       ? 'single_agent'
-      : (profile === 'opus' ? 'multi_agent' : 'orchestrator'),
+      : (profile === 'astral' ? 'multi_agent' : 'orchestrator'),
     agent,
     skills,
     complexity: profileDefinition.complexity,
@@ -603,7 +603,7 @@ const routeToDecision = async ({
     //       rehausse le profil meme sur un prompt trivial.
     const localProfile = classifyPromptProfile(userPrompt);
     if (localProfile?.confidence === 'high' || isPromptTrivialForL1(userPrompt, ctx.settings)) {
-      const profile = localProfile?.profile || 'haiku';
+      const profile = localProfile?.profile || 'lumen';
       return buildResponse(buildProfileDecision(profile), 'fallback');
     }
 
@@ -650,7 +650,7 @@ const routeToDecision = async ({
     // Jamais de payload (donc jamais de cle API) dans les logs — message generique seulement.
     console.error('[Router] routeToDecision en echec, repli sur le comportement par defaut:', error?.message || 'erreur inconnue');
     // Le plancher d'effort s'applique meme sur le repli d'erreur : un utilisateur
-    // en "ultra" doit obtenir un profil eleve, pas le repli haiku par defaut.
+    // en "ultra" doit obtenir un profil eleve, pas le repli lumen par defaut.
     try {
       return await buildResponse({ ...ROUTER_SAFE_FALLBACK_DECISION }, 'fallback');
     } catch {

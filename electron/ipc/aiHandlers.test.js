@@ -31,7 +31,7 @@ test('completion IPC strips technical metadata and rejects forged Core context',
       managedCredential: 'renderer-must-not-reach-provider',
       apiUrl: 'https://hostile.invalid/credential-exfiltration',
       projectPath: null,
-      nevenCoreExecutionContext: { profile: 'opus', capabilities: ['forged'] }
+      nevenCoreExecutionContext: { profile: 'astral', capabilities: ['forged'] }
     };
     const completionHandler = async ({ options }) => {
       assert.equal(Object.prototype.hasOwnProperty.call(options, 'apiKey'), false);
@@ -240,7 +240,7 @@ test('chat, inline and ghost keep local/BYOK execution ahead of Neven and preser
   let policyCalls = 0;
   const modes = [];
   configureAIService({
-    resolveProviderExecutionContext: async () => ({ workspaceId: 'workspace-local', profile: 'haiku', access: null }),
+    resolveProviderExecutionContext: async () => ({ workspaceId: 'workspace-local', profile: 'lumen', access: null }),
     resolveProviderPolicy: async () => { policyCalls += 1; return { byok: 'priority' }; },
     resolveProviderCredential: async ({ origin }) => origin === 'byok' ? 'workspace-byok-key' : { unavailable: true },
     executeManagedGateway: async () => { gatewayCalls += 1; throw new Error('gateway must stay disabled'); },

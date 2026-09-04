@@ -13,26 +13,26 @@ const {
 } = require('./router.service');
 
 test('internal profile classifier keeps strong signals deterministic', () => {
-  assert.equal(classifyPromptProfile('bonjour').profile, 'haiku');
+  assert.equal(classifyPromptProfile('bonjour').profile, 'lumen');
   assert.equal(classifyPromptProfile('corrige ce bug dans App.js').profile, 'luna');
   assert.equal(classifyPromptProfile('analyse l architecture du repository et planifie le refactoring').profile, 'sol');
-  assert.equal(classifyPromptProfile('audite la sécurité et la migration de paiement en production').profile, 'opus');
+  assert.equal(classifyPromptProfile('audite la sécurité et la migration de paiement en production').profile, 'astral');
 });
 
 test('profile resolution selects a physical model without changing the internal profile', async () => {
-  const haiku = await resolveModelForProfile('claude', 'haiku', {
+  const lumen = await resolveModelForProfile('claude', 'lumen', {
     liveModels: ['claude-haiku-4-6', 'claude-sonnet-4-6']
   });
-  const opus = await resolveModelForProfile('claude', 'opus', {
+  const astral = await resolveModelForProfile('claude', 'astral', {
     liveModels: ['claude-haiku-4-6', 'claude-sonnet-4-6', 'claude-opus-4-1']
   });
   const sol = await resolveModelForProfile('claude', 'sol', {
     liveModels: ['claude-haiku-4-6', 'claude-sonnet-4-6', 'claude-opus-4-1']
   });
 
-  assert.equal(haiku.resolved, 'claude-haiku-4-6');
+  assert.equal(lumen.resolved, 'claude-haiku-4-6');
   assert.equal(sol.resolved, 'claude-sonnet-4-6');
-  assert.equal(opus.resolved, 'claude-opus-4-1');
+  assert.equal(astral.resolved, 'claude-opus-4-1');
 });
 
 test('Neven router leaves physical model selection to the managed control plane', async () => {
@@ -59,7 +59,7 @@ test('profile validation overrides contradictory mode and complexity fields', ()
   const result = validateRouterDecision({
     mode: 'single_agent',
     complexity: 'light',
-    profile: 'opus'
+    profile: 'astral'
   }, new Set(), new Set());
 
   assert.deepEqual(result, {
@@ -67,7 +67,7 @@ test('profile validation overrides contradictory mode and complexity fields', ()
     agent: null,
     skills: [],
     complexity: 'premium',
-    profile: 'opus'
+    profile: 'astral'
   });
 });
 
@@ -81,9 +81,9 @@ test('route decision uses the internal profile while the UI-facing decision stay
     runSingleCompletionProvider: async () => ({ success: false })
   });
 
-  assert.equal(result.decision.profile, 'haiku');
+  assert.equal(result.decision.profile, 'lumen');
   assert.equal(result.model.resolved, 'claude-haiku-4-6');
-  assert.equal(result.execution.profile, 'haiku');
+  assert.equal(result.execution.profile, 'lumen');
 });
 
 test('route fallback does not call an LLM when agents and skills are absent', async () => {
@@ -102,8 +102,8 @@ test('route fallback does not call an LLM when agents and skills are absent', as
 
   assert.equal(completionCalls, 0);
   assert.equal(result.source, 'fallback');
-  assert.equal(result.decision.profile, 'haiku');
-  assert.equal(result.execution.profile, 'haiku');
+  assert.equal(result.decision.profile, 'lumen');
+  assert.equal(result.execution.profile, 'lumen');
 });
 
 // ---------------------------------------------------------------------------
@@ -121,25 +121,25 @@ test('reasoning effort normalization falls back to auto for unknown values', () 
 
 test('reasoning effort floor raises the profile without ever lowering it', () => {
   // low -> plancher luna
-  assert.equal(applyReasoningEffortFloor('haiku', 'low'), 'luna');
+  assert.equal(applyReasoningEffortFloor('lumen', 'low'), 'luna');
   assert.equal(applyReasoningEffortFloor('luna', 'low'), 'luna');
-  assert.equal(applyReasoningEffortFloor('opus', 'low'), 'opus');
+  assert.equal(applyReasoningEffortFloor('astral', 'low'), 'astral');
   // medium -> plancher sol
-  assert.equal(applyReasoningEffortFloor('haiku', 'medium'), 'sol');
+  assert.equal(applyReasoningEffortFloor('lumen', 'medium'), 'sol');
   assert.equal(applyReasoningEffortFloor('sol', 'medium'), 'sol');
-  // high/ultra -> plancher opus
-  assert.equal(applyReasoningEffortFloor('haiku', 'high'), 'opus');
-  assert.equal(applyReasoningEffortFloor('sol', 'ultra'), 'opus');
-  assert.equal(applyReasoningEffortFloor('opus', 'ultra'), 'opus');
+  // high/ultra -> plancher astral
+  assert.equal(applyReasoningEffortFloor('lumen', 'high'), 'astral');
+  assert.equal(applyReasoningEffortFloor('sol', 'ultra'), 'astral');
+  assert.equal(applyReasoningEffortFloor('astral', 'ultra'), 'astral');
   // auto -> aucun changement
-  assert.equal(applyReasoningEffortFloor('haiku', 'auto'), 'haiku');
-  assert.equal(applyReasoningEffortFloor('opus', 'auto'), 'opus');
+  assert.equal(applyReasoningEffortFloor('lumen', 'auto'), 'lumen');
+  assert.equal(applyReasoningEffortFloor('astral', 'auto'), 'astral');
   // valeur invalide -> auto -> aucun changement
-  assert.equal(applyReasoningEffortFloor('haiku', 'nawak'), 'haiku');
+  assert.equal(applyReasoningEffortFloor('lumen', 'nawak'), 'lumen');
 });
 
 test('raiseDecisionProfile keeps agent/skills and derives mode/complexity from the raised profile', () => {
-  const decision = { mode: 'single_agent', agent: 'coder', skills: ['review'], complexity: 'light', profile: 'haiku' };
+  const decision = { mode: 'single_agent', agent: 'coder', skills: ['review'], complexity: 'light', profile: 'lumen' };
   const raised = raiseDecisionProfile(decision, 'medium');
   assert.equal(raised.profile, 'sol');
   assert.equal(raised.mode, 'orchestrator');
@@ -148,7 +148,7 @@ test('raiseDecisionProfile keeps agent/skills and derives mode/complexity from t
   assert.deepEqual(raised.skills, ['review']);
 
   const raisedOpus = raiseDecisionProfile(decision, 'ultra');
-  assert.equal(raisedOpus.profile, 'opus');
+  assert.equal(raisedOpus.profile, 'astral');
   assert.equal(raisedOpus.mode, 'multi_agent');
 
   // Pas de rehaussement -> decision d'origine retournee telle quelle.
@@ -166,8 +166,8 @@ test('routeToDecision applies the reasoning effort floor on the L1 trivial path'
   });
 
   assert.equal(result.reasoningEffort, 'high');
-  assert.equal(result.decision.profile, 'opus');
-  assert.equal(result.execution.profile, 'opus');
+  assert.equal(result.decision.profile, 'astral');
+  assert.equal(result.execution.profile, 'astral');
 });
 
 test('routeToDecision with auto effort keeps the historical profile', async () => {
@@ -181,7 +181,7 @@ test('routeToDecision with auto effort keeps the historical profile', async () =
   });
 
   assert.equal(result.reasoningEffort, 'auto');
-  assert.equal(result.decision.profile, 'haiku');
+  assert.equal(result.decision.profile, 'lumen');
 });
 
 test('routeToDecision applies the reasoning effort floor on the L2 classification path', async () => {
@@ -193,7 +193,7 @@ test('routeToDecision applies the reasoning effort floor on the L2 classificatio
     listSkills: async () => ({ skills: [] }),
     runSingleCompletionProvider: async () => ({
       success: true,
-      text: '{"mode":"single_agent","agent":null,"skills":[],"complexity":"light","profile":"haiku"}'
+      text: '{"mode":"single_agent","agent":null,"skills":[],"complexity":"light","profile":"lumen"}'
     })
   });
 

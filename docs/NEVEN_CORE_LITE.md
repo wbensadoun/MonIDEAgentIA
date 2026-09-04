@@ -15,10 +15,10 @@ Ce socle ne remplace pas le routeur invisible existant. Il le compacte et lui do
 
 ## Contrat du core
 
-- `haiku` : rapide, court, triviale.
+- `lumen` : rapide, court, triviale.
 - `luna` : code courant et correctifs bornes.
 - `sol` : architecture, plan, coordination multi-etapes.
-- `opus` : risque critique, securite, migration sensible.
+- `astral` : risque critique, securite, migration sensible.
 
 ## Capabilites de base
 

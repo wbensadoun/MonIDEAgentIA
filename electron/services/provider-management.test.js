@@ -105,7 +105,7 @@ test('production completion runner sends resolved OpenAI BYOK credentials only t
   const previousFetch = global.fetch;
   const requests = [];
   configureAIService({
-    resolveProviderExecutionContext: async () => ({ workspaceId: 'openai-workspace', profile: 'haiku', access: null }),
+    resolveProviderExecutionContext: async () => ({ workspaceId: 'openai-workspace', profile: 'lumen', access: null }),
     resolveProviderPolicy: async () => ({ byok: 'mandatory' }),
     resolveProviderCredential: async ({ origin }) => origin === 'byok' ? credential : null,
     providerUsageLedger: { append: async () => {} }
@@ -159,7 +159,7 @@ test('Google BYOK timeout never forwards its managed credential to an OpenAI fal
   const previousFetch = global.fetch;
   const requests = [];
   configureAIService({
-    resolveProviderExecutionContext: async () => ({ workspaceId: 'google-workspace', profile: 'haiku', access: null }),
+    resolveProviderExecutionContext: async () => ({ workspaceId: 'google-workspace', profile: 'lumen', access: null }),
     resolveProviderPolicy: async () => ({ byok: 'mandatory' }),
     resolveProviderCredential: async ({ origin, provider }) => origin === 'byok' && provider === 'gemini' ? googleCredential : null,
     providerUsageLedger: { append: async () => {} }

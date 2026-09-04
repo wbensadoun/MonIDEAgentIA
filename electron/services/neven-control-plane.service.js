@@ -9,7 +9,7 @@ const DEFAULT_CACHE_SKEW_MS = 15000;
 const DEFAULT_GATEWAY_BASE_PATH = '/api/v1/gateway';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const GRANT_PATTERN = /^[^\s\r\n]{1,4096}$/;
-const PROFILES = new Set(['haiku', 'luna', 'sol', 'opus']);
+const PROFILES = new Set(['lumen', 'luna', 'sol', 'astral']);
 const USAGE_ORIGINS = new Set(['neven', 'byok', 'local']);
 const USAGE_PROVIDERS = new Set(['gemini', 'claude', 'kimi', 'ollama', 'dashscope', 'neven']);
 const MAX_EVENT_ID_LENGTH = 128;
@@ -146,7 +146,7 @@ const normalizeUsageEvent = (event = {}, now = () => new Date().toISOString()) =
 };
 
 const normalizeProfile = (value) => {
-  const profile = String(value || 'haiku').trim().toLowerCase();
+  const profile = String(value || 'lumen').trim().toLowerCase();
   if (!PROFILES.has(profile)) throw new Error('Profil Neven invalide.');
   return profile;
 };
@@ -165,7 +165,7 @@ const normalizeExpiry = (value) => {
 const normalizeAccess = (payload, {
   workspaceId,
   deviceId,
-  profile = 'haiku',
+  profile = 'lumen',
   capability = 'completion',
   gatewayBaseUrl,
   allowedHosts,
@@ -299,7 +299,7 @@ class NevenControlPlaneClient {
     }
   }
 
-  async resolveAccess({ workspaceId, deviceId, profile = 'haiku', capability = 'completion' } = {}) {
+  async resolveAccess({ workspaceId, deviceId, profile = 'lumen', capability = 'completion' } = {}) {
     let normalizedWorkspaceId;
     let normalizedDeviceId;
     let normalizedProfile;
@@ -401,7 +401,7 @@ const createNevenAccessResolver = ({ client, cacheSkewMs = DEFAULT_CACHE_SKEW_MS
   if (!client || typeof client.resolveAccess !== 'function') throw new Error('Client control plane Neven requis.');
   const cache = new Map();
 
-  const getCacheKey = ({ workspaceId, deviceId, profile = 'haiku', capability = 'completion' } = {}) =>
+  const getCacheKey = ({ workspaceId, deviceId, profile = 'lumen', capability = 'completion' } = {}) =>
     JSON.stringify([
       normalizeWorkspaceId(workspaceId),
       normalizeDeviceId(deviceId),
@@ -409,7 +409,7 @@ const createNevenAccessResolver = ({ client, cacheSkewMs = DEFAULT_CACHE_SKEW_MS
       normalizeCapability(capability)
     ]);
 
-  const resolve = async ({ workspaceId, deviceId, profile = 'haiku', capability = 'completion' } = {}) => {
+  const resolve = async ({ workspaceId, deviceId, profile = 'lumen', capability = 'completion' } = {}) => {
     let key;
     try {
       key = getCacheKey({ workspaceId, deviceId, profile, capability });
@@ -429,14 +429,14 @@ const createNevenAccessResolver = ({ client, cacheSkewMs = DEFAULT_CACHE_SKEW_MS
   };
 
   resolve.clear = () => cache.clear();
-  resolve.invalidate = ({ workspaceId, deviceId, profile = 'haiku', capability = 'completion' } = {}) => {
+  resolve.invalidate = ({ workspaceId, deviceId, profile = 'lumen', capability = 'completion' } = {}) => {
     try {
       cache.delete(getCacheKey({ workspaceId, deviceId, profile, capability }));
     } catch {
       // Invalid input must not affect unrelated grants.
     }
   };
-  resolve.revoke = async ({ workspaceId, deviceId, profile = 'haiku', capability = 'completion', grant } = {}) => {
+  resolve.revoke = async ({ workspaceId, deviceId, profile = 'lumen', capability = 'completion', grant } = {}) => {
     let normalizedWorkspaceId;
     let normalizedDeviceId;
     let cacheKey;

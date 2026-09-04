@@ -63,7 +63,7 @@ const normalizeMode = (mode, request = {}) => {
 
 // The payload deliberately has no provider identifier. Provider selection and
 // credentials remain the gateway's responsibility.
-const buildGatewayPayload = ({ workspaceId, deviceId, subjectId, profile = 'haiku', capability = 'completion', mode, request = {} } = {}) => {
+const buildGatewayPayload = ({ workspaceId, deviceId, subjectId, profile = 'lumen', capability = 'completion', mode, request = {} } = {}) => {
   const payload = {
     workspaceId: normalizeWorkspaceId(workspaceId),
     deviceId: normalizeDeviceId(deviceId),
@@ -150,7 +150,7 @@ class NevenManagedGatewayClient {
 
 const createManagedGatewayCompletion = ({ accessResolver, gatewayClient, enabled = isNevenManagedGatewayEnabled() } = {}) => {
   if (!accessResolver || typeof accessResolver !== 'function' || !gatewayClient || typeof gatewayClient.complete !== 'function') throw new Error('Dépendances passerelle Neven requises.');
-  return async ({ workspaceId, deviceId, profile = 'haiku', capability = 'completion', mode, request = {}, access } = {}) => {
+  return async ({ workspaceId, deviceId, profile = 'lumen', capability = 'completion', mode, request = {}, access } = {}) => {
     if (!enabled) return failure('managed_disabled', 'Mode managed Neven désactivé.');
     let grant = access || await accessResolver({ workspaceId, deviceId, profile, capability });
     let result = await gatewayClient.complete({ access: grant, workspaceId, deviceId, profile, capability, mode, request });

@@ -199,7 +199,7 @@ configureAIService({
     const derivedProfile = buildNevenCorePlan({ prompt: request?.userPrompt || '' }).profile;
     const baseProfile = Object.prototype.hasOwnProperty.call(NEVEN_INTERNAL_PROFILES, profileFromCore)
       ? profileFromCore
-      : (Object.prototype.hasOwnProperty.call(NEVEN_INTERNAL_PROFILES, derivedProfile) ? derivedProfile : 'haiku');
+      : (Object.prototype.hasOwnProperty.call(NEVEN_INTERNAL_PROFILES, derivedProfile) ? derivedProfile : 'lumen');
     // L'effort de raisonnement (Settings > Routeur) pose un PLANCHER sur le profil
     // managed : le control plane peut monter au-dessus, jamais descendre en dessous.
     // 'auto' (defaut) laisse le profil derive intact — comportement historique.

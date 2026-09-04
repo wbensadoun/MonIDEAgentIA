@@ -656,7 +656,7 @@ const runProviderCompletionWithPolicy = async ({ provider, request = {}, options
         return serviceDeps.executeManagedGateway({
           workspaceId: context.workspaceId,
           deviceId: context.deviceId,
-          profile: context.profile || 'haiku',
+          profile: context.profile || 'lumen',
           capability: 'completion',
           access: context.access,
           mode: request.mode,
