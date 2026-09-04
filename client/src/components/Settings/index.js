@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './Settings.css';
 import ThemeSwitcher from '../AppShell/ThemeSwitcher';
+import Select from '../ComponentLibrary/Select';
 import {
   IconSettings,
   IconMoon,
@@ -469,7 +470,7 @@ const Settings = ({
           {activeTab === 'general' && (<>
           <div className="settings-section">
             <label className="settings-label">Fournisseur par défaut</label>
-            <select
+            <Select
               value={settings.defaultProvider}
               onChange={(e) => handleChange('defaultProvider', e.target.value)}
               className="settings-input"
@@ -480,7 +481,7 @@ const Settings = ({
               ))}
               <option value="neven">Neven IA</option>
               <option value="multi">Équipe d&apos;agents</option>
-            </select>
+            </Select>
             <div className="settings-hint">
               « Équipe d&apos;agents » délègue la demande au roster configuré dans l&apos;onglet Agents,
               au lieu d&apos;interroger un seul fournisseur.
@@ -534,7 +535,7 @@ const Settings = ({
 
           <div className="settings-section">
             <label className="settings-label">Exécution locale (Ollama)</label>
-            <select
+            <Select
               value={settings.localAIOptimizationMode || 'safe'}
               onChange={(e) => handleChange('localAIOptimizationMode', e.target.value)}
               className="settings-input"
@@ -543,7 +544,7 @@ const Settings = ({
               <option value="safe">Privé / Safe</option>
               <option value="auto">Auto-adaptatif</option>
               <option value="manual">Manuel expert</option>
-            </select>
+            </Select>
             <div className="settings-hint">
               Safe ne lit pas la configuration PC et limite Ollama a un agent local. Auto lit CPU/RAM/GPU uniquement apres accord explicite.
             </div>
@@ -606,7 +607,7 @@ const Settings = ({
                   title="Agents API/cloud simultanes"
                   aria-label="Agents API/cloud simultanes"
                 />
-                <select
+                <Select
                   value={settings.localAIContextBudget || 'short'}
                   onChange={(e) => handleChange('localAIContextBudget', e.target.value)}
                   className="settings-input"
@@ -615,7 +616,7 @@ const Settings = ({
                   <option value="short">Contexte court</option>
                   <option value="medium">Contexte moyen</option>
                   <option value="long">Contexte long</option>
-                </select>
+                </Select>
                 <input
                   type="number"
                   min="512"
@@ -656,7 +657,7 @@ const Settings = ({
                       <span className="settings-agent-focus">{role.focus}</span>
                     </div>
                     <div className="settings-agent-controls">
-                      <select
+                      <Select
                         value={roleConfig.provider}
                         onChange={(e) => handleMultiAgentRoleChange(role.key, 'provider', e.target.value)}
                         className="settings-input"
@@ -667,7 +668,7 @@ const Settings = ({
                             {providerOption.label}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                       <input
                         type="text"
                         list="multi-agent-model-suggestions"
@@ -732,7 +733,7 @@ const Settings = ({
               La clé employée est celle déjà saisie dans l&apos;onglet Fournisseurs.
             </div>
             <div className="settings-agent-controls">
-              <select
+              <Select
                 value={routerClassifierProvider || ''}
                 onChange={(e) => onRouterClassifierProviderChange && onRouterClassifierProviderChange(e.target.value || null)}
                 className="settings-input"
@@ -744,7 +745,7 @@ const Settings = ({
                     {providerOption.label}
                   </option>
                 ))}
-              </select>
+              </Select>
               <input
                 type="text"
                 list="router-classifier-model-suggestions"
@@ -787,7 +788,7 @@ const Settings = ({
           {activeTab === 'permissions' && (<>
           <div className="settings-section">
             <label className="settings-label">Niveau d&apos;accès</label>
-            <select
+            <Select
               value={settings.permissionMode || 'edit_terminal'}
               onChange={(e) => handleChange('permissionMode', e.target.value)}
               className="settings-input"
@@ -796,7 +797,7 @@ const Settings = ({
               <option value="read_only">Lecture seule</option>
               <option value="edit">Edition (sans terminal)</option>
               <option value="edit_terminal">Edition + terminal</option>
-            </select>
+            </Select>
             <div className="settings-hint">
               Lecture seule bloque les modifications. Edition bloque uniquement les commandes terminal.
             </div>
@@ -845,7 +846,7 @@ const Settings = ({
           {activeTab === 'context' && (<>
           <div className="settings-section">
             <label className="settings-label">Contexte IA (scan projet)</label>
-            <select
+            <Select
               value={settings.aiContextPreset || 'safe'}
               onChange={(e) => handleChange('aiContextPreset', e.target.value)}
               className="settings-input"
@@ -854,7 +855,7 @@ const Settings = ({
               <option value="safe">Safe (rapide)</option>
               <option value="full">Full (configs + dotfiles)</option>
               <option value="god">God (build + node_modules + .git)</option>
-            </select>
+            </Select>
             <div className="settings-hint">
               Safe = le plus rapide. Full = meilleur contexte sans exploser. God = peut être long et gourmand.
             </div>
@@ -872,7 +873,7 @@ const Settings = ({
             </div>
 
             <label className="settings-label">Fichiers volumineux</label>
-            <select
+            <Select
               value={settings.aiContextLargeFileStrategy || 'skip'}
               onChange={(e) => handleChange('aiContextLargeFileStrategy', e.target.value)}
               className="settings-input"
@@ -880,10 +881,10 @@ const Settings = ({
             >
               <option value="skip">Ignorer</option>
               <option value="truncate">Tronquer</option>
-            </select>
+            </Select>
 
             <label className="settings-label" style={{ marginTop: '10px' }}>Mode de contexte injecte</label>
-            <select
+            <Select
               value={settings.contextMode || 'auto'}
               onChange={(e) => handleChange('contextMode', e.target.value)}
               className="settings-input"
@@ -892,7 +893,7 @@ const Settings = ({
               <option value="auto">Auto (intention detectee)</option>
               <option value="mentions">Mentions uniquement (@fichier)</option>
               <option value="none">Aucun contexte projet</option>
-            </select>
+            </Select>
 
             <label className="settings-label" style={{ marginTop: '10px' }}>Max fichiers contexte</label>
             <input

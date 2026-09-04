@@ -1,0 +1,25 @@
+.cc-select {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.cc-select__control {
+  appearance: none;
+  width: 100%;
+  padding-inline-end: 2.25rem;
+}
+
+.cc-select__arrow {
+  position: absolute;
+  top: 50%;
+  right: 0.75rem;
+  transform: translateY(-55%);
+  color: var(--text-muted);
+  pointer-events: none;
+  line-height: 1;
+}
+
+.cc-select:focus-within .cc-select__arrow {
+  color: var(--accent);
+}
