@@ -17,6 +17,7 @@
 
 import React from 'react';
 import './Toolbar.css';
+import Tooltip from './Tooltip';
 
 interface ToolbarProps {
   children: React.ReactNode;
@@ -99,7 +100,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
       .filter(Boolean)
       .join(' ');
 
-    return (
+    const button = (
       <button
         ref={ref}
         className={classNames}
@@ -113,6 +114,8 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
         {label && <span className="icon-button__label">{label}</span>}
       </button>
     );
+
+    return !label && title ? <Tooltip label={title}>{button}</Tooltip> : button;
   }
 );
 
