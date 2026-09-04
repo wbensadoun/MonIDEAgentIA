@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.21.0] — Lignes UI sémantiques
+
+### Fixed
+
+- Les conversations sauvegardées et les chemins de changements en attente du chat sont désormais des contrôles clavier explicites, sans bouton imbriqué.
+
 ## [4.20.0] — Tokens CSS du Brain Graph
 
 ### Fixed

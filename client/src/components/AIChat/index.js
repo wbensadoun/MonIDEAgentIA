@@ -1904,7 +1904,8 @@ const AIChat = ({
               {isConversationLoading && <div style={{ padding: '8px 14px', fontSize: 10, color: 'var(--text-muted)' }}>Chargement...</div>}
               {!isConversationLoading && filteredConversations.length === 0 && <div style={{ padding: '8px 14px', fontSize: 10, color: 'var(--text-muted)' }}>Aucune</div>}
               {!isConversationLoading && filteredConversations.map((conv) => (
-                <div
+                <button
+                  type="button"
                   key={conv.fileName}
                   onClick={() => handleSelectConversation(conv.fileName)}
                   className={`ai-history-item ${conv.fileName === activeConversationFile ? 'is-active' : ''}`}
@@ -1913,7 +1914,7 @@ const AIChat = ({
                   <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>
                     {new Date(conv.createdAt).toLocaleDateString('fr-FR', { month: 'numeric', day: 'numeric' })}
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -1960,12 +1961,21 @@ const AIChat = ({
                   padding: '3px 6px', borderRadius: 3, fontSize: 11, fontFamily: 'var(--font-mono)',
                   background: isPendingChangeActive(change) ? 'var(--accent-soft)' : 'transparent',
                   color: isPendingChangeActive(change) ? 'var(--accent)' : 'var(--text-dim)',
-                  cursor: 'pointer', transition: 'background 0.1s',
+                  transition: 'background 0.1s',
                 }}
-                onClick={() => onSelectPendingChange && onSelectPendingChange(index)}
-                title={change.filePath}
               >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{change.filePath}</span>
+                <button
+                  type="button"
+                  onClick={() => onSelectPendingChange && onSelectPendingChange(index)}
+                  title={change.filePath}
+                  style={{
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0,
+                    display: 'block', padding: 0, border: 'none', background: 'transparent', color: 'inherit',
+                    font: 'inherit', textAlign: 'left', cursor: 'pointer',
+                  }}
+                >
+                  {change.filePath}
+                </button>
                 <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
                   <button
                     type="button"
