@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.16.0] — Primitive Select partagée
+
+### Added
+
+- Ajout d’une primitive `Select` partagée qui conserve le combobox natif et le clavier OS tout en normalisant la flèche et la surface du thème.
+- Migration des 9 selects de Settings ; le listbox custom reste explicitement une étape ultérieure.
+
 ## [4.15.0] — Stabilité des tests App
 
 ### Fixed
