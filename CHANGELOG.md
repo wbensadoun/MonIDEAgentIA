@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.17.0] — Tooltip partagé pour les contrôles compacts
+
+### Added
+
+- Ajout d’une primitive `Tooltip` themeable qui se révèle au survol et au focus clavier, avec conservation du `title` natif comme fallback.
+- Adoption sur les contrôles icon-only de l’Activity Bar.
+
 ## [4.16.0] — Primitive Select partagée
 
 ### Added

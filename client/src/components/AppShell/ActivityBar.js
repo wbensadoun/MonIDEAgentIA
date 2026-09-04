@@ -1,6 +1,7 @@
 import React from 'react';
 import './ActivityBar.css';
 import { IconFolder, IconSearch, IconChat, IconAgents, IconGit, IconAudit, IconFlow, IconPlug, IconSettings } from '../ComponentLibrary/icons';
+import Tooltip from '../ComponentLibrary/Tooltip';
 
 /**
  * ActivityBar — fixed 48px vertical icon rail, always visible at the far
@@ -102,33 +103,36 @@ const ActivityBar = ({
     <nav className="activity-bar" aria-label="Navigation principale">
       <div className="activity-bar-group">
         {items.map(({ id, label, icon: Icon, isActive, onClick }) => (
-          <button
-            key={id}
-            id={`workspace-tab-${id}`}
-            type="button"
-            className={`activity-bar-btn ${isActive ? 'is-active' : ''}`}
-            onClick={onClick}
-            title={label}
-            aria-label={label}
-            aria-pressed={isActive}
-          >
-            <Icon size={20} />
-          </button>
+          <Tooltip key={id} label={label}>
+            <button
+              id={`workspace-tab-${id}`}
+              type="button"
+              className={`activity-bar-btn ${isActive ? 'is-active' : ''}`}
+              onClick={onClick}
+              title={label}
+              aria-label={label}
+              aria-pressed={isActive}
+            >
+              <Icon size={20} />
+            </button>
+          </Tooltip>
         ))}
       </div>
 
       <div className="activity-bar-spacer" />
 
       <div className="activity-bar-group">
-        <button
-          type="button"
-          className="activity-bar-btn"
-          onClick={onOpenSettings}
-          title="Paramètres"
-          aria-label="Paramètres"
-        >
-          <IconSettings size={20} />
-        </button>
+        <Tooltip label="Paramètres">
+          <button
+            type="button"
+            className="activity-bar-btn"
+            onClick={onOpenSettings}
+            title="Paramètres"
+            aria-label="Paramètres"
+          >
+            <IconSettings size={20} />
+          </button>
+        </Tooltip>
       </div>
     </nav>
   );
