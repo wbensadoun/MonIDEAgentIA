@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.15.0] — Stabilité des tests App
+
+### Fixed
+
+- Le test de démarrage accepte les occurrences légitimes multiples de la marque `Code Companion` dans le shell, l’accueil éditeur et l’accueil chat.
+
 ## [4.14.0] — Primitive Button partagée
 
 ### Added
