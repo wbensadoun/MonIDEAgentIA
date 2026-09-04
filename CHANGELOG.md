@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.13.0] — Garde-fous de dette CSS
+
+### Added
+
+- La gate de design debt suit désormais aussi les régressions de `border-radius` hardcodés, de `z-index` numériques et de groupes de fichiers CSS dupliqués, avec des budgets régressifs explicites.
+
 ## [4.12.0] — Dialogs partagés pour les erreurs et suppressions
 
 ### Fixed
