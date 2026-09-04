@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.14.0] — Primitive Button partagée
+
+### Added
+
+- Ajout d’une primitive `Button` partagée avec `type="button"` par défaut, état loading accessible et conservation des classes visuelles existantes pendant les migrations.
+- Migration des contrôles de l’Explorateur vers cette primitive.
+
 ## [4.13.0] — Garde-fous de dette CSS
 
 ### Added
