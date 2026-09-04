@@ -114,6 +114,7 @@ const WorkspaceSidebar = ({
   onFileClick,
   onNewItemNameChange,
   isReadOnlyMode,
+  allowDangerousActions,
   // WorkspacePanel props
   workspacePanelProps,
   // GitPanel props (only used when activeSection === 'git')
@@ -226,6 +227,7 @@ const WorkspaceSidebar = ({
                   onFileClick={onFileClick}
                   onNewItemNameChange={onNewItemNameChange}
                   isReadOnly={isReadOnlyMode}
+                  allowDangerousActions={allowDangerousActions}
                 />
               ) : (
                 <WorkspacePanel {...workspacePanelProps} />

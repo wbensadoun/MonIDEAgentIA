@@ -208,7 +208,8 @@ const AppContent = () => {
     renameItem,
     moveItem,
     deleteItem,
-    openFolder
+    openFolder,
+    allowDangerousActions
   } = useFileOperations(currentProjectPath, isElectronApiAvailable, showMessage, setActiveFile, permissionMode);
 
   const {
@@ -966,6 +967,7 @@ const AppContent = () => {
             onFileClick={openFile}
             onNewItemNameChange={setNewItemName}
             isReadOnlyMode={isReadOnlyMode}
+            allowDangerousActions={allowDangerousActions}
             centerView={centerView}
             onCenterViewChange={setCenterView}
             isFocusMode={isFocusMode}

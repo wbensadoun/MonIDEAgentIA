@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.12.0] — Dialogs partagés pour les erreurs et suppressions
+
+### Fixed
+
+- Les erreurs de completion IA utilisent désormais le `Dialog` partagé au lieu de dialogs navigateur natifs.
+- La suppression de fichiers et dossiers utilise une confirmation accessible avec restauration du focus, tout en conservant le bypass des actions dangereuses autorisées.
+
 ## [4.11.0] — Types explicites sur les boutons
 
 ### Fixed

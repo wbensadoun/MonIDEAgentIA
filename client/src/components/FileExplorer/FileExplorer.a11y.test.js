@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import FileExplorer from './index';
 
 const baseProps = {
@@ -46,5 +46,26 @@ test('FileExplorer uses the shared dialog for creating an item inside a folder',
   fireEvent.click(screen.getByRole('button', { name: 'Créer' }));
 
   await waitFor(() => expect(onCreateItem).toHaveBeenCalledWith('file', 'index.js', 'src'));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+});
+
+test('FileExplorer confirms deletions through the shared dialog', async () => {
+  const onDeleteItem = jest.fn().mockResolvedValue({ success: true });
+  render(
+    <FileExplorer
+      {...baseProps}
+      onDeleteItem={onDeleteItem}
+      projectItems={[{ type: 'file', name: 'notes.md', path: 'notes.md' }]}
+    />
+  );
+
+  fireEvent.click(screen.getByTitle('Supprimer'));
+
+  expect(screen.getByRole('dialog')).toHaveTextContent('notes.md');
+  expect(onDeleteItem).not.toHaveBeenCalled();
+
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Supprimer' }));
+
+  await waitFor(() => expect(onDeleteItem).toHaveBeenCalledWith('notes.md', 'file'));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 });

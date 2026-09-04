@@ -126,6 +126,7 @@ const WorkspaceLayout = ({
   onFileClick,
   onNewItemNameChange,
   isReadOnlyMode,
+  allowDangerousActions,
   centerView,
   onCenterViewChange,
   isFocusMode,
@@ -321,6 +322,7 @@ const WorkspaceLayout = ({
           onFileClick={onFileClick}
           onNewItemNameChange={onNewItemNameChange}
           isReadOnlyMode={isReadOnlyMode}
+          allowDangerousActions={allowDangerousActions}
           workspacePanelProps={workspacePanelProps}
           gitPanelProps={gitPanelProps}
           aiChangesPanelProps={aiChangesPanelProps}

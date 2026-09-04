@@ -231,11 +231,6 @@ export const useFileOperations = (
       return { success: false, error: 'read_only' };
     }
 
-    if (!allowDangerousActions) {
-      if (!window.confirm(`Supprimer ${type === 'file' ? 'le fichier' : 'le dossier'} "${itemName}" ?`)) {
-        return { success: false, error: 'cancelled' };
-      }
-    }
     if (!isElectronApiAvailable || !currentProjectPath) {
       showMessage("Erreur: Electron non disponible.", 10000);
       return { success: false, error: 'Electron non disponible' };
@@ -261,7 +256,7 @@ export const useFileOperations = (
       showMessage(`Erreur IPC: ${error.message}`, 5000);
       return { success: false, error: error.message };
     }
-  }, [currentProjectPath, isElectronApiAvailable, showMessage, loadProjectItems, allowDangerousActions, isReadOnly]);
+  }, [currentProjectPath, isElectronApiAvailable, showMessage, loadProjectItems, isReadOnly]);
 
   const openFolder = useCallback(async () => {
     if (!isElectronApiAvailable) {
@@ -297,7 +292,8 @@ export const useFileOperations = (
     renameItem,
     moveItem,
     deleteItem,
-    openFolder
+    openFolder,
+    allowDangerousActions
   };
 };
 
