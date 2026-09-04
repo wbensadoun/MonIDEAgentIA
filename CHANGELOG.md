@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.18.0] — Focus clavier de l’arbre Workspace
+
+### Fixed
+
+- Les lignes projet et conversation de `WorkspacePanel` sont désormais activables au clavier avec Enter/Espace et exposent un focus visible cohérent avec les tokens.
+
 ## [4.17.0] — Tooltip partagé pour les contrôles compacts
 
 ### Added
