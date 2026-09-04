@@ -130,6 +130,38 @@ describe('COD-70 composer — suggestions @fichier au clavier', () => {
   });
 });
 
+describe('COD-68 — lignes de chat sémantiques', () => {
+  test('une conversation sauvegardée est activable comme bouton', () => {
+    const onSelectConversation = jest.fn();
+    render(
+      <Harness
+        conversations={[{ fileName: 'saved.json', title: 'Sauvegardée', createdAt: '2026-09-01T00:00:00Z' }]}
+        onSelectConversation={onSelectConversation}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('Historique'));
+    const conversation = screen.getByRole('button', { name: /Sauvegardée/ });
+    fireEvent.click(conversation);
+
+    expect(onSelectConversation).toHaveBeenCalledWith('saved.json');
+  });
+
+  test('le chemin d’un changement en attente est activable séparément des actions', () => {
+    const onSelectPendingChange = jest.fn();
+    render(
+      <Harness
+        pendingFileChanges={[{ id: 'change-1', filePath: 'src/app.js' }]}
+        onSelectPendingChange={onSelectPendingChange}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'src/app.js' }));
+
+    expect(onSelectPendingChange).toHaveBeenCalledWith(0);
+  });
+});
+
 describe('COD-70 — actions sur les messages', () => {
   test('Modifier un message user -> edition inline -> Enter renvoie le texte edite', () => {
     const onSend = jest.fn();
