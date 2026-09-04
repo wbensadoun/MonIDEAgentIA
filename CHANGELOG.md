@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.25.0] — Écran Sync Cloud
+
+- ajout de l’onglet Sync Cloud dans Settings ;
+- affichage du statut et des ressources distantes par type ;
+- publication globale et récupération individuelle via les appels renderer existants.
+
 ## [4.24.0] — Synchronisation Cloud des ressources
 
 ### Added
