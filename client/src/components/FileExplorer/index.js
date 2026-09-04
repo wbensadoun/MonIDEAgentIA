@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import './FileExplorer.css';
 import Dialog from '../ComponentLibrary/Dialog';
+import Button from '../ComponentLibrary/Button';
 import {
   getNavigatorBaseName,
   getNavigatorDirName,
@@ -137,7 +138,7 @@ const FileItem = ({
       >
         <div className="file-item-main">
           {item.type === 'directory' && (
-            <button
+            <Button
               type="button"
               onClick={() => onToggleFolder(item)}
               className="file-item-toggle"
@@ -145,10 +146,10 @@ const FileItem = ({
               aria-expanded={isExpanded}
             >
               <ChevronIcon isExpanded={isExpanded} />
-            </button>
+            </Button>
           )}
 
-          <button
+          <Button
             type="button"
             onClick={() => {
               if (isRenaming) return;
@@ -182,13 +183,13 @@ const FileItem = ({
             ) : (
               <span className="file-item-label">{item.name}</span>
             )}
-          </button>
+          </Button>
         </div>
 
         <div className="file-item-actions">
           {item.type === 'directory' && !isReadOnly && (
             <>
-              <button
+              <Button
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -198,8 +199,8 @@ const FileItem = ({
                 title="Nouveau fichier"
               >
                 +F
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -209,10 +210,10 @@ const FileItem = ({
                 title="Nouveau dossier"
               >
                 +D
-              </button>
+              </Button>
             </>
           )}
-          <button
+          <Button
             type="button"
             onClick={() => onDelete(itemPath, item.type)}
             className="file-item-delete"
@@ -227,7 +228,7 @@ const FileItem = ({
                 d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
               />
             </svg>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -641,22 +642,22 @@ const FileExplorer = ({
             </p>
           </div>
           <div className="session-dialog__actions">
-            <button
+            <Button
               type="button"
               className="btn btn-ghost"
               onClick={() => setDeleteDialog(null)}
               disabled={isDeleting}
             >
               Annuler
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               className="btn btn-danger"
               onClick={confirmDelete}
               disabled={isDeleting}
             >
               {isDeleting ? 'Suppression…' : 'Supprimer'}
-            </button>
+            </Button>
           </div>
         </Dialog>
       )}
@@ -692,21 +693,21 @@ const FileExplorer = ({
               disabled={isCreating}
             />
             <div className="nav-dialog-actions">
-              <button
+              <Button
                 type="button"
                 className="nav-dialog-button is-secondary"
                 onClick={() => setCreateDialog(null)}
                 disabled={isCreating}
               >
                 Annuler
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
                 className="nav-dialog-button is-primary"
                 disabled={isCreating || !createDialog.value.trim()}
               >
                 {isCreating ? 'Création…' : 'Créer'}
-              </button>
+              </Button>
             </div>
           </form>
         </Dialog>
@@ -717,7 +718,7 @@ const FileExplorer = ({
         <div className="nav-header-actions">
           {!isReadOnly && (
             <>
-              <button
+              <Button
                 type="button"
                 onClick={() => handleCreate('file')}
                 className="nav-header-btn"
@@ -725,8 +726,8 @@ const FileExplorer = ({
                 disabled={!isElectronApiAvailable}
               >
                 +
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={() => handleCreate('directory')}
                 className="nav-header-btn"
@@ -734,7 +735,7 @@ const FileExplorer = ({
                 disabled={!isElectronApiAvailable}
               >
                 ⊕
-              </button>
+              </Button>
             </>
           )}
           {isReadOnly && (
@@ -805,7 +806,7 @@ const FileExplorer = ({
           ) : (
             <div className="nav-results">
               {filteredFiles.map((file) => (
-                <button
+                <Button
                   key={file.path || file.name}
                   type="button"
                   className="nav-result"
@@ -814,7 +815,7 @@ const FileExplorer = ({
                 >
                   <FileIcon />
                   <span className="nav-result-label">{file.path || file.name}</span>
-                </button>
+                </Button>
               ))}
             </div>
           )
@@ -852,7 +853,7 @@ const FileExplorer = ({
       </div>
 
       {/* Bouton Ouvrir dossier en bas */}
-      <button
+      <Button
         type="button"
         onClick={onOpenFolder}
         className="nav-open-folder-btn"
@@ -872,7 +873,7 @@ const FileExplorer = ({
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
         </svg>
         Ouvrir dossier
-      </button>
+      </Button>
 
       {contextMenu && contextActions.length > 0 && (
         <div
@@ -882,14 +883,14 @@ const FileExplorer = ({
           onClick={(event) => event.stopPropagation()}
         >
           {contextActions.map((action) => (
-            <button
+            <Button
               key={action.id}
               type="button"
               className={`nav-context-item ${action.danger ? 'is-danger' : ''}`}
               onClick={action.onClick}
             >
               {action.label}
-            </button>
+            </Button>
           ))}
         </div>
       )}
