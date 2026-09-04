@@ -1,6 +1,6 @@
 {
   "name": "code-companion",
-  "version": "4.23.0",
+  "version": "4.25.0",
   "main": "main.js",
   "scripts": {
     "start": "concurrently \"npm:start-react\" \"npm:electron-dev\"",
@@ -21,7 +21,9 @@
     "test:electron": "node --test electron/services/provider-contract.service.test.js electron/services/provider-management.test.js electron/services/provider-credential-composition.service.test.js electron/services/router.service.test.js electron/services/neven-control-plane.service.test.js electron/services/neven-identity.service.test.js electron/services/neven-managed-gateway.service.test.js electron/services/neven-core.service.test.js electron/services/neven-usage-publisher.service.test.js electron/services/workflowEngine.service.test.js electron/services/file.service.test.js electron/services/agent.service.test.js electron/ipc/aiHandlers.test.js electron/ipc/projectHandlers.test.js electron/ipc/routerHandlers.test.js electron/ipc/settingsHandlers.test.js electron/integration/neven-managed-flow.integration.test.js",
     "lint:css": "npm run lint:css --prefix client",
     "check:design-debt": "bash scripts/check-design-debt.sh",
-    "check:ui-contracts": "node scripts/check-ui-contracts.mjs"
+    "check:ui-contracts": "node scripts/check-ui-contracts.mjs",
+    "seed:cloudflare": "node scripts/seed-cloudflare.mjs",
+    "test:cloudflare": "node scripts/test-cloudflare-live.mjs"
   },
   "keywords": [],
   "author": "",

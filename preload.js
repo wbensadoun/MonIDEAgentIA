@@ -207,6 +207,14 @@ try {
     saveAgent: (name, content, scope, projectPath) => ipcRenderer.invoke('save-agent', name, content, scope, projectPath),
     deleteAgent: (name, scope, projectPath) => ipcRenderer.invoke('delete-agent', name, scope, projectPath),
 
+    // Cloudflare agents storage sync (agents.md, skills, workflows)
+    cloudflareAgentsStatus: () => ipcRenderer.invoke('cloudflare-agents:status'),
+    cloudflareAgentsList: (type) => ipcRenderer.invoke('cloudflare-agents:list', type),
+    cloudflareAgentsGet: (name, type) => ipcRenderer.invoke('cloudflare-agents:get', name, type),
+    cloudflareAgentsPush: (name, scope, projectPath) => ipcRenderer.invoke('cloudflare-agents:push', name, scope, projectPath),
+    cloudflareAgentsPushAll: (type) => ipcRenderer.invoke('cloudflare-agents:push-all', type),
+    cloudflareAgentsPull: (name, type) => ipcRenderer.invoke('cloudflare-agents:pull', name, type),
+
     // Skills APIs
     listSkills: (projectPath) => ipcRenderer.invoke('list-skills', projectPath),
     getSkill: (name, scope, projectPath) => ipcRenderer.invoke('get-skill', name, scope, projectPath),

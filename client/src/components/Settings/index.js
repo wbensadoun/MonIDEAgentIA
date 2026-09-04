@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import './Settings.css';
 import ThemeSwitcher from '../AppShell/ThemeSwitcher';
 import Select from '../ComponentLibrary/Select';
+import CloudSyncSettings from './CloudSyncSettings';
 import {
   IconSettings,
   IconMoon,
@@ -12,7 +13,8 @@ import {
   IconFolder,
   IconPlug,
   IconLayoutCustomize,
-  IconCompass
+  IconCompass,
+  IconCloud
 } from '../ComponentLibrary/icons';
 import {
   DEFAULT_OLLAMA_MODEL,
@@ -46,6 +48,7 @@ const SETTINGS_TABS = [
   { id: 'appearance', Icon: IconMoon, label: 'Apparence' },
   { id: 'providers', Icon: IconPackage, label: 'Fournisseurs' },
   { id: 'agents', Icon: IconAgents, label: 'Agents' },
+  { id: 'cloud-sync', Icon: IconCloud, label: 'Sync Cloud' },
   { id: 'execution', Icon: IconLightning, label: 'Exécution' },
   { id: 'permissions', Icon: IconShield, label: 'Permissions' },
   { id: 'context', Icon: IconFolder, label: 'Contexte' },
@@ -685,6 +688,13 @@ const Settings = ({
             </div>
           </div>
           </>)}
+
+          {activeTab === 'cloud-sync' && (
+            <CloudSyncSettings
+              isElectronApiAvailable={isElectronApiAvailable}
+              showMessage={showMessage}
+            />
+          )}
 
           {activeTab === 'execution' && (<>
           <datalist id="router-classifier-model-suggestions">

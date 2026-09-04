@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.25.0] — Écran Sync Cloud
+
+- ajout de l’onglet Sync Cloud dans Settings ;
+- affichage du statut et des ressources distantes par type ;
+- publication globale et récupération individuelle via les appels renderer existants.
+
+## [4.24.0] — Synchronisation Cloud des ressources
+
+### Added
+
+- Ajout du backend Cloudflare pour publier, récupérer et lister les agents, skills et workflows.
+- Ajout des scripts de déploiement et de smoke test Cloudflare, sans secret dans Git.
+
 ## [4.23.0] — Navigation Chat et AgentVerse
 
 ### Fixed

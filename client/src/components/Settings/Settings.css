@@ -355,9 +355,113 @@
   border-top: 1px solid var(--border-0);
 }
 
+.settings-cloud-sync {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-cloud-sync-intro {
+  gap: 12px;
+}
+
+.settings-cloud-sync-heading,
+.settings-cloud-sync-type-head,
+.settings-cloud-sync-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-cloud-sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid var(--border-0);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.settings-cloud-sync-badge.is-ok { color: var(--accent-3); border-color: rgba(74, 222, 128, 0.4); }
+.settings-cloud-sync-badge.is-error { color: var(--danger); border-color: rgba(255, 107, 107, 0.4); }
+.settings-cloud-sync-badge.is-warning { color: #fbbf24; border-color: rgba(251, 191, 36, 0.4); }
+.settings-cloud-sync-badge.is-loading { color: var(--accent); }
+
+.settings-cloud-sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-cloud-sync-actions button,
+.settings-cloud-sync-type-head button,
+.settings-cloud-sync-item button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-cloud-sync-type-title {
+  margin: 0;
+  color: var(--text-0);
+  font-size: 0.82rem;
+}
+
+.settings-cloud-sync-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-cloud-sync-item {
+  padding: 9px 10px;
+  border: 1px solid var(--border-0);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.settings-cloud-sync-item-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-cloud-sync-item-meta strong {
+  overflow: hidden;
+  color: var(--text-0);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-cloud-sync-item-meta span {
+  color: var(--text-2);
+  font-size: 0.66rem;
+}
+
+.settings-cloud-sync-empty {
+  margin: 12px 0 0;
+}
+
 @media (max-width: 640px) {
   .settings-agent-controls {
     grid-template-columns: 1fr;
+  }
+
+  .settings-cloud-sync-heading,
+  .settings-cloud-sync-type-head,
+  .settings-cloud-sync-item {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 .settings-select option,
