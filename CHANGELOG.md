@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.22.0] — Sélection de session accessible
+
+### Fixed
+
+- La sélection des sessions du chat est désormais un bouton indépendant des actions d’ouverture et du menu contextuel.
+
 ## [4.21.0] — Lignes UI sémantiques
 
 ### Fixed
