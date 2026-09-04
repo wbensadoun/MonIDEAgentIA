@@ -9,6 +9,7 @@ describe('Toolbar controls', () => {
     const button = screen.getByRole('button', { name: 'Ouvrir le terminal' });
     expect(button).toHaveAttribute('type', 'button');
     expect(button).toHaveAttribute('aria-label', 'Ouvrir le terminal');
+    expect(button).toHaveAttribute('aria-describedby');
   });
 
   test('IconButton preserves an explicit submit type for form actions', () => {

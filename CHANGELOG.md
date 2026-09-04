@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.19.0] — Tooltip des IconButton
+
+### Added
+
+- Les `IconButton` icon-only réutilisent désormais le Tooltip partagé au focus et au survol, tout en conservant leur `title` natif.
+
 ## [4.18.0] — Focus clavier de l’arbre Workspace
 
 ### Fixed
