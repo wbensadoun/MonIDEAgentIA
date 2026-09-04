@@ -15,25 +15,24 @@ import Tooltip from '../ComponentLibrary/Tooltip';
  *
  * Top group: Explorer / Search / Git / AI Changes switch the *content* of
  * the left sidebar (WorkspaceSidebar owns those views). AI Chat toggles the
- * right panel. Agents opens the agentverse. Flux opens the workflow editor
+ * full Chat view. AgentVerse opens its dedicated page. Flux opens the workflow editor
  * as the center document (VisualWorkflowEditor already owns its own
  * list+canvas, so it needs no sidebar view of its own — see
  * plan-ia-onglets.md §④). Bottom: Settings, pinned with margin-top: auto.
  */
 const ActivityBar = ({
+  viewMode = 'ide',
+  onViewModeChange = () => {},
   activeSidebarSection = 'explorer',
   onSidebarSectionChange = () => {},
   isLeftCollapsed = false,
   onExpandLeftPanel = () => {},
   onOpenSettings = () => {},
-  isAgentverseOpen = false,
-  onAgentverseToggle = () => {},
-  isRightCollapsed = false,
-  onToggleRightPanel = () => {},
   centerView,
   onOpenWorkflows = () => {},
 }) => {
   const goToSidebarSection = (section) => {
+    onViewModeChange('ide');
     onSidebarSectionChange(section);
     if (isLeftCollapsed) onExpandLeftPanel();
   };
@@ -43,58 +42,56 @@ const ActivityBar = ({
       id: 'explorer',
       label: 'Explorateur',
       icon: IconFolder,
-      isActive: activeSidebarSection === 'explorer',
+      isActive: viewMode === 'ide' && activeSidebarSection === 'explorer',
       onClick: () => goToSidebarSection('explorer'),
     },
     {
       id: 'search',
       label: 'Recherche',
       icon: IconSearch,
-      isActive: activeSidebarSection === 'search',
+      isActive: viewMode === 'ide' && activeSidebarSection === 'search',
       onClick: () => goToSidebarSection('search'),
     },
     {
       id: 'chat',
       label: 'AI Chat',
       icon: IconChat,
-      isActive: !isRightCollapsed,
-      onClick: () => {
-        if (isRightCollapsed) onToggleRightPanel();
-      },
+      isActive: viewMode === 'chat',
+      onClick: () => onViewModeChange('chat'),
     },
     {
       id: 'agents',
-      label: 'Agents',
+      label: 'AgentVerse',
       icon: IconAgents,
-      isActive: isAgentverseOpen,
-      onClick: () => onAgentverseToggle(!isAgentverseOpen),
+      isActive: viewMode === 'agents',
+      onClick: () => onViewModeChange('agents'),
     },
     {
       id: 'git',
       label: 'Source Control',
       icon: IconGit,
-      isActive: activeSidebarSection === 'git',
+      isActive: viewMode === 'ide' && activeSidebarSection === 'git',
       onClick: () => goToSidebarSection('git'),
     },
     {
       id: 'ai-changes',
       label: 'AI Changes',
       icon: IconAudit,
-      isActive: activeSidebarSection === 'ai-changes',
+      isActive: viewMode === 'ide' && activeSidebarSection === 'ai-changes',
       onClick: () => goToSidebarSection('ai-changes'),
     },
     {
       id: 'extensions',
       label: 'Extensions & Connecteurs',
       icon: IconPlug,
-      isActive: activeSidebarSection === 'extensions',
+      isActive: viewMode === 'ide' && activeSidebarSection === 'extensions',
       onClick: () => goToSidebarSection('extensions'),
     },
     {
       id: 'workflows',
       label: 'Flux',
       icon: IconFlow,
-      isActive: centerView === 'workflows',
+      isActive: viewMode === 'ide' && centerView === 'workflows',
       onClick: () => onOpenWorkflows(),
     },
   ];

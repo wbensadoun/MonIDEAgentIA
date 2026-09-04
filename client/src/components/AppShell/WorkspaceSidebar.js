@@ -136,6 +136,7 @@ const WorkspaceSidebar = ({
     return (
       <aside
         className="ide-sidebar-left"
+        aria-label="Sessions et projets"
         style={{ width: width || '20%', ...style }}
       >
         <div className="sidebar-tab-body custom-scrollbar">

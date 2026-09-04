@@ -2,6 +2,16 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from './App';
 
+// AgentVerse loads Phaser lazily. Keep App navigation tests deterministic in
+// jsdom, where Phaser's canvas feature detection is not available; the real
+// AgentVerse module remains covered by its own component/build checks.
+jest.mock('./components/AppShell/lazyAgentVerse', () => {
+  const React = require('react');
+  return function MockAgentVerse() {
+    return React.createElement('div', null, 'AgentVerse');
+  };
+});
+
 beforeEach(() => {
   delete window.electronAPI;
 });
@@ -73,5 +83,26 @@ test('toggles between IDE and Chat views via the ActivityBar rail', async () => 
   // Verify Chat button is now active
   await waitFor(() => {
     expect(chatButton.classList.contains('is-active')).toBe(true);
+  });
+
+  expect(screen.getByRole('main', { name: /chat/i })).toBeInTheDocument();
+});
+
+test('AgentVerse icon opens the dedicated AgentVerse page without toggling a side panel', async () => {
+  window.electronAPI = {
+    loadSettings: jest.fn().mockResolvedValue({
+      success: true,
+      settings: { permissionMode: 'read_only', defaultProvider: 'gemini', onboardingCompleted: true }
+    })
+  };
+
+  render(<App />);
+
+  const agentVerseButton = screen.getByRole('button', { name: 'AgentVerse' });
+  fireEvent.click(agentVerseButton);
+
+  await waitFor(() => {
+    expect(agentVerseButton.classList.contains('is-active')).toBe(true);
+    expect(screen.getByRole('main', { name: 'AgentVerse' })).toBeInTheDocument();
   });
 });
