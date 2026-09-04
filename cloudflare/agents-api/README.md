@@ -15,17 +15,19 @@ GitHub tiers — leçon COD-49/COD-51).
 
 `/agents` est interchangeable avec `/skills` et `/workflows`.
 
-## Authentification
+## Authentification (2 couches — ACTIVES)
 
-- **Bearer applicatif (actif)** : `Authorization: Bearer <AGENTS_API_TOKEN>` — secret
-  du worker, comparé en temps constant, échoue fermé si absent. C'est LA protection
-  de l'API sur `workers.dev`.
-- **Cloudflare Access (optionnel, plus tard)** : Access **ne peut pas** protéger une
-  URL `*.workers.dev` — il exige un custom domain sur une zone Cloudflare activée.
-  Quand `wansia.fr` sera activée chez Cloudflare (NS actuellement chez OVH), on
-  pourra exposer l'API sur `api.wansia.fr` + application Access Self-hosted avec
-  policy Allow + Service Auth (le client envoie déjà les headers `CF-Access-*`
-  s'ils sont configurés dans le `.env` — no-op sinon).
+1. **Cloudflare Access** (Zero Trust) : application `wansia-agents-api`
+   (uid `eea13418-9207-4284-b612-9e3ad4d0529b`, destination `worker` = tag
+   `cad934f1a1f9432c9a02e0cd8bf23891`), policy `non_identity` incluant le service
+   token **`api`** (`fdbad29f-6450-4207-b336-bac277bf78b5`). Le client envoie les
+   headers `CF-Access-Client-Id` / `CF-Access-Client-Secret` du `.env`.
+   Access fonctionne aussi sur les URLs `*.workers.dev` (destination type `worker`).
+2. **Bearer applicatif** : `Authorization: Bearer <AGENTS_API_TOKEN>` — secret du
+   worker, comparé en temps constant, échoue fermé si absent.
+
+Vérifié en live : les deux couches ensemble → 200 ; bearer seul → 403 ; Access
+seul → 401 ; aucune → 403.
 
 ## Déploiement
 
