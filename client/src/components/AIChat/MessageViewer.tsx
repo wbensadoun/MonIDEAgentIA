@@ -67,6 +67,10 @@ export interface MessageViewerProps {
   onCopyMessage?: (message: ChatMessage) => void;
   /** Action « Relancer cette requête ». Absent ⇒ pas de bouton. */
   onRerunMessage?: (message: ChatMessage) => void;
+  /** Actions complémentaires du conteneur (édition user, feedback, copie). */
+  renderMessageActions?: (message: ChatMessage) => React.ReactNode;
+  /** Permet au conteneur de remplacer le corps pendant une édition inline. */
+  renderMessageContent?: (message: ChatMessage, defaultContent: React.ReactNode) => React.ReactNode;
   /** Desactive les actions par message pendant une generation. */
   actionsDisabled?: boolean;
   /** Contenu additionnel rendu sous une bulle : images collees et cartes
@@ -128,11 +132,22 @@ const MessageBubble = memo<{
   onRerunMessage?: MessageViewerProps['onRerunMessage'];
   actionsDisabled?: boolean;
   renderMessageExtras?: MessageViewerProps['renderMessageExtras'];
+  renderMessageActions?: MessageViewerProps['renderMessageActions'];
+  renderMessageContent?: MessageViewerProps['renderMessageContent'];
   /** 1.4 — la barre d'actions de la derniere reponse assistant reste visible
    *  en permanence (voir .message-viewer__bubble--pinned-actions), au lieu de
    *  n'apparaitre qu'au survol/focus comme les messages plus anciens. */
   isLastAssistant?: boolean;
-}>(({ message, onCopyCode, onApplyCode, onCopyMessage, onRerunMessage, actionsDisabled, renderMessageExtras, isLastAssistant }) => (
+}>(({ message, onCopyCode, onApplyCode, onCopyMessage, onRerunMessage, actionsDisabled, renderMessageExtras, renderMessageActions, renderMessageContent, isLastAssistant }) => {
+  const defaultContent = (
+    <>
+      {message.blocks.map((block, i) => (
+        <BlockContent key={i} block={block} onCopyCode={onCopyCode} onApplyCode={onApplyCode} />
+      ))}
+    </>
+  );
+
+  return (
   <div
     className={[
       'message-viewer__bubble',
@@ -149,9 +164,7 @@ const MessageBubble = memo<{
       <span className="message-viewer__time">{formatTime(message.timestamp)}</span>
     </div>
     <div className="message-viewer__bubble-content">
-      {message.blocks.map((block, i) => (
-        <BlockContent key={i} block={block} onCopyCode={onCopyCode} onApplyCode={onApplyCode} />
-      ))}
+      {renderMessageContent ? renderMessageContent(message, defaultContent) : defaultContent}
     </div>
     {/* Actions reservees aux reponses de l'agent : « relancer » n'a pas de
         sens sur son propre message, et un message systeme n'est pas une
@@ -183,9 +196,11 @@ const MessageBubble = memo<{
         )}
       </div>
     )}
+    {renderMessageActions && renderMessageActions(message)}
     {renderMessageExtras && renderMessageExtras(message)}
   </div>
-));
+  );
+});
 
 MessageBubble.displayName = 'MessageBubble';
 
@@ -200,7 +215,9 @@ export const MessageViewer: React.FC<MessageViewerProps> = ({
   onCopyMessage,
   onRerunMessage,
   actionsDisabled,
-  renderMessageExtras
+  renderMessageExtras,
+  renderMessageActions,
+  renderMessageContent
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -249,6 +266,8 @@ export const MessageViewer: React.FC<MessageViewerProps> = ({
             onRerunMessage={onRerunMessage}
             actionsDisabled={actionsDisabled}
             renderMessageExtras={renderMessageExtras}
+            renderMessageActions={renderMessageActions}
+            renderMessageContent={renderMessageContent}
             isLastAssistant={message.id === lastAssistantId}
           />
         ))

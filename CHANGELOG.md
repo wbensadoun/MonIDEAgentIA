@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.10.0] — Swap ChatInterface sous feature flag
+
+### Fixed
+
+- Le flag `chatInterfaceSwap` monte désormais le conteneur `ChatInterface` complet avec streaming spécialisé, composer, suggestions, édition et feedback conservés.
+- Les interactions avancées du composer restent pilotées par le pipeline legacy pendant la phase de déploiement progressif.
+
 ## [4.9.0] — Dialog de variables MCP
 
 ### Fixed

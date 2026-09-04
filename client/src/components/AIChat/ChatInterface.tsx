@@ -49,6 +49,11 @@ export interface ChatInterfaceProps {
   onApplyCode?: (code: string, language: string, filePath: string) => void;
   onCopyMessage?: (message: ChatMessage) => void;
   onRerunMessage?: (message: ChatMessage) => void;
+  renderMessageExtras?: (message: ChatMessage) => React.ReactNode;
+  renderMessageActions?: (message: ChatMessage) => React.ReactNode;
+  renderMessageContent?: (message: ChatMessage, defaultContent: React.ReactNode) => React.ReactNode;
+  /** Custom streaming UI for providers with file/workflow/code modes. */
+  streamingContent?: React.ReactNode;
 
   /** Emplacements d'extension. Le conteneur existant (AIChat/index.js) porte
    *  des surfaces que ChatInterface ne modelise pas — pills provider/modele,
@@ -67,6 +72,21 @@ export interface ChatInterfaceProps {
   onAttach?: (files: FileList) => void;
   onRemoveAttachment?: (id: string) => void;
   inputWarning?: string;
+  textareaRef?: React.RefObject<HTMLTextAreaElement>;
+  textareaProps?: React.TextareaHTMLAttributes<HTMLTextAreaElement>;
+  onInputKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onInputPaste?: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void;
+  onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragEnter?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragLeave?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
+  dropHint?: React.ReactNode;
+  onCancel?: () => void;
+  canSubmit?: boolean;
+  showAttachButton?: boolean;
+  inputSending?: boolean;
+  /** Allows a stop action to remain available while the text field stays editable. */
+  inputDisabled?: boolean;
 
   /** True while a run is in flight — disables autonomy switches and the composer alike. */
   isBusy?: boolean;
@@ -91,6 +111,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onApplyCode,
   onCopyMessage,
   onRerunMessage,
+  renderMessageExtras,
+  renderMessageActions,
+  renderMessageContent,
+  streamingContent,
   toolbarExtra,
   aboveInput,
   inputValue,
@@ -100,7 +124,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onAttach,
   onRemoveAttachment,
   inputWarning,
+  textareaRef,
+  textareaProps,
+  onInputKeyDown,
+  onInputPaste,
+  onDragOver,
+  onDragEnter,
+  onDragLeave,
+  onDrop,
+  dropHint,
+  onCancel,
+  canSubmit,
+  showAttachButton,
+  inputSending = isStreaming,
   isBusy = false,
+  inputDisabled = isBusy,
   className
 }) => {
   return (
@@ -120,6 +158,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       {toolbarExtra}
 
+      {streamingContent}
+
       <MessageViewer
         messages={messages}
         streamingText={streamingText}
@@ -130,6 +170,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         onApplyCode={onApplyCode}
         onCopyMessage={onCopyMessage}
         onRerunMessage={onRerunMessage}
+        renderMessageExtras={renderMessageExtras}
+        renderMessageActions={renderMessageActions}
+        renderMessageContent={renderMessageContent}
         actionsDisabled={isBusy}
       />
 
@@ -142,8 +185,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         attachments={attachments}
         onAttach={onAttach}
         onRemoveAttachment={onRemoveAttachment}
-        disabled={isBusy}
-        isSending={isStreaming}
+        textareaRef={textareaRef}
+        textareaProps={textareaProps}
+        onKeyDown={onInputKeyDown}
+        onPaste={onInputPaste}
+        onDragOver={onDragOver}
+        onDragEnter={onDragEnter}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        dropHint={dropHint}
+        onCancel={onCancel}
+        canSubmit={canSubmit}
+        showAttachButton={showAttachButton}
+        disabled={inputDisabled}
+        isSending={inputSending}
         warning={inputWarning}
       />
     </div>

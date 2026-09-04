@@ -24,6 +24,20 @@ export interface InputAreaProps {
   disabled?: boolean;
   isSending?: boolean;
   placeholder?: string;
+  textareaRef?: React.RefObject<HTMLTextAreaElement>;
+  textareaProps?: Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+    'value' | 'onChange' | 'onKeyDown' | 'onPaste' | 'disabled'>;
+  onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onPaste?: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void;
+  onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragEnter?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragLeave?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
+  dropHint?: React.ReactNode;
+  onCancel?: () => void;
+  cancelLabel?: string;
+  canSubmit?: boolean;
+  showAttachButton?: boolean;
   /** Shown when autonomy level requires acknowledging risk before sending
    *  (e.g. permissive mode + terminal access). */
   warning?: string;
@@ -39,10 +53,24 @@ export const InputArea: React.FC<InputAreaProps> = ({
   disabled = false,
   isSending = false,
   placeholder = 'Écrire un message… (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)',
-  warning
+  warning,
+  textareaRef: externalTextareaRef,
+  textareaProps,
+  onKeyDown: externalOnKeyDown,
+  onPaste,
+  onDragOver,
+  onDragEnter,
+  onDragLeave,
+  onDrop,
+  dropHint,
+  onCancel,
+  cancelLabel = 'Arrêter la génération',
+  canSubmit,
+  showAttachButton = true
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const resolvedTextareaRef = externalTextareaRef ?? textareaRef;
 
   // COD-70 A.1 — autosize : le champ grandit avec son contenu (cap ~200 px),
   // la ref textarea etait declaree mais jamais exploitree.
@@ -76,10 +104,18 @@ export const InputArea: React.FC<InputAreaProps> = ({
     [onAttach]
   );
 
-  const canSend = !disabled && !isSending && value.trim().length > 0;
+  const canSend = !disabled && !isSending && (canSubmit ?? value.trim().length > 0);
+  const isCancelAction = isSending && typeof onCancel === 'function';
 
   return (
-    <div className="input-area">
+    <div
+      className="input-area"
+      onDragOver={onDragOver}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {dropHint}
       {warning && (
         <div className="input-area__warning" role="alert">
           {warning}
@@ -106,7 +142,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
       )}
 
       <div className="input-area__row">
-        <button
+        {showAttachButton && <button
           type="button"
           className="input-area__attach-btn"
           data-focus-ring
@@ -115,7 +151,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
           onClick={() => fileInputRef.current?.click()}
         >
           📎
-        </button>
+        </button>}
         <input
           ref={fileInputRef}
           type="file"
@@ -127,26 +163,28 @@ export const InputArea: React.FC<InputAreaProps> = ({
         />
 
         <textarea
-          ref={textareaRef}
+          ref={resolvedTextareaRef}
           className="input-area__textarea focus-ring"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
+          onKeyDown={externalOnKeyDown ?? handleKeyDown}
+          onPaste={onPaste}
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
           aria-label="Message à envoyer"
+          {...textareaProps}
         />
 
         <button
           type="button"
           className="input-area__send-btn"
           data-focus-ring
-          disabled={!canSend}
-          onClick={onSubmit}
-          aria-label={isSending ? 'Envoi en cours' : 'Envoyer le message'}
+          disabled={isCancelAction ? false : !canSend}
+          onClick={isCancelAction ? onCancel : onSubmit}
+          aria-label={isCancelAction ? cancelLabel : 'Envoyer le message'}
         >
-          {isSending ? '…' : '↑'}
+          {isCancelAction ? 'Arrêter' : (isSending ? '…' : '↑')}
         </button>
       </div>
     </div>
