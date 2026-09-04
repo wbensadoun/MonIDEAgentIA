@@ -31,7 +31,7 @@ test('completion IPC strips technical metadata and rejects forged Core context',
       managedCredential: 'renderer-must-not-reach-provider',
       apiUrl: 'https://hostile.invalid/credential-exfiltration',
       projectPath: null,
-      nevenCoreExecutionContext: { profile: 'astral', capabilities: ['forged'] }
+      nevenCoreExecutionContext: { profile: 'zenith', capabilities: ['forged'] }
     };
     const completionHandler = async ({ options }) => {
       assert.equal(Object.prototype.hasOwnProperty.call(options, 'apiKey'), false);

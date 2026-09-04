@@ -83,7 +83,7 @@ const PROFILE_MODEL_PATTERNS = Object.freeze({
   lumen: ['haiku', 'flash-lite', 'flash'],
   luna: ['sonnet', 'pro', 'k2'],
   sol: ['sonnet', 'pro', 'k2'],
-  astral: ['opus', 'ultra', 'pro', 'sonnet', 'k2']
+  zenith: ['opus', 'ultra', 'pro', 'sonnet', 'k2']
 });
 
 const normalizeRouterProfile = (profile) => {
@@ -98,18 +98,18 @@ const normalizeRouterProfile = (profile) => {
 // profil interne plancher, SANS jamais voir ces profils (il ne voit que "Neven
 // IA" ou son BYOK + modèle). 'auto' = le routeur décide seul (comportement
 // historique inchangé). Sémantique PLANCHER : le routeur peut monter au-dessus
-// du niveau demandé (ex. prompt critique → astral même en Low), jamais descendre
+// du niveau demandé (ex. prompt critique → zenith même en Low), jamais descendre
 // en dessous. Les profils internes restent une métadonnée backend.
 // ---------------------------------------------------------------------------
 const ROUTER_REASONING_EFFORTS = Object.freeze({
   auto: { floor: null, label: 'Auto' },
   low: { floor: 'luna', label: 'Faible' },
   medium: { floor: 'sol', label: 'Moyen' },
-  high: { floor: 'astral', label: 'Élevé' },
-  ultra: { floor: 'astral', label: 'Ultra' }
+  high: { floor: 'zenith', label: 'Élevé' },
+  ultra: { floor: 'zenith', label: 'Ultra' }
 });
 const ROUTER_VALID_EFFORTS = new Set(Object.keys(ROUTER_REASONING_EFFORTS));
-const ROUTER_PROFILE_RANK = Object.freeze({ lumen: 0, luna: 1, sol: 2, astral: 3 });
+const ROUTER_PROFILE_RANK = Object.freeze({ lumen: 0, luna: 1, sol: 2, zenith: 3 });
 
 const normalizeReasoningEffort = (effort) => {
   const normalized = String(effort || '').trim().toLowerCase();
@@ -143,12 +143,12 @@ const raiseDecisionProfile = (decision, effort) => {
     complexity: definition.complexity,
     mode: definition.executionMode === 'agent'
       ? 'single_agent'
-      : (raised === 'astral' ? 'multi_agent' : 'orchestrator')
+      : (raised === 'zenith' ? 'multi_agent' : 'orchestrator')
   };
 };
 
 const deriveProfileFromDecision = ({ mode, complexity }) => {
-  if (mode === 'multi_agent') return 'astral';
+  if (mode === 'multi_agent') return 'zenith';
   if (mode === 'orchestrator') return 'sol';
   return complexity === 'premium' ? 'luna' : 'lumen';
 };
@@ -159,7 +159,7 @@ const buildProfileDecision = (profile) => {
   return {
     mode: definition.executionMode === 'agent'
       ? 'single_agent'
-      : (normalizedProfile === 'astral' ? 'multi_agent' : 'orchestrator'),
+      : (normalizedProfile === 'zenith' ? 'multi_agent' : 'orchestrator'),
     agent: null,
     skills: [],
     complexity: definition.complexity,
@@ -178,7 +178,7 @@ const classifyPromptProfile = (prompt) => {
     return { profile: 'lumen', confidence: 'high', reason: 'small-talk' };
   }
   if (/(production|sécurité|security|vulnér|vulnerab|migration critique|perte de données|data loss|authentification|paiement|compliance|menace|threat)/i.test(text)) {
-    return { profile: 'astral', confidence: 'high', reason: 'critical-risk' };
+    return { profile: 'zenith', confidence: 'high', reason: 'critical-risk' };
   }
   if (/(architecture|architect|repository|repo|refactor.*(complet|global|entier)|multi[- ]?étapes|multi[- ]?steps|planifie|planifier|débogage.*(complexe|profond)|debug.*(complex|deep)|plusieurs fichiers|multiple files)/i.test(text)) {
     return { profile: 'sol', confidence: 'high', reason: 'multi-step' };
@@ -439,12 +439,12 @@ ${routerContext.skillBlock}
 RÈGLES ABSOLUES :
 1. Réponds UNIQUEMENT avec un objet JSON strict, sans aucun texte avant ou après, sans bloc markdown (pas de \`\`\`).
 2. Le JSON doit correspondre EXACTEMENT à ce schéma :
-{"mode":"single_agent"|"orchestrator"|"multi_agent","agent":"<nom exact d'un agent ci-dessus ou null>","skills":["<noms exacts de skills ci-dessus>"],"complexity":"light"|"premium","profile":"lumen"|"luna"|"sol"|"astral"}
+{"mode":"single_agent"|"orchestrator"|"multi_agent","agent":"<nom exact d'un agent ci-dessus ou null>","skills":["<noms exacts de skills ci-dessus>"],"complexity":"light"|"premium","profile":"lumen"|"luna"|"sol"|"zenith"}
 3. "mode" : "single_agent" pour une tâche simple confiée à un seul agent (ou aucun agent particulier) ; "orchestrator" si une tâche complexe nécessite une coordination multi-étapes par un chef d'orchestre ; "multi_agent" si plusieurs agents spécialisés doivent collaborer.
 4. "agent" doit être le nom EXACT d'un agent listé ci-dessus, ou null si aucun agent spécifique n'est pertinent.
 5. "skills" est un tableau des noms EXACTS de skills listés ci-dessus pertinents pour la tâche (tableau vide si aucun).
 6. "complexity" = "light" pour une tâche simple/rapide, "premium" pour une tâche complexe qui bénéficierait d'un modèle plus puissant.
-7. "profile" est interne à Neven : lumen pour rapide, luna pour coding courant, sol pour planification/orchestration, astral pour risque critique ou multi-agent réel.
+7. "profile" est interne à Neven : lumen pour rapide, luna pour coding courant, sol pour planification/orchestration, zenith pour risque critique ou multi-agent réel.
 8. Si aucun agent ou skill listé n'est pertinent, utilise agent: null et skills: [].`;
 };
 
@@ -487,7 +487,7 @@ const validateRouterDecision = (raw, agentNameSet, skillNameSet) => {
   return {
     mode: profileDefinition.executionMode === 'agent'
       ? 'single_agent'
-      : (profile === 'astral' ? 'multi_agent' : 'orchestrator'),
+      : (profile === 'zenith' ? 'multi_agent' : 'orchestrator'),
     agent,
     skills,
     complexity: profileDefinition.complexity,

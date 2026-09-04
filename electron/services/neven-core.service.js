@@ -24,8 +24,8 @@ const NEVEN_INTERNAL_PROFILES = Object.freeze({
     executionMode: 'multi-agent',
     depth: 'deep'
   },
-  astral: {
-    label: 'Astral',
+  zenith: {
+    label: 'Zenith',
     fallback: 'sol',
     complexity: 'premium',
     executionMode: 'multi-agent',
@@ -136,7 +136,7 @@ const isNevenCoreExecutionEnabled = (env = process.env) => {
 const INTENT_PATTERNS = Object.freeze([
   {
     kind: 'critical',
-    profile: 'astral',
+    profile: 'zenith',
     primaryRole: 'sol',
     secondaryRole: 'terra',
     regex: /(security|secure|securit|production|payment|migration|auth|authentication|authorization|compliance|critical|risk|incident|data loss|vulnerability|vulnerab)/i

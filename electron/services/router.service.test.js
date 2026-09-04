@@ -16,14 +16,14 @@ test('internal profile classifier keeps strong signals deterministic', () => {
   assert.equal(classifyPromptProfile('bonjour').profile, 'lumen');
   assert.equal(classifyPromptProfile('corrige ce bug dans App.js').profile, 'luna');
   assert.equal(classifyPromptProfile('analyse l architecture du repository et planifie le refactoring').profile, 'sol');
-  assert.equal(classifyPromptProfile('audite la sécurité et la migration de paiement en production').profile, 'astral');
+  assert.equal(classifyPromptProfile('audite la sécurité et la migration de paiement en production').profile, 'zenith');
 });
 
 test('profile resolution selects a physical model without changing the internal profile', async () => {
   const lumen = await resolveModelForProfile('claude', 'lumen', {
     liveModels: ['claude-haiku-4-6', 'claude-sonnet-4-6']
   });
-  const astral = await resolveModelForProfile('claude', 'astral', {
+  const zenith = await resolveModelForProfile('claude', 'zenith', {
     liveModels: ['claude-haiku-4-6', 'claude-sonnet-4-6', 'claude-opus-4-1']
   });
   const sol = await resolveModelForProfile('claude', 'sol', {
@@ -32,7 +32,7 @@ test('profile resolution selects a physical model without changing the internal 
 
   assert.equal(lumen.resolved, 'claude-haiku-4-6');
   assert.equal(sol.resolved, 'claude-sonnet-4-6');
-  assert.equal(astral.resolved, 'claude-opus-4-1');
+  assert.equal(zenith.resolved, 'claude-opus-4-1');
 });
 
 test('Neven router leaves physical model selection to the managed control plane', async () => {
@@ -59,7 +59,7 @@ test('profile validation overrides contradictory mode and complexity fields', ()
   const result = validateRouterDecision({
     mode: 'single_agent',
     complexity: 'light',
-    profile: 'astral'
+    profile: 'zenith'
   }, new Set(), new Set());
 
   assert.deepEqual(result, {
@@ -67,7 +67,7 @@ test('profile validation overrides contradictory mode and complexity fields', ()
     agent: null,
     skills: [],
     complexity: 'premium',
-    profile: 'astral'
+    profile: 'zenith'
   });
 });
 
@@ -123,17 +123,17 @@ test('reasoning effort floor raises the profile without ever lowering it', () =>
   // low -> plancher luna
   assert.equal(applyReasoningEffortFloor('lumen', 'low'), 'luna');
   assert.equal(applyReasoningEffortFloor('luna', 'low'), 'luna');
-  assert.equal(applyReasoningEffortFloor('astral', 'low'), 'astral');
+  assert.equal(applyReasoningEffortFloor('zenith', 'low'), 'zenith');
   // medium -> plancher sol
   assert.equal(applyReasoningEffortFloor('lumen', 'medium'), 'sol');
   assert.equal(applyReasoningEffortFloor('sol', 'medium'), 'sol');
-  // high/ultra -> plancher astral
-  assert.equal(applyReasoningEffortFloor('lumen', 'high'), 'astral');
-  assert.equal(applyReasoningEffortFloor('sol', 'ultra'), 'astral');
-  assert.equal(applyReasoningEffortFloor('astral', 'ultra'), 'astral');
+  // high/ultra -> plancher zenith
+  assert.equal(applyReasoningEffortFloor('lumen', 'high'), 'zenith');
+  assert.equal(applyReasoningEffortFloor('sol', 'ultra'), 'zenith');
+  assert.equal(applyReasoningEffortFloor('zenith', 'ultra'), 'zenith');
   // auto -> aucun changement
   assert.equal(applyReasoningEffortFloor('lumen', 'auto'), 'lumen');
-  assert.equal(applyReasoningEffortFloor('astral', 'auto'), 'astral');
+  assert.equal(applyReasoningEffortFloor('zenith', 'auto'), 'zenith');
   // valeur invalide -> auto -> aucun changement
   assert.equal(applyReasoningEffortFloor('lumen', 'nawak'), 'lumen');
 });
@@ -148,7 +148,7 @@ test('raiseDecisionProfile keeps agent/skills and derives mode/complexity from t
   assert.deepEqual(raised.skills, ['review']);
 
   const raisedOpus = raiseDecisionProfile(decision, 'ultra');
-  assert.equal(raisedOpus.profile, 'astral');
+  assert.equal(raisedOpus.profile, 'zenith');
   assert.equal(raisedOpus.mode, 'multi_agent');
 
   // Pas de rehaussement -> decision d'origine retournee telle quelle.
@@ -166,8 +166,8 @@ test('routeToDecision applies the reasoning effort floor on the L1 trivial path'
   });
 
   assert.equal(result.reasoningEffort, 'high');
-  assert.equal(result.decision.profile, 'astral');
-  assert.equal(result.execution.profile, 'astral');
+  assert.equal(result.decision.profile, 'zenith');
+  assert.equal(result.execution.profile, 'zenith');
 });
 
 test('routeToDecision with auto effort keeps the historical profile', async () => {

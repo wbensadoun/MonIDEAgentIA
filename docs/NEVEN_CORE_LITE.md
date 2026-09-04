@@ -18,7 +18,7 @@ Ce socle ne remplace pas le routeur invisible existant. Il le compacte et lui do
 - `lumen` : rapide, court, triviale.
 - `luna` : code courant et correctifs bornes.
 - `sol` : architecture, plan, coordination multi-etapes.
-- `astral` : risque critique, securite, migration sensible.
+- `zenith` : risque critique, securite, migration sensible.
 
 ## Capabilites de base
 

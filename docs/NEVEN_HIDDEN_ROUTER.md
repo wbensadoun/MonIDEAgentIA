@@ -9,7 +9,7 @@ Le parcours normal ne demande jamais à l'utilisateur de choisir un fournisseur 
 | `lumen` | question courte, résumé, classification, autocomplete | agent rapide | modèle léger |
 | `luna` | correction ou fonctionnalité bornée | agent | lumen |
 | `sol` | architecture, repository large, plan multi-étapes | orchestrateur | luna |
-| `astral` | sécurité, migration critique, risque élevé, multi-agent réel | multi-agent | sol puis luna |
+| `zenith` | sécurité, migration critique, risque élevé, multi-agent réel | multi-agent | sol puis luna |
 
 Ces profils sont des données internes. L'interface affiche seulement `Neven · Auto` et un statut générique. Les paramètres techniques et BYOK restent réservés aux réglages avancés.
 

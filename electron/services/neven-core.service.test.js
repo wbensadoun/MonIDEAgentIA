@@ -18,7 +18,7 @@ test('core manifest exposes the expected versioned roles and profiles', () => {
   const manifest = buildNevenCoreManifest();
   assert.equal(manifest.version, NEVEN_CORE_VERSION);
   assert.deepEqual(Object.keys(manifest.roles), ['sol', 'luna', 'terra']);
-  assert.deepEqual(Object.keys(manifest.profiles), ['lumen', 'luna', 'sol', 'astral']);
+  assert.deepEqual(Object.keys(manifest.profiles), ['lumen', 'luna', 'sol', 'zenith']);
 });
 
 test('core intent maps plan, code, qa and critical prompts to the right profile and role', () => {
@@ -38,7 +38,7 @@ test('core intent maps plan, code, qa and critical prompts to the right profile 
   assert.equal(qa.profile, 'luna');
   assert.equal(qa.primaryRole, 'terra');
   assert.equal(critical.kind, 'critical');
-  assert.equal(critical.profile, 'astral');
+  assert.equal(critical.profile, 'zenith');
   assert.equal(critical.primaryRole, 'sol');
   assert.equal(general.kind, 'general');
   assert.equal(normalizeProfileName('unknown-profile'), 'lumen');
@@ -96,7 +96,7 @@ test('router context keeps a compact selection and reports savings', () => {
     maxCapabilities: 3
   });
 
-  assert.equal(context.profile, 'astral');
+  assert.equal(context.profile, 'zenith');
   assert.equal(context.primaryRole, 'sol');
   assert.equal(context.selectedAgents.length, 2);
   assert.equal(context.selectedSkills.length, 2);
@@ -116,7 +116,7 @@ test('execution context maps all four internal profiles without provider or mode
     ['bonjour', 'lumen'],
     ['corrige ce bug dans le code', 'luna'],
     ['planifie l architecture du repository', 'sol'],
-    ['migration critique de paiement en production', 'astral']
+    ['migration critique de paiement en production', 'zenith']
   ];
 
   for (const [prompt, expectedProfile] of prompts) {
