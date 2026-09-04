@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.26.0] — Connexion managed Neven
+
+- configuration d’exemple câblée sur le control plane Workers COD-76 ;
+- allowlist HTTPS et dérivation de la gateway documentées ;
+- session de production conservée dans l’identité chiffrée du main process, sans token renderer.
+
 ## [4.25.0] — Écran Sync Cloud
 
 - ajout de l’onglet Sync Cloud dans Settings ;
