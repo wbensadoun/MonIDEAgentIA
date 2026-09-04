@@ -24,6 +24,14 @@ const statusLabel = (status) => {
   return '';
 };
 
+const activateOnKeyboard = (event, callback) => {
+  if (event.target !== event.currentTarget) return;
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    callback();
+  }
+};
+
 const WorkspacePanel = ({
   workspaces = [],
   currentProjectPath,
@@ -126,8 +134,12 @@ const WorkspacePanel = ({
           return (
             <div key={ws.path} className="ws-project-block">
               <div
-                className={`ws-project ${isActive ? 'is-active' : ''}`}
+                className={`ws-project focus-ring ${isActive ? 'is-active' : ''}`}
                 onClick={() => onSelectProject && onSelectProject(ws.path)}
+                onKeyDown={(event) => activateOnKeyboard(event, () => onSelectProject && onSelectProject(ws.path))}
+                role="button"
+                tabIndex={0}
+                aria-label={ws.name}
                 title={ws.path}
               >
                 <button
@@ -174,8 +186,15 @@ const WorkspacePanel = ({
                     return (
                       <div
                         key={conv.fileName}
-                        className={`ws-session ${isActiveConv ? 'is-active' : ''}`}
+                        className={`ws-session focus-ring ${isActiveConv ? 'is-active' : ''}`}
                         onClick={() => onOpenConversation && onOpenConversation(ws.path, conv.fileName)}
+                        onKeyDown={(event) => activateOnKeyboard(
+                          event,
+                          () => onOpenConversation && onOpenConversation(ws.path, conv.fileName)
+                        )}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={conv.title}
                         title={conv.title}
                       >
                         <span className="ws-dot ws-dot-idle" />
