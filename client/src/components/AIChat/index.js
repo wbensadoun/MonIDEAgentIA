@@ -1835,13 +1835,16 @@ const AIChat = ({
                   key={session.id}
                   className={`ai-history-item ${session.id === activeSessionId ? 'is-active' : ''}`}
                   style={{ position: 'relative', gap: 4 }}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => { if (onSwitchSession) onSwitchSession(session.id); setShowConversations(false); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { if (onSwitchSession) onSwitchSession(session.id); setShowConversations(false); } }}
                   onContextMenu={(e) => { e.preventDefault(); setSessionMenuId(session.id); }}
                 >
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.title}</span>
+                  <button
+                    type="button"
+                    className="ai-history-item-select"
+                    onClick={() => { if (onSwitchSession) onSwitchSession(session.id); setShowConversations(false); }}
+                    aria-current={session.id === activeSessionId ? 'true' : undefined}
+                  >
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.title}</span>
+                  </button>
                   {typeof onOpenSessionTab === 'function' && (
                     <button
                       type="button"

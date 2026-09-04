@@ -160,6 +160,25 @@ describe('COD-68 — lignes de chat sémantiques', () => {
 
     expect(onSelectPendingChange).toHaveBeenCalledWith(0);
   });
+
+  test('une session est sélectionnable comme bouton sans imbriquer ses actions', () => {
+    const onSwitchSession = jest.fn();
+    const onOpenSessionTab = jest.fn();
+    render(
+      <Harness
+        sessions={[{ id: 'session-1', title: 'Travail', updatedAt: 2 }]}
+        onSwitchSession={onSwitchSession}
+        onOpenSessionTab={onOpenSessionTab}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('Historique'));
+    const session = screen.getByRole('button', { name: 'Travail' });
+    fireEvent.click(session);
+
+    expect(onSwitchSession).toHaveBeenCalledWith('session-1');
+    expect(onOpenSessionTab).not.toHaveBeenCalled();
+  });
 });
 
 describe('COD-70 — actions sur les messages', () => {
