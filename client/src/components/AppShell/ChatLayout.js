@@ -186,7 +186,11 @@ const ChatLayout = ({
         </>
       )}
 
-      <main className="chat-fullscreen" style={{ minWidth: `${CHAT_MAIN_MIN_WIDTH}px` }}>
+      <main
+        className="chat-fullscreen"
+        aria-label="Chat principal"
+        style={{ minWidth: `${CHAT_MAIN_MIN_WIDTH}px` }}
+      >
         <div className="chat-fullscreen-inner">
           <AIChat
             {...aiChatProps}

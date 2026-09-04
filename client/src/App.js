@@ -22,6 +22,7 @@ import WorkflowManager from './components/WorkflowManager';
 import AppTopbar from './components/AppShell/AppTopbar';
 import ActivityBar from './components/AppShell/ActivityBar';
 import WorkspaceLayout from './components/AppShell/WorkspaceLayout';
+import ChatLayout from './components/AppShell/ChatLayout';
 import AgentsLayout from './components/AppShell/AgentsLayout';
 import StatusBar from './components/AppShell/StatusBar';
 import OnboardingModal from './components/AppShell/OnboardingModal';
@@ -37,7 +38,11 @@ const AppContent = () => {
   // Which content the left sidebar shows in 'ide' viewMode — driven by the
   // ActivityBar rail (Explorer / Search / Source Control).
   const [activeSidebarSection, setActiveSidebarSection] = useState('explorer');
-  const [isAgentverseOpen, setIsAgentverseOpen] = useState(false);
+  // Navigation de premier niveau. ChatLayout et AgentsLayout sont des vues
+  // distinctes de l'IDE : leur montage doit être piloté par une seule source
+  // de vérité pour éviter les bascules partielles (panneau droit vs page).
+  const [viewMode, setViewMode] = useState('ide');
+  const isAgentverseOpen = viewMode === 'agents';
 
   const { isAvailable: isElectronApiAvailable, message, showMessage } = useElectronAPI();
   const {
@@ -99,6 +104,11 @@ const AppContent = () => {
     devPort,
     showMessage
   });
+
+  const navigateToView = React.useCallback((nextView) => {
+    if (!['ide', 'chat', 'agents'].includes(nextView)) return;
+    setViewMode(nextView);
+  }, []);
   const {
     activeFile,
     setActiveFile,
@@ -752,7 +762,7 @@ const AppContent = () => {
     onActiveModelChange: handleActiveModelChange,
     isExpertMode,
     isDeveloperMode: isExpertMode,
-    onOpenAgentManager: () => setIsAgentverseOpen(true)
+    onOpenAgentManager: () => navigateToView('agents')
   };
 
   // Paramètres : contenu d'onglet singleton, hébergé par WorkspaceLayout
@@ -921,20 +931,21 @@ const AppContent = () => {
 
       <div className="app-body">
         <ActivityBar
+          viewMode={viewMode}
+          onViewModeChange={navigateToView}
           activeSidebarSection={activeSidebarSection}
           onSidebarSectionChange={setActiveSidebarSection}
           isLeftCollapsed={isLeftCollapsed}
           onExpandLeftPanel={() => { if (isLeftCollapsed) toggleLeftPanel(); }}
           onOpenSettings={openSettings}
-          isAgentverseOpen={isAgentverseOpen}
-          onAgentverseToggle={setIsAgentverseOpen}
-          isRightCollapsed={isRightCollapsed}
-          onToggleRightPanel={toggleRightPanel}
           centerView={centerView}
-          onOpenWorkflows={() => setCenterView('workflows')}
+          onOpenWorkflows={() => {
+            navigateToView('ide');
+            setCenterView('workflows');
+          }}
         />
         <FeatureErrorBoundary feature="workspace">
-        {!isAgentverseOpen && (
+        {viewMode === 'ide' && (
           <WorkspaceLayout
             layoutRef={layoutRef}
             leftWidth={leftWidth}
@@ -998,13 +1009,22 @@ const AppContent = () => {
             onCloseSettings={closeSettings}
           />
         )}
-        {isAgentverseOpen && (
+        {viewMode === 'chat' && (
+          <ChatLayout
+            workspacePanelProps={workspacePanelProps}
+            aiChatProps={aiChatProps}
+            isSidebarCollapsed={isChatSidebarCollapsed}
+            isSwarmOpen={isSwarmPanelOpen}
+            onToggleSwarmPanel={toggleSwarmPanel}
+          />
+        )}
+        {viewMode === 'agents' && (
           <AgentsLayout
             workspacePanelProps={workspacePanelProps}
             onViewChanges={() => {
               setActiveSidebarSection('ai-changes');
               if (isLeftCollapsed) toggleLeftPanel();
-              setIsAgentverseOpen(false);
+              navigateToView('ide');
             }}
             projectItems={projectItems}
             currentProjectPath={currentProjectPath}
@@ -1028,6 +1048,7 @@ const AppContent = () => {
 
       <FeatureErrorBoundary feature="statusbar">
       <StatusBar
+        viewMode={viewMode}
         centerView={centerView}
         previewStatus={previewStatus}
         isStreamingCodePreview={isStreamingCodePreview}

@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.23.0] — Navigation Chat et AgentVerse
+
+### Fixed
+
+- L’icône AI Chat ouvre à nouveau une vue plein écran avec les sessions/projets à gauche et le chat au centre.
+- L’icône AgentVerse et « Configurer les agents… » utilisent le même chemin de navigation dédié.
+- Les vues IDE, Chat et AgentVerse ont désormais une source de vérité unique, sans bascule parasite du panneau droit.
+
 ## [4.22.0] — Sélection de session accessible
 
 ### Fixed

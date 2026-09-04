@@ -61,7 +61,7 @@ const AgentsLayout = ({
       />
 
       {/* Main Content — AgentVerse */}
-      <main className="agents-fullscreen">
+      <main className="agents-fullscreen" aria-label="AgentVerse">
         <Suspense
           fallback={
             <div
