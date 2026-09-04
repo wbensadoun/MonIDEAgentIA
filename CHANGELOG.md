@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.24.0] — Synchronisation Cloud des ressources
+
+### Added
+
+- Ajout du backend Cloudflare pour publier, récupérer et lister les agents, skills et workflows.
+- Ajout des scripts de déploiement et de smoke test Cloudflare, sans secret dans Git.
+
 ## [4.23.0] — Navigation Chat et AgentVerse
 
 ### Fixed
