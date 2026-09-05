@@ -1,5 +1,10 @@
 # Changelog
 
+## [4.27.0] — Tokens de radius COD-69
+
+- remplacement de trois `border-radius` hardcodés par les tokens du système de design ;
+- budget de dette `border-radius` réduit à 292 occurrences.
+
 ## [4.26.0] — Connexion managed Neven
 
 - configuration d’exemple câblée sur le control plane Workers COD-76 ;

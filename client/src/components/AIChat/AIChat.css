@@ -1679,7 +1679,7 @@
 .ai-history-item-select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 /* =============================
